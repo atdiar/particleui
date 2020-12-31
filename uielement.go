@@ -1,118 +1,130 @@
-// Package uitree is a library of functions for simple, generic gui development.
-package uitree
+// Package ui is a library of functions for simple, generic gui development.
+package ui
 
-import "sync"
+import (
+	"errors"
+	"log"
+)
+
+var (
+	ErrNoTemplate = errors.New("Element template missing")
+)
 
 type ElementStore struct {
-	ByID map[string]*Element
+	DocType   string
+	Templates map[string]Element
+	ByID      map[string]*Element
 }
 
-func (e ElementStore) Put(el *Element) {
-	_, ok := e.ByID[el.ID]
-	if !ok {
-		e.ByID[el.ID] = el
+func (e ElementStore) ElementFromTemplate(name string) *Element {
+	t, ok := e.Templates[name]
+	if ok {
+		return &t
 	}
+	return nil
 }
 
-func (e ElementStore) GetByID(id string) *Element {
-	v, ok := e.ByID[id]
-	if !ok {
-		return nil
-	}
-	return v
+func (e ElementStore) NewTemplate(t *Element) {
+	e.Templates[t.Name] = *t
 }
 
-func (e ElementStore) GetByType(typ string) Elements {
-	n := NewElements()
-	for _, v := range e.ByID {
-		if v.Type == typ {
-			n.Insert(v, len(n.List))
+func Constructor(es ElementStore) func(string, string) (*Element, error) {
+	New := func(name string, id string) (*Element, error) {
+		if e := es.ElementFromTemplate(name); e != nil {
+			e.Name = name
+			e.ID = id
+			e.DocType = es.DocType
+			// TODO copy any map field
+			return e, nil
 		}
+		return nil, ErrNoTemplate
 	}
-	return *n
-}
-
-func (e ElementStore) GetByName(name string) Elements {
-	n := NewElements()
-	for _, v := range e.ByID {
-		if v.Name == name {
-			n.Insert(v, len(n.List))
-		}
-	}
-	return *n
-}
-
-func Constructor() (func(string, string, string) *Element, map[string]Elements, map[string]*Element) {
-	ElementStoredByType := make(map[string]Element)
-	ElementStoredByID := make(map[string]*Element)
-	New := func(namespace string, eltype string, id string) *Element {
-		e, ok := ElementStoredByType[eltype]
-		if ok {
-			new := Element{}
-			new.Name = namespace
-			new.mu = &sync.Mutex{}
-			new.Type = eltype
-			new.ID = id
-			new.UIProperties.Shared = e.UIProperties.Shared
-			new.UIProperties.Local = make(map[string]string)
-			for k, v := range e.UIProperties.Local {
-				new.UIProperties.Local[k] = v
-			}
-			new.UIProperties.Watchers = make(map[string]*Elements) // mapping string properties with a list of observing Element types
-			new.mutationHandlers = e.mutationHandlers
-			new.watchedUIMutattions = make(map[string]string)
-			new.watchedDataMutations = make(map[string]interface{})
-
-		}
-	}
-	return New, ElementStoredByType, ElementStoredByID
+	return New
 }
 
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
 type Element struct {
+	root        *Element
+	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
+	path        *Elements
+
 	Parent *Element
 
-	Name string
-	Type string
-	ID   string
+	Name    string
+	ID      string
+	DocType string
 
-	UIProperties map[string]Properties // properties are namespaced
-	Data         Data
+	UIProperties PropertyStore
+	Data         DataStore
 
-	// watched mutations are recipient for the mutated values
-	// Each time the method to add to these are called, we should try and  find
-	// a mutation Handler if any has been registered.
-	// TODO Use heap so that the history of mutations is conserved map[string][]string
-	watchedUIMutattions  map[string]string      // the key is the property name and the value is the new value
-	watchedDataMutations map[string]interface{} // the key is the data name and the value its new value
-	mutationHandlers     map[string]MutationHandlers
+	OnMutation map[string]MutationHandlers // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	OnEvent    EventListeners              // EventHandlers are to be called when the named event has fired.
+
+	// Proper event handling requires to assert the interface to have access to the underlying object so that target id may be retrieved
+	// amongst other event properties. the handling should be reflected in the actual dom via modification of the underlying js object.
 
 	Children *Elements
 
-	mu *sync.Mutex
+	Native interface{}
+
+	inherit bool
 }
 
-type Properties struct {
-	Shared map[string]string
-	Local  map[string]string // A property in local will override a  global property
+type PropertyStore struct {
+	GlobalShared map[string]interface{}
 
+	Default map[string]interface{}
+
+	Inherited map[string]interface{} //Inherited property cannot be mutated by the inheritor
+
+	Local map[string]interface{}
+
+	Inheritable map[string]interface{} // the value of a property overrides ithe value stored in any of its predecessor value store
 	// map key is the address of the element's  property
+	// being watched and elements is the list of elements watching this property
+	// Inheritable encompasses overidden values and inherited values that are being passed down.
+	Watchers map[string]*Elements
+}
+
+func (p PropertyStore) NewWatcher(propName string, watcher *Element) {
+	list, ok := p.Watchers[propName]
+	if !ok {
+		p.Watchers[propName] = NewElements(watcher)
+		return
+	}
+	list.Insert(watcher, len(list.List))
+}
+func (p PropertyStore) RemoveWatcher(propName string, watcher *Element) {}
+
+func (p PropertyStore) Get(propName string) (interface{}, bool) {}
+func (p PropertyStore) Set(propName string, value interface{})  {} // don't forget to propagate mutation event to watchers
+
+type DataStore struct {
+	Store     map[string]interface{}
+	Immutable map[string]interface{}
+
+	// map key is the address of the data being watched (e.g. id/dataname)
 	// being watched and elements is the list of elements watching this property
 	Watchers map[string]*Elements
 }
 
-type Data struct {
-	Store map[string]interface{}
-
-	// map key is the address of the data being watched
-	// being watched and elements is the list of elements watching this property
-	Watchers map[string]Elements
+func (d DataStore) NewWatcher(label string, watcher *Element) {
+	list, ok := d.Watchers[label]
+	if !ok {
+		d.Watchers[label] = NewElements(watcher)
+		return
+	}
+	list.Insert(watcher, len(list.List))
 }
+func (d DataStore) RemoveWatcher(label string, watcher *Element) {}
 
-func NewDataStore() Data {
-	return Data{make(map[string]interface{})}
+func (d DataStore) Get(label string) (interface{}, bool) {}
+func (d DataStore) Set(label string, value interface{})  {} // do not forget to notify watcher Elements of change
+
+func NewDataStore() DataStore {
+	return DataStore{make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
 }
 
 type Elements struct {
@@ -122,8 +134,9 @@ type Elements struct {
 func NewElements(elements ...*Element) *Elements {
 	return &Elements{elements}
 }
+
 func (e *Elements) Insert(el *Element, index int) *Elements {
-	nel := make([]*Elements, 0)
+	nel := make([]*Element, 0)
 	nel = append(nel, e.List[:index]...)
 	nel = append(nel, el)
 	nel = append(nel, e.List[index:]...)
@@ -131,9 +144,78 @@ func (e *Elements) Insert(el *Element, index int) *Elements {
 	return e
 }
 
-type MutationHandlers struct {
-	Handlers []func(*Element) interface{}
+func (e *Element) Handle(evt Event) bool {
+	evt.SetCurrentTarget(e)
+	return e.OnEvent.Handle(evt)
 }
 
-func (e *Element) Parse(format string, payload string) *Element {}
-func (e *Element) Inner(elements ...*Element) *Element          {}
+//
+func (e *Element) DispatchEvent(evt Event) *Element {
+
+	if e.Detached() {
+		log.Print("Error: Element detached. should not happen.")
+		return e // should not really happen
+	}
+	if e.path == nil {
+		log.Print("Error: Element path does not exist.") // should not happen if the libaray is correctly implemented
+		return e
+	}
+
+	// First we apply the capturing event handlers PHASE 1
+	evt.SetPhase(1)
+	var done bool
+	for _, ancestor := range e.path.List {
+		if evt.Stopped() {
+			return e
+		}
+
+		done = ancestor.Handle(evt) // Handling deemed finished in user side logic
+		if done || evt.Stopped() {
+			return e
+		}
+	}
+
+	// Second phase: we handle the events at target
+	evt.SetPhase(2)
+	done = e.Handle(evt)
+	if done {
+		return e
+	}
+
+	// Third phase : bubbling
+	if !evt.Bubbles() {
+		return e
+	}
+	evt.SetPhase(3)
+	for k := len(e.path.List) - 1; k >= 0; k-- {
+		ancestor := e.path.List[k]
+		if evt.Stopped() {
+			return e
+		}
+		done = ancestor.Handle(evt)
+		if done {
+			return e
+		}
+	}
+	return e
+}
+
+func (e *Element) Parse(payload string) *Element      { return e }
+func (e *Element) Unparse(outputformat string) string {}
+
+func (e *Element) AddInnerElementselements(...*Element) *Element { return e }
+
+func (e *Element) Watch(datalabel string, target *Element, handler func(MutationEvent)) *Element {
+	return e
+}
+func (e *Element) Unwatch(datalabel string, target *Element) *Element { return e }
+
+func (e *Element) AddEventListener(event string, handler *EventHandler) *Element    { return e }
+func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element { return e }
+
+func (e *Element) Detached() bool {
+	if e.subtreeRoot.Parent == nil && e.subtreeRoot != e.root {
+		return true
+	}
+	return false
+}
