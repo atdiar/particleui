@@ -25,10 +25,10 @@ type EventListeners struct {
 }
 
 func NewEventListenerStore() EventListeners {
-	return EventListeners{make(map[string]*eventHandlers)}
+	return EventListeners{make(map[string]*eventHandlers, 0)}
 }
 
-func (e EventListeners) AddEventListener(event string, handler *EventHandler) {
+func (e EventListeners) AddEventHandler(event string, handler *EventHandler) {
 	eh, ok := e.list[event]
 	if !ok {
 		e.list[event] = newEventHandlers().Add(handler)
@@ -36,7 +36,7 @@ func (e EventListeners) AddEventListener(event string, handler *EventHandler) {
 	eh.Add(handler)
 }
 
-func (e EventListeners) RemoveEventListener(event string, handler *EventHandler) {
+func (e EventListeners) RemoveEventHandler(event string, handler *EventHandler) {
 	eh, ok := e.list[event]
 	if !ok {
 		return
@@ -59,6 +59,10 @@ func (e EventListeners) Handle(evt Event) bool {
 				continue
 			}
 			done := h.Handle(evt)
+			if h.Once {
+				evh.Remove(h)
+			}
+
 			if done {
 				return done
 			}
@@ -69,6 +73,9 @@ func (e EventListeners) Handle(evt Event) bool {
 	case 2:
 		for _, h := range evh.List {
 			done := h.Handle(evt)
+			if h.Once {
+				evh.Remove(h)
+			}
 			if done {
 				return done
 			}
@@ -82,6 +89,9 @@ func (e EventListeners) Handle(evt Event) bool {
 				continue
 			}
 			done := h.Handle(evt)
+			if h.Once {
+				evh.Remove(h)
+			}
 			if done {
 				return done
 			}
@@ -115,7 +125,9 @@ func (e *eventHandlers) Remove(h *EventHandler) *eventHandlers {
 		index = k
 		break
 	}
-	e.List = append(e.List[:index], e.List[index+1:]...)
+	if index >= 0 {
+		e.List = append(e.List[:index], e.List[index+1:]...)
+	}
 	return e
 }
 

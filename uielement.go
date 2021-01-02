@@ -59,8 +59,8 @@ type Element struct {
 	UIProperties PropertyStore
 	Data         DataStore
 
-	OnMutation map[string]MutationHandlers // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
-	OnEvent    EventListeners              // EventHandlers are to be called when the named event has fired.
+	OnMutation MutationCallbacks // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	OnEvent    EventListeners    // EventHandlers are to be called when the named event has fired.
 
 	// Proper event handling requires to assert the interface to have access to the underlying object so that target id may be retrieved
 	// amongst other event properties. the handling should be reflected in the actual dom via modification of the underlying js object.
@@ -96,10 +96,56 @@ func (p PropertyStore) NewWatcher(propName string, watcher *Element) {
 	}
 	list.Insert(watcher, len(list.List))
 }
-func (p PropertyStore) RemoveWatcher(propName string, watcher *Element) {}
+func (p PropertyStore) RemoveWatcher(propName string, watcher *Element) {
+	list, ok := p.Watchers[propName]
+	if !ok {
+		return
+	}
+	list.Remove(watcher)
+}
 
-func (p PropertyStore) Get(propName string) (interface{}, bool) {}
-func (p PropertyStore) Set(propName string, value interface{})  {} // don't forget to propagate mutation event to watchers
+func (p PropertyStore) Get(propName string) (interface{}, bool) {
+	v, ok := p.Inheritable[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Local[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Inherited[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Default[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.GlobalShared[propName]
+	if ok {
+		return v, ok
+	}
+	return nil, false
+}
+func (p PropertyStore) Set(propName string, value interface{}, inheritable bool) {
+	if inheritable {
+		p.Inheritable[propName] = value
+		return
+	}
+	p.Local[propName] = value
+} // don't forget to propagate mutation event to watchers
+
+func (p PropertyStore) Inherit(source PropertyStore) {
+	if source.Inheritable != nil {
+		for k, v := range source.Inheritable {
+			p.Inherited[k] = v
+		}
+	}
+}
+
+func (p PropertyStore) SetDefault(propName string, value interface{}) {
+	p.Default[propName] = value
+}
 
 type DataStore struct {
 	Store     map[string]interface{}
@@ -118,10 +164,27 @@ func (d DataStore) NewWatcher(label string, watcher *Element) {
 	}
 	list.Insert(watcher, len(list.List))
 }
-func (d DataStore) RemoveWatcher(label string, watcher *Element) {}
+func (d DataStore) RemoveWatcher(label string, watcher *Element) {
+	v, ok := d.Watchers[label]
+	if !ok {
+		return
+	}
+	v.Remove(watcher)
+}
 
-func (d DataStore) Get(label string) (interface{}, bool) {}
-func (d DataStore) Set(label string, value interface{})  {} // do not forget to notify watcher Elements of change
+func (d DataStore) Get(label string) (interface{}, bool) {
+	if v, ok := d.Immutable[label]; ok {
+		return v, ok
+	}
+	v, ok := d.Store[label]
+	return v, ok
+}
+func (d DataStore) Set(label string, value interface{}) {
+	if v, ok := d.Immutable[label]; ok {
+		return
+	}
+	d.Store[label] = value
+} // do not forget to notify watcher Elements of change
 
 func NewDataStore() DataStore {
 	return DataStore{make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
@@ -144,12 +207,30 @@ func (e *Elements) Insert(el *Element, index int) *Elements {
 	return e
 }
 
+func (e *Elements) Remove(el *Element) *Elements {
+	index := -1
+	for k, element := range e.List {
+		if element == el {
+			index = k
+		}
+	}
+	if index >= 0 {
+		e.List = append(e.List[:index], e.List[index+1:]...)
+	}
+	return e
+}
+
+// Handle calls up the event handlers in charge of processing the event for which
+// the Element is listening.
 func (e *Element) Handle(evt Event) bool {
 	evt.SetCurrentTarget(e)
 	return e.OnEvent.Handle(evt)
 }
 
-//
+// DispatchEvent is used typically to propagate UI events throughout the ui tree.
+// It may require an event object to be created from the native event object implementation.
+// Events are propagated following the model set by web browser DOM events:
+// 3 phases being the capture phase, at-target and then bubbling up if allowed.
 func (e *Element) DispatchEvent(evt Event) *Element {
 
 	if e.Detached() {
@@ -203,19 +284,51 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 func (e *Element) Parse(payload string) *Element      { return e }
 func (e *Element) Unparse(outputformat string) string {}
 
-func (e *Element) AddInnerElementselements(...*Element) *Element { return e }
+func (e *Element) AddInnerElements(elements ...*Element) *Element { return e }
 
-func (e *Element) Watch(datalabel string, target *Element, handler func(MutationEvent)) *Element {
+func (e *Element) Watch(datalabel string, mutationSource *Element, h *MutationHandler) *Element {
+	mutationSource.Data.NewWatcher(datalabel, e)
+	e.OnMutation.Add(mutationSource.ID+"/"+datalabel, h)
 	return e
 }
-func (e *Element) Unwatch(datalabel string, target *Element) *Element { return e }
+func (e *Element) Unwatch(datalabel string, mutationSource *Element) *Element {
+	mutationSource.Data.RemoveWatcher(datalabel, e)
+	return e
+}
 
-func (e *Element) AddEventListener(event string, handler *EventHandler) *Element    { return e }
-func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element { return e }
+func (e *Element) AddEventListener(event string, handler *EventHandler) *Element {
+	e.OnEvent.AddEventHandler(event, handler)
+	return e
+}
+func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element {
+	e.OnEvent.RemoveEventHandler(event, handler)
+	return e
+}
 
+// Detached returns whether the csubtree the current Element belongs to is attached
+// to the main tree or not.
 func (e *Element) Detached() bool {
 	if e.subtreeRoot.Parent == nil && e.subtreeRoot != e.root {
 		return true
 	}
 	return false
+}
+
+func (e *Element) Get(label string) (interface{}, bool) {
+	return e.Data.Get(label)
+}
+func (e *Element) Set(label string, value interface{}) {
+	e.Data.Set(label, value)
+	evt := e.NewMutationEvent(label, value).Data()
+	e.OnMutation.DispatchEvent(evt)
+}
+
+func (e *Element) GetUI(propName string) (interface{}, bool) {
+	return e.UIProperties.Get(propName)
+}
+
+func (e *Element) SetUI(propName string, value interface{}, inheritable bool) {
+	e.UIProperties.Set(propName, value, inheritable)
+	evt := e.NewMutationEvent(propName, value).UI()
+	e.OnMutation.DispatchEvent(evt)
 }
