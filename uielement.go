@@ -59,15 +59,16 @@ type Element struct {
 	UIProperties PropertyStore
 	Data         DataStore
 
-	OnMutation MutationCallbacks // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
-	OnEvent    EventListeners    // EventHandlers are to be called when the named event has fired.
+	OnMutation             MutationCallbacks // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	OnEvent                EventListeners    // EventHandlers are to be called when the named event has fired.
+	NativeEventUnlisteners NativeEventUnlisteners
 
 	// Proper event handling requires to assert the interface to have access to the underlying object so that target id may be retrieved
 	// amongst other event properties. the handling should be reflected in the actual dom via modification of the underlying js object.
 
 	Children *Elements
 
-	Native interface{}
+	Native NativeElementWrapper
 
 	inherit bool
 }
@@ -180,11 +181,11 @@ func (d DataStore) Get(label string) (interface{}, bool) {
 	return v, ok
 }
 func (d DataStore) Set(label string, value interface{}) {
-	if v, ok := d.Immutable[label]; ok {
+	if _, ok := d.Immutable[label]; ok {
 		return
 	}
 	d.Store[label] = value
-} // do not forget to notify watcher Elements of change
+}
 
 func NewDataStore() DataStore {
 	return DataStore{make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
@@ -196,6 +197,16 @@ type Elements struct {
 
 func NewElements(elements ...*Element) *Elements {
 	return &Elements{elements}
+}
+
+func (e *Elements) InsertLast(elements ...*Element) *Elements {
+	e.List = append(e.List, elements...)
+	return e
+}
+
+func (e *Elements) InsertFirst(elements ...*Element) *Elements {
+	e.List = append(elements, e.List...)
+	return e
 }
 
 func (e *Elements) Insert(el *Element, index int) *Elements {
@@ -220,6 +231,21 @@ func (e *Elements) Remove(el *Element) *Elements {
 	return e
 }
 
+func (e *Elements) RemoveAll() *Elements {
+	e.List = nil
+	return e
+}
+
+func (e *Elements) Replace(old *Element, new *Element) *Elements {
+	for k, element := range e.List {
+		if element == old {
+			e.List[k] = new
+			return e
+		}
+	}
+	return e
+}
+
 // Handle calls up the event handlers in charge of processing the event for which
 // the Element is listening.
 func (e *Element) Handle(evt Event) bool {
@@ -235,10 +261,10 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 
 	if e.Detached() {
 		log.Print("Error: Element detached. should not happen.")
-		return e // should not really happen
+		return e // can happen if we are building a document fragment and try to dispatch a custom event
 	}
 	if e.path == nil {
-		log.Print("Error: Element path does not exist.") // should not happen if the libaray is correctly implemented
+		log.Print("Error: Element path does not exist (yet).")
 		return e
 	}
 
@@ -281,10 +307,78 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 	return e
 }
 
-func (e *Element) Parse(payload string) *Element      { return e }
-func (e *Element) Unparse(outputformat string) string {}
+// func (e *Element) Parse(payload string) *Element      { return e }
+// func (e *Element) Unparse(outputformat string) string {}
 
-func (e *Element) AddInnerElements(elements ...*Element) *Element { return e }
+// TODO not forget to change the path of the child element ...
+// Any other attach function (adjacent for instance) may just require to append
+// from the parent Element. Nothing too fancy. Probably no need to implement it.
+func (e *Element) AppendChild(child *Element) *Element {
+	child.Parent = e
+	child.subtreeRoot = e.subtreeRoot
+	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+
+	e.Children.InsertLast(child)
+	if e.Native != nil {
+		e.Native.AppendChild(child)
+	}
+	return e
+}
+func (e *Element) Prepend(child *Element) *Element {
+	child.Parent = e
+	child.subtreeRoot = e.subtreeRoot
+	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+
+	e.Children.InsertFirst(child)
+	if e.Native != nil {
+		e.Native.PrependChild(child)
+	}
+	return e
+}
+func (e *Element) InsertChild(child *Element, index int) *Element {
+	child.Parent = e
+	child.subtreeRoot = e.subtreeRoot
+	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+
+	e.Children.Insert(child, index)
+	if e.Native != nil {
+		e.Native.InsertChild(child, index)
+	}
+	return e
+}
+func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
+	new.Parent = e
+	new.subtreeRoot = e.subtreeRoot
+	new.path.InsertFirst(e).InsertFirst(e.path.List...)
+
+	old.Parent = nil
+	old.subtreeRoot = nil
+	old.path.RemoveAll()
+
+	e.Children.Replace(old, new)
+	if e.Native != nil {
+		e.Native.ReplaceChild(old, new)
+	}
+	return e
+}
+func (e *Element) RemoveChild(child *Element) *Element {
+	child.Parent = nil
+	child.subtreeRoot = nil
+	child.path.RemoveAll()
+
+	e.Children.Remove(child)
+	if e.Native != nil {
+		e.Native.RemoveChild(child)
+	}
+	return e
+}
+
+func (e *Element) RemoveChildren() *Element {
+	for _, child := range e.Children.List {
+		e.RemoveChild(child)
+	}
+	return e
+}
 
 func (e *Element) Watch(datalabel string, mutationSource *Element, h *MutationHandler) *Element {
 	mutationSource.Data.NewWatcher(datalabel, e)
@@ -296,12 +390,20 @@ func (e *Element) Unwatch(datalabel string, mutationSource *Element) *Element {
 	return e
 }
 
-func (e *Element) AddEventListener(event string, handler *EventHandler) *Element {
+func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	e.OnEvent.AddEventHandler(event, handler)
+	if nativebinding != nil {
+		nativebinding(event, e)
+	}
 	return e
 }
-func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element {
+func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
 	e.OnEvent.RemoveEventHandler(event, handler)
+	if native {
+		if e.NativeEventUnlisteners.List != nil {
+			e.NativeEventUnlisteners.Apply(event)
+		}
+	}
 	return e
 }
 
@@ -331,4 +433,33 @@ func (e *Element) SetUI(propName string, value interface{}, inheritable bool) {
 	e.UIProperties.Set(propName, value, inheritable)
 	evt := e.NewMutationEvent(propName, value).UI()
 	e.OnMutation.DispatchEvent(evt)
+}
+
+// ToggleDisplay is a simple example of conditional rendering.
+// It allows an Element to have a single child Element that can be switched with another one.
+//
+// For example, if we have a toggable button, one for login and one for logout,
+// We can implement the switch between login and logout by switching the inner Elements.
+//
+// This is merely an example as we could implement toggling between more than two
+// Elements quite easily.
+// Routing will probably be implemented this way, toggling between states
+// when a mutationevent such as browser history occurs.
+func (e *Element) ToggleDisplay(conditionName string, first *Element, second *Element, init interface{}) *Element {
+	toggle := NewMutationHandler(func(evt MutationEvent) {
+		value, ok := evt.NewValue().(bool)
+		if !ok {
+			value = false
+		}
+		if value {
+			e.RemoveChildren()
+			e.AppendChild(first)
+			return
+		}
+		e.RemoveChildren()
+		e.AppendChild(second)
+	})
+	e.Watch(conditionName, e, toggle)
+	e.Set(conditionName, init)
+	return e
 }

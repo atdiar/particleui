@@ -20,6 +20,49 @@ type Event interface {
 	Native() interface{} // returns the native event object
 }
 
+type eventObject struct {
+	typ           string
+	target        *Element
+	currentTarget *Element
+
+	defaultPrevented bool
+	bubbles          bool
+	stopped          bool
+	phase            int
+
+	nativeObject interface{}
+}
+
+type defaultPreventer interface {
+	PrventDefault()
+}
+
+func (e *eventObject) Type() string            { return e.typ }
+func (e *eventObject) Target() *Element        { return e.target }
+func (e *eventObject) CurrentTarget() *Element { return e.currentTarget }
+func (e *eventObject) PreventDefault() {
+	if v, ok := e.nativeObject.(defaultPreventer); ok {
+		v.PrventDefault()
+	}
+	e.defaultPrevented = true
+}
+func (e *eventObject) StopPropagation() { e.stopped = true }
+func (e *eventObject) StopImmediatePropagation() {
+	e.stopped = true
+	e.phase = 0
+}
+func (e *eventObject) SetPhase(i int)              { e.phase = i }
+func (e *eventObject) SetCurrentTarget(t *Element) { e.currentTarget = t }
+func (e *eventObject) Phase() int                  { return e.phase }
+func (e *eventObject) Bubbles() bool               { return e.bubbles }
+func (e *eventObject) DefaultPrevented() bool      { return e.defaultPrevented }
+func (e *eventObject) Stopped() bool               { return e.stopped }
+func (e *eventObject) Native() interface{}         { return e.nativeObject }
+
+func NewEvent(typ string, bubbles bool, target *Element, nativeEvent interface{}) Event {
+	return &eventObject{typ, target, target, false, bubbles, false, 0, nativeEvent}
+}
+
 type EventListeners struct {
 	list map[string]*eventHandlers
 }
