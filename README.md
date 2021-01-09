@@ -1,6 +1,6 @@
-# simplicity
+# ParticleUI
 
-Simplicity defines a set of objects and functions used for the creation of platform-independent,
+ParticleUI defines a set of objects and functions used for the creation of platform-independent,
 easily composable, component based ui toolkits.
 
 It defines a gui as a set of elements which hold properties that are either rendered
