@@ -4,11 +4,28 @@ package ui
 import (
 	"errors"
 	"log"
+	"math/rand"
+	"strings"
 )
 
 var (
 	ErrNoTemplate = errors.New("Element template missing")
 )
+
+// NewIDgenerator returns a function used to create new IDs for Elements. It uses
+// a Pseudo-Random Number Generator (PRNG) as it is disirable to have as deterministic
+// IDs as possible. Notably for the mostly tstaic elements.
+// Evidently, as users navigate the app differently and mya create new Elements
+// in a different order (hence calling the ID generator is path-dependent), we
+// do not expect to have the same id structure for different runs of a same program.
+func NewIDgenerator(seed int64) func() string {
+	return func() string {
+		bstr := make([]byte, 32)
+		rand.Seed(seed)
+		_, _ = rand.Read(bstr)
+		return string(bstr)
+	}
+}
 
 type ElementStore struct {
 	DocType   string
@@ -59,18 +76,18 @@ type Element struct {
 	UIProperties PropertyStore
 	Data         DataStore
 
-	OnMutation             MutationCallbacks // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
-	OnEvent                EventListeners    // EventHandlers are to be called when the named event has fired.
-	NativeEventUnlisteners NativeEventUnlisteners
+	OnMutation             MutationCallbacks      // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	OnEvent                EventListeners         // EventHandlers are to be called when the named event has fired.
+	NativeEventUnlisteners NativeEventUnlisteners // Allows to remove event listeners on the native element, registered when bridging event listeners from the native UI platform.
 
-	// Proper event handling requires to assert the interface to have access to the underlying object so that target id may be retrieved
-	// amongst other event properties. the handling should be reflected in the actual dom via modification of the underlying js object.
+	Children   *Elements
+	ActiveView string // Holds the name of the current set of children Element
+	//ViewAccessPath records the Elements which have defined alternative views and the value for which the view makes the current element reachable for rendering.
+	ViewAccessPath *viewNodes // it's different from the path because some subtree may all belong to the same view, if there is no element with multiple available views inbetween
 
-	Children *Elements
+	AlternateViews map[string]*Elements // this is a  store for  named views: alternative to the Children field, used for instance to implement routes/ conditional rendering.
 
 	Native NativeElementWrapper
-
-	inherit bool
 }
 
 type PropertyStore struct {
@@ -223,6 +240,7 @@ func (e *Elements) Remove(el *Element) *Elements {
 	for k, element := range e.List {
 		if element == el {
 			index = k
+			break
 		}
 	}
 	if index >= 0 {
@@ -261,6 +279,9 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 
 	if e.Detached() {
 		log.Print("Error: Element detached. should not happen.")
+		// TODO review which type of event could walk up a detached subtree
+		// for instance, how to update darkmode on detached elements especially
+		// on attachment. (life cycles? +  globally propagated values from root + mutations propagated in spite of detachment status)
 		return e // can happen if we are building a document fragment and try to dispatch a custom event
 	}
 	if e.path == nil {
@@ -310,13 +331,159 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 // func (e *Element) Parse(payload string) *Element      { return e }
 // func (e *Element) Unparse(outputformat string) string {}
 
-// TODO not forget to change the path of the child element ...
-// Any other attach function (adjacent for instance) may just require to append
-// from the parent Element. Nothing too fancy. Probably no need to implement it.
+// AddView enables conditional rendering for an Element, specifying multiple
+// named version for the list of direct children Elements.
+func (e *Element) AddView(v View) *Element {
+	for _, child := range v.Elements.List {
+		child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v.Name)).Prepend(e.ViewAccessPath.nodes...)
+		attach(e, child, false)
+	}
+
+	e.AlternateViews[v.Name] = v.Elements
+	return e
+}
+
+// ActivateVIew is used to render the desired named view for a given Element.
+func (e *Element) ActivateView(name string) *Element {
+	newview, ok := e.AlternateViews[name]
+	if !ok {
+		// Support for parameterized views TODO
+		if len(e.AlternateViews) !=0 {
+			var viewElements *Elements
+			var parameterName string
+			for k, v := range e.AlternateViews {
+				if strings.HasPrefix(k, ":") {
+					parameterName = k
+					viewElements = v
+					break
+				}
+			}
+			if parameterName != "" {
+				if len(parameterName) == 1{
+					log.Print("Bad view parameter. Needs to be longer than 0 character.")
+					return e
+				}
+				parameter := parameterName[1:]
+				// let's set the parameter value (name) on the children elements in case their
+				// display depends on it which is probably the case. // TODO think about how the user should make sure that the child Elements API includes this parameter
+				for _, v := range viewElements.List {
+					v.Set(parameter, name)
+				}
+				e.ActiveView = name
+				// Let's detach the former view items and attach the ViewElements
+				for _, child := range e.Children.List {
+					detach(child)
+				}
+
+				for _, newchild := range viewElements.List {
+					e.AppendChild(newchild)
+				}
+				return e
+			}
+		}
+		log.Print("View does not exist.")
+		return e
+	}
+
+	// first we detach the current active View and reattach it as an alternative View
+	oldviewname := e.ActiveView
+	if oldviewname != "" || e.Children != nil {
+		for _, child := range e.Children.List {
+			detach(child)
+			attach(e, child, false)
+		}
+		e.AlternateViews[oldviewname] = e.Children
+	}
+	// we attach the desired view
+	for _, child := range newview.List {
+		e.AppendChild(child)
+	}
+	delete(e.AlternateViews, name)
+	e.ActiveView = name
+
+	return e
+}
+
+// attach will link a child Element to the subtree its target parent belongs to.
+// It does not however position it in any view specifically. At this staged,
+// the Element can not be rendered as part of the view.
+func attach(parent, child *Element, activeview bool) {
+	if activeview {
+		child.Parent = parent
+		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
+	}
+	child.root = parent.root // attached once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
+	child.subtreeRoot = parent.subtreeRoot
+
+	// if the child is not a navigable view(meaning that its alternateViews is nil, then it's viewadress is its parent's)
+	// otherwise, it's its own to which is prepended its parent's viewAddress.
+	if child.AlternateViews == nil {
+		child.ViewAccessPath = parent.ViewAccessPath
+	} else {
+		child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.nodes...)
+	}
+
+	for _, descendant := range child.Children.List {
+		attach(child, descendant, true)
+	}
+
+	for _, descendants := range child.AlternateViews {
+		for _, descendant := range descendants.List {
+			attach(child, descendant, false)
+		}
+	}
+}
+
+// detach will unlink an Element from its parent. If the element was in a view,
+// the element is still being rendered until it is removed. However, it should
+// not be anle to react to events or mutations. TODO review the latter part.
+func detach(e *Element) {
+	if e.Parent == nil {
+		return
+	}
+	e.subtreeRoot = e
+
+	// reset e.path to start with the top-most element i.e. "e" in the current case
+	index := -1
+	for k, ancestor := range e.path.List {
+		if ancestor == e.Parent {
+			index = k
+			break
+		}
+	}
+	if index >= 0 {
+		e.path.List = e.path.List[index+1:]
+	}
+
+	e.Parent = nil
+
+	// ViewAccessPath handling:
+	if e.AlternateViews == nil {
+		e.ViewAccessPath = nil
+	} else {
+		e.ViewAccessPath.nodes = e.ViewAccessPath.nodes[len(e.ViewAccessPath.nodes)-1:]
+	}
+
+	// got to update the subtree with the new subtree root and path
+	for _, descendant := range e.Children.List {
+		attach(e, descendant, true)
+	}
+
+	for _, descendants := range e.AlternateViews {
+		for _, descendant := range descendants.List {
+			attach(e, descendant, false)
+		}
+	}
+}
+
+// AppendChild appends a new element to the element's children list for the active
+// view being rendered.
 func (e *Element) AppendChild(child *Element) *Element {
-	child.Parent = e
-	child.subtreeRoot = e.subtreeRoot
-	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+	attach(e, child, true)
 
 	e.Children.InsertLast(child)
 	if e.Native != nil {
@@ -324,10 +491,13 @@ func (e *Element) AppendChild(child *Element) *Element {
 	}
 	return e
 }
+
 func (e *Element) Prepend(child *Element) *Element {
-	child.Parent = e
-	child.subtreeRoot = e.subtreeRoot
-	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+	attach(e, child, true)
 
 	e.Children.InsertFirst(child)
 	if e.Native != nil {
@@ -336,9 +506,11 @@ func (e *Element) Prepend(child *Element) *Element {
 	return e
 }
 func (e *Element) InsertChild(child *Element, index int) *Element {
-	child.Parent = e
-	child.subtreeRoot = e.subtreeRoot
-	child.path.InsertFirst(e).InsertFirst(e.path.List...)
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+	attach(e, child, true)
 
 	e.Children.Insert(child, index)
 	if e.Native != nil {
@@ -347,13 +519,13 @@ func (e *Element) InsertChild(child *Element, index int) *Element {
 	return e
 }
 func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
-	new.Parent = e
-	new.subtreeRoot = e.subtreeRoot
-	new.path.InsertFirst(e).InsertFirst(e.path.List...)
+	if e.DocType != new.DocType {
+		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, new.DocType)
+		return e
+	}
+	attach(e, new, true)
 
-	old.Parent = nil
-	old.subtreeRoot = nil
-	old.path.RemoveAll()
+	detach(old)
 
 	e.Children.Replace(old, new)
 	if e.Native != nil {
@@ -362,11 +534,8 @@ func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 	return e
 }
 func (e *Element) RemoveChild(child *Element) *Element {
-	child.Parent = nil
-	child.subtreeRoot = nil
-	child.path.RemoveAll()
+	detach(child)
 
-	e.Children.Remove(child)
 	if e.Native != nil {
 		e.Native.RemoveChild(child)
 	}
@@ -407,7 +576,7 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 	return e
 }
 
-// Detached returns whether the csubtree the current Element belongs to is attached
+// Detached returns whether the subtree the current Element belongs to is attached
 // to the main tree or not.
 func (e *Element) Detached() bool {
 	if e.subtreeRoot.Parent == nil && e.subtreeRoot != e.root {
@@ -435,7 +604,7 @@ func (e *Element) SetUI(propName string, value interface{}, inheritable bool) {
 	e.OnMutation.DispatchEvent(evt)
 }
 
-// ToggleDisplay is a simple example of conditional rendering.
+// MakeToggable is a simple example of conditional rendering.
 // It allows an Element to have a single child Element that can be switched with another one.
 //
 // For example, if we have a toggable button, one for login and one for logout,
@@ -445,21 +614,67 @@ func (e *Element) SetUI(propName string, value interface{}, inheritable bool) {
 // Elements quite easily.
 // Routing will probably be implemented this way, toggling between states
 // when a mutationevent such as browser history occurs.
-func (e *Element) ToggleDisplay(conditionName string, first *Element, second *Element, init interface{}) *Element {
+func MakeToggable(conditionName string, e *Element, firstView View, secondView View, initialconditionvalue interface{}) *Element {
+	e.AddView(firstView).AddView(secondView)
+
 	toggle := NewMutationHandler(func(evt MutationEvent) {
 		value, ok := evt.NewValue().(bool)
 		if !ok {
 			value = false
 		}
 		if value {
-			e.RemoveChildren()
-			e.AppendChild(first)
-			return
+			e.ActivateView(firstView.Name)
 		}
-		e.RemoveChildren()
-		e.AppendChild(second)
+		e.ActivateView(secondView.Name)
 	})
+
 	e.Watch(conditionName, e, toggle)
-	e.Set(conditionName, init)
+
+	e.Set(conditionName, initialconditionvalue)
 	return e
+}
+
+type View struct {
+	Name     string
+	Elements *Elements
+}
+
+// NewView can be used to create a list of children Elements to append to an element, for display.
+// In effect, a named view.
+// An example of use would be an empty window that would be filled with different child elements
+// upon navigation.
+// A parameterized view can be created by using a naming scheme such as ":parameter" (string with a leading colon)
+// In that case,
+func NewView(name string, elements ...*Element) View {
+	for _, el := range elements {
+		el.ActiveView = name
+	}
+	return View{name, NewElements(elements...)}
+}
+
+type viewNodes struct {
+	nodes []viewNode
+}
+
+func newViewNodes() *viewNodes {
+	return &viewNodes{make([]viewNode, 0)}
+}
+
+func (v *viewNodes) Append(nodes ...viewNode) *viewNodes {
+	v.nodes = append(v.nodes, nodes...)
+	return v
+}
+
+func (v *viewNodes) Prepend(nodes ...viewNode) *viewNodes {
+	v.nodes = append(nodes, v.nodes...)
+	return v
+}
+
+type viewNode struct {
+	*Element
+	ViewName string
+}
+
+func newViewNode(e *Element, view string) viewNode {
+	return viewNode{e, view}
 }
