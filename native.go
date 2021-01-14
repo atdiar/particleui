@@ -1,17 +1,19 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
-type NativeElementWrapper interface{
-  AppendChild(child *Element)
-  PrependChild(child *Element)
-  InsertChild(child *Element,position int)
-  ReplaceChild(old *Element, new *Element)
-  RemoveChild(child *Element)
+type NativeElementWrapper interface {
+	AppendChild(child *Element)
+	PrependChild(child *Element)
+	InsertChild(child *Element, position int)
+	ReplaceChild(old *Element, new *Element)
+	RemoveChild(child *Element)
 }
 
 type NativeEventBridge func(event string, target *Element)
 
-/* Example of JS Event bridging
+/* Example of Generic JS Event bridging
+(It does not handle the specifics of the event, such as event target value so a library of specific event bridges should be built for each target platform
+and incorporated to the JSEventbridge function (switch over event types and dispatch of a more specific event type on the go side))
 
 func JSEventBridge() NativeEventBridge {
 	return func(event string, target *Element) {
@@ -19,6 +21,9 @@ func JSEventBridge() NativeEventBridge {
 			nativeEvent := args[0]
 			nativeEvent.Call("stopPropagation")
 			evt := NewEvent(event, true, target, nativeEvent)
+      if event == "routechange"{
+        evt = NewRouteChangeEvent(event,true,target,nativeEvent, evt.target.Value) // this is pseudo code for an example of how to switch on the event type
+      }
 			target.DispatchEvent(evt)
 			return nil
 		})

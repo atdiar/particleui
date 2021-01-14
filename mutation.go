@@ -67,22 +67,25 @@ func (m *mutationHandlers) Remove(h *MutationHandler) *mutationHandlers {
 
 func (m *mutationHandlers) Handle(evt MutationEvent) {
 	for _, h := range m.list {
-		h.Handle(evt)
+		b := h.Handle(evt)
+		if b {
+			return
+		}
 	}
 }
 
 // MutationHandler is a wrapper type around a callback function run after a mutation
 // event occured.
 type MutationHandler struct {
-	Fn func(MutationEvent)
+	Fn func(MutationEvent) bool
 }
 
-func NewMutationHandler(f func(MutationEvent)) *MutationHandler {
+func NewMutationHandler(f func(evt MutationEvent) bool) *MutationHandler {
 	return &MutationHandler{f}
 }
 
-func (m *MutationHandler) Handle(evt MutationEvent) {
-	m.Fn(evt)
+func (m *MutationHandler) Handle(evt MutationEvent) bool {
+	return m.Fn(evt)
 }
 
 // MutationEvent defines a common interface for mutation notifying events.
