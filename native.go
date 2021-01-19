@@ -9,22 +9,22 @@ type NativeElementWrapper interface {
 	RemoveChild(child *Element)
 }
 
-type NativeEventBridge func(event string, target *Element)
+type NativeEventBridge func(event Event, target *Element) // TODO might need to turn this in a stuct with func and map fields, map needed to map the event names from Go to native Host's
 
 /* Example of Generic JS Event bridging
 (It does not handle the specifics of the event, such as event target value so a library of specific event bridges should be built for each target platform
 and incorporated to the JSEventbridge function (switch over event types and dispatch of a more specific event type on the go side))
 
 func JSEventBridge() NativeEventBridge {
-	return func(event string, target *Element) {
+	return func(event Event, target *Element) {
 		cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			nativeEvent := args[0]
 			nativeEvent.Call("stopPropagation")
-			evt := NewEvent(event, true, target, nativeEvent)
-      if event == "routechange"{
-        evt = NewRouteChangeEvent(event,true,target,nativeEvent, evt.target.Value) // this is pseudo code for an example of how to switch on the event type
+			evt := NewEvent(event.Type(), true, target, nativeEvent)
+      if evt,ok := event.(RouteChangeEvent);ok{
+        evt = NewRouteChangeEvent(event.Type(),true,target,nativeEvent, evt.target.Value) // this is pseudo code for an example of how to switch on the event type
       }
-			target.DispatchEvent(evt)
+			target.DispatchEvent(evt,nil)
 			return nil
 		})
 		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", event, cb)
@@ -44,16 +44,16 @@ func NewNativeEventUnlisteners() NativeEventUnlisteners {
 	return NativeEventUnlisteners{make(map[string]func(), 0)}
 }
 
-func (n NativeEventUnlisteners) Add(event string, f func()) {
-	_, ok := n.List[event]
+func (n NativeEventUnlisteners) Add(event Event, f func()) {
+	_, ok := n.List[event.Type()]
 	if ok {
 		return
 	}
-	n.List[event] = f
+	n.List[event.Type()] = f
 }
 
-func (n NativeEventUnlisteners) Apply(event string) {
-	removeNativeEventListener, ok := n.List[event]
+func (n NativeEventUnlisteners) Apply(event Event) {
+	removeNativeEventListener, ok := n.List[event.Type()]
 	if !ok {
 		return
 	}

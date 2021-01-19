@@ -272,10 +272,17 @@ func (e *Element) Handle(evt Event) bool {
 }
 
 // DispatchEvent is used typically to propagate UI events throughout the ui tree.
+// If a nativebinding (type NativeEventBridge) is provided, the event will be dispatched
+// on the native host only using the nativebinding function.
+//
 // It may require an event object to be created from the native event object implementation.
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
-func (e *Element) DispatchEvent(evt Event) *Element {
+func (e *Element) DispatchEvent(evt Event, nativebinding NativeEventBridge) *Element {
+	if nativebinding != nil {
+		nativebinding(evt, evt.Target())
+		return e
+	}
 
 	if e.Detached() {
 		log.Print("Error: Element detached. should not happen.")
@@ -331,9 +338,10 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 // func (e *Element) Parse(payload string) *Element      { return e }
 // func (e *Element) Unparse(outputformat string) string {}
 
-// AddView enables conditional rendering for an Element.
-// In effetc, it allows to specify several named versions for the list of nexted
-// children elements.
+// AddView adds a named list of children Elements to an Element creating as such
+// a named version of the internal state of an Element.
+// In a sense, it enables conditional rendering for an Element by allowing to
+// switch between the different named internal states.
 func (e *Element) AddView(v ViewElements) *Element {
 	for _, child := range v.Elements().List {
 		child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v)).Prepend(e.ViewAccessPath.nodes...)
@@ -610,14 +618,14 @@ func (e *Element) Unwatch(datalabel string, mutationSource *Element) *Element {
 	return e
 }
 
-func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
+func (e *Element) AddEventListener(event Event, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	e.OnEvent.AddEventHandler(event, handler)
 	if nativebinding != nil {
 		nativebinding(event, e)
 	}
 	return e
 }
-func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
+func (e *Element) RemoveEventListener(event Event, handler *EventHandler, native bool) *Element {
 	e.OnEvent.RemoveEventHandler(event, handler)
 	if native {
 		if e.NativeEventUnlisteners.List != nil {
@@ -676,7 +684,7 @@ func (e *Element) Route() string {
 	}
 
 	for _, n := range e.path.List {
-		rpath := relativePath(n, e.ViewAccessPath)
+		rpath := pathSegment(n, e.ViewAccessPath)
 		Route = Route + "/" + rpath
 	}
 	return Route
@@ -717,10 +725,10 @@ func (e *Element) viewAdjacence() bool {
 	return false
 }
 
-// relativePath returns true if the path belongs to a View besides returning the
+// pathSegment returns true if the path belongs to a View besides returning the
 // first degree relative path of an Element.
 // If the view holds Elements which are adjecent view objects, t
-func relativePath(p *Element, views *viewNodes) string {
+func pathSegment(p *Element, views *viewNodes) string {
 	rp := p.ID
 	if views != nil {
 		for _, v := range views.nodes {
@@ -798,6 +806,9 @@ func NewViewElements(name string, elements ...*Element) ViewElements {
 
 // NewParameterizedView defines a parameterized, named, list of *Element composing a view.
 // The Elements can be parameterized by applying a function submitted as argument.
+// This function can and probably should implement validation.
+// It may for instance be used to verify that the parameter value belongs to a finite
+// set of accepted values.
 func NewParameterizedView(parametername string, paramFn func(string, ViewElements) (*ViewElements, error), elements ...*Element) ViewElements {
 	if !strings.HasPrefix(parametername, ":") {
 		parametername = ":" + parametername

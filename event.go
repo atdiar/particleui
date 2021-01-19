@@ -71,16 +71,16 @@ func NewEventListenerStore() EventListeners {
 	return EventListeners{make(map[string]*eventHandlers, 0)}
 }
 
-func (e EventListeners) AddEventHandler(event string, handler *EventHandler) {
-	eh, ok := e.list[event]
+func (e EventListeners) AddEventHandler(event Event, handler *EventHandler) {
+	eh, ok := e.list[event.Type()]
 	if !ok {
-		e.list[event] = newEventHandlers().Add(handler)
+		e.list[event.Type()] = newEventHandlers().Add(handler)
 	}
 	eh.Add(handler)
 }
 
-func (e EventListeners) RemoveEventHandler(event string, handler *EventHandler) {
-	eh, ok := e.list[event]
+func (e EventListeners) RemoveEventHandler(event Event, handler *EventHandler) {
+	eh, ok := e.list[event.Type()]
 	if !ok {
 		return
 	}
