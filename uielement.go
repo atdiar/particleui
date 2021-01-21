@@ -28,35 +28,29 @@ func NewIDgenerator(seed int64) func() string {
 }
 
 type ElementStore struct {
-	DocType   string
-	Templates map[string]Element
-	ByID      map[string]*Element
+	DocType      string
+	Constructors map[string]func(name, id string) *Element
+	ByID         map[string]*Element
 }
 
-func (e ElementStore) ElementFromTemplate(name string) *Element {
-	t, ok := e.Templates[name]
-	if ok {
-		return &t
+func NewElementStore(doctype string) *ElementStore {
+	return &ElementStore{doctype, make(map[string]func(name string, id string) *Element, 0), make(map[string]*Element)}
+}
+
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) {
+	e.Constructors[elementname] = func(name, id string) *Element {
+		element := constructor(name, id)
+		e.ByID[id] = element
+		return element
 	}
-	return nil
 }
 
-func (e ElementStore) NewTemplate(t *Element) {
-	e.Templates[t.Name] = *t
-}
-
-func Constructor(es ElementStore) func(string, string) (*Element, error) {
-	New := func(name string, id string) (*Element, error) {
-		if e := es.ElementFromTemplate(name); e != nil {
-			e.Name = name
-			e.ID = id
-			e.DocType = es.DocType
-			// TODO copy any map field
-			return e, nil
-		}
-		return nil, ErrNoTemplate
+func (e *ElementStore) GetByID(id string) *Element {
+	v, ok := e.ByID[id]
+	if !ok {
+		return nil
 	}
-	return New
+	return v
 }
 
 // Element is the building block of the User Interface. Everything is described
@@ -73,11 +67,10 @@ type Element struct {
 	ID      string
 	DocType string
 
-	UIProperties PropertyStore
-	Data         DataStore
+	Properties PropertyStore
 
-	OnMutation             MutationCallbacks      // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
-	OnEvent                EventListeners         // EventHandlers are to be called when the named event has fired.
+	PropMutationHandlers             MutationCallbacks      // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	EventHandlers                EventListeners         // EventHandlers are to be called when the named event has fired.
 	NativeEventUnlisteners NativeEventUnlisteners // Allows to remove event listeners on the native element, registered when bridging event listeners from the native UI platform.
 
 	Children   *Elements
@@ -91,6 +84,44 @@ type Element struct {
 }
 
 type PropertyStore struct {
+	Categories map[string]Properties
+}
+
+func NewPropertyStore() PropertyStore {
+	return PropertyStore{make(map[string]Properties)}
+}
+
+func (p PropertyStore) Get(category string, propname string) (interface{}, bool) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		return nil, false
+	}
+	return ps.Get(propname)
+}
+
+func (p PropertyStore) Set(category string, propname string, value interface{}, inheritable ...bool) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	var isInheritable bool
+	if inheritable != nil && len(inheritable) == 1 && inheritable[0] == true {
+		isInheritable = true
+	}
+	ps.Set(propname, value, isInheritable)
+}
+
+func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	ps.SetDefault(propname, value)
+}
+
+type Properties struct {
 	GlobalShared map[string]interface{}
 
 	Default map[string]interface{}
@@ -99,14 +130,18 @@ type PropertyStore struct {
 
 	Local map[string]interface{}
 
-	Inheritable map[string]interface{} // the value of a property overrides ithe value stored in any of its predecessor value store
+	Inheritable map[string]interface{} // the value of a property overrides the value stored in any of its predecessor value store
 	// map key is the address of the element's  property
 	// being watched and elements is the list of elements watching this property
 	// Inheritable encompasses overidden values and inherited values that are being passed down.
 	Watchers map[string]*Elements
 }
 
-func (p PropertyStore) NewWatcher(propName string, watcher *Element) {
+func newProperties() Properties {
+	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
+}
+
+func (p Properties) NewWatcher(propName string, watcher *Element) {
 	list, ok := p.Watchers[propName]
 	if !ok {
 		p.Watchers[propName] = NewElements(watcher)
@@ -114,7 +149,7 @@ func (p PropertyStore) NewWatcher(propName string, watcher *Element) {
 	}
 	list.Insert(watcher, len(list.List))
 }
-func (p PropertyStore) RemoveWatcher(propName string, watcher *Element) {
+func (p Properties) RemoveWatcher(propName string, watcher *Element) {
 	list, ok := p.Watchers[propName]
 	if !ok {
 		return
@@ -122,7 +157,7 @@ func (p PropertyStore) RemoveWatcher(propName string, watcher *Element) {
 	list.Remove(watcher)
 }
 
-func (p PropertyStore) Get(propName string) (interface{}, bool) {
+func (p Properties) Get(propName string) (interface{}, bool) {
 	v, ok := p.Inheritable[propName]
 	if ok {
 		return v, ok
@@ -145,7 +180,7 @@ func (p PropertyStore) Get(propName string) (interface{}, bool) {
 	}
 	return nil, false
 }
-func (p PropertyStore) Set(propName string, value interface{}, inheritable bool) {
+func (p Properties) Set(propName string, value interface{}, inheritable bool) {
 	if inheritable {
 		p.Inheritable[propName] = value
 		return
@@ -153,7 +188,7 @@ func (p PropertyStore) Set(propName string, value interface{}, inheritable bool)
 	p.Local[propName] = value
 } // don't forget to propagate mutation event to watchers
 
-func (p PropertyStore) Inherit(source PropertyStore) {
+func (p Properties) Inherit(source Properties) {
 	if source.Inheritable != nil {
 		for k, v := range source.Inheritable {
 			p.Inherited[k] = v
@@ -161,7 +196,7 @@ func (p PropertyStore) Inherit(source PropertyStore) {
 	}
 }
 
-func (p PropertyStore) SetDefault(propName string, value interface{}) {
+func (p Properties) SetDefault(propName string, value interface{}) {
 	p.Default[propName] = value
 }
 
@@ -172,40 +207,6 @@ type DataStore struct {
 	// map key is the address of the data being watched (e.g. id/dataname)
 	// being watched and elements is the list of elements watching this property
 	Watchers map[string]*Elements
-}
-
-func (d DataStore) NewWatcher(label string, watcher *Element) {
-	list, ok := d.Watchers[label]
-	if !ok {
-		d.Watchers[label] = NewElements(watcher)
-		return
-	}
-	list.Insert(watcher, len(list.List))
-}
-func (d DataStore) RemoveWatcher(label string, watcher *Element) {
-	v, ok := d.Watchers[label]
-	if !ok {
-		return
-	}
-	v.Remove(watcher)
-}
-
-func (d DataStore) Get(label string) (interface{}, bool) {
-	if v, ok := d.Immutable[label]; ok {
-		return v, ok
-	}
-	v, ok := d.Store[label]
-	return v, ok
-}
-func (d DataStore) Set(label string, value interface{}) {
-	if _, ok := d.Immutable[label]; ok {
-		return
-	}
-	d.Store[label] = value
-}
-
-func NewDataStore() DataStore {
-	return DataStore{make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
 }
 
 type Elements struct {
@@ -268,7 +269,7 @@ func (e *Elements) Replace(old *Element, new *Element) *Elements {
 // the Element is listening.
 func (e *Element) Handle(evt Event) bool {
 	evt.SetCurrentTarget(e)
-	return e.OnEvent.Handle(evt)
+	return e.EventHandlers.Handle(evt)
 }
 
 // DispatchEvent is used typically to propagate UI events throughout the ui tree.
@@ -405,7 +406,7 @@ func (e *Element) ActivateView(name string) error {
 				view = *v
 
 				// Let's detach the former view items
-				oldview, ok := e.GetUI("activeview")
+				oldview, ok := e.Get("internals", "activeview")
 				oldviewname, ok2 := oldview.(string)
 				viewIsParameterized := (oldviewname != e.ActiveView)
 				if ok && ok2 && oldviewname != "" && e.Children != nil {
@@ -425,7 +426,7 @@ func (e *Element) ActivateView(name string) error {
 				for _, newchild := range view.Elements().List {
 					e.AppendChild(newchild)
 				}
-				e.SetUI("activeview", name, false)
+				e.Set("internals", "activeview", name, false)
 				e.ActiveView = parameterName
 				return nil
 			}
@@ -434,7 +435,7 @@ func (e *Element) ActivateView(name string) error {
 	}
 
 	// first we detach the current active View and reattach it as an alternative View if non-parameterized
-	oldview, ok := e.GetUI("activeview")
+	oldview, ok := e.Get("internals", "activeview")
 	oldviewname, ok2 := oldview.(string)
 	viewIsParameterized := (oldviewname != e.ActiveView)
 	if ok && ok2 && oldviewname != "" && e.Children != nil {
@@ -454,7 +455,7 @@ func (e *Element) ActivateView(name string) error {
 		e.AppendChild(child)
 	}
 	delete(e.AlternateViews, name)
-	e.SetUI("activeview", name, false)
+	e.Set("internals", "activeview", name, false)
 	e.ActiveView = name
 
 	return nil
@@ -608,25 +609,34 @@ func (e *Element) RemoveChildren() *Element {
 	return e
 }
 
-func (e *Element) Watch(datalabel string, mutationSource *Element, h *MutationHandler) *Element {
-	mutationSource.Data.NewWatcher(datalabel, e)
-	e.OnMutation.Add(mutationSource.ID+"/"+datalabel, h)
+func (e *Element) Watch(category string, propname string, owner *Element, h *MutationHandler) *Element {
+	p, ok := owner.Properties.Categories[category]
+	if !ok {
+		p = newProperties()
+		owner.Properties.Categories[category] = p
+	}
+	p.NewWatcher(propname, e)
+	e.PropMutationHandlers.Add(owner.ID+"/"+category+"/"+propname, h)
 	return e
 }
-func (e *Element) Unwatch(datalabel string, mutationSource *Element) *Element {
-	mutationSource.Data.RemoveWatcher(datalabel, e)
+func (e *Element) Unwatch(category string, propname string, owner *Element) *Element {
+	p, ok := owner.Properties.Categories[category]
+	if !ok {
+		return e
+	}
+	p.RemoveWatcher(propname, e)
 	return e
 }
 
 func (e *Element) AddEventListener(event Event, handler *EventHandler, nativebinding NativeEventBridge) *Element {
-	e.OnEvent.AddEventHandler(event, handler)
+	e.EventHandlers.AddEventHandler(event, handler)
 	if nativebinding != nil {
 		nativebinding(event, e)
 	}
 	return e
 }
 func (e *Element) RemoveEventListener(event Event, handler *EventHandler, native bool) *Element {
-	e.OnEvent.RemoveEventHandler(event, handler)
+	e.EventHandlers.RemoveEventHandler(event, handler)
 	if native {
 		if e.NativeEventUnlisteners.List != nil {
 			e.NativeEventUnlisteners.Apply(event)
@@ -644,23 +654,13 @@ func (e *Element) Detached() bool {
 	return false
 }
 
-func (e *Element) Get(label string) (interface{}, bool) {
-	return e.Data.Get(label)
+func (e *Element) Get(category, propname string) (interface{}, bool) {
+	return e.Properties.Get(category, propname)
 }
-func (e *Element) Set(label string, value interface{}) {
-	e.Data.Set(label, value)
-	evt := e.NewMutationEvent(label, value).Data()
-	e.OnMutation.DispatchEvent(evt)
-}
-
-func (e *Element) GetUI(propName string) (interface{}, bool) {
-	return e.UIProperties.Get(propName)
-}
-
-func (e *Element) SetUI(propName string, value interface{}, inheritable bool) {
-	e.UIProperties.Set(propName, value, inheritable)
-	evt := e.NewMutationEvent(propName, value).UI()
-	e.OnMutation.DispatchEvent(evt)
+func (e *Element) Set(category string, propname string, value interface{}, inheritable bool) {
+	e.Properties.Set(category, propname, value, inheritable)
+	evt := e.NewMutationEvent(category, propname, value)
+	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 // Route returns the path to an Element.
@@ -769,9 +769,9 @@ func MakeToggable(conditionName string, e *Element, firstView ViewElements, seco
 		return true
 	})
 
-	e.Watch(conditionName, e, toggle)
+	e.Watch("data", conditionName, e, toggle)
 
-	e.Set(conditionName, initialconditionvalue)
+	e.Set("data", conditionName, initialconditionvalue, false)
 	return e
 }
 

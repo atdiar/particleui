@@ -226,14 +226,14 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 			return true // means that event handling has to stop
 		}
 		// the target element route should be changed to the event NewRoute value.
-		root.Set(event.Type(), event.NewRoute())
+		root.Set("events", event.Type(), event.NewRoute(), false)
 		return false
 	})
 	// TODO create a litst of events handled by Go
 	// Native drivers will be in charge of mapping the events to their native names
 	// for binding.
 	root.AddEventListener(RouteChange, onroutechange, nativebinding)
-	r.Watch(RouteChange.Type(), root, r.Handler())
+	r.Watch("events", RouteChange.Type(), root, r.Handler())
 	r.serve()
 }
 
@@ -351,7 +351,7 @@ func (r *routeNode) Match(route string, NavigateFn func() error) (*Element, func
 				return err
 			}
 			if querystring != "" {
-				r.Element.Target.Set("query", querystring)
+				r.Element.Target.Set("router", "query", querystring, false)
 			}
 		}
 		return nil

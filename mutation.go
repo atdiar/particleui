@@ -109,16 +109,6 @@ func (m Mutation) Origin() *Element      { return m.Src }
 func (m Mutation) Type() string          { return m.typ }
 func (m Mutation) NewValue() interface{} { return m.Value }
 
-func (e *Element) NewMutationEvent(elementPropertyName string, newvalue interface{}) Mutation {
-	return Mutation{e.ID + "/" + elementPropertyName, "", newvalue, e}
-}
-
-func (m Mutation) UI() Mutation {
-	m.typ = "ui"
-	return m
-}
-
-func (m Mutation) Data() Mutation {
-	m.typ = "data"
-	return m
+func (e *Element) NewMutationEvent(propcat string, propname string, newvalue interface{}) Mutation {
+	return Mutation{e.ID + "/" + propcat+"/"+propname, propcat, newvalue, e}
 }
