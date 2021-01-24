@@ -37,12 +37,15 @@ func NewElementStore(doctype string) *ElementStore {
 	return &ElementStore{doctype, make(map[string]func(name string, id string) *Element, 0), make(map[string]*Element)}
 }
 
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) {
-	e.Constructors[elementname] = func(name, id string) *Element {
+// NewConstructor registers and returns a new Element construcor function.
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(string, string) *Element {
+	c := func(name, id string) *Element {
 		element := constructor(name, id)
 		e.ByID[id] = element
 		return element
 	}
+	e.Constructors[elementname] = c
+	return c
 }
 
 func (e *ElementStore) GetByID(id string) *Element {
@@ -69,8 +72,8 @@ type Element struct {
 
 	Properties PropertyStore
 
-	PropMutationHandlers             MutationCallbacks      // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
-	EventHandlers                EventListeners         // EventHandlers are to be called when the named event has fired.
+	PropMutationHandlers   *MutationCallbacks     // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
+	EventHandlers          EventListeners         // EventHandlers are to be called when the named event has fired.
 	NativeEventUnlisteners NativeEventUnlisteners // Allows to remove event listeners on the native element, registered when bridging event listeners from the native UI platform.
 
 	Children   *Elements
@@ -83,130 +86,27 @@ type Element struct {
 	Native NativeElementWrapper
 }
 
-type PropertyStore struct {
-	Categories map[string]Properties
-}
-
-func NewPropertyStore() PropertyStore {
-	return PropertyStore{make(map[string]Properties)}
-}
-
-func (p PropertyStore) Get(category string, propname string) (interface{}, bool) {
-	ps, ok := p.Categories[category]
-	if !ok {
-		return nil, false
+// NewElement returns a new Element with no properties, no event or mutation handlers.
+// Essentlially an empty shell to be customized.
+func NewElement(name string, id string, doctype string) *Element {
+	return &Element{
+		nil,
+		nil,
+		nil,
+		nil,
+		name,
+		id,
+		doctype,
+		NewPropertyStore(),
+		NewMutationCallbacks(),
+		NewEventListenerStore(),
+		NewNativeEventUnlisteners(),
+		nil,
+		"",
+		nil,
+		nil,
+		nil,
 	}
-	return ps.Get(propname)
-}
-
-func (p PropertyStore) Set(category string, propname string, value interface{}, inheritable ...bool) {
-	ps, ok := p.Categories[category]
-	if !ok {
-		ps = newProperties()
-		p.Categories[category] = ps
-	}
-	var isInheritable bool
-	if inheritable != nil && len(inheritable) == 1 && inheritable[0] == true {
-		isInheritable = true
-	}
-	ps.Set(propname, value, isInheritable)
-}
-
-func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
-	ps, ok := p.Categories[category]
-	if !ok {
-		ps = newProperties()
-		p.Categories[category] = ps
-	}
-	ps.SetDefault(propname, value)
-}
-
-type Properties struct {
-	GlobalShared map[string]interface{}
-
-	Default map[string]interface{}
-
-	Inherited map[string]interface{} //Inherited property cannot be mutated by the inheritor
-
-	Local map[string]interface{}
-
-	Inheritable map[string]interface{} // the value of a property overrides the value stored in any of its predecessor value store
-	// map key is the address of the element's  property
-	// being watched and elements is the list of elements watching this property
-	// Inheritable encompasses overidden values and inherited values that are being passed down.
-	Watchers map[string]*Elements
-}
-
-func newProperties() Properties {
-	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
-}
-
-func (p Properties) NewWatcher(propName string, watcher *Element) {
-	list, ok := p.Watchers[propName]
-	if !ok {
-		p.Watchers[propName] = NewElements(watcher)
-		return
-	}
-	list.Insert(watcher, len(list.List))
-}
-func (p Properties) RemoveWatcher(propName string, watcher *Element) {
-	list, ok := p.Watchers[propName]
-	if !ok {
-		return
-	}
-	list.Remove(watcher)
-}
-
-func (p Properties) Get(propName string) (interface{}, bool) {
-	v, ok := p.Inheritable[propName]
-	if ok {
-		return v, ok
-	}
-	v, ok = p.Local[propName]
-	if ok {
-		return v, ok
-	}
-	v, ok = p.Inherited[propName]
-	if ok {
-		return v, ok
-	}
-	v, ok = p.Default[propName]
-	if ok {
-		return v, ok
-	}
-	v, ok = p.GlobalShared[propName]
-	if ok {
-		return v, ok
-	}
-	return nil, false
-}
-func (p Properties) Set(propName string, value interface{}, inheritable bool) {
-	if inheritable {
-		p.Inheritable[propName] = value
-		return
-	}
-	p.Local[propName] = value
-} // don't forget to propagate mutation event to watchers
-
-func (p Properties) Inherit(source Properties) {
-	if source.Inheritable != nil {
-		for k, v := range source.Inheritable {
-			p.Inherited[k] = v
-		}
-	}
-}
-
-func (p Properties) SetDefault(propName string, value interface{}) {
-	p.Default[propName] = value
-}
-
-type DataStore struct {
-	Store     map[string]interface{}
-	Immutable map[string]interface{}
-
-	// map key is the address of the data being watched (e.g. id/dataname)
-	// being watched and elements is the list of elements watching this property
-	Watchers map[string]*Elements
 }
 
 type Elements struct {
@@ -663,6 +563,47 @@ func (e *Element) Set(category string, propname string, value interface{}, inher
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
+func SetDefault(e *Element, category string, propname string, value interface{}) {
+	e.Properties.SetDefault(category, propname, value)
+}
+
+func InheritProperties(target *Element, src *Element, categories ...string) {
+	for cat, ps := range src.Properties.Categories {
+		if categories != nil {
+			for _, c := range categories {
+				if c == cat {
+					pst, ok := target.Properties.Categories[cat]
+					if !ok {
+						pst = newProperties()
+						target.Properties.Categories[cat] = pst
+					}
+					pst.Inherit(ps)
+					break
+				}
+			}
+			continue
+		}
+		pst, ok := target.Properties.Categories[cat]
+		if !ok {
+			pst = newProperties()
+			target.Properties.Categories[cat] = pst
+		}
+		pst.Inherit(ps)
+	}
+}
+
+func Get(e *Element, key string) (interface{}, bool) {
+	return e.Get("data", key)
+}
+
+func Set(e *Element, key string, value interface{}) {
+	e.Set("data", key, value, false)
+}
+
+func Watcher(e *Element, target *Element, key string, h *MutationHandler) {
+	e.Watch("data", key, target, h)
+}
+
 // Route returns the path to an Element.
 // If the path to an Element includes a parameterized view, the returned route is
 // parameterized as well.
@@ -749,11 +690,6 @@ func pathSegment(p *Element, views *viewNodes) string {
 //
 // For example, if we have a toggable button, one for login and one for logout,
 // We can implement the switch between login and logout by switching the inner Elements.
-//
-// This is merely an example as we could implement toggling between more than two
-// Elements quite easily.
-// Routing will probably be implemented this way, toggling between states
-// when a mutationevent such as browser history occurs.
 func MakeToggable(conditionName string, e *Element, firstView ViewElements, secondView ViewElements, initialconditionvalue interface{}) *Element {
 	e.AddView(firstView).AddView(secondView)
 
@@ -843,4 +779,125 @@ type viewNode struct {
 
 func newViewNode(e *Element, view ViewElements) viewNode {
 	return viewNode{e, view}
+}
+
+// PropertyStore defines the format of the datastructure which holds
+// UI element's properties.
+type PropertyStore struct {
+	Categories map[string]Properties
+}
+
+func NewPropertyStore() PropertyStore {
+	return PropertyStore{make(map[string]Properties)}
+}
+
+// Get retrieves the value of a property stored within a given category.
+// A category acts as a namespace for property keys.
+func (p PropertyStore) Get(category string, propname string) (interface{}, bool) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		return nil, false
+	}
+	return ps.Get(propname)
+}
+
+func (p PropertyStore) Set(category string, propname string, value interface{}, inheritable ...bool) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	var isInheritable bool
+	if inheritable != nil && len(inheritable) == 1 && inheritable[0] == true {
+		isInheritable = true
+	}
+	ps.Set(propname, value, isInheritable)
+}
+
+func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	ps.SetDefault(propname, value)
+}
+
+type Properties struct {
+	GlobalShared map[string]interface{}
+
+	Default map[string]interface{}
+
+	Inherited map[string]interface{} //Inherited property cannot be mutated by the inheritor
+
+	Local map[string]interface{}
+
+	Inheritable map[string]interface{} // the value of a property overrides the value stored in any of its predecessor value store
+	// map key is the address of the element's  property
+	// being watched and elements is the list of elements watching this property
+	// Inheritable encompasses overidden values and inherited values that are being passed down.
+	Watchers map[string]*Elements
+}
+
+func newProperties() Properties {
+	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
+}
+
+func (p Properties) NewWatcher(propName string, watcher *Element) {
+	list, ok := p.Watchers[propName]
+	if !ok {
+		p.Watchers[propName] = NewElements(watcher)
+		return
+	}
+	list.Insert(watcher, len(list.List))
+}
+func (p Properties) RemoveWatcher(propName string, watcher *Element) {
+	list, ok := p.Watchers[propName]
+	if !ok {
+		return
+	}
+	list.Remove(watcher)
+}
+
+func (p Properties) Get(propName string) (interface{}, bool) {
+	v, ok := p.Inheritable[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Local[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Inherited[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.Default[propName]
+	if ok {
+		return v, ok
+	}
+	v, ok = p.GlobalShared[propName]
+	if ok {
+		return v, ok
+	}
+	return nil, false
+}
+func (p Properties) Set(propName string, value interface{}, inheritable bool) {
+	if inheritable {
+		p.Inheritable[propName] = value
+		return
+	}
+	p.Local[propName] = value
+} // don't forget to propagate mutation event to watchers
+
+func (p Properties) Inherit(source Properties) {
+	if source.Inheritable != nil {
+		for k, v := range source.Inheritable {
+			p.Inherited[k] = v
+		}
+	}
+}
+
+func (p Properties) SetDefault(propName string, value interface{}) {
+	p.Default[propName] = value
 }
