@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-var (
-	// RouteChange defines an unspecified route change event that can be listened to
-	RouteChange = NewRouteChangeEvent("", nil)
-)
-
 // Router allows for a genre of condiitional rendering where Elements belonging
 // to the App tree register with a router a function that will mutate their state.
 // (in other words, the action of mutating an Element is delegated to an outside object: the router)
@@ -148,7 +143,7 @@ func (r *Router) ErrorAppLogic() {
 // of the app, requesting for a route change. This request is
 // typically dispatched to the native host via the nativebinding function instead
 // when provided.
-func (r *Router) Reditrect(route string, nativebinding NativeEventBridge) {
+func (r *Router) Reditrect(route string, nativebinding NativeDispatch) {
 	r.root.DispatchEvent(NewRouteChangeEvent(route, r.root), nativebinding)
 }
 
@@ -232,8 +227,8 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 	// TODO create a litst of events handled by Go
 	// Native drivers will be in charge of mapping the events to their native names
 	// for binding.
-	root.AddEventListener(RouteChange, onroutechange, nativebinding)
-	r.Watch("events", RouteChange.Type(), root, r.Handler())
+	root.AddEventListener("routechange", onroutechange, nativebinding)
+	r.Watch("events", "routechange", root, r.Handler())
 	r.serve()
 }
 

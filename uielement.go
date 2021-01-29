@@ -83,7 +83,7 @@ type Element struct {
 
 	AlternateViews map[string]ViewElements // this is a  store for  named views: alternative to the Children field, used for instance to implement routes/ conditional rendering.
 
-	Native NativeElementWrapper
+	Native NativeElement
 }
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
@@ -179,9 +179,9 @@ func (e *Element) Handle(evt Event) bool {
 // It may require an event object to be created from the native event object implementation.
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
-func (e *Element) DispatchEvent(evt Event, nativebinding NativeEventBridge) *Element {
+func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Element {
 	if nativebinding != nil {
-		nativebinding(evt, evt.Target())
+		nativebinding(evt)
 		return e
 	}
 
@@ -364,7 +364,10 @@ func (e *Element) ActivateView(name string) error {
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
-func attach(parent, child *Element, activeview bool) {
+func attach(parent *Element, child *Element, activeview bool) {
+	defer func() {
+		child.Set("event", "attached", true, true)
+	}()
 	if activeview {
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
@@ -528,14 +531,14 @@ func (e *Element) Unwatch(category string, propname string, owner *Element) *Ele
 	return e
 }
 
-func (e *Element) AddEventListener(event Event, handler *EventHandler, nativebinding NativeEventBridge) *Element {
+func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	e.EventHandlers.AddEventHandler(event, handler)
 	if nativebinding != nil {
 		nativebinding(event, e)
 	}
 	return e
 }
-func (e *Element) RemoveEventListener(event Event, handler *EventHandler, native bool) *Element {
+func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
 	e.EventHandlers.RemoveEventHandler(event, handler)
 	if native {
 		if e.NativeEventUnlisteners.List != nil {
