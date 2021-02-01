@@ -94,7 +94,7 @@ func (r *Router) ErrorNotFound() {
 			break
 		}
 	}
-	r.Reditrect(e.Route(), nil)
+	r.Redirect(e.Route(), nil)
 }
 
 func (r *Router) ErrorUnauthorized() {
@@ -115,7 +115,7 @@ func (r *Router) ErrorUnauthorized() {
 			break
 		}
 	}
-	r.Reditrect(e.Route(), nil)
+	r.Redirect(e.Route(), nil)
 }
 
 func (r *Router) ErrorAppLogic() {
@@ -136,14 +136,14 @@ func (r *Router) ErrorAppLogic() {
 			break
 		}
 	}
-	r.Reditrect(e.Route(), nil)
+	r.Redirect(e.Route(), nil)
 }
 
 // Redirect creates and dispatches an event from the router to the root
 // of the app, requesting for a route change. This request is
 // typically dispatched to the native host via the nativebinding function instead
 // when provided.
-func (r *Router) Reditrect(route string, nativebinding NativeDispatch) {
+func (r *Router) Redirect(route string, nativebinding NativeDispatch) {
 	r.root.DispatchEvent(NewRouteChangeEvent(route, r.root), nativebinding)
 }
 
@@ -214,7 +214,7 @@ func (r *Router) serve() {
 // after receiving notice of popstate event firing.
 func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 	root := r.root.root
-	onroutechange := NewEventHandler(func(evt Event) bool {
+	routeChangeHandler := NewEventHandler(func(evt Event) bool {
 		event, ok := evt.(RouteChangeEvent)
 		if !ok {
 			log.Print("Event of wrong type. Expected a RouteChangeEvent firing")
@@ -227,7 +227,7 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 	// TODO create a litst of events handled by Go
 	// Native drivers will be in charge of mapping the events to their native names
 	// for binding.
-	root.AddEventListener("routechange", onroutechange, nativebinding)
+	root.AddEventListener("routechange", routeChangeHandler, nativebinding)
 	r.Watch("events", "routechange", root, r.Handler())
 	r.serve()
 }
@@ -237,8 +237,8 @@ type RouteChangeEvent interface {
 	Event
 }
 
-func NewRouteChangeEvent(newroute string, target *Element) RouteChangeEvent {
-	return newroutechangeEvent(newroute, target)
+func NewRouteChangeEvent(newroute string, routeChangeTarget *Element) RouteChangeEvent {
+	return newroutechangeEvent(newroute, routeChangeTarget)
 }
 
 type routeChangeEvent struct {
@@ -251,7 +251,7 @@ func (r routeChangeEvent) NewRoute() string {
 }
 
 func newroutechangeEvent(newroute string, root *Element) routeChangeEvent {
-	e := NewEvent("routechange", false, root, nil)
+	e := NewEvent("routechange", false, false, root, nil)
 	return routeChangeEvent{e, newroute}
 }
 

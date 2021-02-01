@@ -566,6 +566,13 @@ func (e *Element) Set(category string, propname string, value interface{}, inher
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
+// Delete removes the property stored for the given category if it exists.
+// Inherited properties cannot be deleted.
+// Default properties cannot be deleted either for now.
+func (e *Element) Delete(category string, propname string) {
+	e.Properties.Delete(category, propname)
+}
+
 func SetDefault(e *Element, category string, propname string, value interface{}) {
 	e.Properties.SetDefault(category, propname, value)
 }
@@ -817,6 +824,14 @@ func (p PropertyStore) Set(category string, propname string, value interface{}, 
 	ps.Set(propname, value, isInheritable)
 }
 
+func (p PropertyStore) Delete(category string, propname string) {
+	ps, ok := p.Categories[category]
+	if !ok {
+		return
+	}
+	ps.Delete(propname)
+}
+
 func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
 	ps, ok := p.Categories[category]
 	if !ok {
@@ -891,7 +906,11 @@ func (p Properties) Set(propName string, value interface{}, inheritable bool) {
 		return
 	}
 	p.Local[propName] = value
-} // don't forget to propagate mutation event to watchers
+}
+
+func (p Properties) Delete(propname string) {
+	delete(p.Local, propname)
+}
 
 func (p Properties) Inherit(source Properties) {
 	if source.Inheritable != nil {

@@ -15,6 +15,7 @@ type Event interface {
 	Phase() int
 	Bubbles() bool
 	DefaultPrevented() bool
+	Cancelable() bool
 	Stopped() bool
 
 	Native() interface{} // returns the native event object
@@ -28,21 +29,25 @@ type eventObject struct {
 	defaultPrevented bool
 	bubbles          bool
 	stopped          bool
+	cancelable       bool
 	phase            int
 
 	nativeObject interface{}
 }
 
 type defaultPreventer interface {
-	PrventDefault()
+	PreventDefault()
 }
 
 func (e *eventObject) Type() string            { return e.typ }
 func (e *eventObject) Target() *Element        { return e.target }
 func (e *eventObject) CurrentTarget() *Element { return e.currentTarget }
 func (e *eventObject) PreventDefault() {
+	if !e.Cancelable() {
+		return
+	}
 	if v, ok := e.nativeObject.(defaultPreventer); ok {
-		v.PrventDefault()
+		v.PreventDefault()
 	}
 	e.defaultPrevented = true
 }
@@ -57,10 +62,11 @@ func (e *eventObject) Phase() int                  { return e.phase }
 func (e *eventObject) Bubbles() bool               { return e.bubbles }
 func (e *eventObject) DefaultPrevented() bool      { return e.defaultPrevented }
 func (e *eventObject) Stopped() bool               { return e.stopped }
+func (e *eventObject) Cancelable() bool            { return e.cancelable }
 func (e *eventObject) Native() interface{}         { return e.nativeObject }
 
-func NewEvent(typ string, bubbles bool, target *Element, nativeEvent interface{}) Event {
-	return &eventObject{typ, target, target, false, bubbles, false, 0, nativeEvent}
+func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}) Event {
+	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent}
 }
 
 type EventListeners struct {
