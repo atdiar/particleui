@@ -98,9 +98,14 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 //
 */
 
+
+// NewAppRoot creates a new app entry point. It is the top-most element
+// in the tree of Elements that consitute the full document.
+// It should be the element which is passed to a router to observe for route
+// change.
 var NewAppRoot = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
-	root := js.Global().Get("document")
+	root := js.Global().Get("document").Get("body")
 	n := NewNativeElementWrapper(root)
 	e.Native = n
 	return e
@@ -114,6 +119,30 @@ var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Ele
 	htmlDiv := js.Global().Get("document").Call("createElement", "div")
 	htmlDiv.Set("id", id)
 	n := NewNativeElementWrapper(htmlDiv)
+	e.Native = n
+	return e
+})
+
+// NewHeader is a constructor for a html header element.
+var NewHeader = Elements.NewConstructor("header", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlHeader := js.Global().Get("document").Call("createElement", "header")
+	htmlHeader.Set("id", id)
+	n := NewNativeElementWrapper(htmlHeader)
+	e.Native = n
+	return e
+})
+
+// NewFooter is a constructor for an html footer element.
+var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlFooter := js.Global().Get("document").Call("createElement", "footer")
+	htmlFooter.Set("id", id)
+	n := NewNativeElementWrapper(htmlFooter)
 	e.Native = n
 	return e
 })
@@ -172,6 +201,109 @@ var NewAnchor = Elements.NewConstructor("link", func(name string, id string) *ui
 	e.Native = n
 	return e
 })
+
+var NewButton = func(name string, id string, type string, options ...func(*ui.Element)*ui.Element)*ui.Element{
+	f:= Elements.NewConstructor("button", func(elementname string, elementid string)) *uiu.Element{
+		e:= ui.NewElement(elementname, elementid,Element.DocType)
+		e = enableClasses(e)
+
+		htmlButton := js.Global().Get("document").Call("createElement","button")
+		htmlButton.Set("name",elementname)
+		htmlButton.Set("id", elementid)
+		htmlButton.Set("type",type)
+
+		n := NewNativeElementWrapper(htmlButton)
+		e.Native = n
+		return e
+	}
+	return f(name,id, options...)
+}
+
+var NewInput = func(name string,id string, type string, options ...func(*ui.Element)*ui.Element) *ui.Element{
+	f:= Elements.NewConstructor("input", func(elementname string, elementid string)) *uiu.Element{
+		e:= ui.NewElement(elementname, elementid,Element.DocType)
+		e = enableClasses(e)
+
+		htmlInput := js.Global().Get("document").Call("createElement","input")
+		htmlInput.Set("name",elementname)
+		htmlInput.Set("id", elementid)
+		htmlInput.Set("type",type)
+
+		n := NewNativeElementWrapper(htmlInput)
+		e.Native = n
+		return e
+	}
+	return f(name,id,options...)
+}
+
+var NewImage = func(src string, id string, altname string, options ...func(*ui.Element)*ui.Element) *ui.Element{
+	return Elements.NewConstructor("image",func(name string, imgid string)*ui.Element{
+		e:= ui.NewElement(name,imgd,Elements.DocType)
+		e = enableClasses(e)
+
+		htmlImg := js.Global().Get("document").Call("createElement","img")
+		htmlImg.Set("src",src)
+		htmlImg.Set("alt",name)
+		htmlImg.Set("id",imgid)
+
+		n:= NewNativeElementWrapper(htmlImg)
+		e.Native = n
+		return e
+	})(altname, id, options...)
+}
+
+var NewAudio = Elements.NewConstructor("audio",func(name string, id string)*ui.Element{
+	e:= ui.NewElement(name,id,Elements.DocType)
+	e = enableClasses(e)
+
+	htmlAudio := js.Global().Get("document").Call("createElement","audio")
+	htmlAudio.Set("name",name)
+	htmlAudio.Set("id",id)
+
+	n:= NewNativeElementWrapper(htmlAudio)
+	e.Native = n
+	return e
+})
+
+var NewVideo = Elements.NewConstructor("video",func(name string, id string)*ui.Element{
+	e:= ui.NewElement(name,id,Elements.DocType)
+	e = enableClasses(e)
+
+	htmlVideo := js.Global().Get("document").Call("createElement","video")
+	htmlVideo.Set("name",name)
+	htmlVideo.Set("id",id)
+
+	n:= NewNativeElementWrapper(htmlVideo)
+	e.Native = n
+	return e
+})
+
+var NewMediaSource = func(src string, typ string) *ui.Element{
+	return Elements.NewConstructor("source",func(name string, id string)*ui.Element{
+		e:= ui.NewElement(name,id,Elements.DocType)
+		e = enableClasses(e)
+
+		htmlVideo := js.Global().Get("document").Call("createElement","video")
+		htmlVideo.Set("type",name)
+		htmlVideo.Set("src",id)
+
+		n:= NewNativeElementWrapper(htmlVideo)
+		e.Native = n
+		return e
+	})(typ, src)
+}
+
+func WithSources(sources ...*ui.Element) func(*ui.Element)*ui.Element{
+	return func(mediaplayer *ui.Element) *ui.Element{
+		for _,source:=range sources{
+			if source.Name != "source"{
+				log.Print("cannot append non media source element to mediaplayer")
+				continue
+				}
+				mediaplayer.AppendChild(source)
+		}
+	}
+}
 
 // NewTextNode creates a text node for the Element whose id is passed as argument
 // The id for the text Element is the id of its parent to which
@@ -244,6 +376,7 @@ var NewTemplatedText = func(name string, id string, format string, paramsNames .
 	}
 	return nt
 }
+
 
 type EventTranslationTable struct {
 	FromJS          map[string]func(evt js.Value) ui.Event

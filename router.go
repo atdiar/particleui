@@ -30,19 +30,21 @@ type Router struct {
 	LeaveTrailingSlash bool
 }
 
-func NewRouter(view *Element) (*Router, error) {
+func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
 	if view.viewAdjacence() {
 		return nil, errors.New("The router cannot be created on a view that has siblings. It should be a unique entry point ot the app. ")
 	}
-	return &Router{make([]RouteChangeHandler, 0), view.Route(), view, nil, newRouteNode("/"), "/", nil, nil, false}, nil
+	documentroot.Set("internals","baseurl",rootview.Route())
+	return &Router{make([]RouteChangeHandler, 0), rootview.Route(), documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
 }
 
-func (r *Router) SetBaseURL(base string) *Router {
+func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
 	u, err := url.Parse(base)
 	if err != nil {
 		return r
 	}
 	r.BaseURL = strings.TrimSuffix(u.Path, "/")
+	r.root.Set("internals","baseurl",r.BaseURL)
 	return r
 }
 
@@ -213,7 +215,7 @@ func (r *Router) serve() {
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
 func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
-	root := r.root.root
+	root := r.root
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
 		event, ok := evt.(RouteChangeEvent)
 		if !ok {
@@ -237,6 +239,13 @@ type RouteChangeEvent interface {
 	Event
 }
 
+// NewRouteChangeEvent creates a new Event that is specifically structured to
+// inform about a change in the current route. In other terms, aprt from the
+// basic Event interface, it implements a NewRoute method which returns the newly
+// created current route.
+// It takes as second argument the Element which holds the route variable.
+// In javascript browser, that would be the Element representing the window
+// element, window.location being the route as a URL.
 func NewRouteChangeEvent(newroute string, routeChangeTarget *Element) RouteChangeEvent {
 	return newroutechangeEvent(newroute, routeChangeTarget)
 }

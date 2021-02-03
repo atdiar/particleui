@@ -38,9 +38,15 @@ func NewElementStore(doctype string) *ElementStore {
 }
 
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(string, string) *Element {
-	c := func(name, id string) *Element {
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(string, string, options...func(*Element)*Element) *Element {
+	c := func(name string, id string, options ...func(*Element)*Element) *Element {
 		element := constructor(name, id)
+
+		if options != nil{
+			for _,option:= range options{
+				element = option(element)
+			}
+		}
 		e.ByID[id] = element
 		return element
 	}
