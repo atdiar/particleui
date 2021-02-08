@@ -31,10 +31,10 @@ type Router struct {
 }
 
 func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
-	if view.viewAdjacence() {
+	if rootview.viewAdjacence() {
 		return nil, errors.New("The router cannot be created on a view that has siblings. It should be a unique entry point ot the app. ")
 	}
-	documentroot.Set("internals","baseurl",rootview.Route())
+	documentroot.Set("internals","baseurl",rootview.Route(),true)
 	return &Router{make([]RouteChangeHandler, 0), rootview.Route(), documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
 }
 
@@ -44,7 +44,7 @@ func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
 		return r
 	}
 	r.BaseURL = strings.TrimSuffix(u.Path, "/")
-	r.root.Set("internals","baseurl",r.BaseURL)
+	r.root.Set("internals","baseurl",r.BaseURL,true)
 	return r
 }
 

@@ -7,6 +7,7 @@ package javascript
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"syscall/js"
 
@@ -17,9 +18,61 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements   = ui.NewElementStore(DOCTYPE)
-	EventTable = NewEventTranslationTable()
+	Elements           = ui.NewElementStore(DOCTYPE)
+	EventTable         = NewEventTranslationTable()
+	DefaultWindowTitle = "Powered by ParticleUI"
 )
+
+// MutationCaptureMode describes how a Go App may capture textarea value changes
+// that happen in native javascript. For instance, when a blur event is dispatched
+// or when any mutation is observed via the MutationObserver API.
+type MutationCaptureMode int
+
+var (
+	OnBlur    MutationCaptureMode = iota
+	OnInput MutationCaptureMode //implemented via mutation observers
+)
+
+// Window is a ype that represents a browser window
+type Window struct {
+	*ui.Element
+}
+
+func (w Window) SetTitle(title string) {
+	w.Set("ui", "title", title, false)
+}
+
+// TODO see if can get height width of window view port, etc.
+
+func getWindow() Window {
+	e := ui.NewElement("window", DefaultWindowTitle, DOCTYPE)
+	e.Native = NewNativeElementWrapper(js.Global())
+
+	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		target := evt.Origin()
+		newtitle, ok := evt.NewValue().(string)
+		if !ok {
+			return true
+		}
+		win, ok := target.Native.(Window)
+		if !ok {
+			return true
+		}
+		nat, ok := win.Element.NativeElement.(js.Wrapper)
+		if !ok {
+			return true
+		}
+		jswindow := nat.JSValue()
+		jswindow.Get("document").Set("title", newtitle)
+		return false
+	})
+
+	e.Watch("ui", "title", e, h)
+	e.Set("ui", "title", DefaultWindowTitle, false)
+	return Window{e}
+}
+
+var DefaultWindow Window = getWindow()
 
 // NativeElement defines a wrapper around a js.Value that implements the
 // ui.NativeElementWrapper interface.
@@ -98,11 +151,16 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 //
 */
 
+// TODO window should have its own type. it is not an element butits properties
+// can be read and some such as title can be changed.
+// Should be alos of type js.Wrapper-
 
 // NewAppRoot creates a new app entry point. It is the top-most element
 // in the tree of Elements that consitute the full document.
 // It should be the element which is passed to a router to observe for route
 // change.
+// By default, it represents document.body. As such, it is different from the
+// document which holds the head element for instance.
 var NewAppRoot = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
 	root := js.Global().Get("document").Get("body")
@@ -117,11 +175,91 @@ var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Ele
 	e = enableClasses(e)
 
 	htmlDiv := js.Global().Get("document").Call("createElement", "div")
-	htmlDiv.Set("id", id)
 	n := NewNativeElementWrapper(htmlDiv)
 	e.Native = n
+	SetAttribute(e,"id",id)
 	return e
 })
+
+func EnableLayoutDispositionTracking(defaultdisposition string, ondispositionchange *ui.MutationHandler) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		e.Watch("ui", "disposition", e, ondispositionchange)
+		e.Set("ui", "disposition", defaultdisposition, false)
+		return e
+	}
+}
+
+// NewTextArea is a constructor for a textarea html element.
+var NewTextArea = func(name string, id string, rows int, cols int, options ...func(*ui.Element)*uiu.Element) *ui.Element {
+	return Elements.NewConstructor("textearea", func(ename string, eid string) *ui.Element {
+		e := ui.NewElement(ename, eid, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlTextArea := js.Global().get("document").Call("createElement", "textarea")
+
+
+		e.Watch("data", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			if evt.ObservedKey() != "text" || evt.Type() != "data" || evt.Origin() != target {
+				return true
+			}
+			if s, ok := evt.NewValue().(string); ok {
+				old := htmlTextArea.Get("value").String()
+				if s != old {
+					SetAttribute("value", s)
+				}
+			}
+			return false
+		}))
+
+
+		n := NativeElementWrapper(htmlTextArea)
+		e.Native = n
+		SetAttribute(e,"name", ename)
+		SetAttribute(e,"id", eid)
+		SetAttribute(e,"rows", strconv.Itoa(row))
+		SetAttribute(e,"cols", strconv.Itoa(cols))
+	})(name, id,options...)
+}
+
+func EnableDataBinding(datacapturemode ...MutationCaptureMode) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		callback:= ui.NewEventHandler(func(evt ui.Event)bool{
+			if evt.Target().ID != e.ID{
+				return false // we do not stop the event propagation but do not handle the event either
+			}
+			n,ok:= e.Native.(NativeElementWrapper)
+			if !ok{
+				return true
+			}
+			nn:= n.Value()
+			v:= nn.Get("value")
+			ok = v.Truthy()
+			if !ok{
+				return true
+			}
+			s:= v.String()
+			e.Set("data",'text',s,false)
+			return false
+		})
+
+
+		if datacapturemode == nil || len(datacapturemode)>1 {
+			e.AddEventListener("blur",onblur, EventTable.NativeEventBridge())
+			return e
+		}
+		mode:= datacapturemode[0]
+		if  mode == OnInput{
+			e.AddEventListener("input",callback, EventTable.NativeEventBridge())
+			return e
+		}
+
+		// capture textarea value on blur by default
+		e.AddEventListener("blur",callback, EventTable.NativeEventBridge())
+		return e
+	}
+}
+
+// TODO attribute setting functions such as Placeholder(val string) func(*ui.Element) *ui.Element to implement
 
 // NewHeader is a constructor for a html header element.
 var NewHeader = Elements.NewConstructor("header", func(name string, id string) *ui.Element {
@@ -129,9 +267,9 @@ var NewHeader = Elements.NewConstructor("header", func(name string, id string) *
 	e = enableClasses(e)
 
 	htmlHeader := js.Global().Get("document").Call("createElement", "header")
-	htmlHeader.Set("id", id)
 	n := NewNativeElementWrapper(htmlHeader)
 	e.Native = n
+	SetAttribute(e,"id", id)
 	return e
 })
 
@@ -141,9 +279,9 @@ var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *
 	e = enableClasses(e)
 
 	htmlFooter := js.Global().Get("document").Call("createElement", "footer")
-	htmlFooter.Set("id", id)
 	n := NewNativeElementWrapper(htmlFooter)
 	e.Native = n
+	SetAttribute(e,"id", id)
 	return e
 })
 
@@ -153,9 +291,9 @@ var NewSpan = Elements.NewConstructor("span", func(name string, id string) *ui.E
 	e = enableClasses(e)
 
 	htmlSpan := js.Global().Get("document").Call("createElement", "span")
-	htmlSpan.Set("id", id)
 	n := NewNativeElementWrapper(htmlSpan)
 	e.Native = n
+	SetAttribute(e,"id", id)
 	return e
 })
 
@@ -165,9 +303,21 @@ var NewParagraph = Elements.NewConstructor("paragraph", func(name string, id str
 	e = enableClasses(e)
 
 	htmlParagraph := js.Global().Get("document").Call("createElement", "p")
-	htmlParagraph.Set("id", id)
 	n := NewNativeElementWrapper(htmlParagraph)
 	e.Native = n
+	SetAttribute(e,"id", id)
+	return e
+})
+
+// NewNavMenu is a constructor for a html nav element.
+var NewNavMenu = Elements.NewConstructor("nav", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlNavMenu := js.Global().Get("document").Call("createElement", "nav")
+	n := NewNativeElementWrapper(htmlNavMenu)
+	e.Native = n
+	SetAttribute(e,"id", id)
 	return e
 })
 
@@ -179,129 +329,131 @@ var NewAnchor = Elements.NewConstructor("link", func(name string, id string) *ui
 	e = enableClasses(e)
 
 	htmlAnchor := js.Global().Get("document").Call("createElement", "a")
-	htmlAnchor.Set("id", id+"-link")
+	baseid:= id
+	id =id+"-link"
 	// finds the element whose id has been passed as argument: if search returns nil
 	// then the Link element references itself.
-	lnkTarget := Elements.GetByID(id)
+	lnkTarget := Elements.GetByID(baseid)
 	if lnkTarget == nil {
 		lnkTarget = e
-		htmlAnchor.Set("id", id)
+		id = baseid
 	}
 
-	// TODO Set a mutation Handler on e which observes the tree insertion event (attach event)
+	// Set a mutation Handler on lnkTarget which observes the tree insertion event (attach event)
 	// At each attachment, we should rewrite href with the new route.
 	lnkTarget.Watch("event", "attached", lnkTarget, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if evt.ObservedKey() != "attached" || evt.Type() != "event" || evt.Origin() != lnkTarget {
 			return true
 		}
-		htmlAnchor.Set("href", lnkTarget.Route())
+		SetAttribute(e, "href", e.Route())
 		return false
 	}))
 	n := NewNativeElementWrapper(htmlAnchor)
 	e.Native = n
+	SetAttribute(e,"id", id)
 	return e
 })
 
-var NewButton = func(name string, id string, type string, options ...func(*ui.Element)*ui.Element)*ui.Element{
-	f:= Elements.NewConstructor("button", func(elementname string, elementid string)) *uiu.Element{
-		e:= ui.NewElement(elementname, elementid,Element.DocType)
+var NewButton = func(name string, id string, typ string, options ...func(*ui.Element) *ui.Element) *ui.Element {
+	f := Elements.NewConstructor("button", func(elementname string, elementid string) *ui.Element {
+		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlButton := js.Global().Get("document").Call("createElement","button")
-		htmlButton.Set("name",elementname)
-		htmlButton.Set("id", elementid)
-		htmlButton.Set("type",type)
-
+		htmlButton := js.Global().Get("document").Call("createElement", "button")
 		n := NewNativeElementWrapper(htmlButton)
 		e.Native = n
+		SetAttribute(e,"name", elementname)
+		SetAttribute(e,"id", elementid)
+		SetAttribute(e,"type", typ)
 		return e
-	}
-	return f(name,id, options...)
+	})
+	return f(name, id, options...)
 }
 
-var NewInput = func(name string,id string, type string, options ...func(*ui.Element)*ui.Element) *ui.Element{
-	f:= Elements.NewConstructor("input", func(elementname string, elementid string)) *uiu.Element{
-		e:= ui.NewElement(elementname, elementid,Element.DocType)
+var NewInput = func(name string, id string, typ string, options ...func(*ui.Element) *ui.Element) *ui.Element {
+	f := Elements.NewConstructor("input", func(elementname string, elementid string) *ui.Element {
+		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlInput := js.Global().Get("document").Call("createElement","input")
-		htmlInput.Set("name",elementname)
-		htmlInput.Set("id", elementid)
-		htmlInput.Set("type",type)
+		htmlInput := js.Global().Get("document").Call("createElement", "input")
 
 		n := NewNativeElementWrapper(htmlInput)
 		e.Native = n
+		SetAttribute(e,"name", elementname)
+		SetAttribute(e,"id", elementid)
+		SetAttribute(e,"type", typ)
 		return e
-	}
-	return f(name,id,options...)
+	})
+	return f(name, id, options...)
 }
 
-var NewImage = func(src string, id string, altname string, options ...func(*ui.Element)*ui.Element) *ui.Element{
-	return Elements.NewConstructor("image",func(name string, imgid string)*ui.Element{
-		e:= ui.NewElement(name,imgd,Elements.DocType)
+var NewImage = func(src string, id string, altname string, options ...func(*ui.Element) *ui.Element) *ui.Element {
+	return Elements.NewConstructor("image", func(name string, imgid string) *ui.Element {
+		e := ui.NewElement(name, imgid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlImg := js.Global().Get("document").Call("createElement","img")
-		htmlImg.Set("src",src)
-		htmlImg.Set("alt",name)
-		htmlImg.Set("id",imgid)
+		htmlImg := js.Global().Get("document").Call("createElement", "img")
 
-		n:= NewNativeElementWrapper(htmlImg)
+		n := NewNativeElementWrapper(htmlImg)
 		e.Native = n
+		SetAttribute(e,"src", src)
+		SetAttribute(e,"alt", name)
+		SetAttribute(e,"id", imgid)
 		return e
 	})(altname, id, options...)
 }
 
-var NewAudio = Elements.NewConstructor("audio",func(name string, id string)*ui.Element{
-	e:= ui.NewElement(name,id,Elements.DocType)
+var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlAudio := js.Global().Get("document").Call("createElement","audio")
-	htmlAudio.Set("name",name)
-	htmlAudio.Set("id",id)
+	htmlAudio := js.Global().Get("document").Call("createElement", "audio")
 
-	n:= NewNativeElementWrapper(htmlAudio)
+	n := NewNativeElementWrapper(htmlAudio)
+	e.Native = n
+	SetAttribute(e,"name", name)
+	SetAttribute(e,"id", id)
+	return e
+})
+
+var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlVideo := js.Global().Get("document").Call("createElement", "video")
+	SetAttribute(e,"name", name)
+	SetAttribute(e,"id", id)
+
+	n := NewNativeElementWrapper(htmlVideo)
 	e.Native = n
 	return e
 })
 
-var NewVideo = Elements.NewConstructor("video",func(name string, id string)*ui.Element{
-	e:= ui.NewElement(name,id,Elements.DocType)
-	e = enableClasses(e)
-
-	htmlVideo := js.Global().Get("document").Call("createElement","video")
-	htmlVideo.Set("name",name)
-	htmlVideo.Set("id",id)
-
-	n:= NewNativeElementWrapper(htmlVideo)
-	e.Native = n
-	return e
-})
-
-var NewMediaSource = func(src string, typ string) *ui.Element{
-	return Elements.NewConstructor("source",func(name string, id string)*ui.Element{
-		e:= ui.NewElement(name,id,Elements.DocType)
+var NewMediaSource = func(src string, typ string, options ...func(*ui.Element)*uiu.Element) *ui.Element {
+	return Elements.NewConstructor("source", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlVideo := js.Global().Get("document").Call("createElement","video")
-		htmlVideo.Set("type",name)
-		htmlVideo.Set("src",id)
+		htmlVideo := js.Global().Get("document").Call("createElement", "video")
 
-		n:= NewNativeElementWrapper(htmlVideo)
+		n := NewNativeElementWrapper(htmlVideo)
 		e.Native = n
+		SetAttribute(e,"type", name)
+		SetAttribute(e,"src", id)
 		return e
-	})(typ, src)
+	})(typ, src,options...)
 }
 
-func WithSources(sources ...*ui.Element) func(*ui.Element)*ui.Element{
-	return func(mediaplayer *ui.Element) *ui.Element{
-		for _,source:=range sources{
-			if source.Name != "source"{
+func WithSources(sources ...*ui.Element) func(*ui.Element) *ui.Element {
+	return func(mediaplayer *ui.Element) *ui.Element {
+		for _, source := range sources {
+			if source.Name != "source" {
 				log.Print("cannot append non media source element to mediaplayer")
 				continue
-				}
-				mediaplayer.AppendChild(source)
+			}
+			mediaplayer.AppendChild(source)
 		}
+		return mediaplayer
 	}
 }
 
@@ -377,6 +529,52 @@ var NewTemplatedText = func(name string, id string, format string, paramsNames .
 	return nt
 }
 
+var NewList = func(name string, id string,options ...func(*ui.Element)*uiu.Element) *ui.Element {
+	elname := "ul"
+	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
+		e := ui.NewElement(ename, eid, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlList := js.Global().Get("document").Call("createElement", elname)
+
+		n := NewNativeElementWrapper(htmlList)
+		e.Native = n
+		SetAttribute(e,"name", ename)
+		SetAttribute(e,"id", eid)
+		return e
+	})(name,id, options...)
+}
+
+var NewOrderedList = func(name string, id string, typ string, numberingstart int,options ...func(*ui.Element)*uiu.Element) *ui.Element {
+	elname := "ol"
+	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
+		e := ui.NewElement(ename, eid, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlList := js.Global().Get("document").Call("createElement", elname)
+
+		n := NewNativeElementWrapper(htmlList)
+		e.Native = n
+		SetAttribute(e,"name", ename)
+		SetAttribute(e,"id", eid)
+		SetAttribute(e,"type", typ)
+		SetAttribute(e,"start", strconv.Itoa(numberingstart))
+		return e
+	})(name,id,options...)
+}
+
+var NewListItem = Elements.NewConstructor("listitem", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlListItem := js.Global().Get("document").Call("createElement", "li")
+
+	n := NewNativeElementWrapper(htmlListItem)
+	e.Native = n
+	SetAttribute(e,"name", name)
+	SetAttribute(e,"id", id) // TODO define attribute setters optional functions
+	return e
+})
 
 type EventTranslationTable struct {
 	FromJS          map[string]func(evt js.Value) ui.Event
@@ -434,13 +632,15 @@ func (e EventTranslationTable) NativeEventBridge() ui.NativeEventBridge {
 			target.DispatchEvent(goevt, nil)
 			return nil
 		})
-		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
-		if target.NativeEventUnlisteners.List == nil {
-			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-		}
-		target.NativeEventUnlisteners.Add(NativeEventName, func() {
-			js.Global().Get("document").Call("getElementById", target.ID).Call("removeEventListener", NativeEventName, cb)
-		})
+
+			js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
+			if target.NativeEventUnlisteners.List == nil {
+				target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+			}
+			target.NativeEventUnlisteners.Add(NativeEventName, func() {
+				js.Global().Get("document").Call("getElementById", target.ID).Call("removeEventListener", NativeEventName, cb)
+				cb.Release()
+			})
 	}
 }
 

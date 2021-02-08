@@ -29,16 +29,16 @@ func NewIDgenerator(seed int64) func() string {
 
 type ElementStore struct {
 	DocType      string
-	Constructors map[string]func(name, id string) *Element
+	Constructors map[string]func(name, id string, options ...func(*Element)*Element) *Element
 	ByID         map[string]*Element
 }
 
 func NewElementStore(doctype string) *ElementStore {
-	return &ElementStore{doctype, make(map[string]func(name string, id string) *Element, 0), make(map[string]*Element)}
+	return &ElementStore{doctype, make(map[string]func(name string, id string,options ...func(*Element)*Element) *Element, 0), make(map[string]*Element)}
 }
 
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(string, string, options...func(*Element)*Element) *Element {
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(name string, id string, options ...func(*Element)*Element) *Element {
 	c := func(name string, id string, options ...func(*Element)*Element) *Element {
 		element := constructor(name, id)
 
