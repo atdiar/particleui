@@ -1,6 +1,8 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
+import "strings"
+
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers
 }
@@ -30,6 +32,18 @@ func (m *MutationCallbacks) Remove(key string, h *MutationHandler) *MutationCall
 }
 
 func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
+	key := evt.ObservedKey()
+	shards := strings.Split(strings.TrimPrefix(key, "/"), "/")
+	if len(shards) == 2 {
+		observableID := shards[0]
+		category := shards[1]
+		grouphandlerAdress := observableID + "/" + category + "/" + "existifallpropertieswatched"
+		gmhs, ok := m.list[grouphandlerAdress]
+		if ok {
+			gmhs.Handle(evt)
+		}
+	}
+
 	mhs, ok := m.list[evt.Origin().ID+"/"+evt.ObservedKey()]
 	if !ok {
 		return
@@ -96,10 +110,10 @@ type MutationEvent interface {
 	NewValue() interface{}
 }
 
-// Mutation defines a basic implementation for Mutation Events .
+// Mutation defines a basic implementation for Mutation Events.
 type Mutation struct {
 	KeyName string
-	typ     string //"ui" or "data"
+	typ     string
 	Value   interface{}
 	Src     *Element
 }
@@ -109,6 +123,6 @@ func (m Mutation) Origin() *Element      { return m.Src }
 func (m Mutation) Type() string          { return m.typ }
 func (m Mutation) NewValue() interface{} { return m.Value }
 
-func (e *Element) NewMutationEvent(propcat string, propname string, newvalue interface{}) Mutation {
-	return Mutation{e.ID + "/" + propcat+"/"+propname, propcat, newvalue, e}
+func (e *Element) NewMutationEvent(category string, propname string, newvalue interface{}) Mutation {
+	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, e}
 }

@@ -31,16 +31,30 @@ type ElementStore struct {
 	DocType      string
 	Constructors map[string]func(name, id string, options ...func(*Element)*Element) *Element
 	ByID         map[string]*Element
+	Matrix *Element // the matrix Element stores the global state shared by all *Elements
 }
 
-func NewElementStore(doctype string) *ElementStore {
-	return &ElementStore{doctype, make(map[string]func(name string, id string,options ...func(*Element)*Element) *Element, 0), make(map[string]*Element)}
+func NewElementStore(storeid string,doctype string) *ElementStore {
+	matrix:= NewElement("matrix",storeid,doctype)
+	es:= &ElementStore{doctype, make(map[string]func(name string, id string,options ...func(*Element)*Element) *Element, 0), make(map[string]*Element),matrix}
+	matrix.WatchGroup("",matrix,NewMutationHandler(func(evt MutationEvent)bool{
+		for _,element := range es.ByID{
+			element.Set("global",evt.ObservedKey(), evt.NewValue(), false)
+		}
+		return false
+		}))
+	return es
 }
 
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(name string, id string, options ...func(*Element)*Element) *Element {
 	c := func(name string, id string, options ...func(*Element)*Element) *Element {
 		element := constructor(name, id)
+		element.matrix = e.Matrix
+		element.WatchGroup("",element, NewMutationHandler(func(evt MutationEvent)bool{
+			element.Set("global", evt.ObservedKey(),evt.NewValue(),false)
+			return false
+			}))
 
 		if options != nil{
 			for _,option:= range options{
@@ -62,10 +76,25 @@ func (e *ElementStore) GetByID(id string) *Element {
 	return v
 }
 
+// EnableGlobalPropertyAccess will, when passed as a configuration option to an Element
+// contructor, grant an Element the right to update a global property. Global properties
+// are those that belong to the "global" namespace (a.k.a. category) of every Element properties.
+func EnableGlobalPropertyAccess(propertyname string) func(*Element)*Element{
+	return func(e *Element)*Element{
+		e.canMutateGlobalScope = true
+		e.matrix.Watch("",propertyname, e, NewMutationHandler(func(evt MutationEvent)bool{
+			e.matrix.setGlobal(propertyname,evt.NewValue(),false)
+			return false
+			}))
+		return e
+	}
+}
+
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
 type Element struct {
+	matrix *Element //where it all begins :)
 	root        *Element
 	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
 	path        *Elements
@@ -77,7 +106,7 @@ type Element struct {
 	DocType string
 
 	Properties PropertyStore
-
+	canMutateGlobalScope bool
 	PropMutationHandlers   *MutationCallbacks     // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
 	EventHandlers          EventListeners         // EventHandlers are to be called when the named event has fired.
 	NativeEventUnlisteners NativeEventUnlisteners // Allows to remove event listeners on the native element, registered when bridging event listeners from the native UI platform.
@@ -100,10 +129,12 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		nil,
 		nil,
+		nil,
 		name,
 		id,
 		doctype,
 		NewPropertyStore(),
+		false,
 		NewMutationCallbacks(),
 		NewEventListenerStore(),
 		NewNativeEventUnlisteners(),
@@ -140,6 +171,14 @@ func (e *Elements) Insert(el *Element, index int) *Elements {
 	nel = append(nel, e.List[index:]...)
 	e.List = nel
 	return e
+}
+
+func(e *Elements) AtIndex(index int) *Element{
+	elements := e.List
+	if index <0 || index >= len(elements){
+		return nil
+	}
+	return elements[index]
 }
 
 func (e *Elements) Remove(el *Element) *Elements {
@@ -191,7 +230,7 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 		return e
 	}
 
-	if e.Detached() {
+	if e.Mounted() {
 		log.Print("Error: Element detached. should not happen.")
 		// TODO review which type of event could walk up a detached subtree
 		// for instance, how to update darkmode on detached elements especially
@@ -372,7 +411,10 @@ func (e *Element) ActivateView(name string) error {
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
 	defer func() {
-		child.Set("event", "attached", true, true)
+		child.Set("event", "attached", true, false)
+		if child.Mounted(){
+			child.Set("event","mounted", true,false)
+		}
 	}()
 	if activeview {
 		child.Parent = parent
@@ -407,6 +449,7 @@ func detach(e *Element) {
 	if e.Parent == nil {
 		return
 	}
+
 	e.subtreeRoot = e
 
 	// reset e.path to start with the top-most element i.e. "e" in the current case
@@ -430,6 +473,9 @@ func detach(e *Element) {
 		e.ViewAccessPath.nodes = e.ViewAccessPath.nodes[len(e.ViewAccessPath.nodes)-1:]
 	}
 
+	e.Set("event", "attached", false, false)
+	e.Set("event","mounted",false,false)
+
 	// got to update the subtree with the new subtree root and path
 	for _, descendant := range e.Children.List {
 		attach(e, descendant, true)
@@ -441,6 +487,7 @@ func detach(e *Element) {
 		}
 	}
 }
+
 
 // AppendChild appends a new element to the element's children list for the active
 // view being rendered.
@@ -458,7 +505,7 @@ func (e *Element) AppendChild(child *Element) *Element {
 	return e
 }
 
-func (e *Element) Prepend(child *Element) *Element {
+func (e *Element) PrependChild(child *Element) *Element {
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -486,6 +533,10 @@ func (e *Element) InsertChild(child *Element, index int) *Element {
 	return e
 }
 
+// ReplaceChild will replace the target child Element with another.
+// Be wary that mutation Watchers and event listeners remain unchanged by default.
+// The addition or removal of change observing obk=jects is left at the discretion
+// of the user.
 func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 	if e.DocType != new.DocType {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, new.DocType)
@@ -528,6 +579,7 @@ func (e *Element) Watch(category string, propname string, owner *Element, h *Mut
 	e.PropMutationHandlers.Add(owner.ID+"/"+category+"/"+propname, h)
 	return e
 }
+
 func (e *Element) Unwatch(category string, propname string, owner *Element) *Element {
 	p, ok := owner.Properties.Categories[category]
 	if !ok {
@@ -536,6 +588,27 @@ func (e *Element) Unwatch(category string, propname string, owner *Element) *Ele
 	p.RemoveWatcher(propname, e)
 	return e
 }
+
+func (e *Element) WatchGroup(category string, target *Element, h *MutationHandler) *Element {
+	p, ok := target.Properties.Categories[category]
+	if !ok {
+		p = newProperties()
+		target.Properties.Categories[category] = p
+	}
+	p.NewWatcher("existifallpropertieswatched", e)
+	e.PropMutationHandlers.Add(target.ID+"/"+category+"/"+"existifallpropertieswatched", h)
+	return e
+}
+
+func (e *Element) UnwatchGroup(category string, owner *Element) *Element {
+	p, ok := owner.Properties.Categories[category]
+	if !ok {
+		return e
+	}
+	p.RemoveWatcher("existifallpropertieswatched", e)
+	return e
+}
+
 
 func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	e.EventHandlers.AddEventHandler(event, handler)
@@ -554,21 +627,49 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 	return e
 }
 
-// Detached returns whether the subtree the current Element belongs to is attached
+// Mounted returns whether the subtree the current Element belongs to is attached
 // to the main tree or not.
-func (e *Element) Detached() bool {
+func (e *Element) Mounted() bool {
 	if e.subtreeRoot.Parent == nil && e.subtreeRoot != e.root {
 		return true
 	}
 	return false
 }
 
+// Get retrieves the value stored for the named property located under the given
+// category. The "" category returns the content of the "global" property category.
+// The "global" namespace is a local copy of the data that resides in the global
+// shared scope common to all Element objects of an ElementStore.
 func (e *Element) Get(category, propname string) (interface{}, bool) {
+	if category == ""{
+		category = "global"
+	}
 	return e.Properties.Get(category, propname)
 }
+
+// Set inserts a key/value pair under a given category in the element property store.
+// The "global" category is read-only.
+// The global scope may be mutated by changing a property of the "" category (empty string).
+// The changes will only take effect if the  Element was granted Global scope access rights for the
+// property in question via the EnableGlobalPropertyAccess functional option.
+//
 func (e *Element) Set(category string, propname string, value interface{}, inheritable bool) {
+	if category=="global"{
+		log.Print("this namespace is read-only (global). It may not be mutated directly. [see docs])")
+		return
+	}
+	if category == "" && !e.canMutateGlobalScope{
+		log.Print("Element does not have sufficient rights to try and mutate global scope")
+		return
+	}
 	e.Properties.Set(category, propname, value, inheritable)
 	evt := e.NewMutationEvent(category, propname, value)
+	e.PropMutationHandlers.DispatchEvent(evt)
+}
+
+func(e *Element) setGlobal(propname string, value interface{}, inheritable bool){
+	e.Properties.Set("", propname, value, inheritable)
+	evt := e.NewMutationEvent("", propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
@@ -577,6 +678,8 @@ func (e *Element) Set(category string, propname string, value interface{}, inher
 // Default properties cannot be deleted either for now.
 func (e *Element) Delete(category string, propname string) {
 	e.Properties.Delete(category, propname)
+	evt := e.NewMutationEvent(category, propname, nil)
+	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 func SetDefault(e *Element, category string, propname string, value interface{}) {
@@ -633,7 +736,7 @@ func Watcher(e *Element, target *Element, key string, h *MutationHandler) {
 func (e *Element) Route() string {
 	// TODO if root is window and not app root, might need to implement additional logic to make link creation process stop at app root.
 	var Route string
-	if e.Detached() {
+	if e.Mounted() {
 		return ""
 	}
 	if e.ViewAccessPath == nil {
@@ -797,8 +900,8 @@ func newViewNode(e *Element, view ViewElements) viewNode {
 	return viewNode{e, view}
 }
 
-// PropertyStore defines the format of the datastructure which holds
-// UI element's properties.
+// PropertyStore allows for the storage of Key Value pairs grouped by namespaces
+// called categories. Key being the property name and Value its value.
 type PropertyStore struct {
 	Categories map[string]Properties
 }
@@ -848,8 +951,6 @@ func (p PropertyStore) SetDefault(category string, propname string, value interf
 }
 
 type Properties struct {
-	GlobalShared map[string]interface{}
-
 	Default map[string]interface{}
 
 	Inherited map[string]interface{} //Inherited property cannot be mutated by the inheritor
@@ -864,7 +965,7 @@ type Properties struct {
 }
 
 func newProperties() Properties {
-	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
+	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
 }
 
 func (p Properties) NewWatcher(propName string, watcher *Element) {
@@ -900,12 +1001,9 @@ func (p Properties) Get(propName string) (interface{}, bool) {
 	if ok {
 		return v, ok
 	}
-	v, ok = p.GlobalShared[propName]
-	if ok {
-		return v, ok
-	}
 	return nil, false
 }
+
 func (p Properties) Set(propName string, value interface{}, inheritable bool) {
 	if inheritable {
 		p.Inheritable[propName] = value

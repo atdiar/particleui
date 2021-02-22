@@ -37,6 +37,7 @@ func DefaultGoEventTranslator(evt ui.Event) js.Value {
 	})
 	return event
 }
+
 func LoadDefaultEventTable(evttbl EventTranslationTable) {
 	evttbl.JSEventTranslator("popstate", "routechange", func(evt js.Value) ui.Event {
 		targetid := evt.Get("target").Get("id").String()
