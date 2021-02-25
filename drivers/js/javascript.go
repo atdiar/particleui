@@ -1,4 +1,4 @@
-Tooltip// +build js,wasm
+// +build js,wasm
 
 // Package javascript defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
@@ -197,16 +197,9 @@ var EnableLayoutDispositionTracking = ui.NewConstructorOption("EnableLayoutDispo
 				e.Watch("ui", "disposition", e, muthandler)
 				e.Set("ui", "disposition", defdispo, false)
 				return e
-			}
-		})
+		}
+})
 
-func EnableLayoutDispositionTracking(defaultdisposition string, ondispositionchange *ui.MutationHandler) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		e.Watch("ui", "disposition", e, ondispositionchange)
-		e.Set("ui", "disposition", defaultdisposition, false)
-		return e
-	}
-}
 
 // NewTooltip is a constructor for html div elements.
 func NewTooltip(name string id string) *ui.Element{

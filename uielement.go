@@ -29,14 +29,39 @@ func NewIDgenerator(seed int64) func() string {
 
 type ElementStore struct {
 	DocType      string
-	Constructors map[string]func(name, id string, options ...func(*Element)*Element) *Element
+	Constructors map[string]func(name, id string, options ...OptionalArguments) *Element
+	ConstructorsOptions map[string]map[string]func(args ...interface{}) func(*Element)*Element
 	ByID         map[string]*Element
 	Matrix *Element // the matrix Element stores the global state shared by all *Elements
 }
 
+// ConstructionOption defines a type of function that is used so that certain options
+// are enabled when using a constructor function that creates new Elements.
+// These construction options must have been prealably registered by name.
+type OptionalArguments func() (string, []interface{})
+
+// WithOption returns an OptionalArguments object which is a function that,
+// when called, returns arguments to be passed to a Constructor Function.
+// It allows the Constructor function to  use pre-registered  Element constructing
+// functions that may add additional Element configuration properties for example.
+func WithOption(optionName string, args ...interface{}) OptionalArguments {
+	return func() (string,[]interface{}){
+		return optionName, args
+	}
+}
+
+type ConstructorOption struct{
+	Name string
+	Configurator func(args ...interface{}) func(*Element)*Element
+}
+
+func NewConstructorOption(name string, configuratorFn func(args ...interface{}) func(*Element)*Element) ConstructorOption {
+	return ConstructorOption{name, configuratorFn}
+}
+
 func NewElementStore(storeid string,doctype string) *ElementStore {
 	matrix:= NewElement("matrix",storeid,doctype)
-	es:= &ElementStore{doctype, make(map[string]func(name string, id string,options ...func(*Element)*Element) *Element, 0), make(map[string]*Element),matrix}
+	es:= &ElementStore{doctype, make(map[string]func(name string, id string,options ...OptionalArguments) *Element, 0),make(map[string]map[string]func(args ...interface{}) func(*Element)*Element,0), make(map[string]*Element),matrix}
 	matrix.WatchGroup("",matrix,NewMutationHandler(func(evt MutationEvent)bool{
 		for _,element := range es.ByID{
 			element.Set("global",evt.ObservedKey(), evt.NewValue(), false)
@@ -47,20 +72,41 @@ func NewElementStore(storeid string,doctype string) *ElementStore {
 }
 
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element) func(name string, id string, options ...func(*Element)*Element) *Element {
-	c := func(name string, id string, options ...func(*Element)*Element) *Element {
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, args ...OptionalArguments) *Element {
+
+	// First we register the options that are passed with the Constructor definition
+	if options != nil{
+		for _,option:= range options{
+			n:= option.Name
+			f:= option.Configurator
+			optlist,ok:= e.ConstructorsOptions[elementname]
+			if !ok{
+				optlist = make(map[string]func(args ...interface{})func(*Element)*Element)
+			}
+			optlist[n]=f
+		}
+	}
+
+	// Then we create the element constructor to return
+	c := func(name string, id string, optionsArgs ...OptionalArguments) *Element {
 		element := constructor(name, id)
 		element.matrix = e.Matrix
 		element.WatchGroup("",element, NewMutationHandler(func(evt MutationEvent)bool{
 			element.Set("global", evt.ObservedKey(),evt.NewValue(),false)
 			return false
 			}))
-
-		if options != nil{
-			for _,option:= range options{
-				element = option(element)
+			// TODO optionalArgs  apply the corresponding options
+			for _,opt:=range optionsArgs{
+				name, args := opt()
+				r,ok:= e.ConstructorsOptions[elementname]
+				if ok{
+					config,ok:=r[name]
+					if ok{
+						element= config(args...)(element)
+					}
+				}
 			}
-		}
+
 		e.ByID[id] = element
 		return element
 	}
