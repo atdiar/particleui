@@ -179,7 +179,26 @@ var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Ele
 	e.Native = n
 	SetAttribute(e,"id",id)
 	return e
-})
+}, EnableLayoutDispositionTracking)
+
+var EnableLayoutDispositionTracking = ui.NewConstructorOption("EnableLayoutDispositionTracking",func(args ...interface{}) (func(*ui.Element)*ui.Element){
+			return func(e *ui.Element) *ui.Element{
+				if len(args)!= 2{
+					return e
+				}
+				defdispo,ok := args[0].(string)
+				if !ok{
+					return e
+				}
+				muthandler,ok := args[1].(*ui.MutationHandler)
+				if !ok{
+					return e
+				}
+				e.Watch("ui", "disposition", e, muthandler)
+				e.Set("ui", "disposition", defdispo, false)
+				return e
+			}
+		})
 
 func EnableLayoutDispositionTracking(defaultdisposition string, ondispositionchange *ui.MutationHandler) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
@@ -202,7 +221,7 @@ func NewTooltip(name string id string) *ui.Element{
 
 		h:= ui.NewMutationHanlder(func(evt ui.MutationEvent)bool{
 			content,ok:= evt.NewValue().(*ui.Element)
-			if ok{
+			if ok{+
 				tooltipdiv := evt.Origin()
 				tooltipdiv.RemoveAll()
 				tooltipdiv.AppendChild(NewSpan("tooltip-span",NewID())).AppendChild(content))
@@ -243,7 +262,7 @@ func EnableTooltip(tooltipcontent interface{}) func(*ui.Element) *ui.Element{
 
 // NewTextArea is a constructor for a textarea html element.
 var NewTextArea = func(name string, id string, rows int, cols int, options ...func(*ui.Element)*uiu.Element) *ui.Element {
-	return Elements.NewConstructor("textearea", func(ename string, eid string) *ui.Element {
+	return Elements.NewConstructor("textarea", func(ename string, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
 
@@ -619,8 +638,56 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 	SetAttribute(e,"name", name)
 	SetAttribute(e,"id", id) // TODO define attribute setters optional functions
 
+	ondatamutation:= ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		cat,ok:= evt.Type().(string)
+		if !ok{
+			return true
+		}
+		if cat != "data"{
+			return false
+		}
+		propname,ok:= evt.ObservedKey().(string)
+		if !ok{
+			return true
+		}
+		if propname!= "content"{
+			return false
+		}
+		evt.Origin().Set("ui",propname, evt.NewValue(),false)
+		return false
+	})
+	e.Watch("data","content",e,ondatamutation)
 
-
+	onuimutation = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		cat,ok:= evt.Type().(string)
+		if !ok{
+			return true
+		}
+		if cat != "ui"{
+			return true
+		}
+		propname,ok:= evt.ObservedKey().(string)
+		if !ok{
+			return true
+		}
+		if propname!= "content"{
+			return true
+		}
+		// we apply the modifications to the UI
+		v:= evt.NewValue()
+		item,ok:=v.(*ui.Element)
+		if !ok{
+			str,ok:= v.(string)
+			if !ok{
+				return true
+			}
+			item = NewTextNode()
+			item.Set("data","text",str,false)
+		}
+		evt.Origin().RemoveChildren().AppendChild(item)
+		return false
+	})
+	e.Watch("ui","content",e,onuimutation)
 	return e
 })
 
@@ -729,7 +796,7 @@ func AutoSyncList() func(*ui.Element)*ui.Element{
 			  item = NewTextNode()
 				item.Set("data","text",str,false)
 			}
-			n.AppendChild(item)
+			n.Set("data","content",item, false)
 
 			evt.Origin().AppendChild(n)
 		}
@@ -746,7 +813,7 @@ func AutoSyncList() func(*ui.Element)*ui.Element{
 			  item = NewTextNode()
 				item.Set("data","text",str,false)
 			}
-			n.AppendChild(item)
+			n.Set("data","content",item, false)
 
 			evt.Origin().PrependChild(n)
 		}
@@ -763,7 +830,7 @@ func AutoSyncList() func(*ui.Element)*ui.Element{
 			  item = NewTextNode()
 				item.Set("data","text",str,false)
 			}
-			n.AppendChild(item)
+			n.Set("data","content",item, false)
 
 			evt.Origin().InsertChild(n,i)
 		}
