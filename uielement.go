@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"time"
 )
 
 var (
@@ -29,39 +30,32 @@ func NewIDgenerator(seed int64) func() string {
 
 type ElementStore struct {
 	DocType      string
-	Constructors map[string]func(name, id string, options ...OptionalArguments) *Element
-	ConstructorsOptions map[string]map[string]func(args ...interface{}) func(*Element)*Element
+	Constructors map[string]func(name, id string, optionNames ...string) *Element
+	ConstructorsOptions map[string]map[string]func(*Element)*Element
 	ByID         map[string]*Element
+
+	PersistentStorageOptions map[string]storageFunctions
+
 	Matrix *Element // the matrix Element stores the global state shared by all *Elements
 }
 
-// ConstructionOption defines a type of function that is used so that certain options
-// are enabled when using a constructor function that creates new Elements.
-// These construction options must have been prealably registered by name.
-type OptionalArguments func() (string, []interface{})
-
-// WithOption returns an OptionalArguments object which is a function that,
-// when called, returns arguments to be passed to a Constructor Function.
-// It allows the Constructor function to  use pre-registered  Element constructing
-// functions that may add additional Element configuration properties for example.
-func WithOption(optionName string, args ...interface{}) OptionalArguments {
-	return func() (string,[]interface{}){
-		return optionName, args
-	}
+type storageFunctions struct{
+	Load func(*Element) error
+	Store func(*Element, categpry string, propname string, value interface{})
 }
 
 type ConstructorOption struct{
 	Name string
-	Configurator func(args ...interface{}) func(*Element)*Element
+	Configurator func(*Element)*Element
 }
 
-func NewConstructorOption(name string, configuratorFn func(args ...interface{}) func(*Element)*Element) ConstructorOption {
+func NewConstructorOption(name string, configuratorFn func(*Element)*Element) ConstructorOption {
 	return ConstructorOption{name, configuratorFn}
 }
 
 func NewElementStore(storeid string,doctype string) *ElementStore {
 	matrix:= NewElement("matrix",storeid,doctype)
-	es:= &ElementStore{doctype, make(map[string]func(name string, id string,options ...OptionalArguments) *Element, 0),make(map[string]map[string]func(args ...interface{}) func(*Element)*Element,0), make(map[string]*Element),matrix}
+	es:= &ElementStore{doctype, make(map[string]func(name string, id string,optionNames ...string) *Element, 0),make(map[string]map[string]func(*Element)*Element,0), make(map[string]*Element),make(map[string]storageFunctions,5),matrix}
 	matrix.WatchGroup("",matrix,NewMutationHandler(func(evt MutationEvent)bool{
 		for _,element := range es.ByID{
 			element.Set("global",evt.ObservedKey(), evt.NewValue(), false)
@@ -71,8 +65,12 @@ func NewElementStore(storeid string,doctype string) *ElementStore {
 	return es
 }
 
+func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,interface{})){
+	e.PersistFn[name] = storageFunctions{loadFromStore,store}
+}
+
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, args ...OptionalArguments) *Element {
+func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, optionNames ...string) *Element {
 
 	// First we register the options that are passed with the Constructor definition
 	if options != nil{
@@ -81,28 +79,28 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 			f:= option.Configurator
 			optlist,ok:= e.ConstructorsOptions[elementname]
 			if !ok{
-				optlist = make(map[string]func(args ...interface{})func(*Element)*Element)
+				optlist = make(map[string]func(*Element)*Element)
 			}
 			optlist[n]=f
 		}
 	}
 
 	// Then we create the element constructor to return
-	c := func(name string, id string, optionsArgs ...OptionalArguments) *Element {
+	c := func(name string, id string, optionNames ...string) *Element {
 		element := constructor(name, id)
 		element.matrix = e.Matrix
+		element.ElementStore = e
 		element.WatchGroup("",element, NewMutationHandler(func(evt MutationEvent)bool{
 			element.Set("global", evt.ObservedKey(),evt.NewValue(),false)
 			return false
 			}))
 			// TODO optionalArgs  apply the corresponding options
-			for _,opt:=range optionsArgs{
-				name, args := opt()
+			for _,opt:=range optionNames{
 				r,ok:= e.ConstructorsOptions[elementname]
 				if ok{
-					config,ok:=r[name]
+					config,ok:=r[opt]
 					if ok{
-						element= config(args...)(element)
+						element= config(element)
 					}
 				}
 			}
@@ -140,6 +138,7 @@ func EnableGlobalPropertyAccess(propertyname string) func(*Element)*Element{
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
 type Element struct {
+	ElementStore *ElementStore
 	matrix *Element //where it all begins :)
 	root        *Element
 	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
@@ -170,7 +169,8 @@ type Element struct {
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentlially an empty shell to be customized.
 func NewElement(name string, id string, doctype string) *Element {
-	return &Element{
+	e:= &Element{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -190,7 +190,23 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		nil,
 	}
+	e.Watch("ui","command",e,DefaultCommandHandler)
+	return e
 }
+
+func PeristenceMode(e *Element) string{
+	mode:= ""
+	v,ok:= e.Get("internals","persistence")
+	if ok{
+		s,ok:= v.(string)
+		if ok{
+			mode = s
+		}
+	}
+	return mode
+}
+
+
 
 type Elements struct {
 	List []*Element
@@ -397,7 +413,7 @@ func (e *Element) ActivateView(name string) error {
 				view = *v
 
 				// Let's detach the former view items
-				oldview, ok := e.Get("internals", "activeview")
+				oldview, ok := e.Get("ui", "activeview")
 				oldviewname, ok2 := oldview.(string)
 				viewIsParameterized := (oldviewname != e.ActiveView)
 				if ok && ok2 && oldviewname != "" && e.Children != nil {
@@ -417,7 +433,7 @@ func (e *Element) ActivateView(name string) error {
 				for _, newchild := range view.Elements().List {
 					e.AppendChild(newchild)
 				}
-				e.Set("internals", "activeview", name, false)
+				e.Set("ui", "activeview", name, false)
 				e.ActiveView = parameterName
 				return nil
 			}
@@ -426,7 +442,7 @@ func (e *Element) ActivateView(name string) error {
 	}
 
 	// first we detach the current active View and reattach it as an alternative View if non-parameterized
-	oldview, ok := e.Get("internals", "activeview")
+	oldview, ok := e.Get("ui", "activeview")
 	oldviewname, ok2 := oldview.(string)
 	viewIsParameterized := (oldviewname != e.ActiveView)
 	if ok && ok2 && oldviewname != "" && e.Children != nil {
@@ -446,7 +462,7 @@ func (e *Element) ActivateView(name string) error {
 		e.AppendChild(child)
 	}
 	delete(e.AlternateViews, name)
-	e.Set("internals", "activeview", name, false)
+	e.Set("ui", "activeview", name, false)
 	e.ActiveView = name
 
 	return nil
@@ -542,6 +558,11 @@ func (e *Element) AppendChild(child *Element) *Element {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
+
+	if child.Parent != nil{
+		child.Parent.RemoveChild(child)
+	}
+
 	attach(e, child, true)
 
 	e.Children.InsertLast(child)
@@ -556,6 +577,11 @@ func (e *Element) PrependChild(child *Element) *Element {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
+
+	if child.Parent != nil{
+		child.Parent.RemoveChild(child)
+	}
+
 	attach(e, child, true)
 
 	e.Children.InsertFirst(child)
@@ -570,6 +596,10 @@ func (e *Element) InsertChild(child *Element, index int) *Element {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
+	if child.Parent != nil{
+		child.Parent.RemoveChild(child)
+	}
+
 	attach(e, child, true)
 
 	e.Children.Insert(child, index)
@@ -588,6 +618,9 @@ func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
 	}
+	if new.Parent != nil{
+		new.Parent.RemoveChild(new)
+	}
 	attach(e, new, true)
 
 	detach(old)
@@ -601,6 +634,7 @@ func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 
 func (e *Element) RemoveChild(child *Element) *Element {
 	detach(child)
+	e.Children.Remove(child)
 
 	if e.Native != nil {
 		e.Native.RemoveChild(child)
@@ -614,6 +648,184 @@ func (e *Element) RemoveChildren() *Element {
 	}
 	return e
 }
+
+// Command defines a type used to represent a UI mutation request.
+//
+// These commands can be logged in an append-only manner so that they are replayable
+// in the order they were registered to recover UI state.
+//
+// In order to register a command, one just needs to Set the "command" property
+// of the "ui" namespace of an Element.
+//  Element.Set("ui","command",Command{...})
+type Command struct{
+	Name string
+	SourceID string
+	TargetID string
+	Position int
+	Timestamp time.Time
+}
+
+type Command map[string]interface{}
+
+func(c Command) Name(s string) Command {
+	c["name"] = s
+	return c
+}
+
+func(c Command) SourceID(s string) Command {
+	c["sourceid"] = s
+	return c
+}
+
+func(c Command) TargetID(s string) Command {
+	c["targetid"] = s
+	return c
+}
+
+func(c Command) Position(p int) Command {
+	c["position"] = p
+	return c
+}
+
+func(c Command) Timestamp(t tiùe.Time) Command {
+	c["timestamp"] = t.String()
+	return c
+}
+
+func NewUICommand() Command{
+	c:=Command(make(map[string]interface{}))
+	return c.Timestamp(time.Now().UTC())
+}
+
+func AppendChildCommand(child *Element) Command{
+	return NewUICommand().Name("appenchild").SourceID(child.ID)
+}
+
+func PrependChildCommand(child *Element) Command{
+	return NewUICommand().Name("prepenchild").SourceID(child.ID)
+}
+
+func InsertChildCommand(child *Element, index int) Command{
+	return NewUICommand().Name("insertchild").SourceID(child.ID).Position(index)
+}
+
+func ReplaceChildCommand(old *Element, new *Element) Command{
+	return NewUICommand().Name{"replacechild").SourceID(new.ID).TargetID(old.ID)
+}
+
+func RemoveChildCommand(child *Element) Command{
+	return NewUICommand().Name("removechild").SourceID(child.ID)
+}
+
+func RemoveChildrenCommand() Command{
+	return NewUICommand().Name(removechildren")
+}
+
+var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
+	if evt.Type() != "ui"|| evt.ObservedKey() != "command"{
+		log.Print("UI command Handler firing for the wrong event.")
+		return true
+	}
+	command,ok:= evt.NewValue().(map[string]interface{})
+	if !ok{
+		log.Print("Wrong format for command property value")
+		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
+	}
+
+	// TODO retrieve Command DATA
+	commandname,ok:= command["name"]
+	if !ok{
+		log.Print("Command is invalid. Missing command name")
+		return true
+	}
+
+	switch commandname{
+	case "appenchild":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing source id to append to")
+			return true
+		}
+		e:= evt.Origin()
+		child:= e.ElementStore.GetByID(sourceid)
+		if child == nil{
+			return true
+		}
+		e.AppendChild(child)
+		return false
+	case "prependchild":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing source id to append to")
+			return true
+		}
+		e:= evt.Origin()
+		child:= e.ElementStore.GetByID(sourceid)
+		if child == nil{
+			return true
+		}
+		e.PrependChild(child)
+		return false
+	case "insertChild":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing source id to append to")
+			return true
+		}
+		commandpos,ok:= command["position"]
+		if !ok{
+			log.Print("Command malformed. Missing insertion positiob.")
+			return true
+		}
+		if commandpos < 0{
+			return true
+		}
+		e:= evt.Origin()
+		child:= e.ElementStore.GetByID(sourceid)
+		if child == nil{
+			return true
+		}
+		e.InsertChild(child,commandpos)
+		return false
+	case "replacechild":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing source id to append to")
+			return true
+		}
+		targetid,ok:= command["targetid"]
+		if !ok{
+			log.Print("Command malformed. Missing id of target that should be replaced")
+			return true
+		}
+		e:= evt.Origin()
+		newc:= e.ElementStore.GetByID(sourceid)
+		oldc:= e.ElementStore.GetByID(targetid)
+		if newc == nil || oldc == nil {
+			return true
+		}
+		e.ReplaceChild(oldc,newc)
+		return false
+	case "removechild":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing source id to append to")
+			return true
+		}
+		e:= evt.Origin()
+		child:= e.ElementStore.GetByID(sourceid)
+		if child == nil{
+			return true
+		}
+		e.RemoveChild(child)
+		return false
+	case "removechildren":
+		evt.Origin().RemoveChildren()
+		return false
+	default:
+		return true
+	}
+})
 
 func (e *Element) Watch(category string, propname string, owner *Element, h *MutationHandler) *Element {
 	p, ok := owner.Properties.Categories[category]
@@ -711,6 +923,20 @@ func (e *Element) Set(category string, propname string, value interface{}, inher
 	e.Properties.Set(category, propname, value, inheritable)
 	evt := e.NewMutationEvent(category, propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
+}
+
+// LoadElementPropertyis a function typically used to return a UI Element to a
+// given state. As such, it does not trigger a mutation event
+// The proptype is a string that describes the property (default,inherited, local, or inheritable).
+// For properties of the 'ui' namespace, i.e. properties that are used for rendering,
+// we create and dispatch a mutation event since loading a property is change inducing at the
+// UI level.
+func LoadElementProperty(e *Element, category string, propname string,proptype string, value interface{}){
+	e.Properties.Load(category, propname, proptype, value)
+	if category == "ui" {
+		evt := e.NewMutationEvent(category, propname, value)
+		e.PropMutationHandlers.DispatchEvent(evt)
+	}
 }
 
 func(e *Element) setGlobal(propname string, value interface{}, inheritable bool){
@@ -954,6 +1180,28 @@ type PropertyStore struct {
 
 func NewPropertyStore() PropertyStore {
 	return PropertyStore{make(map[string]Properties)}
+}
+
+func(p PropertyStore) Load(category string, propname string, proptype string, value interface{}){
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	proptype = strings.ToLower(proptype)
+
+	switch proptype {
+	case "default":
+		ps.Default[propname]=value
+	case "inherited":
+		ps.Inherited[propname] = value
+  case "local":
+		ps.Local[propname]= value
+	case "inheritable":
+		ps.Inheritable[propname] =value
+	default:
+		return
+	}
 }
 
 // Get retrieves the value of a property stored within a given category.

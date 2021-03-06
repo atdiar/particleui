@@ -25,14 +25,14 @@ var (
 
 var NewID = ui.NewIDgenerator(56813256545869)
 
-// MutationCaptureMode describes how a Go App may capture textarea value changes
+// mutationCaptureMode describes how a Go App may capture textarea value changes
 // that happen in native javascript. For instance, when a blur event is dispatched
 // or when any mutation is observed via the MutationObserver API.
-type MutationCaptureMode int
+type mutationCaptureMode int
 
 const (
-	OnBlur MutationCaptureMode = iota
-	OnInput
+	onBlur mutationCaptureMode = iota
+	onInput
 )
 
 // Window is a ype that represents a browser window
@@ -171,6 +171,68 @@ var NewAppRoot = Elements.NewConstructor("root", func(name string, id string) *u
 	return e
 })
 
+var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlTooltip := js.Global().Get("document").Call("createElement", "div")
+	n := NewNativeElementWrapper(htmlTooltip)
+	e.Native = n
+	SetAttribute(e, "id", id)
+
+	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		content, ok := evt.NewValue().(*ui.Element)
+		if ok {
+			tooltipdiv := evt.Origin()
+			tooltipdiv.RemoveChildren()
+			tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(content))
+			return false
+		}
+		strcontent, ok := evt.NewValue().(string)
+		if !ok {
+			return true
+		}
+
+		tooltipdiv := evt.Origin()
+		tooltipdiv.RemoveChildren()
+		tn := NewTextNode()
+		tn.Set("data", "text", strcontent, false)
+		tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(tn))
+		return false
+	})
+	e.Watch("data", "content", e, h)
+
+	return e
+})
+
+func RetrieveTooltip(target *ui.Element) *ui.Element {
+	return target.ElementStore.GetByID(target.ID+"-tooltip")
+}
+
+// EnableTooltip, when passed to a constructor, creates a tootltip html div element (for a given target ui.Element)
+// The content of the tooltip can be directly set by  specifying a value for
+// the ("data","content") (category,propertyname) Element datastore entry.
+// The content value can be a string or another ui.Element.
+// The content of the tooltip can also be set by modifying the ("tooltip","content")
+// property
+func EnableTooltip() string{
+	return "AllowTooltip"
+}
+
+var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element)*ui.Element{
+	e:=tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip")
+	// Let's observe the target element which owns the tooltip too so that we can
+	// change the tooltip automatically from there.
+	h:= ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		e.Set("data","content",evt.NewValue(),false)
+		return false
+	})
+	target.Watch("tooltip","content",target,h)
+
+	target.AppendChild(e)
+	return target
+})
+
 // NewDiv is a constructor for html div elements.
 var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
@@ -181,111 +243,12 @@ var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Ele
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-}, EnableLayoutDispositionTracking, EnableTooltip)
+},AllowTooltip)
 
-var EnableLayoutDispositionTracking = ui.NewConstructorOption("EnableLayoutDispositionTracking", func(args ...interface{}) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		if len(args) != 2 {
-			return e
-		}
-		defaultdisposition, ok := args[0].(string)
-		if !ok {
-			return e
-		}
-		muthandler, ok := args[1].(*ui.MutationHandler)
-		if !ok {
-			return e
-		}
-		e.Watch("ui", "disposition", e, muthandler)
-		e.Set("ui", "disposition", defaultdisposition, false)
-		return e
-	}
-})
 
-// ActivateLayoutMonitoringOption  returns an optional Argument object that is passed to a ui.Element
-// constructor function so that any element that is constructed can have its
-// "ui"/"disposition" property tracked for changes.
-// It accepts a default disposition value as first argument along with a mutation
-// handler that is applied when change to the disposition property is detected.
-func ActivateLayoutMonitoringOption(defaultdisposition string, ondispositionchange *ui.MutationHandler) ui.OptionalArguments {
-	return ui.WithOption("EnableLayoutDispositionTracking", defaultdisposition, ondispositionchange)
-}
-
-// NewTooltip creates a tootltip html div element (for a given target ui.Element)
-// The content of the tooltip can be set by  specifying a value for
-// the ("data","content") (category,propertyname) Element datastore entry.
-// The content value can be a string or another ui.Element.
-func NewTooltip(target *ui.Element) *ui.Element {
-	var TooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
-		e := ui.NewElement(name, id, Elements.DocType)
-		e = enableClasses(e)
-
-		htmlTooltip := js.Global().Get("document").Call("createElement", "div")
-		n := NewNativeElementWrapper(htmlTooltip)
-		e.Native = n
-		SetAttribute(e, "id", id)
-
-		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			content, ok := evt.NewValue().(*ui.Element)
-			if ok {
-				tooltipdiv := evt.Origin()
-				tooltipdiv.RemoveChildren()
-				tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(content))
-				return false
-			}
-			strcontent, ok := evt.NewValue().(string)
-			if !ok {
-				return true
-			}
-
-			tooltipdiv := evt.Origin()
-			tooltipdiv.RemoveChildren()
-			tn := NewTextNode()
-			tn.Set("data", "text", strcontent, false)
-			tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(tn))
-			return false
-		})
-		e.Watch("data", "content", e, h)
-		return e
-	})
-	return TooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip")
-}
-
-// EnableTooltip is a constructor option that can be used when defining a new
-// ui.Element constructor. If so, then when the Element constructor
-// is being used, optional arguments attached to the option Name "EnableTooltip"
-// can be used to allow the element to have tooltips. As defined below, only one
-// optional argument is expected which should be the content of the tooltip.
-// (either a string or a *ui.Element)
-// TODO toopltip display behavior/logic is not defined here. Could be done so
-// by the adjunction of css classes, on mutation of the ui layer/namespace/category etc.
-var EnableTooltip = ui.NewConstructorOption("EnableTooltip", func(args ...interface{}) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		if len(args) != 1 {
-			return e
-		}
-		t := NewTooltip(e)
-		e.AppendChild(t)
-		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			t.Set("data", "content", evt.NewValue(), false)
-			return false
-		})
-		e.Watch("data", "tooltipcontent", e, h)
-		e.Set("data", "tooltipcontent", args[0], false)
-		return e
-	}
-})
-
-// WithTooltip is used as an optional parameter to a constructor function.
-// If the constructor function allows for activation of tooltip on the Elements
-// it constructs, WithTooltip will allow to specify how a tooltip should
-// look like by specifying its content (whether it is a string or another ui.Element).
-func WithTooltip(content interface{}) ui.OptionalArguments {
-	return ui.WithOption("EnableTooltip", content)
-}
 
 // NewTextArea is a constructor for a textarea html element.
-var NewTextArea = func(name string, id string, rows int, cols int, options ...ui.OptionalArguments) *ui.Element {
+var NewTextArea = func(name string, id string, rows int, cols int, options ...string) *ui.Element {
 	return Elements.NewConstructor("textarea", func(ename string, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
@@ -309,44 +272,37 @@ var NewTextArea = func(name string, id string, rows int, cols int, options ...ui
 		SetAttribute(e, "rows", strconv.Itoa(rows))
 		SetAttribute(e, "cols", strconv.Itoa(cols))
 		return e
-	}, EnableSyncedTextArea)(name, id, options...)
+	}, allowTextAreaDataBindingOnBlur,allowTextAreaDataBindingOnInput,AllowTooltip)(name, id, options...)
 }
 
-// WithTwoWayBinding allows for a TextArea element to have its textual content value
-// and the content displayed on screen to be tightly bound. The model updates
-// when the view updates and vice versa.
-func WithTwoWayBinding(changecapturemode ...MutationCaptureMode) ui.OptionalArguments {
-	var s []interface{}
-	for _, val := range changecapturemode {
-		s = append(s, val)
-	}
-	return ui.WithOption("WithTwoWayBinding", s...)
-}
 
-// EnableSyncedTextArea is a constructor option for TextArea UI elements enabling
+// allowTextAreaDataBindingOnBlur is a constructor option for TextArea UI elements enabling
 // TextAreas to activate an option ofr two-way databinding.
-var EnableSyncedTextArea = ui.NewConstructorOption("EnableSyncedTextArea", func(args ...interface{}) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		if len(args) > 1 {
-			return e
-		}
-		var datacapturemode MutationCaptureMode
-		datacapturemode = -1
-		var ok bool
-		if len(args) > 0 {
-			datacapturemode, ok = args[0].(MutationCaptureMode)
-			if !ok {
-				return e
-			}
-		}
-		if datacapturemode >= 0 {
-			return enableDataBinding(datacapturemode)(e)
-		}
-		return enableDataBinding()(e)
-	}
+var allowTextAreaDataBindingOnBlur = ui.NewConstructorOption("SyncOnBlur", func(e *ui.Element) *ui.Element {
+		return enableDataBinding(onBlur)(e)
 })
 
-func enableDataBinding(datacapturemode ...MutationCaptureMode) func(*ui.Element) *ui.Element {
+// allowTextAreaDataBindingOnInoput is a constructor option for TextArea UI elements enabling
+// TextAreas to activate an option ofr two-way databinding.
+var allowTextAreaDataBindingOnInput = ui.NewConstructorOption("SyncOnInput", func(e *ui.Element) *ui.Element {
+		return enableDataBinding(onInput)(e)
+})
+
+// EnableTextAreaSyncOnBlur returns the name of the option that can be passed to
+// textarea ui.Element constructor to trigger two-way databinding on textarea
+// blur event.
+func EnableTextAreaSyncOnBlur() string{
+	return "SyncOnBlur"
+}
+
+// EnableTextAreaSyncOnInput returns the name of the option that can be passed to
+// textarea ui.Element constructor to trigger two-way databinding on textarea
+// input event.
+func EnableTextAreaSyncOnInput() string{
+	return "SyncOnInput"
+}
+
+func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
 		callback := ui.NewEventHandler(func(evt ui.Event) bool {
 			if evt.Target().ID != e.ID {
@@ -372,7 +328,7 @@ func enableDataBinding(datacapturemode ...MutationCaptureMode) func(*ui.Element)
 			return e
 		}
 		mode := datacapturemode[0]
-		if mode == OnInput {
+		if mode == onInput {
 			e.AddEventListener("input", callback, EventTable.NativeEventBridge())
 			return e
 		}
@@ -395,7 +351,7 @@ var NewHeader = Elements.NewConstructor("header", func(name string, id string) *
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 // NewFooter is a constructor for an html footer element.
 var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *ui.Element {
@@ -407,7 +363,7 @@ var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 // NewSpan is a constructor for html div elements.
 var NewSpan = Elements.NewConstructor("span", func(name string, id string) *ui.Element {
@@ -419,7 +375,7 @@ var NewSpan = Elements.NewConstructor("span", func(name string, id string) *ui.E
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 // NewDiv is a constructor for html div elements.
 var NewParagraph = Elements.NewConstructor("paragraph", func(name string, id string) *ui.Element {
@@ -431,7 +387,7 @@ var NewParagraph = Elements.NewConstructor("paragraph", func(name string, id str
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 // NewNavMenu is a constructor for a html nav element.
 var NewNavMenu = Elements.NewConstructor("nav", func(name string, id string) *ui.Element {
@@ -443,7 +399,7 @@ var NewNavMenu = Elements.NewConstructor("nav", func(name string, id string) *ui
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 // NewAnchor creates an html anchor element which points to the object whose id is
 // being passed as argument.
@@ -477,9 +433,9 @@ var NewAnchor = Elements.NewConstructor("link", func(name string, id string) *ui
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
-var NewButton = func(name string, id string, typ string, options ...ui.OptionalArguments) *ui.Element {
+var NewButton = func(name string, id string, typ string, options ...string) *ui.Element {
 	f := Elements.NewConstructor("button", func(elementname string, elementid string) *ui.Element {
 		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
@@ -491,11 +447,11 @@ var NewButton = func(name string, id string, typ string, options ...ui.OptionalA
 		SetAttribute(e, "id", elementid)
 		SetAttribute(e, "type", typ)
 		return e
-	})
+	},AllowTooltip)
 	return f(name, id, options...)
 }
 
-var NewInput = func(name string, id string, typ string, options ...ui.OptionalArguments) *ui.Element {
+var NewInput = func(name string, id string, typ string, options ...string) *ui.Element {
 	f := Elements.NewConstructor("input", func(elementname string, elementid string) *ui.Element {
 		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
@@ -512,7 +468,7 @@ var NewInput = func(name string, id string, typ string, options ...ui.OptionalAr
 	return f(name, id, options...)
 }
 
-var NewImage = func(src string, id string, altname string, options ...ui.OptionalArguments) *ui.Element {
+var NewImage = func(src string, id string, altname string, options ...string) *ui.Element {
 	return Elements.NewConstructor("image", func(name string, imgid string) *ui.Element {
 		e := ui.NewElement(name, imgid, Elements.DocType)
 		e = enableClasses(e)
@@ -525,7 +481,7 @@ var NewImage = func(src string, id string, altname string, options ...ui.Optiona
 		SetAttribute(e, "alt", name)
 		SetAttribute(e, "id", imgid)
 		return e
-	})(altname, id, options...)
+	},AllowTooltip)(altname, id, options...)
 }
 
 var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui.Element {
@@ -539,7 +495,7 @@ var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui
 	SetAttribute(e, "name", name)
 	SetAttribute(e, "id", id)
 	return e
-})
+},AllowTooltip)
 
 var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
@@ -552,9 +508,9 @@ var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui
 	n := NewNativeElementWrapper(htmlVideo)
 	e.Native = n
 	return e
-})
+},AllowTooltip)
 
-var NewMediaSource = func(src string, typ string, options ...ui.OptionalArguments) *ui.Element {
+var NewMediaSource = func(src string, typ string, options ...string) *ui.Element {
 	return Elements.NewConstructor("source", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
@@ -566,8 +522,10 @@ var NewMediaSource = func(src string, typ string, options ...ui.OptionalArgument
 		SetAttribute(e, "type", name)
 		SetAttribute(e, "src", id)
 		return e
-	})(typ, src, options...)
+	},AllowTooltip)(typ, src, options...)
 }
+
+/* Convenience function
 
 func WithSources(sources ...*ui.Element) func(*ui.Element) *ui.Element { // TODO
 	return func(mediaplayer *ui.Element) *ui.Element {
@@ -581,6 +539,7 @@ func WithSources(sources ...*ui.Element) func(*ui.Element) *ui.Element { // TODO
 		return mediaplayer
 	}
 }
+*/
 
 // NewTextNode creates a text node for the Element whose id is passed as argument
 // The id for the text Element is the id of its parent to which
@@ -647,7 +606,7 @@ var NewTemplatedText = func(name string, id string, format string, paramsNames .
 	return nt
 }
 
-var NewList = func(name string, id string, options ...ui.OptionalArguments) *ui.Element {
+var NewList = func(name string, id string, options ...string) *ui.Element {
 	elname := "ul"
 	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
@@ -660,10 +619,10 @@ var NewList = func(name string, id string, options ...ui.OptionalArguments) *ui.
 		SetAttribute(e, "name", ename)
 		SetAttribute(e, "id", eid)
 		return e
-	}, EnableListAutoSync)(name, id, options...)
+	}, AllowListAutoSync)(name, id, options...)
 }
 
-var NewOrderedList = func(name string, id string, typ string, numberingstart int, options ...ui.OptionalArguments) *ui.Element {
+var NewOrderedList = func(name string, id string, typ string, numberingstart int, options ...string) *ui.Element {
 	elname := "ol"
 	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
@@ -678,7 +637,7 @@ var NewOrderedList = func(name string, id string, typ string, numberingstart int
 		SetAttribute(e, "type", typ)
 		SetAttribute(e, "start", strconv.Itoa(numberingstart))
 		return e
-	}, EnableListAutoSync)(name, id, options...)
+	}, AllowListAutoSync)(name, id, options...)
 }
 
 var NewListItem = Elements.NewConstructor("listitem", func(name string, id string) *ui.Element {
@@ -735,7 +694,7 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 	})
 	e.Watch("ui", "content", e, onuimutation)
 	return e
-}, EnableTooltip)
+}, AllowTooltip)
 
 type listValue struct {
 	Index int
@@ -846,18 +805,18 @@ func ListDelete(list *ui.Element, offset int) *ui.Element {
 	return list
 }
 
-// WithAutoSync is passed as an optional Argument to a list constructor call in
+// EnableListAutoSync is passed as an optional Argument to a list constructor call in
 // order to trigger list autosyncing.
 // When a list is autosyncing, any modification to the list (item adjunction, deletion, modification)
 // will propagate to the User Interface.
 // This is a convenience function that enforces the argument list
-func ActivateAutoSyncOption() ui.OptionalArguments {
-	return ui.WithOption("EnableListAutoSync")
+func EnableListAutoSync() string {
+	return "ListAutoSync"
 }
 
 // AutoSyncList enables to set a mutation handler which is called each time
 // a change occurs in the chosen namespace/category of a list Element.
-var EnableListAutoSync = ui.NewConstructorOption("EnableListAutoSync", func(args ...interface{}) func(*ui.Element) *ui.Element {
+var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Element) *ui.Element {
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		i, v, ok := DataFromListChange(evt.NewValue())
 		if !ok {
@@ -925,10 +884,8 @@ var EnableListAutoSync = ui.NewConstructorOption("EnableListAutoSync", func(args
 		return false
 	})
 
-	return func(e *ui.Element) *ui.Element {
-		e.WatchGroup(e.Name, e, h)
-		return e
-	}
+	e.WatchGroup(e.Name, e, h)
+	return e
 })
 
 type EventTranslationTable struct {
