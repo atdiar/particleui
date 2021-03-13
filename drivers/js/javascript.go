@@ -21,6 +21,7 @@ var (
 	Elements           = ui.NewElementStore("default", DOCTYPE)
 	EventTable         = NewEventTranslationTable()
 	DefaultWindowTitle = "Powered by ParticleUI"
+	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
 var NewID = ui.NewIDgenerator(56813256545869)
@@ -34,14 +35,127 @@ const (
 	onBlur mutationCaptureMode = iota
 	onInput
 )
+/*
+type Storage struct{
+	Load func(key string) interface{}
+	Store func(key string, value interface{})
+}
 
+func(s Storage) Get(key string) interface{}{
+	return s.Load(key)
+}
+
+func(s Storage) Set(key string, value interface{}){
+	s.store(key,value)
+}
+
+func NewStorage(load)
+
+*/
+
+type jsStore struct{
+	store js.Value
+}
+
+func(s jsStore) Get(key string) (string,bool){
+	v:= s.store.Call("getItem", key)
+	if !js.Truthy(v){
+		return "", false
+	}
+	return v.String(),true
+}
+
+func(s jsStore) Set(key string,value string){
+	s.store.Call("setItem",key,value)
+}
+
+// Let's add sessionstorage and localstorage for Element properties.
+// For example, an Element which would have been created with the sessionstorage option
+// would have every set properties stored in sessionstorage, available for
+// later recovery. It enables to have data that persists runs and loads of a
+// web app.
+/*
+var sessionstorefn = func(element *ui.Element, category string, propname string, value interface{},flags ...bool){
+	store:= jsStore{js.Global().Get("sessionStorage")}
+	if category != "ui"{
+		categoryExists := element.Properties.HasCategory()
+		propertyExists := element.Properties.HasProperty()
+
+		if  !categoryExists{
+			categories := make([]string,0,len(element.Properties.Categories)+1)
+			for k,_:= range element.Properties.Categories{
+				categories = append(categories,k)
+			}
+			categories = append(categories, category)
+			v,err:= json.Marshal(categories)
+			if err!=nil{
+				log.Print(err)
+				return
+			}
+			store.Set(element.ID,string(v))
+		}
+		proptype:= "Local"
+		if len(flags) > 0{
+			if flags[0]{
+				proptype = "Inheritable"
+			}
+		}
+		if !propertyExists{
+			props := make([]string,0,1)
+			c,ok:=element.Properties[category]
+			if !ok{
+				props = append(props,proptype+"/"+propname)
+				v,err:=json.Marshal(props)
+				if err!=nil{
+					log.Print(err)
+					return
+				}
+				store.Set(element.ID+"/"+category,string(v))
+			}
+			for k,_:= range c.Default{
+				props = append(props,"Default/"+k)
+			}
+			for k,_:= range c.Inherited{
+				props = append(props,"Inherited/"+k)
+			}
+			for k,_:= range c.Local{
+				props = append(props,"Local/"+k)
+			}
+			for k,_:= range c.Inheritable{
+				props = append(props,"Inheritable/"+k)
+			}
+
+			props = append(props,proptype+"/"+propname)
+			v,err:=json.Marshal(props)
+			if err!=nil{
+				log.Print(err)
+				return
+			}
+			store.Set(element.ID+"/"+category,string(v))
+		}
+		val,err:= json.Marshal(value)
+		if err!=nil{
+			log.Print(err)
+			return
+		}
+		store.Set(element.ID+"/"+category+"/"+propname, string(val))
+		return
+	}
+
+	// Now in the case we want to persist a ui mutation
+
+}
+
+
+Elements.AddPersistenceMode("sessionstorage",loadfromsessionstore,sessionstorefn)
+*/
 // Window is a ype that represents a browser window
 type Window struct {
 	*ui.Element
 }
 
 func (w Window) SetTitle(title string) {
-	w.Set("ui", "title", title, false)
+	w.Element.Set("ui", "title", title)
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -153,9 +267,27 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 //
 */
 
-// TODO window should have its own type. it is not an element butits properties
-// can be read and some such as title can be changed.
-// Should be alos of type js.Wrapper-
+
+// AllowSessionPersistence is a constructor option. When passed as argument in
+// the creation of a ui.Element constructor, it allows for ui.Element constructors to
+// different options for property persistence.
+var AllowSessionPersistence = ui.NewConstructorOption("sessionstorage",func(e *ui.Element)*ui.Element{
+	ui.LoadElementProperty(e,"internals","persistence","default","sessionstorage")
+	return e
+})
+
+var AllowAppLocalPersistence = ui.NewConstructorOption("localstorage",func(e *ui.Element)*ui.Element{
+	ui.LoadElementProperty(e,"internals","persistence","default","localstorage")
+	return e
+})
+
+func EnableSessionPeristence() string{
+	return "sessionstorage"
+}
+
+func EnableAppLocalPersistence() string{
+	return "localstorage"
+}
 
 // NewAppRoot creates a new app entry point. It is the top-most element
 // in the tree of Elements that consitute the full document.
@@ -171,6 +303,19 @@ var NewAppRoot = Elements.NewConstructor("root", func(name string, id string) *u
 	return e
 })
 
+// NewDiv is a constructor for html div elements.
+var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Element {
+	e := ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlDiv := js.Global().Get("document").Call("createElement", "div")
+	n := NewNativeElementWrapper(htmlDiv)
+	e.Native = n
+	SetAttribute(e, "id", id)
+	return e
+},AllowTooltip)
+
+
 var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
 	e = enableClasses(e)
@@ -183,9 +328,11 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		content, ok := evt.NewValue().(*ui.Element)
 		if ok {
-			tooltipdiv := evt.Origin()
-			tooltipdiv.RemoveChildren()
-			tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(content))
+			tooltip := evt.Origin()
+			// tooltip.RemoveChildren()
+			tooltip.Set("ui","command",ui.RemoveChildrenCommand(),false)
+			// tooltip.AppendChild(content)
+			tooltip.Set("ui","command",ui.AppendChildCommand(content),false)
 			return false
 		}
 		strcontent, ok := evt.NewValue().(string)
@@ -193,11 +340,13 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 			return true
 		}
 
-		tooltipdiv := evt.Origin()
-		tooltipdiv.RemoveChildren()
+		tooltip := evt.Origin()
+		// tooltip.RemoveChildren()
+		tooltip.Set("ui","command",ui.RemoveChildrenCommand(),false)
 		tn := NewTextNode()
 		tn.Set("data", "text", strcontent, false)
-		tooltipdiv.AppendChild(NewSpan("tooltip-span", NewID()).AppendChild(tn))
+		//tooltip.AppendChild(tn)
+		tooltip.Set("ui","command",ui.AppendChildCommand(tn),false)
 		return false
 	})
 	e.Watch("data", "content", e, h)
@@ -205,7 +354,7 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 	return e
 })
 
-func RetrieveTooltip(target *ui.Element) *ui.Element {
+func TryRetrieveTooltip(target *ui.Element) *ui.Element {
 	return target.ElementStore.GetByID(target.ID+"-tooltip")
 }
 
@@ -229,22 +378,10 @@ var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Eleme
 	})
 	target.Watch("tooltip","content",target,h)
 
-	target.AppendChild(e)
+	//target.AppendChild(e)
+	target.Set("ui","command",ui.AppendChildCommand(e),false)
 	return target
 })
-
-// NewDiv is a constructor for html div elements.
-var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Element {
-	e := ui.NewElement(name, id, Elements.DocType)
-	e = enableClasses(e)
-
-	htmlDiv := js.Global().Get("document").Call("createElement", "div")
-	n := NewNativeElementWrapper(htmlDiv)
-	e.Native = n
-	SetAttribute(e, "id", id)
-	return e
-},AllowTooltip)
-
 
 
 // NewTextArea is a constructor for a textarea html element.
@@ -689,7 +826,9 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 			item = NewTextNode()
 			item.Set("data", "text", str, false)
 		}
-		evt.Origin().RemoveChildren().AppendChild(item)
+		// evt.Origin().RemoveChildren().AppendChild(item)
+		evt.Origin().Set("ui","command",ui.RemoveChildrenCommand())
+		evt.Origin().Set("ui","command",ui.AppendChildCommand(item))
 		return false
 	})
 	e.Watch("ui", "content", e, onuimutation)
@@ -837,7 +976,8 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			}
 			n.Set("data", "content", item, false)
 
-			evt.Origin().AppendChild(n)
+			// evt.Origin().AppendChild(n)
+			evt.Origin().Set("ui","command",ui.AppendChildCommand(n),false)
 		}
 
 		if evt.ObservedKey() == "prepend" {
@@ -854,7 +994,8 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			}
 			n.Set("data", "content", item, false)
 
-			evt.Origin().PrependChild(n)
+			// evt.Origin().PrependChild(n)
+			evt.Origin().Set("ui","command",ui.PrependChildCommand(n),false)
 		}
 
 		if evt.ObservedKey() == "insert" {
@@ -871,14 +1012,16 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			}
 			n.Set("data", "content", item, false)
 
-			evt.Origin().InsertChild(n, i)
+			// evt.Origin().InsertChild(n, i)
+			evt.Origin().Set("ui","command",ui.InsertChildCommand(n,i),false)
 		}
 
 		if evt.ObservedKey() == "delete" {
 			target := evt.Origin()
 			deletee := target.Children.AtIndex(i)
 			if deletee != nil {
-				target.RemoveChild(deletee)
+				// target.RemoveChild(deletee)
+				target.Set("ui","command", ui.RemoveChildCommand(deletee))
 			}
 		}
 		return false

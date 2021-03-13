@@ -28,6 +28,34 @@ func NewIDgenerator(seed int64) func() string {
 	}
 }
 
+// Stores holds a list of ElementStore. Every newly created ElementStore should be
+// listed here by defauklt.
+var Stores = newElementStores()
+
+type elementStores struct{
+	stores map[string]ElementStore
+}
+
+func newElementStores() elementStores{
+	v:=make(map[string]ElementStore)
+	return elementStores{v}
+}
+
+func(e elementStores) Get(storedid string) (ElementStore,bool){
+	res,ok:= e.stores[storeid]
+	return res,ok
+}
+
+func(e elementStores) Set(store ElementStore) {
+	s,ok:= e.store[store.Matrix.ID]
+	if ok{
+		log.Print("ElementStore already exists")
+		return
+	}
+	e.store[store.Matrix.ID]=store
+}
+
+// ElementStore defines a namespace for a list of Element constructors.
 type ElementStore struct {
 	DocType      string
 	Constructors map[string]func(name, id string, optionNames ...string) *Element
@@ -41,18 +69,39 @@ type ElementStore struct {
 
 type storageFunctions struct{
 	Load func(*Element) error
-	Store func(*Element, categpry string, propname string, value interface{})
+	Store func(*Element, category string, propname string, value interface{}, flags ...bool)
 }
 
+// ConstructorOption defines a type for optional function that can be called on
+// Element construction. It allows to specify optional Element construction behaviours.
+// Useful if we want to be able to return different types of buttons from a button
+// Element constructor for example.
 type ConstructorOption struct{
 	Name string
 	Configurator func(*Element)*Element
 }
 
 func NewConstructorOption(name string, configuratorFn func(*Element)*Element) ConstructorOption {
-	return ConstructorOption{name, configuratorFn}
+	fn:= func(e *Element) *Element{
+		a,ok:= e.Get("internals","constructoroptions")
+		if !ok{
+			a:= NewList(String(name))
+			e.Set("internals","constructoroptions",a)
+		}
+		l,ok:= a.(List)
+		if !ok{
+			log.Print("Unexpected error. constructoroptions should be stored as a ui.List")
+			a:= NewList(String(name))
+			e.Set("internals","constructoroptions",a)
+		}
+		e.Set("internals","constructoroptions",append(l,String(name)))
+
+		return configuratorFn(e)
+	}
+	return ConstructorOption{name, fn}
 }
 
+// NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string,doctype string) *ElementStore {
 	matrix:= NewElement("matrix",storeid,doctype)
 	es:= &ElementStore{doctype, make(map[string]func(name string, id string,optionNames ...string) *Element, 0),make(map[string]map[string]func(*Element)*Element,0), make(map[string]*Element),make(map[string]storageFunctions,5),matrix}
@@ -61,17 +110,22 @@ func NewElementStore(storeid string,doctype string) *ElementStore {
 			element.Set("global",evt.ObservedKey(), evt.NewValue(), false)
 		}
 		return false
-		}))
+	}))
+	Stores.Set(es)
 	return es
 }
 
-func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,interface{})){
+// AddPersistenceMode allos to define alternate ways to persist Element properties
+// from the default in-memory.
+// For instance, in a web setting, we may want to be able to persist data in
+// webstorage so that on refresh, the app state can be recovered.
+func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,interface{}, ...bool)){
 	e.PersistFn[name] = storageFunctions{loadFromStore,store}
 }
 
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, optionNames ...string) *Element {
-
+	options = append(options,allowPropertyInheritanceOnMount)
 	// First we register the options that are passed with the Constructor definition
 	if options != nil{
 		for _,option:= range options{
@@ -88,22 +142,23 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 	// Then we create the element constructor to return
 	c := func(name string, id string, optionNames ...string) *Element {
 		element := constructor(name, id)
+		element.Set("internals","constructor",String(elementname))
 		element.matrix = e.Matrix
 		element.ElementStore = e
 		element.WatchGroup("",element, NewMutationHandler(func(evt MutationEvent)bool{
 			element.Set("global", evt.ObservedKey(),evt.NewValue(),false)
 			return false
-			}))
-			// TODO optionalArgs  apply the corresponding options
-			for _,opt:=range optionNames{
-				r,ok:= e.ConstructorsOptions[elementname]
+		}))
+		// TODO optionalArgs  apply the corresponding options
+		for _,opt:=range optionNames{
+			r,ok:= e.ConstructorsOptions[elementname]
+			if ok{
+				config,ok:=r[opt]
 				if ok{
-					config,ok:=r[opt]
-					if ok{
-						element= config(element)
-					}
+					element= config(element)
 				}
 			}
+		}
 
 		e.ByID[id] = element
 		return element
@@ -139,7 +194,7 @@ func EnableGlobalPropertyAccess(propertyname string) func(*Element)*Element{
 // From the window to the buttons on a page.
 type Element struct {
 	ElementStore *ElementStore
-	matrix *Element //where it all begins :)
+	matrix *Element //where it all begins :) holds ownership of the global state
 	root        *Element
 	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
 	path        *Elements
@@ -167,7 +222,7 @@ type Element struct {
 }
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
-// Essentlially an empty shell to be customized.
+// Essentially an empty shell to be customized.
 func NewElement(name string, id string, doctype string) *Element {
 	e:= &Element{
 		nil,
@@ -657,43 +712,39 @@ func (e *Element) RemoveChildren() *Element {
 // In order to register a command, one just needs to Set the "command" property
 // of the "ui" namespace of an Element.
 //  Element.Set("ui","command",Command{...})
-type Command struct{
-	Name string
-	SourceID string
-	TargetID string
-	Position int
-	Timestamp time.Time
-}
-
-type Command map[string]interface{}
+// As such, the Command type implements the Value interface.
+type Command Object
+func(c Command) discriminant() discriminant{return "particleui"}
+func(c Command) ValueType() string{return "Command"}
+func(c Command) RawValue() Object{return Object(c).RawValue()}
 
 func(c Command) Name(s string) Command {
-	c["name"] = s
+	Object(c).Set("name",String(s))
 	return c
 }
 
 func(c Command) SourceID(s string) Command {
-	c["sourceid"] = s
+	Object(c).Set("sourceid",String(s))
 	return c
 }
 
 func(c Command) TargetID(s string) Command {
-	c["targetid"] = s
+	Object(c).Set("targetid",String(s))
 	return c
 }
 
 func(c Command) Position(p int) Command {
-	c["position"] = p
+	Object(c).Set("position",Number(p))
 	return c
 }
 
 func(c Command) Timestamp(t tiùe.Time) Command {
-	c["timestamp"] = t.String()
+	Object(c).Set("timestamp",String(t.String()))
 	return c
 }
 
 func NewUICommand() Command{
-	c:=Command(make(map[string]interface{}))
+	c:=Command(NewObject().SetType("Command"))
 	return c.Timestamp(time.Now().UTC())
 }
 
@@ -721,6 +772,23 @@ func RemoveChildrenCommand() Command{
 	return NewUICommand().Name(removechildren")
 }
 
+func ActivateViewCommand(viewname string) Command{
+	return NewUICOmmand().Name("activateview").SourceID(viewname)
+}
+
+// Mutate allows to send a command that aims to change an element, modifying the
+// underlying User Interface.
+// The default commands allow to change the ActiveView, AppendChild, PrependChild,
+// InsertChild, ReplaceChild, RemoveChild, RemoveChildren.
+//
+// Why not simply use the Element methods?
+//
+// For the simple reason that commands can be stored to be replayed later whereas
+// using the commands directly would not be a recordable action.
+func Mutate(e *Element, command Command){
+	e.Set("ui","command",command)
+}
+
 var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 	if evt.Type() != "ui"|| evt.ObservedKey() != "command"{
 		log.Print("UI command Handler firing for the wrong event.")
@@ -732,7 +800,6 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
 	}
 
-	// TODO retrieve Command DATA
 	commandname,ok:= command["name"]
 	if !ok{
 		log.Print("Command is invalid. Missing command name")
@@ -809,7 +876,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 	case "removechild":
 		sourceid,ok:= command["sourceid"]
 		if !ok{
-			log.Print("Command malformed. Missing source id to append to")
+			log.Print("Command malformed. Missing id of source of mutation")
 			return true
 		}
 		e:= evt.Origin()
@@ -821,6 +888,17 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 		return false
 	case "removechildren":
 		evt.Origin().RemoveChildren()
+		return false
+	case "activateview":
+		sourceid,ok:= command["sourceid"]
+		if !ok{
+			log.Print("Command malformed. Missing viewname to activate, stored in sourceid")
+			return true
+		}
+		err := evt.Origin().ActivateView(sourceid)
+		if err!= nil{
+			log.Print(err)
+		}
 		return false
 	default:
 		return true
@@ -894,6 +972,17 @@ func (e *Element) Mounted() bool {
 	return false
 }
 
+func(e *Element) OnMount(h *MutationHandler){
+	nh:= NewMutationHandler(func(evt MutationEvent)bool{
+		b,ok:=evt.NewValue().(bool)
+		if !ok || !b {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.Watch("event", "mounted",e,nh)
+}
+
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
@@ -911,7 +1000,8 @@ func (e *Element) Get(category, propname string) (interface{}, bool) {
 // The changes will only take effect if the  Element was granted Global scope access rights for the
 // property in question via the EnableGlobalPropertyAccess functional option.
 //
-func (e *Element) Set(category string, propname string, value interface{}, inheritable bool) {
+// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
+func (e *Element) Set(category string, propname string, value interface{}, flags ...bool) {
 	if category=="global"{
 		log.Print("this namespace is read-only (global). It may not be mutated directly. [see docs])")
 		return
@@ -919,6 +1009,10 @@ func (e *Element) Set(category string, propname string, value interface{}, inher
 	if category == "" && !e.canMutateGlobalScope{
 		log.Print("Element does not have sufficient rights to try and mutate global scope")
 		return
+	}
+	var inheritable bool
+	if len(flags) > 0{
+		inheritable = flags[0]
 	}
 	e.Properties.Set(category, propname, value, inheritable)
 	evt := e.NewMutationEvent(category, propname, value)
@@ -939,7 +1033,7 @@ func LoadElementProperty(e *Element, category string, propname string,proptype s
 	}
 }
 
-func(e *Element) setGlobal(propname string, value interface{}, inheritable bool){
+func(e *Element) setGlobal(propname string, value interface{}, flags ...bool){
 	e.Properties.Set("", propname, value, inheritable)
 	evt := e.NewMutationEvent("", propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
@@ -981,6 +1075,23 @@ func InheritProperties(target *Element, src *Element, categories ...string) {
 		}
 		pst.Inherit(ps)
 	}
+}
+
+var allowPropertyInheritanceOnMount = NewConstructorOption("propertyinheritance", func(e *Element)*Element{
+	h:= NewMutationHandler(func(evt *MutationEvent)bool{
+		element:=evt.Origin()
+		InheritProperties(element,element.Parent)
+		return false
+	})
+	e.OnMount(h)
+	return e
+})
+
+// EnablePropertyAutoInheritance is an option that when passed to an Element
+// constructor, allows an Element to inherit the properties of its parent
+// when it is mounted in the DOM tree.
+func EnablePropertyAutoInheritance() string{
+	return 'propertyinheritance'
 }
 
 func Get(e *Element, key string) (interface{}, bool) {
@@ -1090,9 +1201,9 @@ func MakeToggable(conditionName string, e *Element, firstView ViewElements, seco
 			value = false
 		}
 		if value {
-			e.ActivateView(firstView.Name())
+			Mutate(e,ActivateViewCommand(firstView.Name()))
 		}
-		e.ActivateView(secondView.Name())
+		Mutate(e,ActivateViewCommand(secondView.Name()))
 		return true
 	})
 
@@ -1235,6 +1346,19 @@ func (p PropertyStore) Delete(category string, propname string) {
 	ps.Delete(propname)
 }
 
+func(p PropertyStore) HasCategory(category string) bool{
+	_,ok:=p.Categories[category]
+	return ok
+}
+
+func(p PropertyStore) HasProperty(category string, propname string) bool{
+	ps,ok:= p.Categoies[category]
+	if !ok{return false}
+
+	_,ok= ps.Get(propname)
+	return ok
+}
+
 func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
 	ps, ok := p.Categories[category]
 	if !ok {
@@ -1318,6 +1442,298 @@ func (p Properties) Inherit(source Properties) {
 	}
 }
 
+// PropertyGroup returns a string denoting whether a property is a default one,
+// an inherited one, a local one, or inheritable.
+func(p Properties) PropertyGroup(propname string) string{
+	_,ok:=p.Default[propname]
+	if ok{
+		return "Default"
+	}
+	_,ok = p.Inherited[propname]
+	if ok{
+		return "Inherited"
+	}
+	_,ok= p.Local[propname]
+	if ok{
+		return  "Local"
+	}
+	_,ok= p.Inheritable[propname]
+	if ok{
+		return "Inheritable"
+	}
+	return ""
+}
+
 func (p Properties) SetDefault(propName string, value interface{}) {
 	p.Default[propName] = value
+}
+
+type discriminant string
+
+// Value is the type for Element property values.
+type Value interface{
+	discriminant() discriminant
+	RawValue() Object
+	ValueType() string
+}
+
+func(e *Element) discriminant() discriminant{return "particleui"}
+func(e *Element) ValueType() string{return "Element"}
+func(e *Element) RawValue() Object{
+	o:= NewObject().SetType("Element")
+	o.Set("id",String(element.ID))
+	o.Set("name",String(element.Name))
+	constructoroptions,ok:= e.Get("internals","constructoroptions")
+	if ok{
+		o.Set("constructoroptions",constructoroptions)
+	}
+
+	constructorname,ok:= e.Get("internals","constructorname")
+	if !ok{
+		retunr nil
+	}
+	o.Set("constructorname",constructorname)
+
+	o.Set("elementstoreid", String(e.ElementStore.Matrix.ID))
+	return o
+}
+
+type Bool bool
+func(b Bool) discriminant() discriminant{return "particleui"}
+func (b Bool) RawValue() Object{
+	o:=NewObject().SetType("Bool")
+	o.Set("value",b)
+	return o
+}
+func(b Bool) ValueType() string{return "Bool"}
+
+type String string
+func(s String) discriminant() discriminant{return "particleui"}
+func(s String) RawValue() Object{
+	o:=NewObject().SetType("String")
+	o.Set("value",s)
+	return o
+}
+func(s String) ValueType() string{return "String"}
+
+type Number float64
+func(n Number) discriminant() discriminant{return "particleui"}
+func(n number) RawValue() Object {
+	o:=NewObject().SetType("Number")
+	o.Set("value",n)
+	return o
+}
+func(n Number) ValueType() string{return "Number"}
+
+type Object map[string]interface{}
+func(o Object) discriminant() discriminant{return "particleui"}
+
+func(o Object) RawValue() Object{
+	if o.ValueType() != "Object"{
+		return o
+	}
+	p:= NewObject()
+	for k,val:= range o{
+		v,ok:= val.(Value)
+		if ok{
+			p[k] = v.RawValue()
+			continue
+		}
+		p[k]=val
+	}
+	return p
+}
+
+func(o Object) ValueType() string{
+	t,ok:= o.Get("typ")
+	if !ok{
+		return "Object"
+	}
+	return t.ValueType()
+}
+
+func(o Object) Get(key string) (Value,bool){
+	v,ok:= o[key]
+	if !ok{
+		return nil,ok
+	}
+	tv,ok:= v.(Value)
+	if !ok{
+		retunr nil,ok
+	}
+
+	u,ok:=tv.(Object)
+	if !ok{
+		return tv,true
+	}
+	return u.Value(),ok
+}
+
+func(o Object) Set(key string, value Value){
+	o[key] =value
+}
+func(o Object) SetType(typ string) Object{
+	o.Set("typ",String(typ))
+	return o
+}
+func(o Object) Value() Value{ // TODO Add Element and Command
+	switch o.ValueType(){
+	case "Bool":
+		v,ok:= o.Get("value")
+		if !ok{
+			return nil
+		}
+		return v
+	case "String":
+		v,ok:= o.Get("value")
+		if !ok{
+			return nil
+		}
+		return v
+	case "Number":
+		v,ok:= o.Get("value")
+		if !ok{
+			return nil
+		}
+		return v
+	case "List":
+		v,ok:= o.Get("value")
+		if !ok{
+			return nil
+		}
+		l,ok:= v.(List)
+		if !ok{
+			return nil
+		}
+		m:= NewList()
+		for i,val:= range l{
+			o,ok:= val.(Object)
+			if ok{
+				m[i] = o.Value()
+				continue
+			}
+			m[i]=val
+		}
+		return m
+	case "Object":
+		p:= NewObject()
+		for k,val:=range o{
+			v,ok:= val.(Value)
+			if !ok{
+				return nil
+			}
+			u,ok:= v.(Object)
+			if !ok{
+				p.Set(k,v)
+				continue
+			}
+			p.Set(k,u.Value())
+		}
+		return p
+	case "Command":
+		return Command(o)
+	case "Element":
+		id,ok:= o.Get("id")
+		if !ok{
+			return nil
+		}
+		name,ok:= o.Get("name")
+		if !ok{
+			return nil
+		}
+		elementstoreid,ok:=  o.Get("elementstoreid")
+		if !ok{
+			return nil
+		}
+		constructorname,ok:= o.Get("constructorname")
+		if !ok{
+			return nil
+		}
+		elstoreid,ok:= elementstoreid.(string)
+		if!ok{
+			log.Print("Wrong type for ElementStore ID")
+			return nil
+		}
+		// Let's get the elementstore
+		elstore,ok:= Stores.Get(elstoreid)
+		if !ok{
+			return nil
+		}
+		// Let's try to see if the element is in the ElementStore already
+		elid,ok:= id.(string)
+		if!ok{
+			log.Print("Wrong type for Element ID stored in ui.Value")
+			return nil
+		}
+		element:= elstore.GetByID(elid)
+		if element != nil{
+			return element
+		}
+		// Otherwise we construct it. (TODO: make sure that element constructors try to get the data in store)
+		cname,ok:= constructorname.(string)
+		if!ok{
+			log.Print("Wrong type for constructor name.")
+			return nil
+		}
+		constructor,ok:= elstore.Constructors[cname]
+		if !ok{
+			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + id + "from Value")
+		}
+		ename,ok:=name.(string)
+		if !ok{
+			log.Print("Element name in Value of wring type.")
+			return nil
+		}
+		edoctype,ok:=doctype.(string)
+		if !ok{
+			log.Print("Doctype stored in Value has wrong type. Should be a string.")
+			return nil
+		}
+
+		coptions := make([]string,0)
+		constructoroptions,ok:= o.Get("constructoroptions")
+		if ok{
+			optlist,ok:= constructoroptions.(List)
+			if ok{
+				for _,opt:= range optlist{
+					sopt,ok:= opt.(string)
+					if !ok{
+						return nil
+					}
+					coptions= append(coptions, sopt)
+				}
+			}
+		}
+		return constructor(ename,elid,coptions...)
+
+	default:
+		return nil
+	}
+}
+
+func NewObject() Object{
+	o:= Object(make(map[string]interface))
+	o.Set("typ","Object")
+	return o
+}
+
+type List []Value
+func(l List) discriminant() discriminant{return "particleui"}
+func(l List) RawValue() Object{
+	o:= NewObject().SetType("List")
+	raw:= make([]Value,0)
+	for_,v:=range l{
+		raw:=append(raw,v.RawValue())
+	}
+	o.Set("value",List(raw))
+	return o
+}
+func(l List) ValueType() string{return "List"}
+
+func NewList(val ...Value) List{
+	if val != nil{
+		return List(val)
+	}
+	l:= make([]Value,0)
+	return List(l)
 }
