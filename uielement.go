@@ -69,7 +69,7 @@ type ElementStore struct {
 
 type storageFunctions struct{
 	Load func(*Element) error
-	Store func(*Element, category string, propname string, value interface{}, flags ...bool)
+	Store func(*Element, category string, propname string, value Value, flags ...bool)
 }
 
 // ConstructorOption defines a type for optional function that can be called on
@@ -119,7 +119,7 @@ func NewElementStore(storeid string,doctype string) *ElementStore {
 // from the default in-memory.
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
-func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,interface{}, ...bool)){
+func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,Value, ...bool)){
 	e.PersistFn[name] = storageFunctions{loadFromStore,store}
 }
 
@@ -517,7 +517,7 @@ func (e *Element) ActivateView(name string) error {
 		e.AppendChild(child)
 	}
 	delete(e.AlternateViews, name)
-	e.Set("ui", "activeview", name, false)
+	e.Set("ui", "activeview", String(name), false)
 	e.ActiveView = name
 
 	return nil
@@ -528,9 +528,9 @@ func (e *Element) ActivateView(name string) error {
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
 	defer func() {
-		child.Set("event", "attached", true, false)
+		child.Set("event", "attached", Bool(true), false)
 		if child.Mounted(){
-			child.Set("event","mounted", true,false)
+			child.Set("event","mounted", Bool(true),false)
 		}
 	}()
 	if activeview {
@@ -590,8 +590,8 @@ func detach(e *Element) {
 		e.ViewAccessPath.nodes = e.ViewAccessPath.nodes[len(e.ViewAccessPath.nodes)-1:]
 	}
 
-	e.Set("event", "attached", false, false)
-	e.Set("event","mounted",false,false)
+	e.Set("event", "attached", Bool(false))
+	e.Set("event","mounted",Bool(false))
 
 	// got to update the subtree with the new subtree root and path
 	for _, descendant := range e.Children.List {
@@ -794,13 +794,13 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 		log.Print("UI command Handler firing for the wrong event.")
 		return true
 	}
-	command,ok:= evt.NewValue().(map[string]interface{})
-	if !ok{
+	command,ok:= evt.NewValue().(Object)
+	if !ok || (command.Type() != "Command"){
 		log.Print("Wrong format for command property value")
 		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
 	}
 
-	commandname,ok:= command["name"]
+	commandname,ok:= command.Get("name")
 	if !ok{
 		log.Print("Command is invalid. Missing command name")
 		return true
@@ -814,7 +814,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			return true
 		}
 		e:= evt.Origin()
-		child:= e.ElementStore.GetByID(sourceid)
+		sid,ok:= sourceid.(string)
+		if !ok{
+			log.Print("Error sourceid is not a string ?!")
+			return true
+		}
+		child:= e.ElementStore.GetByID(sid)
 		if child == nil{
 			return true
 		}
@@ -827,7 +832,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			return true
 		}
 		e:= evt.Origin()
-		child:= e.ElementStore.GetByID(sourceid)
+		sid,ok:= sourceid.(string)
+		if !ok{
+		  log.Print("Error sourceid is not a string ?!")
+		  return true
+		}
+		child:= e.ElementStore.GetByID(sid)
 		if child == nil{
 			return true
 		}
@@ -839,20 +849,30 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			log.Print("Command malformed. Missing source id to append to")
 			return true
 		}
-		commandpos,ok:= command["position"]
+		pos,ok:= command["position"]
 		if !ok{
 			log.Print("Command malformed. Missing insertion positiob.")
+			return true
+		}
+		commandpos,ok:= pos.(float64)
+		if !ok{
+			log.Print("position to insert at is not stored as a valid numeric type")
 			return true
 		}
 		if commandpos < 0{
 			return true
 		}
 		e:= evt.Origin()
-		child:= e.ElementStore.GetByID(sourceid)
+		sid,ok:= sourceid.(string)
+		if !ok{
+		  log.Print("Error sourceid is not a string ?!")
+		  return true
+		}
+		child:= e.ElementStore.GetByID(sid)
 		if child == nil{
 			return true
 		}
-		e.InsertChild(child,commandpos)
+		e.InsertChild(child,int(commandpos))
 		return false
 	case "replacechild":
 		sourceid,ok:= command["sourceid"]
@@ -866,8 +886,18 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			return true
 		}
 		e:= evt.Origin()
-		newc:= e.ElementStore.GetByID(sourceid)
-		oldc:= e.ElementStore.GetByID(targetid)
+		sid,ok:= sourceid.(string)
+		if !ok{
+		  log.Print("Error sourceid is not a string ?!")
+		  return true
+		}
+		tid,ok:= targetid.(string)
+		if !ok{
+		  log.Print("Error targetid is not a string ?!")
+		  return true
+		}
+		newc:= e.ElementStore.GetByID(sid)
+		oldc:= e.ElementStore.GetByID(tid)
 		if newc == nil || oldc == nil {
 			return true
 		}
@@ -880,7 +910,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			return true
 		}
 		e:= evt.Origin()
-		child:= e.ElementStore.GetByID(sourceid)
+		sid,ok:= sourceid.(string)
+		if !ok{
+		  log.Print("Error sourceid is not a string ?!")
+		  return true
+		}
+		child:= e.ElementStore.GetByID(sid)
 		if child == nil{
 			return true
 		}
@@ -895,7 +930,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 			log.Print("Command malformed. Missing viewname to activate, stored in sourceid")
 			return true
 		}
-		err := evt.Origin().ActivateView(sourceid)
+		viewname,ok:= sourceid.(string)
+		if !ok{
+		  log.Print("Error viewname/sourceid is not a string ?!")
+		  return true
+		}
+		err := evt.Origin().ActivateView(viewname)
 		if err!= nil{
 			log.Print(err)
 		}
@@ -987,7 +1027,7 @@ func(e *Element) OnMount(h *MutationHandler){
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
 // shared scope common to all Element objects of an ElementStore.
-func (e *Element) Get(category, propname string) (interface{}, bool) {
+func (e *Element) Get(category, propname string) (Value, bool) {
 	if category == ""{
 		category = "global"
 	}
@@ -1001,7 +1041,7 @@ func (e *Element) Get(category, propname string) (interface{}, bool) {
 // property in question via the EnableGlobalPropertyAccess functional option.
 //
 // First flag in the variadic argument, if true, denotes whether the property should be inheritable.
-func (e *Element) Set(category string, propname string, value interface{}, flags ...bool) {
+func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
 	if category=="global"{
 		log.Print("this namespace is read-only (global). It may not be mutated directly. [see docs])")
 		return
@@ -1025,7 +1065,7 @@ func (e *Element) Set(category string, propname string, value interface{}, flags
 // For properties of the 'ui' namespace, i.e. properties that are used for rendering,
 // we create and dispatch a mutation event since loading a property is change inducing at the
 // UI level.
-func LoadElementProperty(e *Element, category string, propname string,proptype string, value interface{}){
+func LoadElementProperty(e *Element, category string, propname string,proptype string, value Value){
 	e.Properties.Load(category, propname, proptype, value)
 	if category == "ui" {
 		evt := e.NewMutationEvent(category, propname, value)
@@ -1033,7 +1073,7 @@ func LoadElementProperty(e *Element, category string, propname string,proptype s
 	}
 }
 
-func(e *Element) setGlobal(propname string, value interface{}, flags ...bool){
+func(e *Element) setGlobal(propname string, value Value, flags ...bool){
 	e.Properties.Set("", propname, value, inheritable)
 	evt := e.NewMutationEvent("", propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
@@ -1048,7 +1088,7 @@ func (e *Element) Delete(category string, propname string) {
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
-func SetDefault(e *Element, category string, propname string, value interface{}) {
+func SetDefault(e *Element, category string, propname string, value Value) {
 	e.Properties.SetDefault(category, propname, value)
 }
 
@@ -1094,11 +1134,11 @@ func EnablePropertyAutoInheritance() string{
 	return 'propertyinheritance'
 }
 
-func Get(e *Element, key string) (interface{}, bool) {
+func Get(e *Element, key string) (Value, bool) {
 	return e.Get("data", key)
 }
 
-func Set(e *Element, key string, value interface{}) {
+func Set(e *Element, key string, value Value) {
 	e.Set("data", key, value, false)
 }
 
@@ -1192,7 +1232,7 @@ func pathSegment(p *Element, views *viewNodes) string {
 //
 // For example, if we have a toggable button, one for login and one for logout,
 // We can implement the switch between login and logout by switching the inner Elements.
-func MakeToggable(conditionName string, e *Element, firstView ViewElements, secondView ViewElements, initialconditionvalue interface{}) *Element {
+func MakeToggable(conditionName string, e *Element, firstView ViewElements, secondView ViewElements, initialconditionvalue Bool) *Element {
 	e.AddView(firstView).AddView(secondView)
 
 	toggle := NewMutationHandler(func(evt MutationEvent) bool {
@@ -1293,7 +1333,7 @@ func NewPropertyStore() PropertyStore {
 	return PropertyStore{make(map[string]Properties)}
 }
 
-func(p PropertyStore) Load(category string, propname string, proptype string, value interface{}){
+func(p PropertyStore) Load(category string, propname string, proptype string, value Value){
 	ps, ok := p.Categories[category]
 	if !ok {
 		ps = newProperties()
@@ -1317,7 +1357,7 @@ func(p PropertyStore) Load(category string, propname string, proptype string, va
 
 // Get retrieves the value of a property stored within a given category.
 // A category acts as a namespace for property keys.
-func (p PropertyStore) Get(category string, propname string) (interface{}, bool) {
+func (p PropertyStore) Get(category string, propname string) (Value, bool) {
 	ps, ok := p.Categories[category]
 	if !ok {
 		return nil, false
@@ -1325,7 +1365,7 @@ func (p PropertyStore) Get(category string, propname string) (interface{}, bool)
 	return ps.Get(propname)
 }
 
-func (p PropertyStore) Set(category string, propname string, value interface{}, inheritable ...bool) {
+func (p PropertyStore) Set(category string, propname string, value Value, inheritable ...bool) {
 	ps, ok := p.Categories[category]
 	if !ok {
 		ps = newProperties()
@@ -1359,7 +1399,7 @@ func(p PropertyStore) HasProperty(category string, propname string) bool{
 	return ok
 }
 
-func (p PropertyStore) SetDefault(category string, propname string, value interface{}) {
+func (p PropertyStore) SetDefault(category string, propname string, value Value) {
 	ps, ok := p.Categories[category]
 	if !ok {
 		ps = newProperties()
@@ -1369,13 +1409,13 @@ func (p PropertyStore) SetDefault(category string, propname string, value interf
 }
 
 type Properties struct {
-	Default map[string]interface{}
+	Default map[string]Value
 
-	Inherited map[string]interface{} //Inherited property cannot be mutated by the inheritor
+	Inherited map[string]Value //Inherited property cannot be mutated by the inheritor
 
-	Local map[string]interface{}
+	Local map[string]Value
 
-	Inheritable map[string]interface{} // the value of a property overrides the value stored in any of its predecessor value store
+	Inheritable map[string]Value // the value of a property overrides the value stored in any of its predecessor value store
 	// map key is the address of the element's  property
 	// being watched and elements is the list of elements watching this property
 	// Inheritable encompasses overidden values and inherited values that are being passed down.
@@ -1383,7 +1423,7 @@ type Properties struct {
 }
 
 func newProperties() Properties {
-	return Properties{make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]interface{}), make(map[string]*Elements)}
+	return Properties{make(map[string]Value), make(map[string]Value), make(map[string]Value), make(map[string]Value), make(map[string]*Elements)}
 }
 
 func (p Properties) NewWatcher(propName string, watcher *Element) {
@@ -1402,7 +1442,7 @@ func (p Properties) RemoveWatcher(propName string, watcher *Element) {
 	list.Remove(watcher)
 }
 
-func (p Properties) Get(propName string) (interface{}, bool) {
+func (p Properties) Get(propName string) (Value, bool) {
 	v, ok := p.Inheritable[propName]
 	if ok {
 		return v, ok
@@ -1422,7 +1462,7 @@ func (p Properties) Get(propName string) (interface{}, bool) {
 	return nil, false
 }
 
-func (p Properties) Set(propName string, value interface{}, inheritable bool) {
+func (p Properties) Set(propName string, value Value, inheritable bool) {
 	if inheritable {
 		p.Inheritable[propName] = value
 		return
@@ -1464,7 +1504,7 @@ func(p Properties) PropertyGroup(propname string) string{
 	return ""
 }
 
-func (p Properties) SetDefault(propName string, value interface{}) {
+func (p Properties) SetDefault(propName string, value Value) {
 	p.Default[propName] = value
 }
 

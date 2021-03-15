@@ -34,7 +34,7 @@ func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
 	if rootview.viewAdjacence() {
 		return nil, errors.New("The router cannot be created on a view that has siblings. It should be a unique entry point ot the app. ")
 	}
-	documentroot.Set("internals", "baseurl", rootview.Route(), true) // TODO Set baseurl in global scope
+	documentroot.Set("internals", "baseurl", String(rootview.Route()), true) // TODO Set baseurl in global scope
 	return &Router{make([]RouteChangeHandler, 0), rootview.Route(), documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
 }
 
@@ -44,7 +44,7 @@ func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
 		return r
 	}
 	r.BaseURL = strings.TrimSuffix(u.Path, "/")
-	r.root.Set("internals", "baseurl", r.BaseURL, true)
+	r.root.Set("internals", "baseurl", String(r.BaseURL), true)
 	return r
 }
 
@@ -223,7 +223,7 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 			return true // means that event handling has to stop
 		}
 		// the target element route should be changed to the event NewRoute value.
-		root.Set("events", event.Type(), event.NewRoute(), false)
+		root.Set("events", event.Type(), String(event.NewRoute()), false)
 		return false
 	})
 	// TODO create a litst of events handled by Go
@@ -355,7 +355,7 @@ func (r *routeNode) Match(route string, NavigateFn func() error) (*Element, func
 				return err
 			}
 			if querystring != "" {
-				r.Element.Target.Set("router", "query", querystring, false)
+				r.Element.Target.Set("router", "query", String(querystring), false)
 			}
 		}
 		return nil

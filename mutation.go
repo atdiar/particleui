@@ -107,22 +107,22 @@ type MutationEvent interface {
 	ObservedKey() string
 	Type() string
 	Origin() *Element
-	NewValue() interface{}
+	NewValue() Value
 }
 
 // Mutation defines a basic implementation for Mutation Events.
 type Mutation struct {
 	KeyName string
 	typ     string
-	Value   interface{}
+	Value   Value
 	Src     *Element
 }
 
-func (m Mutation) ObservedKey() string   { return m.KeyName }
-func (m Mutation) Origin() *Element      { return m.Src }
-func (m Mutation) Type() string          { return m.typ }
-func (m Mutation) NewValue() interface{} { return m.Value }
+func (m Mutation) ObservedKey() string { return m.KeyName }
+func (m Mutation) Origin() *Element    { return m.Src }
+func (m Mutation) Type() string        { return m.typ }
+func (m Mutation) NewValue() Value     { return m.Value }
 
-func (e *Element) NewMutationEvent(category string, propname string, newvalue interface{}) Mutation {
+func (e *Element) NewMutationEvent(category string, propname string, newvalue Value) Mutation {
 	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, e}
 }
