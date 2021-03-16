@@ -33,26 +33,26 @@ func NewIDgenerator(seed int64) func() string {
 var Stores = newElementStores()
 
 type elementStores struct{
-	stores map[string]ElementStore
+	stores map[string]*ElementStore
 }
 
 func newElementStores() elementStores{
-	v:=make(map[string]ElementStore)
+	v:=make(map[string]*ElementStore)
 	return elementStores{v}
 }
 
-func(e elementStores) Get(storedid string) (ElementStore,bool){
+func(e elementStores) Get(storeid string) (*ElementStore,bool){
 	res,ok:= e.stores[storeid]
 	return res,ok
 }
 
-func(e elementStores) Set(store ElementStore) {
-	s,ok:= e.store[store.Matrix.ID]
+func(e elementStores) Set(store *ElementStore) {
+	_,ok:= e.stores[store.Matrix.ID]
 	if ok{
 		log.Print("ElementStore already exists")
 		return
 	}
-	e.store[store.Matrix.ID]=store
+	e.stores[store.Matrix.ID]=store
 }
 
 // ElementStore defines a namespace for a list of Element constructors.
@@ -62,14 +62,14 @@ type ElementStore struct {
 	ConstructorsOptions map[string]map[string]func(*Element)*Element
 	ByID         map[string]*Element
 
-	PersistentStorageOptions map[string]storageFunctions
+	PersistentStorer map[string]storageFunctions
 
 	Matrix *Element // the matrix Element stores the global state shared by all *Elements
 }
 
 type storageFunctions struct{
 	Load func(*Element) error
-	Store func(*Element, category string, propname string, value Value, flags ...bool)
+	Store func(e *Element, category string, propname string, value Value, flags ...bool)
 }
 
 // ConstructorOption defines a type for optional function that can be called on
@@ -120,7 +120,7 @@ func NewElementStore(storeid string,doctype string) *ElementStore {
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
 func(e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error,store func(*Element,string,string,Value, ...bool)){
-	e.PersistFn[name] = storageFunctions{loadFromStore,store}
+	e.PersistentStorer[name] = storageFunctions{loadFromStore,store}
 }
 
 // NewConstructor registers and returns a new Element construcor function.
@@ -253,9 +253,9 @@ func PeristenceMode(e *Element) string{
 	mode:= ""
 	v,ok:= e.Get("internals","persistence")
 	if ok{
-		s,ok:= v.(string)
+		s,ok:= v.(String)
 		if ok{
-			mode = s
+			mode = string(s)
 		}
 	}
 	return mode
@@ -469,8 +469,8 @@ func (e *Element) ActivateView(name string) error {
 
 				// Let's detach the former view items
 				oldview, ok := e.Get("ui", "activeview")
-				oldviewname, ok2 := oldview.(string)
-				viewIsParameterized := (oldviewname != e.ActiveView)
+				oldviewname, ok2 := oldview.(String)
+				viewIsParameterized := (string(oldviewname) != e.ActiveView)
 				if ok && ok2 && oldviewname != "" && e.Children != nil {
 					for _, child := range e.Children.List {
 						detach(child)
@@ -480,7 +480,7 @@ func (e *Element) ActivateView(name string) error {
 					}
 					if !viewIsParameterized {
 						// the view is not parameterized
-						e.AlternateViews[oldviewname] = NewViewElements(oldviewname, e.Children.List...)
+						e.AlternateViews[string(oldviewname)] = NewViewElements(string(oldviewname), e.Children.List...)
 					}
 				}
 
@@ -488,7 +488,7 @@ func (e *Element) ActivateView(name string) error {
 				for _, newchild := range view.Elements().List {
 					e.AppendChild(newchild)
 				}
-				e.Set("ui", "activeview", name, false)
+				e.Set("ui", "activeview", String(name), false)
 				e.ActiveView = parameterName
 				return nil
 			}
@@ -498,8 +498,8 @@ func (e *Element) ActivateView(name string) error {
 
 	// first we detach the current active View and reattach it as an alternative View if non-parameterized
 	oldview, ok := e.Get("ui", "activeview")
-	oldviewname, ok2 := oldview.(string)
-	viewIsParameterized := (oldviewname != e.ActiveView)
+	oldviewname, ok2 := oldview.(String)
+	viewIsParameterized := (string(oldviewname) != e.ActiveView)
 	if ok && ok2 && oldviewname != "" && e.Children != nil {
 		for _, child := range e.Children.List {
 			detach(child)
@@ -509,7 +509,7 @@ func (e *Element) ActivateView(name string) error {
 		}
 		if !viewIsParameterized {
 			// the view is not parameterized
-			e.AlternateViews[oldviewname] = NewViewElements(oldviewname, e.Children.List...)
+			e.AlternateViews[string(oldviewname)] = NewViewElements(string(oldviewname), e.Children.List...)
 		}
 	}
 	// we attach and activate the desired view
@@ -738,7 +738,7 @@ func(c Command) Position(p int) Command {
 	return c
 }
 
-func(c Command) Timestamp(t tiùe.Time) Command {
+func(c Command) Timestamp(t time.Time) Command {
 	Object(c).Set("timestamp",String(t.String()))
 	return c
 }
@@ -761,7 +761,7 @@ func InsertChildCommand(child *Element, index int) Command{
 }
 
 func ReplaceChildCommand(old *Element, new *Element) Command{
-	return NewUICommand().Name{"replacechild").SourceID(new.ID).TargetID(old.ID)
+	return NewUICommand().Name("replacechild").SourceID(new.ID).TargetID(old.ID)
 }
 
 func RemoveChildCommand(child *Element) Command{
@@ -769,11 +769,11 @@ func RemoveChildCommand(child *Element) Command{
 }
 
 func RemoveChildrenCommand() Command{
-	return NewUICommand().Name(removechildren")
+	return NewUICommand().Name("removechildren")
 }
 
 func ActivateViewCommand(viewname string) Command{
-	return NewUICOmmand().Name("activateview").SourceID(viewname)
+	return NewUICommand().Name("activateview").SourceID(viewname)
 }
 
 // Mutate allows to send a command that aims to change an element, modifying the
@@ -795,7 +795,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 		return true
 	}
 	command,ok:= evt.NewValue().(Object)
-	if !ok || (command.Type() != "Command"){
+	if !ok || (command.ValueType() != "Command"){
 		log.Print("Wrong format for command property value")
 		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
 	}
@@ -805,8 +805,13 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
 		log.Print("Command is invalid. Missing command name")
 		return true
 	}
+	cname,ok:= commandname.(String)
+	if !ok{
+		log.Print("Command is invalid. Wrong type for command name value")
+		return true
+	}
 
-	switch commandname{
+	switch string(cname){
 	case "appenchild":
 		sourceid,ok:= command["sourceid"]
 		if !ok{
@@ -1014,8 +1019,8 @@ func (e *Element) Mounted() bool {
 
 func(e *Element) OnMount(h *MutationHandler){
 	nh:= NewMutationHandler(func(evt MutationEvent)bool{
-		b,ok:=evt.NewValue().(bool)
-		if !ok || !b {
+		b,ok:=evt.NewValue().(Bool)
+		if !ok || !bool(b) {
 			return false
 		}
 		return h.Handle(evt)
@@ -1074,7 +1079,11 @@ func LoadElementProperty(e *Element, category string, propname string,proptype s
 }
 
 func(e *Element) setGlobal(propname string, value Value, flags ...bool){
-	e.Properties.Set("", propname, value, inheritable)
+	var inheritable bool
+	if len(flags) > 0{
+		inheritable = flags[0]
+	}
+	e.Properties.Set("", propname, value,inheritable)
 	evt := e.NewMutationEvent("", propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
@@ -1118,7 +1127,7 @@ func InheritProperties(target *Element, src *Element, categories ...string) {
 }
 
 var allowPropertyInheritanceOnMount = NewConstructorOption("propertyinheritance", func(e *Element)*Element{
-	h:= NewMutationHandler(func(evt *MutationEvent)bool{
+	h:= NewMutationHandler(func(evt MutationEvent)bool{
 		element:=evt.Origin()
 		InheritProperties(element,element.Parent)
 		return false
@@ -1131,7 +1140,7 @@ var allowPropertyInheritanceOnMount = NewConstructorOption("propertyinheritance"
 // constructor, allows an Element to inherit the properties of its parent
 // when it is mounted in the DOM tree.
 func EnablePropertyAutoInheritance() string{
-	return 'propertyinheritance'
+	return "propertyinheritance"
 }
 
 func Get(e *Element, key string) (Value, bool) {
@@ -1236,11 +1245,11 @@ func MakeToggable(conditionName string, e *Element, firstView ViewElements, seco
 	e.AddView(firstView).AddView(secondView)
 
 	toggle := NewMutationHandler(func(evt MutationEvent) bool {
-		value, ok := evt.NewValue().(bool)
+		value, ok := evt.NewValue().(Bool)
 		if !ok {
 			value = false
 		}
-		if value {
+		if bool(value) {
 			Mutate(e,ActivateViewCommand(firstView.Name()))
 		}
 		Mutate(e,ActivateViewCommand(secondView.Name()))
@@ -1392,7 +1401,7 @@ func(p PropertyStore) HasCategory(category string) bool{
 }
 
 func(p PropertyStore) HasProperty(category string, propname string) bool{
-	ps,ok:= p.Categoies[category]
+	ps,ok:= p.Categories[category]
 	if !ok{return false}
 
 	_,ok= ps.Get(propname)
@@ -1521,8 +1530,8 @@ func(e *Element) discriminant() discriminant{return "particleui"}
 func(e *Element) ValueType() string{return "Element"}
 func(e *Element) RawValue() Object{
 	o:= NewObject().SetType("Element")
-	o.Set("id",String(element.ID))
-	o.Set("name",String(element.Name))
+	o.Set("id",String(e.ID))
+	o.Set("name",String(e.Name))
 	constructoroptions,ok:= e.Get("internals","constructoroptions")
 	if ok{
 		o.Set("constructoroptions",constructoroptions)
@@ -1530,7 +1539,7 @@ func(e *Element) RawValue() Object{
 
 	constructorname,ok:= e.Get("internals","constructorname")
 	if !ok{
-		retunr nil
+		return nil
 	}
 	o.Set("constructorname",constructorname)
 
@@ -1558,7 +1567,7 @@ func(s String) ValueType() string{return "String"}
 
 type Number float64
 func(n Number) discriminant() discriminant{return "particleui"}
-func(n number) RawValue() Object {
+func(n Number) RawValue() Object {
 	o:=NewObject().SetType("Number")
 	o.Set("value",n)
 	return o
@@ -1599,7 +1608,7 @@ func(o Object) Get(key string) (Value,bool){
 	}
 	tv,ok:= v.(Value)
 	if !ok{
-		retunr nil,ok
+		return nil,ok
 	}
 
 	u,ok:=tv.(Object)
@@ -1689,44 +1698,39 @@ func(o Object) Value() Value{ // TODO Add Element and Command
 		if !ok{
 			return nil
 		}
-		elstoreid,ok:= elementstoreid.(string)
+		elstoreid,ok:= elementstoreid.(String)
 		if!ok{
 			log.Print("Wrong type for ElementStore ID")
 			return nil
 		}
 		// Let's get the elementstore
-		elstore,ok:= Stores.Get(elstoreid)
+		elstore,ok:= Stores.Get(string(elstoreid))
 		if !ok{
 			return nil
 		}
 		// Let's try to see if the element is in the ElementStore already
-		elid,ok:= id.(string)
+		elid,ok:= id.(String)
 		if!ok{
 			log.Print("Wrong type for Element ID stored in ui.Value")
 			return nil
 		}
-		element:= elstore.GetByID(elid)
+		element:= elstore.GetByID(string(elid))
 		if element != nil{
 			return element
 		}
 		// Otherwise we construct it. (TODO: make sure that element constructors try to get the data in store)
-		cname,ok:= constructorname.(string)
+		cname,ok:= constructorname.(String)
 		if!ok{
 			log.Print("Wrong type for constructor name.")
 			return nil
 		}
-		constructor,ok:= elstore.Constructors[cname]
+		constructor,ok:= elstore.Constructors[string(cname)]
 		if !ok{
-			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + id + "from Value")
+			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
 		}
-		ename,ok:=name.(string)
+		ename,ok:=name.(String)
 		if !ok{
 			log.Print("Element name in Value of wring type.")
-			return nil
-		}
-		edoctype,ok:=doctype.(string)
-		if !ok{
-			log.Print("Doctype stored in Value has wrong type. Should be a string.")
 			return nil
 		}
 
@@ -1736,24 +1740,24 @@ func(o Object) Value() Value{ // TODO Add Element and Command
 			optlist,ok:= constructoroptions.(List)
 			if ok{
 				for _,opt:= range optlist{
-					sopt,ok:= opt.(string)
+					sopt,ok:= opt.(String)
 					if !ok{
 						return nil
 					}
-					coptions= append(coptions, sopt)
+					coptions= append(coptions, string(sopt))
 				}
 			}
 		}
-		return constructor(ename,elid,coptions...)
+		return constructor(string(ename),string(elid),coptions...)
 
 	default:
-		return nil
+		return o
 	}
 }
 
 func NewObject() Object{
-	o:= Object(make(map[string]interface))
-	o.Set("typ","Object")
+	o:= Object(make(map[string]interface{}))
+	o.Set("typ",String("Object"))
 	return o
 }
 
@@ -1762,8 +1766,8 @@ func(l List) discriminant() discriminant{return "particleui"}
 func(l List) RawValue() Object{
 	o:= NewObject().SetType("List")
 	raw:= make([]Value,0)
-	for_,v:=range l{
-		raw:=append(raw,v.RawValue())
+	for _,v:=range l{
+		raw=append(raw,v.RawValue())
 	}
 	o.Set("value",List(raw))
 	return o

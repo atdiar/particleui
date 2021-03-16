@@ -59,7 +59,7 @@ type jsStore struct{
 
 func(s jsStore) Get(key string) (string,bool){
 	v:= s.store.Call("getItem", key)
-	if !js.Truthy(v){
+	if !v.Truthy(){
 		return "", false
 	}
 	return v.String(),true
@@ -155,7 +155,7 @@ type Window struct {
 }
 
 func (w Window) SetTitle(title string) {
-	w.Element.Set("ui", "title", title)
+	w.Element.Set("ui", "title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -166,7 +166,7 @@ func getWindow() Window {
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		target := evt.Origin()
-		newtitle, ok := evt.NewValue().(string)
+		newtitle, ok := evt.NewValue().(ui.String)
 		if !ok {
 			return true
 		}
@@ -179,12 +179,12 @@ func getWindow() Window {
 			return true
 		}
 		jswindow := nat.JSValue()
-		jswindow.Get("document").Set("title", newtitle)
+		jswindow.Get("document").Set("title", string(newtitle))
 		return false
 	})
 
 	e.Watch("ui", "title", e, h)
-	e.Set("ui", "title", DefaultWindowTitle, false)
+	e.Set("ui", "title", ui.String(DefaultWindowTitle), false)
 	return Window{e}
 }
 
@@ -272,12 +272,12 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 // the creation of a ui.Element constructor, it allows for ui.Element constructors to
 // different options for property persistence.
 var AllowSessionPersistence = ui.NewConstructorOption("sessionstorage",func(e *ui.Element)*ui.Element{
-	ui.LoadElementProperty(e,"internals","persistence","default","sessionstorage")
+	ui.LoadElementProperty(e,"internals","persistence","default",ui.String("sessionstorage"))
 	return e
 })
 
 var AllowAppLocalPersistence = ui.NewConstructorOption("localstorage",func(e *ui.Element)*ui.Element{
-	ui.LoadElementProperty(e,"internals","persistence","default","localstorage")
+	ui.LoadElementProperty(e,"internals","persistence","default",ui.String("localstorage"))
 	return e
 })
 
@@ -335,7 +335,7 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 			tooltip.Set("ui","command",ui.AppendChildCommand(content),false)
 			return false
 		}
-		strcontent, ok := evt.NewValue().(string)
+		strcontent, ok := evt.NewValue().(ui.String)
 		if !ok {
 			return true
 		}
@@ -393,10 +393,10 @@ var NewTextArea = func(name string, id string, rows int, cols int, options ...st
 		htmlTextArea := js.Global().Get("document").Call("createElement", "textarea")
 
 		e.Watch("data", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			if s, ok := evt.NewValue().(string); ok {
+			if s, ok := evt.NewValue().(ui.String); ok {
 				old := htmlTextArea.Get("value").String()
-				if s != old {
-					SetAttribute(evt.Origin(), "value", s)
+				if string(s) != old {
+					SetAttribute(evt.Origin(), "value", string(s))
 				}
 			}
 			return false
@@ -456,7 +456,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 				return true
 			}
 			s := v.String()
-			e.Set("data", "text", s, false)
+			e.Set("data", "text", ui.String(s), false)
 			return false
 		})
 
@@ -693,7 +693,7 @@ func NewTextNode() *ui.Element {
 		e.Native = n
 
 		e.Watch("data", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			if s, ok := evt.NewValue().(string); ok { // if data.text is deleted, nothing happens, so no check for nil of  evt.NewValue()
+			if s, ok := evt.NewValue().(ui.String); ok { // if data.text is deleted, nothing happens, so no check for nil of  evt.NewValue()
 				htmlTextNode.Set("nodeValue", s)
 			}
 			return false
@@ -729,14 +729,14 @@ var NewTemplatedText = func(name string, id string, format string, paramsNames .
 	params := make([]string, len(paramsNames))
 	for i, p := range paramsNames {
 		nt.Watch("data", p, nt, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			s, ok := evt.NewValue().(string)
+			s, ok := evt.NewValue().(ui.String)
 			if ok {
-				params[i] = s
+				params[i] = string(s)
 			} else {
 				params[i] = "???"
 			}
 
-			nt.Set("data", "text", formatter(format, params...), false)
+			nt.Set("data", "text", ui.String(formatter(format, params...)), false)
 			return false
 		}))
 	}
@@ -819,7 +819,7 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 		v := evt.NewValue()
 		item, ok := v.(*ui.Element)
 		if !ok {
-			str, ok := v.(string)
+			str, ok := v.(ui.String)
 			if !ok {
 				return true
 			}
@@ -835,30 +835,42 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 	return e
 }, AllowTooltip)
 
-type listValue struct {
-	Index int
-	Value interface{}
+
+
+func newListValue(index int, value ui.Value) ui.Object {
+	o:=ui.NewObject()
+	o.Set("index",ui.Number(index))
+	o.Set("value",value)
+	return o
 }
 
-func newListValue(index int, value interface{}) listValue {
-	return listValue{index, value}
+func DataFromListChange(v ui.Value) (index int, newvalue ui.Value, ok bool) {
+	res, ok := v.(ui.Object)
+	i,ok:= res.Get("index")
+	if !ok{
+		return -1,nil,false
+	}
+	idx,ok:= i.(ui.Number)
+	if !ok{
+		return -1,nil,false
+	}
+	value,ok:= res.Get("value")
+	if !ok{
+		return -1,nil,false
+	}
+	return int(idx), value, true
 }
 
-func DataFromListChange(v interface{}) (index int, newvalue interface{}, ok bool) {
-	res, ok := v.(listValue)
-	return res.Index, res.Value, ok
-}
-
-func ListAppend(list *ui.Element, values ...interface{}) *ui.Element {
-	var backinglist []interface{}
+func ListAppend(list *ui.Element, values ...ui.Value) *ui.Element {
+	var backinglist ui.List
 
 	bkglist, ok := list.Get("internals", list.Name)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
-	backinglist, ok = bkglist.([]interface{})
+	backinglist, ok = bkglist.(ui.List)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
 
 	length := len(backinglist)
@@ -871,16 +883,16 @@ func ListAppend(list *ui.Element, values ...interface{}) *ui.Element {
 	return list
 }
 
-func ListPrepend(list *ui.Element, values ...interface{}) *ui.Element {
-	var backinglist []interface{}
+func ListPrepend(list *ui.Element, values ...ui.Value) *ui.Element {
+	var backinglist ui.List
 
 	bkglist, ok := list.Get("internals", list.Name)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
-	backinglist, ok = bkglist.([]interface{})
+	backinglist, ok = bkglist.(ui.List)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
 
 	backinglist = append(values, backinglist...)
@@ -891,16 +903,16 @@ func ListPrepend(list *ui.Element, values ...interface{}) *ui.Element {
 	return list
 }
 
-func ListInsertAt(list *ui.Element, offset int, values ...interface{}) *ui.Element {
-	var backinglist []interface{}
+func ListInsertAt(list *ui.Element, offset int, values ...ui.Value) *ui.Element {
+	var backinglist ui.List
 
 	bkglist, ok := list.Get("internals", list.Name)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
-	backinglist, ok = bkglist.([]interface{})
+	backinglist, ok = bkglist.(ui.List)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
 
 	length := len(backinglist)
@@ -909,8 +921,7 @@ func ListInsertAt(list *ui.Element, offset int, values ...interface{}) *ui.Eleme
 		return list
 	}
 
-	nel := make([]interface{}, 0)
-	nel = append(nel, backinglist[:offset]...)
+	nel := ui.NewList(backinglist[:offset]...)
 	nel = append(nel, values...)
 	nel = append(nel, backinglist[offset:]...)
 	backinglist = nel
@@ -922,15 +933,15 @@ func ListInsertAt(list *ui.Element, offset int, values ...interface{}) *ui.Eleme
 }
 
 func ListDelete(list *ui.Element, offset int) *ui.Element {
-	var backinglist []interface{}
+	var backinglist ui.List
 
 	bkglist, ok := list.Get("internals", list.Name)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
-	backinglist, ok = bkglist.([]interface{})
+	backinglist, ok = bkglist.(ui.List)
 	if !ok {
-		backinglist = make([]interface{}, 0)
+		backinglist = ui.NewList()
 	}
 
 	length := len(backinglist)
@@ -967,7 +978,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n := NewListItem(evt.Origin().Name+"-item", id)
 			item, ok := v.(*ui.Element)
 			if !ok {
-				str, ok := v.(string)
+				str, ok := v.(ui.String)
 				if !ok {
 					return true
 				}
@@ -985,7 +996,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n := NewListItem(evt.Origin().Name+"-item", id)
 			item, ok := v.(*ui.Element)
 			if !ok {
-				str, ok := v.(string)
+				str, ok := v.(ui.String)
 				if !ok {
 					return true
 				}
@@ -1003,7 +1014,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n := NewListItem(evt.Origin().Name+"-item", id)
 			item, ok := v.(*ui.Element)
 			if !ok {
-				str, ok := v.(string)
+				str, ok := v.(ui.String)
 				if !ok {
 					return true
 				}
@@ -1136,18 +1147,19 @@ func AddClass(target *ui.Element, classname string) {
 	category := "css"
 	classes, ok := target.Get(category, "class")
 	if ok {
-		c, ok := classes.(string)
+		c, ok := classes.(ui.String)
 		if !ok {
-			target.Set(category, "class", classname, false)
+			target.Set(category, "class", ui.String(classname), false)
 			return
 		}
-		if !strings.Contains(c, classname) {
-			c = c + " " + classname
-			target.Set(category, "class", c, false)
+		sc:= string(c)
+		if !strings.Contains(sc, classname) {
+			sc = sc + " " + classname
+			target.Set(category, "class", ui.String(sc), false)
 		}
 		return
 	}
-	target.Set(category, "class", classname, false)
+	target.Set(category, "class", ui.String(classname), false)
 }
 
 func RemoveClass(target *ui.Element, classname string) {
@@ -1156,14 +1168,15 @@ func RemoveClass(target *ui.Element, classname string) {
 	if !ok {
 		return
 	}
-	c, ok := classes.(string)
+	rc, ok := classes.(ui.String)
 	if !ok {
 		return
 	}
+	c:=string(rc)
 	c = strings.TrimPrefix(c, classname)
 	c = strings.TrimPrefix(c, " ")
 	c = strings.ReplaceAll(c, classname+" ", " ")
-	target.Set(category, "class", c, false)
+	target.Set(category, "class", ui.String(c), false)
 }
 
 func Classes(target *ui.Element) []string {
@@ -1172,11 +1185,11 @@ func Classes(target *ui.Element) []string {
 	if !ok {
 		return nil
 	}
-	c, ok := classes.(string)
+	c, ok := classes.(ui.String)
 	if !ok {
 		return nil
 	}
-	return strings.Split(c, " ")
+	return strings.Split(string(c), " ")
 }
 
 func enableClasses(e *ui.Element) *ui.Element {
@@ -1187,7 +1200,7 @@ func enableClasses(e *ui.Element) *ui.Element {
 			log.Print("wrong type for native element or native element does not exist")
 			return true
 		}
-		classes, ok := evt.NewValue().(string)
+		classes, ok := evt.NewValue().(ui.String)
 		if !ok {
 			log.Print("new value of non-string type. Unable to use as css class(es)")
 			return true
@@ -1224,7 +1237,7 @@ func GetAttribute(target *ui.Element, name string) string {
 }
 
 func SetAttribute(target *ui.Element, name string, value string) {
-	target.Set("attrs", name, value, false)
+	target.Set("attrs", name, ui.String(value), false)
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot set Attribute on non-expected wrapper type")

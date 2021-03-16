@@ -163,12 +163,13 @@ func (r *Router) mount(element *Element, middleware ...RouteChangeHandler) {
 // Handler returns a mutation handler which deals with route change.
 func (r *Router) Handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
-		newroute, ok := evt.NewValue().(string)
+		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
 			r.ErrorAppLogic()
 			return true
 		}
+		newroute:=string(nroute)
 		if !r.LeaveTrailingSlash {
 			if newroute[len(newroute)-1:] == "/" {
 				newroute = newroute[:len(newroute)-1]
