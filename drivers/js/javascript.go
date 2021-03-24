@@ -18,9 +18,9 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements           = ui.NewElementStore("default", DOCTYPE)
-	EventTable         = NewEventTranslationTable()
-	DefaultWindowTitle = "Powered by ParticleUI"
+	Elements                      = ui.NewElementStore("default", DOCTYPE)
+	EventTable                    = NewEventTranslationTable()
+	DefaultWindowTitle            = "Powered by ParticleUI"
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
@@ -35,6 +35,7 @@ const (
 	onBlur mutationCaptureMode = iota
 	onInput
 )
+
 /*
 type Storage struct{
 	Load func(key string) interface{}
@@ -53,20 +54,20 @@ func NewStorage(load)
 
 */
 
-type jsStore struct{
+type jsStore struct {
 	store js.Value
 }
 
-func(s jsStore) Get(key string) (string,bool){
-	v:= s.store.Call("getItem", key)
-	if !v.Truthy(){
+func (s jsStore) Get(key string) (string, bool) {
+	v := s.store.Call("getItem", key)
+	if !v.Truthy() {
 		return "", false
 	}
-	return v.String(),true
+	return v.String(), true
 }
 
-func(s jsStore) Set(key string,value string){
-	s.store.Call("setItem",key,value)
+func (s jsStore) Set(key string, value string) {
+	s.store.Call("setItem", key, value)
 }
 
 // Let's add sessionstorage and localstorage for Element properties.
@@ -267,25 +268,24 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 //
 */
 
-
 // AllowSessionPersistence is a constructor option. When passed as argument in
 // the creation of a ui.Element constructor, it allows for ui.Element constructors to
 // different options for property persistence.
-var AllowSessionPersistence = ui.NewConstructorOption("sessionstorage",func(e *ui.Element)*ui.Element{
-	ui.LoadElementProperty(e,"internals","persistence","default",ui.String("sessionstorage"))
+var AllowSessionPersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
+	ui.LoadElementProperty(e, "internals", "persistence", "default", ui.String("sessionstorage"))
 	return e
 })
 
-var AllowAppLocalPersistence = ui.NewConstructorOption("localstorage",func(e *ui.Element)*ui.Element{
-	ui.LoadElementProperty(e,"internals","persistence","default",ui.String("localstorage"))
+var AllowAppLocalPersistence = ui.NewConstructorOption("localstorage", func(e *ui.Element) *ui.Element {
+	ui.LoadElementProperty(e, "internals", "persistence", "default", ui.String("localstorage"))
 	return e
 })
 
-func EnableSessionPeristence() string{
+func EnableSessionPeristence() string {
 	return "sessionstorage"
 }
 
-func EnableAppLocalPersistence() string{
+func EnableAppLocalPersistence() string {
 	return "localstorage"
 }
 
@@ -308,13 +308,14 @@ var NewDiv = Elements.NewConstructor("div", func(name string, id string) *ui.Ele
 	e := ui.NewElement(name, id, Elements.DocType)
 	e = enableClasses(e)
 
+	// TODO call getElementById first..; if element exist already, no need to call createElement
+	// Also, need to try and load any corresponding properties that would have been persisted and retrigger ui.mutations to recover ui state.
 	htmlDiv := js.Global().Get("document").Call("createElement", "div")
 	n := NewNativeElementWrapper(htmlDiv)
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
-
+}, AllowTooltip)
 
 var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
@@ -330,9 +331,9 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 		if ok {
 			tooltip := evt.Origin()
 			// tooltip.RemoveChildren()
-			tooltip.Set("ui","command",ui.RemoveChildrenCommand(),false)
+			tooltip.Set("ui", "command", ui.RemoveChildrenCommand(), false)
 			// tooltip.AppendChild(content)
-			tooltip.Set("ui","command",ui.AppendChildCommand(content),false)
+			tooltip.Set("ui", "command", ui.AppendChildCommand(content), false)
 			return false
 		}
 		strcontent, ok := evt.NewValue().(ui.String)
@@ -342,11 +343,11 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 
 		tooltip := evt.Origin()
 		// tooltip.RemoveChildren()
-		tooltip.Set("ui","command",ui.RemoveChildrenCommand(),false)
+		tooltip.Set("ui", "command", ui.RemoveChildrenCommand(), false)
 		tn := NewTextNode()
 		tn.Set("data", "text", strcontent, false)
 		//tooltip.AppendChild(tn)
-		tooltip.Set("ui","command",ui.AppendChildCommand(tn),false)
+		tooltip.Set("ui", "command", ui.AppendChildCommand(tn), false)
 		return false
 	})
 	e.Watch("data", "content", e, h)
@@ -355,7 +356,7 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 })
 
 func TryRetrieveTooltip(target *ui.Element) *ui.Element {
-	return target.ElementStore.GetByID(target.ID+"-tooltip")
+	return target.ElementStore.GetByID(target.ID + "-tooltip")
 }
 
 // EnableTooltip, when passed to a constructor, creates a tootltip html div element (for a given target ui.Element)
@@ -364,25 +365,24 @@ func TryRetrieveTooltip(target *ui.Element) *ui.Element {
 // The content value can be a string or another ui.Element.
 // The content of the tooltip can also be set by modifying the ("tooltip","content")
 // property
-func EnableTooltip() string{
+func EnableTooltip() string {
 	return "AllowTooltip"
 }
 
-var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element)*ui.Element{
-	e:=tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip")
+var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element) *ui.Element {
+	e := tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip")
 	// Let's observe the target element which owns the tooltip too so that we can
 	// change the tooltip automatically from there.
-	h:= ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		e.Set("data","content",evt.NewValue(),false)
+	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Set("data", "content", evt.NewValue(), false)
 		return false
 	})
-	target.Watch("tooltip","content",target,h)
+	target.Watch("tooltip", "content", target, h)
 
 	//target.AppendChild(e)
-	target.Set("ui","command",ui.AppendChildCommand(e),false)
+	target.Set("ui", "command", ui.AppendChildCommand(e), false)
 	return target
 })
-
 
 // NewTextArea is a constructor for a textarea html element.
 var NewTextArea = func(name string, id string, rows int, cols int, options ...string) *ui.Element {
@@ -409,33 +409,32 @@ var NewTextArea = func(name string, id string, rows int, cols int, options ...st
 		SetAttribute(e, "rows", strconv.Itoa(rows))
 		SetAttribute(e, "cols", strconv.Itoa(cols))
 		return e
-	}, allowTextAreaDataBindingOnBlur,allowTextAreaDataBindingOnInput,AllowTooltip)(name, id, options...)
+	}, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput, AllowTooltip)(name, id, options...)
 }
-
 
 // allowTextAreaDataBindingOnBlur is a constructor option for TextArea UI elements enabling
 // TextAreas to activate an option ofr two-way databinding.
 var allowTextAreaDataBindingOnBlur = ui.NewConstructorOption("SyncOnBlur", func(e *ui.Element) *ui.Element {
-		return enableDataBinding(onBlur)(e)
+	return enableDataBinding(onBlur)(e)
 })
 
 // allowTextAreaDataBindingOnInoput is a constructor option for TextArea UI elements enabling
 // TextAreas to activate an option ofr two-way databinding.
 var allowTextAreaDataBindingOnInput = ui.NewConstructorOption("SyncOnInput", func(e *ui.Element) *ui.Element {
-		return enableDataBinding(onInput)(e)
+	return enableDataBinding(onInput)(e)
 })
 
 // EnableTextAreaSyncOnBlur returns the name of the option that can be passed to
 // textarea ui.Element constructor to trigger two-way databinding on textarea
 // blur event.
-func EnableTextAreaSyncOnBlur() string{
+func EnableTextAreaSyncOnBlur() string {
 	return "SyncOnBlur"
 }
 
 // EnableTextAreaSyncOnInput returns the name of the option that can be passed to
 // textarea ui.Element constructor to trigger two-way databinding on textarea
 // input event.
-func EnableTextAreaSyncOnInput() string{
+func EnableTextAreaSyncOnInput() string {
 	return "SyncOnInput"
 }
 
@@ -488,7 +487,7 @@ var NewHeader = Elements.NewConstructor("header", func(name string, id string) *
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 // NewFooter is a constructor for an html footer element.
 var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *ui.Element {
@@ -500,7 +499,7 @@ var NewFooter = Elements.NewConstructor("footer", func(name string, id string) *
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 // NewSpan is a constructor for html div elements.
 var NewSpan = Elements.NewConstructor("span", func(name string, id string) *ui.Element {
@@ -512,7 +511,7 @@ var NewSpan = Elements.NewConstructor("span", func(name string, id string) *ui.E
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 // NewDiv is a constructor for html div elements.
 var NewParagraph = Elements.NewConstructor("paragraph", func(name string, id string) *ui.Element {
@@ -524,7 +523,7 @@ var NewParagraph = Elements.NewConstructor("paragraph", func(name string, id str
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 // NewNavMenu is a constructor for a html nav element.
 var NewNavMenu = Elements.NewConstructor("nav", func(name string, id string) *ui.Element {
@@ -536,7 +535,7 @@ var NewNavMenu = Elements.NewConstructor("nav", func(name string, id string) *ui
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 // NewAnchor creates an html anchor element which points to the object whose id is
 // being passed as argument.
@@ -570,7 +569,7 @@ var NewAnchor = Elements.NewConstructor("link", func(name string, id string) *ui
 	e.Native = n
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 var NewButton = func(name string, id string, typ string, options ...string) *ui.Element {
 	f := Elements.NewConstructor("button", func(elementname string, elementid string) *ui.Element {
@@ -584,7 +583,7 @@ var NewButton = func(name string, id string, typ string, options ...string) *ui.
 		SetAttribute(e, "id", elementid)
 		SetAttribute(e, "type", typ)
 		return e
-	},AllowTooltip)
+	}, AllowTooltip)
 	return f(name, id, options...)
 }
 
@@ -618,7 +617,7 @@ var NewImage = func(src string, id string, altname string, options ...string) *u
 		SetAttribute(e, "alt", name)
 		SetAttribute(e, "id", imgid)
 		return e
-	},AllowTooltip)(altname, id, options...)
+	}, AllowTooltip)(altname, id, options...)
 }
 
 var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui.Element {
@@ -632,7 +631,7 @@ var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui
 	SetAttribute(e, "name", name)
 	SetAttribute(e, "id", id)
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
@@ -645,7 +644,7 @@ var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui
 	n := NewNativeElementWrapper(htmlVideo)
 	e.Native = n
 	return e
-},AllowTooltip)
+}, AllowTooltip)
 
 var NewMediaSource = func(src string, typ string, options ...string) *ui.Element {
 	return Elements.NewConstructor("source", func(name string, id string) *ui.Element {
@@ -659,7 +658,7 @@ var NewMediaSource = func(src string, typ string, options ...string) *ui.Element
 		SetAttribute(e, "type", name)
 		SetAttribute(e, "src", id)
 		return e
-	},AllowTooltip)(typ, src, options...)
+	}, AllowTooltip)(typ, src, options...)
 }
 
 /* Convenience function
@@ -744,12 +743,11 @@ var NewTemplatedText = func(name string, id string, format string, paramsNames .
 }
 
 var NewList = func(name string, id string, options ...string) *ui.Element {
-	elname := "ul"
-	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
+	return Elements.NewConstructor("ul", func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlList := js.Global().Get("document").Call("createElement", elname)
+		htmlList := js.Global().Get("document").Call("createElement", "ul")
 
 		n := NewNativeElementWrapper(htmlList)
 		e.Native = n
@@ -760,12 +758,11 @@ var NewList = func(name string, id string, options ...string) *ui.Element {
 }
 
 var NewOrderedList = func(name string, id string, typ string, numberingstart int, options ...string) *ui.Element {
-	elname := "ol"
-	return Elements.NewConstructor(elname, func(ename, eid string) *ui.Element {
+	return Elements.NewConstructor("ol", func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlList := js.Global().Get("document").Call("createElement", elname)
+		htmlList := js.Global().Get("document").Call("createElement", "ol")
 
 		n := NewNativeElementWrapper(htmlList)
 		e.Native = n
@@ -827,36 +824,34 @@ var NewListItem = Elements.NewConstructor("listitem", func(name string, id strin
 			item.Set("data", "text", str, false)
 		}
 		// evt.Origin().RemoveChildren().AppendChild(item)
-		evt.Origin().Set("ui","command",ui.RemoveChildrenCommand())
-		evt.Origin().Set("ui","command",ui.AppendChildCommand(item))
+		evt.Origin().Set("ui", "command", ui.RemoveChildrenCommand())
+		evt.Origin().Set("ui", "command", ui.AppendChildCommand(item))
 		return false
 	})
 	e.Watch("ui", "content", e, onuimutation)
 	return e
 }, AllowTooltip)
 
-
-
 func newListValue(index int, value ui.Value) ui.Object {
-	o:=ui.NewObject()
-	o.Set("index",ui.Number(index))
-	o.Set("value",value)
+	o := ui.NewObject()
+	o.Set("index", ui.Number(index))
+	o.Set("value", value)
 	return o
 }
 
 func DataFromListChange(v ui.Value) (index int, newvalue ui.Value, ok bool) {
 	res, ok := v.(ui.Object)
-	i,ok:= res.Get("index")
-	if !ok{
-		return -1,nil,false
+	i, ok := res.Get("index")
+	if !ok {
+		return -1, nil, false
 	}
-	idx,ok:= i.(ui.Number)
-	if !ok{
-		return -1,nil,false
+	idx, ok := i.(ui.Number)
+	if !ok {
+		return -1, nil, false
 	}
-	value,ok:= res.Get("value")
-	if !ok{
-		return -1,nil,false
+	value, ok := res.Get("value")
+	if !ok {
+		return -1, nil, false
 	}
 	return int(idx), value, true
 }
@@ -988,7 +983,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n.Set("data", "content", item, false)
 
 			// evt.Origin().AppendChild(n)
-			evt.Origin().Set("ui","command",ui.AppendChildCommand(n),false)
+			evt.Origin().Set("ui", "command", ui.AppendChildCommand(n), false)
 		}
 
 		if evt.ObservedKey() == "prepend" {
@@ -1006,7 +1001,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n.Set("data", "content", item, false)
 
 			// evt.Origin().PrependChild(n)
-			evt.Origin().Set("ui","command",ui.PrependChildCommand(n),false)
+			evt.Origin().Set("ui", "command", ui.PrependChildCommand(n), false)
 		}
 
 		if evt.ObservedKey() == "insert" {
@@ -1024,7 +1019,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			n.Set("data", "content", item, false)
 
 			// evt.Origin().InsertChild(n, i)
-			evt.Origin().Set("ui","command",ui.InsertChildCommand(n,i),false)
+			evt.Origin().Set("ui", "command", ui.InsertChildCommand(n, i), false)
 		}
 
 		if evt.ObservedKey() == "delete" {
@@ -1032,7 +1027,7 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 			deletee := target.Children.AtIndex(i)
 			if deletee != nil {
 				// target.RemoveChild(deletee)
-				target.Set("ui","command", ui.RemoveChildCommand(deletee))
+				target.Set("ui", "command", ui.RemoveChildCommand(deletee))
 			}
 		}
 		return false
@@ -1152,7 +1147,7 @@ func AddClass(target *ui.Element, classname string) {
 			target.Set(category, "class", ui.String(classname), false)
 			return
 		}
-		sc:= string(c)
+		sc := string(c)
 		if !strings.Contains(sc, classname) {
 			sc = sc + " " + classname
 			target.Set(category, "class", ui.String(sc), false)
@@ -1172,7 +1167,7 @@ func RemoveClass(target *ui.Element, classname string) {
 	if !ok {
 		return
 	}
-	c:=string(rc)
+	c := string(rc)
 	c = strings.TrimPrefix(c, classname)
 	c = strings.TrimPrefix(c, " ")
 	c = strings.ReplaceAll(c, classname+" ", " ")

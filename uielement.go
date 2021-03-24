@@ -47,24 +47,25 @@ func(e elementStores) Get(storeid string) (*ElementStore,bool){
 }
 
 func(e elementStores) Set(store *ElementStore) {
-	_,ok:= e.stores[store.Matrix.ID]
+	_,ok:= e.stores[store.Global.ID]
 	if ok{
 		log.Print("ElementStore already exists")
 		return
 	}
-	e.stores[store.Matrix.ID]=store
+	e.stores[store.Global.ID]=store
 }
 
 // ElementStore defines a namespace for a list of Element constructors.
 type ElementStore struct {
 	DocType      string
 	Constructors map[string]func(name, id string, optionNames ...string) *Element
+	GlobalConstructosOptions map[string]func(*Element)*Element
 	ConstructorsOptions map[string]map[string]func(*Element)*Element
 	ByID         map[string]*Element
 
 	PersistentStorer map[string]storageFunctions
 
-	Matrix *Element // the matrix Element stores the global state shared by all *Elements
+	Global *Element // the global Element stores the global state shared by all *Elements
 }
 
 type storageFunctions struct{
@@ -103,19 +104,21 @@ func NewConstructorOption(name string, configuratorFn func(*Element)*Element) Co
 
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string,doctype string) *ElementStore {
-	matrix:= NewElement("matrix",storeid,doctype)
-	es:= &ElementStore{doctype, make(map[string]func(name string, id string,optionNames ...string) *Element, 0),make(map[string]map[string]func(*Element)*Element,0), make(map[string]*Element),make(map[string]storageFunctions,5),matrix}
-	matrix.WatchGroup("",matrix,NewMutationHandler(func(evt MutationEvent)bool{
-		for _,element := range es.ByID{
-			element.Set("global",evt.ObservedKey(), evt.NewValue(), false)
-		}
-		return false
-	}))
+	global:= NewElement("global",storeid,doctype)
+	es:= &ElementStore{doctype, make(map[string]func(name string, id string,optionNames ...string) *Element, 0),make(map[string]func(*Element)*Element),make(map[string]map[string]func(*Element)*Element,0), make(map[string]*Element),make(map[string]storageFunctions,5),global}
 	Stores.Set(es)
 	return es
 }
 
-// AddPersistenceMode allos to define alternate ways to persist Element properties
+// ApplyGlobalOption registers a Constructor option that will be called for every
+// element constructed.
+// Rationale: implementing dark-mode aware ui elements easily.
+func(e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore{
+	e.GlobalConstructosOptions[c.Name] = c.Configurator
+	return e
+}
+
+// AddPersistenceMode allows to define alternate ways to persist Element properties
 // from the default in-memory.
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
@@ -143,12 +146,14 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 	c := func(name string, id string, optionNames ...string) *Element {
 		element := constructor(name, id)
 		element.Set("internals","constructor",String(elementname))
-		element.matrix = e.Matrix
+		element.Global = e.Global
 		element.ElementStore = e
-		element.WatchGroup("",element, NewMutationHandler(func(evt MutationEvent)bool{
-			element.Set("global", evt.ObservedKey(),evt.NewValue(),false)
-			return false
-		}))
+
+		// Let's apply the global constructor options
+		for _,fn:=range e.GlobalConstructosOptions{
+			element = fn(element)
+		}
+
 		// TODO optionalArgs  apply the corresponding options
 		for _,opt:=range optionNames{
 			r,ok:= e.ConstructorsOptions[elementname]
@@ -175,26 +180,14 @@ func (e *ElementStore) GetByID(id string) *Element {
 	return v
 }
 
-// EnableGlobalPropertyAccess will, when passed as a configuration option to an Element
-// contructor, grant an Element the right to update a global property. Global properties
-// are those that belong to the "global" namespace (a.k.a. category) of every Element properties.
-func EnableGlobalPropertyAccess(propertyname string) func(*Element)*Element{
-	return func(e *Element)*Element{
-		e.canMutateGlobalScope = true
-		e.matrix.Watch("",propertyname, e, NewMutationHandler(func(evt MutationEvent)bool{
-			e.matrix.setGlobal(propertyname,evt.NewValue(),false)
-			return false
-			}))
-		return e
-	}
-}
+
 
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
 type Element struct {
 	ElementStore *ElementStore
-	matrix *Element //where it all begins :) holds ownership of the global state
+	Global *Element // holds ownership of the global state
 	root        *Element
 	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
 	path        *Elements
@@ -206,7 +199,6 @@ type Element struct {
 	DocType string
 
 	Properties PropertyStore
-	canMutateGlobalScope bool
 	PropMutationHandlers   *MutationCallbacks     // list of mutation handlers stored at elementID/propertyName (Elements react to change in other elements they are monitoring)
 	EventHandlers          EventListeners         // EventHandlers are to be called when the named event has fired.
 	NativeEventUnlisteners NativeEventUnlisteners // Allows to remove event listeners on the native element, registered when bridging event listeners from the native UI platform.
@@ -220,6 +212,8 @@ type Element struct {
 
 	Native NativeElement
 }
+
+func(e *Element) Element() *Element{return e}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
@@ -235,7 +229,6 @@ func NewElement(name string, id string, doctype string) *Element {
 		id,
 		doctype,
 		NewPropertyStore(),
-		false,
 		NewMutationCallbacks(),
 		NewEventListenerStore(),
 		NewNativeEventUnlisteners(),
@@ -610,7 +603,7 @@ func detach(e *Element) {
 // view being rendered.
 func (e *Element) AppendChild(child *Element) *Element {
 	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 
@@ -629,7 +622,7 @@ func (e *Element) AppendChild(child *Element) *Element {
 
 func (e *Element) PrependChild(child *Element) *Element {
 	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 
@@ -648,7 +641,7 @@ func (e *Element) PrependChild(child *Element) *Element {
 
 func (e *Element) InsertChild(child *Element, index int) *Element {
 	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 	if child.Parent != nil{
@@ -670,7 +663,7 @@ func (e *Element) InsertChild(child *Element, index int) *Element {
 // of the user.
 func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 	if e.DocType != new.DocType {
-		log.Printf("Doctypes do not macth. Parent has %s while child Element has %s", e.DocType, new.DocType)
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
 	}
 	if new.Parent != nil{
@@ -786,7 +779,7 @@ func ActivateViewCommand(viewname string) Command{
 // For the simple reason that commands can be stored to be replayed later whereas
 // using the commands directly would not be a recordable action.
 func Mutate(e *Element, command Command){
-	e.Set("ui","command",command)
+	e.SetUI("command",command)
 }
 
 var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent)bool{
@@ -1033,35 +1026,76 @@ func(e *Element) OnMount(h *MutationHandler){
 // The "global" namespace is a local copy of the data that resides in the global
 // shared scope common to all Element objects of an ElementStore.
 func (e *Element) Get(category, propname string) (Value, bool) {
-	if category == ""{
-		category = "global"
-	}
 	return e.Properties.Get(category, propname)
 }
 
 // Set inserts a key/value pair under a given category in the element property store.
-// The "global" category is read-only.
-// The global scope may be mutated by changing a property of the "" category (empty string).
-// The changes will only take effect if the  Element was granted Global scope access rights for the
-// property in question via the EnableGlobalPropertyAccess functional option.
-//
 // First flag in the variadic argument, if true, denotes whether the property should be inheritable.
+// The "ui" category is unformally reserved for properties that are a UI representation
+// of data.
 func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
-	if category=="global"{
-		log.Print("this namespace is read-only (global). It may not be mutated directly. [see docs])")
-		return
-	}
-	if category == "" && !e.canMutateGlobalScope{
-		log.Print("Element does not have sufficient rights to try and mutate global scope")
-		return
-	}
 	var inheritable bool
 	if len(flags) > 0{
 		inheritable = flags[0]
 	}
 	e.Properties.Set(category, propname, value, inheritable)
+
 	evt := e.NewMutationEvent(category, propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
+}
+
+func(e *Element) GetData(propname string) (Value,bool){
+	return e.Get("data",propname)
+}
+
+// SetData inserts a key/value pair under the "data" category in the element property store.
+// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
+// It does not automatically update any potential property representation stored
+// for rendering use in the "ui" category/namespace.
+func (e *Element) SetData(propname string, value Value, flags ...bool) {
+	e.Set("data",propname,value, flags...)
+}
+
+// SetUI inserts a key/value pair under the "data" category in the element property store.
+// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
+// It does not automatically update any potential property representation stored
+// for rendering use in the "ui" category/namespace.
+func (e *Element) SetUI(propname string, value Value, flags ...bool) {
+	e.Set("ui",propname,value, flags...)
+}
+
+// SetDataSyncUI will set a "data" property and update the same-name property stored
+// in the "ui namespace/category for rendering.
+// Typically NOT used when the data is updated
+func(e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
+	var inheritable bool
+	if len(flags) > 0{
+		inheritable = flags[0]
+	}
+	e.Properties.Set("data", propname, value, inheritable)
+
+	e.Set("ui",propname,value,flags...)
+
+	evt := e.NewMutationEvent("data", propname, value)
+	e.PropMutationHandlers.DispatchEvent(evt)
+}
+
+// SyncUISetData is used in event handlers when a user changed a value accessible
+// via the User Interface, typically.
+//
+// For instance, after a User event changes the value via a GUI control, we would set
+// this value to the new value chosen by the user and then set the corresponding data
+// with a call to SetData (and not SetDataSyncUI since the UI value is alread up-to-date).
+//
+// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
+func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
+	var inheritable bool
+	if len(flags) > 0{
+		inheritable = flags[0]
+	}
+	e.Properties.Set("ui", propname, value, inheritable)
+
+	e.SetData(propname,value,flags...)
 }
 
 // LoadElementPropertyis a function typically used to return a UI Element to a
@@ -1076,16 +1110,6 @@ func LoadElementProperty(e *Element, category string, propname string,proptype s
 		evt := e.NewMutationEvent(category, propname, value)
 		e.PropMutationHandlers.DispatchEvent(evt)
 	}
-}
-
-func(e *Element) setGlobal(propname string, value Value, flags ...bool){
-	var inheritable bool
-	if len(flags) > 0{
-		inheritable = flags[0]
-	}
-	e.Properties.Set("", propname, value,inheritable)
-	evt := e.NewMutationEvent("", propname, value)
-	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 // Delete removes the property stored for the given category if it exists.
@@ -1374,17 +1398,17 @@ func (p PropertyStore) Get(category string, propname string) (Value, bool) {
 	return ps.Get(propname)
 }
 
-func (p PropertyStore) Set(category string, propname string, value Value, inheritable ...bool) {
+func (p PropertyStore) Set(category string, propname string, value Value, flags ...bool) {
 	ps, ok := p.Categories[category]
 	if !ok {
 		ps = newProperties()
 		p.Categories[category] = ps
 	}
-	var isInheritable bool
-	if inheritable != nil && len(inheritable) == 1 && inheritable[0] == true {
-		isInheritable = true
+	var Inheritable bool
+	if len(flags) >0{
+		Inheritable = flags[0]
 	}
-	ps.Set(propname, value, isInheritable)
+	ps.Set(propname, value, Inheritable)
 }
 
 func (p PropertyStore) Delete(category string, propname string) {
@@ -1543,7 +1567,7 @@ func(e *Element) RawValue() Object{
 	}
 	o.Set("constructorname",constructorname)
 
-	o.Set("elementstoreid", String(e.ElementStore.Matrix.ID))
+	o.Set("elementstoreid", String(e.ElementStore.Global.ID))
 	return o
 }
 
