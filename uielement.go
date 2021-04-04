@@ -59,7 +59,7 @@ func (e elementStores) Set(store *ElementStore) {
 type ElementStore struct {
 	DocType                  string
 	Constructors             map[string]func(name, id string, optionNames ...string) *Element
-	GlobalConstructosOptions map[string]func(*Element) *Element
+	GlobalConstructorOptions map[string]func(*Element) *Element
 	ConstructorsOptions      map[string]map[string]func(*Element) *Element
 	ByID                     map[string]*Element
 
@@ -114,7 +114,7 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 // element constructed.
 // Rationale: implementing dark-mode aware ui elements easily.
 func (e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore {
-	e.GlobalConstructosOptions[c.Name] = c.Configurator
+	e.GlobalConstructorOptions[c.Name] = c.Configurator
 	return e
 }
 
@@ -150,7 +150,7 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 		element.ElementStore = e
 
 		// Let's apply the global constructor options
-		for _, fn := range e.GlobalConstructosOptions {
+		for _, fn := range e.GlobalConstructorOptions {
 			element = fn(element)
 		}
 
@@ -240,7 +240,7 @@ func NewElement(name string, id string, doctype string) *Element {
 	return e
 }
 
-func PeristenceMode(e *Element) string {
+func PersistenceMode(e *Element) string {
 	mode := ""
 	v, ok := e.Get("internals", "persistence")
 	if ok {
@@ -251,6 +251,8 @@ func PeristenceMode(e *Element) string {
 	}
 	return mode
 }
+
+
 
 type Elements struct {
 	List []*Element
@@ -1038,7 +1040,35 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	if len(flags) > 0 {
 		inheritable = flags[0]
 	}
+
+	// Persist property if persistence mode has been set at Element creation
+	pmode:= PersistenceMode(e)
+	storage,ok:=e.ElementStore.PersistentStorer[pmode]
+	if ok{
+		if category !="ui"{
+				storage.Store(e,category,propname,value,flags...)
+		}
+	}
+
 	e.Properties.Set(category, propname, value, inheritable)
+
+	if category == "ui" && propname != "mutationrecords"{
+		mrs,ok:= e.Get("ui","mutationrecords")
+		if !ok{
+			mrs=NewList()
+		}
+		mrslist,ok:=mrs.(List)
+		if !ok{
+			mrslist = NewList()
+		}
+		mrslist = append(mrslist,NewMutationRecord(category,propname,value))
+		e.Set("ui","mutationrecords",mrslist)
+	}
+
+	// Mutationrecords persistence
+	if ok && category == "ui" && propname == "mutationrecords"{
+		storage.Store(e,category,propname,value,flags...)
+	}
 
 	evt := e.NewMutationEvent(category, propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
@@ -1094,6 +1124,18 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 		inheritable = flags[0]
 	}
 	e.Properties.Set("ui", propname, value, inheritable)
+	if propname != "mutationrecords"{
+		mrs,ok:= e.Get("ui","mutationrecords")
+		if !ok{
+			mrs=NewList()
+		}
+		mrslist,ok:=mrs.(List)
+		if !ok{
+			mrslist = NewList()
+		}
+		mrslist = append(mrslist,NewMutationRecord("ui",propname,value))
+		e.Set("ui","mutationrecords",mrslist)
+	}
 
 	e.SetData(propname, value, flags...)
 }
