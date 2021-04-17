@@ -8,11 +8,10 @@ import (
 	"strings"
 )
 
-// Router allows for a genre of condiitional rendering where Elements belonging
-// to the App tree register with a router a function that will mutate their state.
-// (in other words, the action of mutating an Element is delegated to an outside object: the router)
-// This router may apply such mutating functions depending on some external events such
-// as a native browser url change event.
+// Router stores shortcuts to given states of the application.
+// These shortcuts take the form of URIs.
+// The router is also in charge of modifying the application state to reach any
+// state registered as a shortcut upon request.
 type Router struct {
 	GlobalHandlers []RouteChangeHandler // used to implement guards such as when user has not the access rights to reach some app state. (authentication?)
 	BaseURL        string
@@ -23,13 +22,16 @@ type Router struct {
 	Routes *routeNode
 
 	// may not need the below
-	CurrentRoute string // this is the router state descibed by a string value (also describing partially the )
+	CurrentRoute string // this is the string value corresponding to the current app state
 	CurrentView  *Element
 	Registrees   []*registree // Holds the views that have not been added to the
 
 	LeaveTrailingSlash bool
 }
 
+// NewRouter takes an Element object which should be the entry point of the router
+// as well as the document root which should be the entry point of the document/application tree.
+// TODO eliminate documentroot ... redundant
 func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
 	if rootview.viewAdjacence() {
 		return nil, errors.New("The router cannot be created on a view that has siblings. It should be a unique entry point ot the app. ")
@@ -38,6 +40,10 @@ func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
 	return &Router{make([]RouteChangeHandler, 0), rootview.Route(), documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
 }
 
+// SetBaseURL is useful when the application is embedded within a webpage which is
+// different from the main page entry ("/")
+// It allows to essentially inform of the prefix the links within the application
+// should be expecting.
 func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
 	u, err := url.Parse(base)
 	if err != nil {
@@ -48,14 +54,15 @@ func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
 	return r
 }
 
-func (r *Router) AddGlobalHandlers(handlers ...RouteChangeHandler) {
+// AddCatchAllHandlers allows to add routing request handlers applying to  every route.
+func (r *Router) AddCatchAllHandlers(handlers ...RouteChangeHandler) {
 	if r.GlobalHandlers == nil {
 		r.GlobalHandlers = make([]RouteChangeHandler, 0)
 	}
 	r.GlobalHandlers = append(r.GlobalHandlers, handlers...)
 }
 
-// Rogister stores the route leading to the display of an *Element. It should
+// Register stores the route leading to the display of an *Element. It should
 // typically used for view-type Elements (i.e. Elements with named internal versions)
 //
 func (r *Router) Register(view *Element, middleware ...RouteChangeHandler) { // TODO RegisterWithName (for shorter alias so we can do Redirect("notfound"))
@@ -65,10 +72,12 @@ func (r *Router) Register(view *Element, middleware ...RouteChangeHandler) { // 
 	r.Registrees = append(r.Registrees, newRegistree(view, middleware...))
 }
 
-// NotFound
+// NotFoundView allows to specify a view that is displayed by the router when the
+// routing request fails.
 func (r *Router) NotFoundView(viewElements ...*Element) {
 	r.Element.AddView(NewViewElements("NotFound", viewElements...))
 }
+
 
 func (r *Router) UnauthorizedView(viewElements ...*Element) {
 	r.Element.AddView(NewViewElements("Unauthorized", viewElements...))
@@ -149,9 +158,9 @@ func (r *Router) Redirect(route string, nativebinding NativeDispatch) {
 	r.root.DispatchEvent(NewRouteChangeEvent(route, r.root), nativebinding)
 }
 
-// mount stores the route of an Element as well as the route of the Element it is a view of.
-// A route represents a serie of states for the User-Interface that needs to be
-// activated for an element to show up on screen. (or be added to the DOM tree, said otherwise in JS terms)
+// mount stores the route of an Element (it is also the route of the view if the Element belongs to one)
+// A route URI represents a serie of states for the User-Interface that needs to be
+// activated for an element to show up on screen.
 func (r *Router) mount(element *Element, middleware ...RouteChangeHandler) {
 	if element.ViewAccessPath == nil || len(element.ViewAccessPath.nodes) == 0 {
 		return
@@ -160,8 +169,8 @@ func (r *Router) mount(element *Element, middleware ...RouteChangeHandler) {
 	r.Routes.Insert(route, newRegistree(element, middleware...))
 }
 
-// Handler returns a mutation handler which deals with route change.
-func (r *Router) Handler() *MutationHandler {
+// handler returns a mutation handler which deals with route change.
+func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
@@ -231,7 +240,7 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 	// Native drivers will be in charge of mapping the events to their native names
 	// for binding.
 	root.AddEventListener("routechange", routeChangeHandler, nativebinding)
-	r.Watch("events", "routechange", root, r.Handler())
+	r.Watch("events", "routechange", root, r.handler())
 	r.serve()
 }
 

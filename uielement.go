@@ -126,6 +126,16 @@ func (e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Elemen
 	e.PersistentStorer[name] = storageFunctions{loadFromStore, store}
 }
 
+func (e *ElementStore) NewAppRoot(id string) *Element {
+	el := NewElement("root", id, e.DocType)
+	el.root = el
+	el.subtreeRoot = el
+	el.ElementStore = e
+	el.Global = e.Global
+	// DEBUG el.path isn't set
+	return el
+}
+
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, optionNames ...string) *Element {
 	options = append(options, allowPropertyInheritanceOnMount)
@@ -221,7 +231,7 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		nil,
 		nil,
-		nil,
+		NewElements(),
 		nil,
 		name,
 		id,
@@ -230,7 +240,7 @@ func NewElement(name string, id string, doctype string) *Element {
 		NewMutationCallbacks(),
 		NewEventListenerStore(),
 		NewNativeEventUnlisteners(),
-		nil,
+		NewElements(),
 		"",
 		nil,
 		nil,
@@ -251,8 +261,6 @@ func PersistenceMode(e *Element) string {
 	}
 	return mode
 }
-
-
 
 type Elements struct {
 	List []*Element
@@ -338,7 +346,7 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 		return e
 	}
 
-	if e.Mounted() {
+	if !e.Mounted() {
 		log.Print("Error: Element detached. should not happen.")
 		// TODO review which type of event could walk up a detached subtree
 		// for instance, how to update darkmode on detached elements especially
@@ -603,7 +611,6 @@ func (e *Element) AppendChild(child *Element) *Element {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
-
 	if child.Parent != nil {
 		child.Parent.RemoveChild(child)
 	}
@@ -706,7 +713,7 @@ func (e *Element) RemoveChildren() *Element {
 type Command Object
 
 func (c Command) discriminant() discriminant { return "particleui" }
-func (c Command) ValueType() string          { return "Command" }
+func (c Command) ValueType() string          { return Object(c).ValueType() }
 func (c Command) RawValue() Object           { return Object(c).RawValue() }
 
 func (c Command) Name(s string) Command {
@@ -786,17 +793,13 @@ func (e *Element) Mutate(command Command) *Element {
 }
 
 var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
-	if evt.Type() != "ui" || evt.ObservedKey() != "command" {
-		log.Print("UI command Handler firing for the wrong event.")
-		return true
-	}
-	command, ok := evt.NewValue().(Object)
+	command, ok := evt.NewValue().(Command)
 	if !ok || (command.ValueType() != "Command") {
-		log.Print("Wrong format for command property value")
+		log.Print("Wrong format for command property value ")
 		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
 	}
 
-	commandname, ok := command.Get("name")
+	commandname, ok := Object(command).Get("name")
 	if !ok {
 		log.Print("Command is invalid. Missing command name")
 		return true
@@ -815,12 +818,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		e := evt.Origin()
-		sid, ok := sourceid.(string)
+		sid, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error sourceid is not a string ?!")
 			return true
 		}
-		child := e.ElementStore.GetByID(sid)
+		child := e.ElementStore.GetByID(string(sid))
 		if child == nil {
 			return true
 		}
@@ -833,12 +836,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		e := evt.Origin()
-		sid, ok := sourceid.(string)
+		sid, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error sourceid is not a string ?!")
 			return true
 		}
-		child := e.ElementStore.GetByID(sid)
+		child := e.ElementStore.GetByID(string(sid))
 		if child == nil {
 			return true
 		}
@@ -855,7 +858,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			log.Print("Command malformed. Missing insertion positiob.")
 			return true
 		}
-		commandpos, ok := pos.(float64)
+		commandpos, ok := pos.(Number)
 		if !ok {
 			log.Print("position to insert at is not stored as a valid numeric type")
 			return true
@@ -864,12 +867,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		e := evt.Origin()
-		sid, ok := sourceid.(string)
+		sid, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error sourceid is not a string ?!")
 			return true
 		}
-		child := e.ElementStore.GetByID(sid)
+		child := e.ElementStore.GetByID(string(sid))
 		if child == nil {
 			return true
 		}
@@ -887,18 +890,18 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		e := evt.Origin()
-		sid, ok := sourceid.(string)
+		sid, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error sourceid is not a string ?!")
 			return true
 		}
-		tid, ok := targetid.(string)
+		tid, ok := targetid.(String)
 		if !ok {
 			log.Print("Error targetid is not a string ?!")
 			return true
 		}
-		newc := e.ElementStore.GetByID(sid)
-		oldc := e.ElementStore.GetByID(tid)
+		newc := e.ElementStore.GetByID(string(sid))
+		oldc := e.ElementStore.GetByID(string(tid))
 		if newc == nil || oldc == nil {
 			return true
 		}
@@ -911,12 +914,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		e := evt.Origin()
-		sid, ok := sourceid.(string)
+		sid, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error sourceid is not a string ?!")
 			return true
 		}
-		child := e.ElementStore.GetByID(sid)
+		child := e.ElementStore.GetByID(string(sid))
 		if child == nil {
 			return true
 		}
@@ -931,12 +934,12 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			log.Print("Command malformed. Missing viewname to activate, stored in sourceid")
 			return true
 		}
-		viewname, ok := sourceid.(string)
+		viewname, ok := sourceid.(String)
 		if !ok {
 			log.Print("Error viewname/sourceid is not a string ?!")
 			return true
 		}
-		err := evt.Origin().ActivateView(viewname)
+		err := evt.Origin().ActivateView(string(viewname))
 		if err != nil {
 			log.Print(err)
 		}
@@ -1006,7 +1009,10 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 // Mounted returns whether the subtree the current Element belongs to is attached
 // to the main tree or not.
 func (e *Element) Mounted() bool {
-	if e.subtreeRoot.Parent == nil && e.subtreeRoot != e.root {
+	if e.subtreeRoot == nil {
+		return false // kinda DEBUG left because whole implementation sketchy
+	}
+	if e.subtreeRoot.Parent == nil && e.subtreeRoot == e.root {
 		return true
 	}
 	return false
@@ -1042,32 +1048,38 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	}
 
 	// Persist property if persistence mode has been set at Element creation
-	pmode:= PersistenceMode(e)
-	storage,ok:=e.ElementStore.PersistentStorer[pmode]
-	if ok{
-		if category !="ui"{
-				storage.Store(e,category,propname,value,flags...)
+	pmode := PersistenceMode(e)
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok {
+			if category != "ui" {
+				storage.Store(e, category, propname, value, flags...)
+			}
 		}
 	}
 
 	e.Properties.Set(category, propname, value, inheritable)
 
-	if category == "ui" && propname != "mutationrecords"{
-		mrs,ok:= e.Get("ui","mutationrecords")
-		if !ok{
-			mrs=NewList()
+	if category == "ui" && propname != "mutationrecords" {
+		mrs, ok := e.Get("ui", "mutationrecords")
+		if !ok {
+			mrs = NewList()
 		}
-		mrslist,ok:=mrs.(List)
-		if !ok{
+		mrslist, ok := mrs.(List)
+		if !ok {
 			mrslist = NewList()
 		}
-		mrslist = append(mrslist,NewMutationRecord(category,propname,value))
-		e.Set("ui","mutationrecords",mrslist)
+		mrslist = append(mrslist, NewMutationRecord(category, propname, value))
+		e.Set("ui", "mutationrecords", mrslist)
 	}
 
 	// Mutationrecords persistence
-	if ok && category == "ui" && propname == "mutationrecords"{
-		storage.Store(e,category,propname,value,flags...)
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok && category == "ui" && propname == "mutationrecords" {
+			storage.Store(e, category, propname, value, flags...)
+		}
 	}
 
 	evt := e.NewMutationEvent(category, propname, value)
@@ -1094,9 +1106,9 @@ func (e *Element) SetUI(propname string, value Value, flags ...bool) {
 	e.Set("ui", propname, value, flags...)
 }
 
-// SetDataSyncUI will set a "data" property and update the same-name property stored
-// in the "ui namespace/category for rendering.
-// Typically NOT used when the data is updated
+// SetDataSyncUI will set a "data" property and update the same-name property value
+// located in the "ui namespace/category and used by the User Interface, for instance, for rendering..
+// Typically NOT used when the data is being updated from the UI.
 func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
 	var inheritable bool
 	if len(flags) > 0 {
@@ -1124,17 +1136,17 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 		inheritable = flags[0]
 	}
 	e.Properties.Set("ui", propname, value, inheritable)
-	if propname != "mutationrecords"{
-		mrs,ok:= e.Get("ui","mutationrecords")
-		if !ok{
-			mrs=NewList()
+	if propname != "mutationrecords" {
+		mrs, ok := e.Get("ui", "mutationrecords")
+		if !ok {
+			mrs = NewList()
 		}
-		mrslist,ok:=mrs.(List)
-		if !ok{
+		mrslist, ok := mrs.(List)
+		if !ok {
 			mrslist = NewList()
 		}
-		mrslist = append(mrslist,NewMutationRecord("ui",propname,value))
-		e.Set("ui","mutationrecords",mrslist)
+		mrslist = append(mrslist, NewMutationRecord("ui", propname, value))
+		e.Set("ui", "mutationrecords", mrslist)
 	}
 
 	e.SetData(propname, value, flags...)
@@ -1146,17 +1158,15 @@ func (m MutationRecord) discriminant() discriminant { return "particleui" }
 func (m MutationRecord) ValueType() string          { return "MutationRecord" }
 func (m MutationRecord) RawValue() Object           { return Object(m).RawValue() }
 
-
-func NewMutationRecord(category string, propname string, value Value) MutationRecord{
-	mr:= NewObject().SetType("MutationRecord")
-	mr.Set("category",String(category))
-	mr.Set("property",String(propname))
-	mr.Set("value",value)
+func NewMutationRecord(category string, propname string, value Value) MutationRecord {
+	mr := NewObject().SetType("MutationRecord")
+	mr.Set("category", String(category))
+	mr.Set("property", String(propname))
+	mr.Set("value", value)
 	mr.Set("timestamp", String(time.Now().UTC().String()))
 
 	return MutationRecord(mr)
 }
-
 
 // LoadProperty is a function typically used to return a UI Element to a
 // given state. As such, it does not trigger a mutation event
@@ -1688,7 +1698,11 @@ func (o Object) ValueType() string {
 	if !ok {
 		return "Object"
 	}
-	return t.ValueType()
+	s, ok := t.(String)
+	if !ok {
+		return "Object"
+	}
+	return string(s)
 }
 
 func (o Object) Get(key string) (Value, bool) {

@@ -1,17 +1,18 @@
 // +build js,wasm
 
-// Package javascript defines the default set of Element constructors, native interfaces,
+// Package doc defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
-package javascript
+package doc
 
 import (
+	"encoding/json"
+	"errors"
 	"log"
 	"strconv"
 	"strings"
 	"syscall/js"
 
 	"github.com/atdiar/particleui"
-	"github.com/valyala/fastjson"
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 	// Elements stores wasm-generated HTML ui.Element constructors.
 	Elements                      = ui.NewElementStore("default", DOCTYPE)
 	EventTable                    = NewEventTranslationTable()
+	DefaultWindow                 Window
 	DefaultWindowTitle            = "Powered by ParticleUI"
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
@@ -60,90 +62,296 @@ func (s jsStore) Set(key string, value js.Value) {
 // later recovery. It enables to have data that persists runs and loads of a
 // web app.
 
-var sessionstorefn = func(element *ui.Element, category string, propname string, value ui.Value,flags ...bool){
-	store:= jsStore{js.Global().Get("sessionStorage")}
-		categoryExists := element.Properties.HasCategory(category)
-		propertyExists := element.Properties.HasProperty(category,propname)
+var sessionstorefn = func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+	store := jsStore{js.Global().Get("sessionStorage")}
+	categoryExists := element.Properties.HasCategory(category)
+	propertyExists := element.Properties.HasProperty(category, propname)
 
-		if  !categoryExists{
-			categories := make([]interface{},0,len(element.Properties.Categories)+1)
-			for k:= range element.Properties.Categories{
-				categories = append(categories,k)
-			}
-			categories = append(categories, category)
-			v:= js.ValueOf(categories)
-			store.Set(element.ID,v)
+	if !categoryExists {
+		categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
+		for k := range element.Properties.Categories {
+			categories = append(categories, k)
 		}
-		proptype:= "Local"
-		if len(flags) > 0{
-			if flags[0]{
-				proptype = "Inheritable"
-			}
+		categories = append(categories, category)
+		v := js.ValueOf(categories)
+		store.Set(element.ID, v)
+	}
+	proptype := "Local"
+	if len(flags) > 0 {
+		if flags[0] {
+			proptype = "Inheritable"
 		}
-		if !propertyExists{
-			props := make([]interface{},0,1)
-			c,ok:=element.Properties.Categories[category]
-			if !ok{
-				props = append(props,proptype+"/"+propname)
-				v:=js.ValueOf(props)
-				store.Set(element.ID+"/"+category,v)
-			}
-			for k:= range c.Default{
-				props = append(props,"Default/"+k)
-			}
-			for k:= range c.Inherited{
-				props = append(props,"Inherited/"+k)
-			}
-			for k:= range c.Local{
-				props = append(props,"Local/"+k)
-			}
-			for k:= range c.Inheritable{
-				props = append(props,"Inheritable/"+k)
-			}
+	}
+	if !propertyExists {
+		props := make([]interface{}, 0, 1)
+		c, ok := element.Properties.Categories[category]
+		if !ok {
+			props = append(props, proptype+"/"+propname)
+			v := js.ValueOf(props)
+			store.Set(element.ID+"/"+category, v)
+		}
+		for k := range c.Default {
+			props = append(props, "Default/"+k)
+		}
+		for k := range c.Inherited {
+			props = append(props, "Inherited/"+k)
+		}
+		for k := range c.Local {
+			props = append(props, "Local/"+k)
+		}
+		for k := range c.Inheritable {
+			props = append(props, "Inheritable/"+k)
+		}
 
-			props = append(props,proptype+"/"+propname)
-			v:=js.ValueOf(props)
-			store.Set(element.ID+"/"+category,v)
-		}
-		v:=js.ValueOf(map[string]interface{}(value.RawValue()))
-		store.Set(element.ID+"/"+category+"/"+propname, v)
-		return
+		props = append(props, proptype+"/"+propname)
+		v := js.ValueOf(props)
+		store.Set(element.ID+"/"+category, v)
+	}
+	v := js.ValueOf(map[string]interface{}(value.RawValue()))
+	store.Set(element.ID+"/"+category+"/"+propname, v)
+	return
 }
 
-var loadfromsession = func(e *ui.Element) error{
-	store:= jsStore{js.Global().Get("sessionStorage")}
-	id:= e.ID
+var localstoragefn = func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+	store := jsStore{js.Global().Get("localStorage")}
+	categoryExists := element.Properties.HasCategory(category)
+	propertyExists := element.Properties.HasProperty(category, propname)
+
+	if !categoryExists {
+		categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
+		for k := range element.Properties.Categories {
+			categories = append(categories, k)
+		}
+		categories = append(categories, category)
+		v := js.ValueOf(categories)
+		store.Set(element.ID, v)
+	}
+	proptype := "Local"
+	if len(flags) > 0 {
+		if flags[0] {
+			proptype = "Inheritable"
+		}
+	}
+	if !propertyExists {
+		props := make([]interface{}, 0, 1)
+		c, ok := element.Properties.Categories[category]
+		if !ok {
+			props = append(props, proptype+"/"+propname)
+			v := js.ValueOf(props)
+			store.Set(element.ID+"/"+category, v)
+		}
+		for k := range c.Default {
+			props = append(props, "Default/"+k)
+		}
+		for k := range c.Inherited {
+			props = append(props, "Inherited/"+k)
+		}
+		for k := range c.Local {
+			props = append(props, "Local/"+k)
+		}
+		for k := range c.Inheritable {
+			props = append(props, "Inheritable/"+k)
+		}
+
+		props = append(props, proptype+"/"+propname)
+		v := js.ValueOf(props)
+		store.Set(element.ID+"/"+category, v)
+	}
+	v := js.ValueOf(map[string]interface{}(value.RawValue()))
+	store.Set(element.ID+"/"+category+"/"+propname, v)
+	return
+}
+
+var loadfromsession = func(e *ui.Element) error {
+	store := jsStore{js.Global().Get("sessionStorage")}
+	id := e.ID
 
 	// Let's retrieve the category index for this element, if it exists in the sessionstore
-	jsoncategories,ok:=store.Get(id)
-	if !ok{
+	jsoncategories, ok := store.Get(id)
+	if !ok {
 		return nil // Not necessarily an error in the general case. element just does not exist in store
 	}
-	var p fastjson.Parser
-	categories, err := p.Parse(jsoncategories.String())
-	if err!= nil{
+	categories := make([]string, 0)
+	properties := make([]string, 0)
+	err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
+	if err != nil {
 		return err
 	}
+	for _, category := range categories {
+		jsonproperties, ok := store.Get(e.ID + "/" + category)
+		if !ok {
+			return nil
+		}
+		err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
+		if err != nil {
+			return err
+		}
+		for _, property := range properties {
+			// let's retrieve the propname (it is suffixed by the proptype)
+			// then we can retrieve the value
+			proptypename := strings.SplitAfter(property, "/")
+			proptype := proptypename[0]
+			propname := proptypename[1]
+			jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
+			if ok {
+				rawvalue := ui.NewObject()
+				err = json.Unmarshal([]byte(jsonvalue.String()), rawvalue)
+				if err != nil {
+					return err
+				}
+				if category != "ui" && propname != "mutationrecords" {
+					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
+				}
+				rawmutationrecords := rawvalue.Value()
+				if rawmutationrecords.ValueType() != "List" {
+					return errors.New("mutationrecords are not of type List")
+				}
+				mutationrecordlist, ok := rawmutationrecords.(ui.List)
+				if !ok {
+					return errors.New("mutationrecords are not of List type")
+				}
 
+				for _, mutationrecord := range mutationrecordlist {
+					record, ok := mutationrecord.(ui.Object)
+					if !ok {
+						return errors.New("mutationrecord is not of expected type.")
+					}
+					vcategory, ok := record.Get("category")
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+					category, ok := vcategory.(ui.String)
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+
+					vpropname, ok := record.Get("property")
+					if !ok {
+						return errors.New("propname not found")
+					}
+					propname, ok := vpropname.(ui.String)
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+					value, ok := record.Get("value")
+					if !ok {
+						return errors.New("value not found")
+					}
+					e.Set(string(category), string(propname), value)
+				}
+			}
+		}
+	}
+	return nil
 }
-/*
 
-Elements.AddPersistenceMode("sessionstorage",loadfromsessionstore,sessionstorefn)
-*/
+var loadfromlocalstorage = func(e *ui.Element) error {
+	store := jsStore{js.Global().Get("localStorage")}
+	id := e.ID
+
+	// Let's retrieve the category index for this element, if it exists in the sessionstore
+	jsoncategories, ok := store.Get(id)
+	if !ok {
+		return nil // Not necessarily an error in the general case. element just does not exist in store
+	}
+	categories := make([]string, 0)
+	properties := make([]string, 0)
+	err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
+	if err != nil {
+		return err
+	}
+	for _, category := range categories {
+		jsonproperties, ok := store.Get(e.ID + "/" + category)
+		if !ok {
+			return nil
+		}
+		err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
+		if err != nil {
+			return err
+		}
+		for _, property := range properties {
+			// let's retrieve the propname (it is suffixed by the proptype)
+			// then we can retrieve the value
+			proptypename := strings.SplitAfter(property, "/")
+			proptype := proptypename[0]
+			propname := proptypename[1]
+			jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
+			if ok {
+				rawvalue := ui.NewObject()
+				err = json.Unmarshal([]byte(jsonvalue.String()), rawvalue)
+				if err != nil {
+					return err
+				}
+				if category != "ui" && propname != "mutationrecords" {
+					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
+				}
+				rawmutationrecords := rawvalue.Value()
+				if rawmutationrecords.ValueType() != "List" {
+					return errors.New("mutationrecords are not of type List")
+				}
+				mutationrecordlist, ok := rawmutationrecords.(ui.List)
+				if !ok {
+					return errors.New("mutationrecords are not of List type")
+				}
+
+				for _, mutationrecord := range mutationrecordlist {
+					record, ok := mutationrecord.(ui.Object)
+					if !ok {
+						return errors.New("mutationrecord is not of expected type.")
+					}
+					vcategory, ok := record.Get("category")
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+					category, ok := vcategory.(ui.String)
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+
+					vpropname, ok := record.Get("property")
+					if !ok {
+						return errors.New("propname not found")
+					}
+					propname, ok := vpropname.(ui.String)
+					if !ok {
+						return errors.New("mutationrecord bad encoding")
+					}
+					value, ok := record.Get("value")
+					if !ok {
+						return errors.New("value not found")
+					}
+					e.Set(string(category), string(propname), value)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Window is a ype that represents a browser window
 type Window struct {
-	*ui.Element
+	UIElement *ui.Element
+}
+
+func (w Window) Element() *ui.Element {
+	return w.UIElement
 }
 
 func (w Window) SetTitle(title string) {
-	w.Element.Set("ui", "title", ui.String(title))
+	w.Element().Set("ui", "title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
 
-func getWindow() Window {
+func GetWindow() Window {
 	e := ui.NewElement("window", DefaultWindowTitle, DOCTYPE)
-	e.Native = NewNativeElementWrapper(js.Global())
+	e.ElementStore = Elements
+	wd := js.Global()
+	if !wd.Truthy() {
+		log.Print("unable to access windows")
+		return Window{}
+	}
+	e.Native = NewNativeElementWrapper(wd)
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		target := evt.Origin()
@@ -160,16 +368,19 @@ func getWindow() Window {
 			return true
 		}
 		jswindow := nat.JSValue()
+		if !jswindow.Truthy() {
+			log.Print("Unable to access native Window object")
+			return true
+		}
 		jswindow.Get("document").Set("title", string(newtitle))
 		return false
 	})
 
 	e.Watch("ui", "title", e, h)
 	e.Set("ui", "title", ui.String(DefaultWindowTitle), false)
+
 	return Window{e}
 }
-
-var DefaultWindow Window = getWindow()
 
 // NativeElement defines a wrapper around a js.Value that implements the
 // ui.NativeElementWrapper interface.
@@ -275,9 +486,19 @@ func EnableLocalPersistence() string {
 // change.
 // By default, it represents document.body. As such, it is different from the
 // document which holds the head element for instance.
-var NewAppRoot = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
-	e := ui.NewElement(name, id, Elements.DocType)
+var NewDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
+	DefaultWindow = GetWindow()
+
+	Elements.AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn)
+	Elements.AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
+
+	e := Elements.NewAppRoot(id)
+
 	root := js.Global().Get("document").Get("body")
+	if !root.Truthy() {
+		log.Print("failed to instantiate root element for the document")
+		return e
+	}
 	n := NewNativeElementWrapper(root)
 	e.Native = n
 	return e
@@ -328,9 +549,8 @@ func NewDiv(name string, id string, options ...string) Div {
 		}))
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	d := newDiv(name, id, options...)
 
-	return Div{tryLoad(d)}
+	return Div{tryLoad(newDiv(name, id, options...))}
 }
 
 func tryLoad(d *ui.Element) *ui.Element {
@@ -832,7 +1052,7 @@ func (b Button) Element() *ui.Element {
 }
 
 func (b Button) Autofocus(t bool) Button {
-	b.Element().SetUI("autofocus", ui.Bool(t))
+	b.Element().SetDataSyncUI("autofocus", ui.Bool(t))
 	return b
 }
 
@@ -849,8 +1069,8 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 		e = enableClasses(e)
 
 		htmlButton := js.Global().Get("document").Call("getElementById", id)
-		exist:= !htmlButton.IsNull()
-		if !exist{
+		exist := !htmlButton.IsNull()
+		if !exist {
 			htmlButton = js.Global().Get("document").Call("createElement", "button")
 		}
 
@@ -927,10 +1147,9 @@ var NewInput = func(name string, id string, typ string, options ...string) *ui.E
 		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
 
-
 		htmlInput := js.Global().Get("document").Call("getElementById", id)
-		exist:= !htmlInput.IsNull()
-		if !exist{
+		exist := !htmlInput.IsNull()
+		if !exist {
 			htmlInput = js.Global().Get("document").Call("createElement", "input")
 		}
 
@@ -1100,9 +1319,9 @@ func NewImage(name, id string, options ...string) Image {
 		e := ui.NewElement(name, imgid, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlImg := js.Global().Get("document").Call("getElementById",id)
-		exist:= !htmlImg.IsNull()
-		if !exist{
+		htmlImg := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlImg.IsNull()
+		if !exist {
 			htmlImg = js.Global().Get("document").Call("createElement", "img")
 		}
 
@@ -1139,8 +1358,8 @@ var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui
 	e = enableClasses(e)
 
 	htmlAudio := js.Global().Get("document").Call("getElmentByID", id)
-	exist:=!htmlAudio.IsNull()
-	if !exist{
+	exist := !htmlAudio.IsNull()
+	if !exist {
 		htmlAudio = js.Global().Get("document").Call("createElement", "audio")
 	}
 
@@ -1155,10 +1374,9 @@ var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui
 	e := ui.NewElement(name, id, Elements.DocType)
 	e = enableClasses(e)
 
-
 	htmlVideo := js.Global().Get("document").Call("getElementById", id)
-	exist:=!htmlVideo.IsNull()
-	if !exist{
+	exist := !htmlVideo.IsNull()
+	if !exist {
 		htmlVideo = js.Global().Get("document").Call("createElement", "video")
 	}
 
@@ -1175,9 +1393,9 @@ var NewMediaSource = func(src string, typ string, options ...string) *ui.Element
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlSource := js.Global().Get("document").Call("getElmentByID",id)
-		exist:=!htmlSource.IsNull()
-		if !exist{
+		htmlSource := js.Global().Get("document").Call("getElmentByID", id)
+		exist := !htmlSource.IsNull()
+		if !exist {
 			htmlSource = js.Global().Get("document").Call("createElement", "source")
 		}
 
@@ -1234,14 +1452,15 @@ func (t TextNode) Value() ui.String {
 func NewTextNode() TextNode {
 	var NewNode = Elements.NewConstructor("text", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
-		htmlTextNode := js.Global().Get("document").Call("createTextNode", "")
+		htmlTextNode := js.Global().Get("document").Call("createTextNode", "") // DEBUG
 		n := NewNativeElementWrapper(htmlTextNode)
 		e.Native = n
 
 		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			if s, ok := evt.NewValue().(ui.String); ok { // if data.text is deleted, nothing happens, so no check for nil of  evt.NewValue() TODO handkle all the Value types
-				htmlTextNode.Set("nodeValue", s)
+				htmlTextNode.Set("nodeValue", string(s))
 			}
+
 			return false
 		}))
 
@@ -1411,8 +1630,8 @@ func NewList(name string, id string, options ...string) List {
 		e = enableClasses(e)
 
 		htmlList := js.Global().Get("document").Call("getElementById", id)
-		exist:=!htmlList.IsNull()
-		if !exist{
+		exist := !htmlList.IsNull()
+		if !exist {
 			htmlList = js.Global().Get("document").Call("createElement", "ul")
 		}
 
@@ -1459,8 +1678,8 @@ func NewOrderedList(name string, id string, typ string, numberingstart int, opti
 		e = enableClasses(e)
 
 		htmlList := js.Global().Get("document").Call("getElementById", id)
-		exist:=!htmlList.IsNull()
-		if !exist{
+		exist := !htmlList.IsNull()
+		if !exist {
 			htmlList = js.Global().Get("document").Call("createElement", "ol")
 		}
 
@@ -1494,8 +1713,8 @@ func NewListItem(name string, id string, options ...string) ListItem {
 		e = enableClasses(e)
 
 		htmlListItem := js.Global().Get("document").Call("getElementById", id)
-		exist:=!htmlListItem.IsNull()
-		if !exist{
+		exist := !htmlListItem.IsNull()
+		if !exist {
 			htmlListItem = js.Global().Get("document").Call("createElement", "li")
 		}
 

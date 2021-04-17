@@ -1,7 +1,10 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
-import "strings"
+import (
+	//"log"
+	"strings"
+)
 
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers
@@ -44,7 +47,7 @@ func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
 		}
 	}
 
-	mhs, ok := m.list[evt.Origin().ID+"/"+evt.ObservedKey()]
+	mhs, ok := m.list[evt.ObservedKey()]
 	if !ok {
 		return
 	}

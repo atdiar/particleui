@@ -1,6 +1,8 @@
-// Package javascript defines the default set of Element constructors, native interfaces,
+// +build js,wasm
+
+// Package doc defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
-package javascript
+package doc
 
 import (
 	"syscall/js"
