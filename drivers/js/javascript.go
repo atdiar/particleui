@@ -19,7 +19,7 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE)
+	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
 	EventTable                    = NewEventTranslationTable()
 	DefaultWindow                 Window
 	DefaultWindowTitle            = "Powered by ParticleUI"
@@ -62,271 +62,183 @@ func (s jsStore) Set(key string, value js.Value) {
 // later recovery. It enables to have data that persists runs and loads of a
 // web app.
 
-var sessionstorefn = func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-	store := jsStore{js.Global().Get("sessionStorage")}
-	categoryExists := element.Properties.HasCategory(category)
-	propertyExists := element.Properties.HasProperty(category, propname)
+func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+		store := jsStore{js.Global().Get(s)}
+		categoryExists := element.Properties.HasCategory(category)
+		propertyExists := element.Properties.HasProperty(category, propname)
 
-	if !categoryExists {
-		categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
-		for k := range element.Properties.Categories {
-			categories = append(categories, k)
+		if !categoryExists {
+			categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
+			for k := range element.Properties.Categories {
+				categories = append(categories, k)
+			}
+			categories = append(categories, category)
+			v := js.ValueOf(categories)
+			store.Set(element.ID, v)
 		}
-		categories = append(categories, category)
-		v := js.ValueOf(categories)
-		store.Set(element.ID, v)
-	}
-	proptype := "Local"
-	if len(flags) > 0 {
-		if flags[0] {
-			proptype = "Inheritable"
+		proptype := "Local"
+		if len(flags) > 0 {
+			if flags[0] {
+				proptype = "Inheritable"
+			}
 		}
-	}
-	if !propertyExists {
-		props := make([]interface{}, 0, 1)
-		c, ok := element.Properties.Categories[category]
-		if !ok {
+		if !propertyExists {
+			props := make([]interface{}, 0, 1)
+			c, ok := element.Properties.Categories[category]
+			if !ok {
+				props = append(props, proptype+"/"+propname)
+				v := js.ValueOf(props)
+				store.Set(element.ID+"/"+category, v)
+			}
+			for k := range c.Default {
+				props = append(props, "Default/"+k)
+			}
+			for k := range c.Inherited {
+				props = append(props, "Inherited/"+k)
+			}
+			for k := range c.Local {
+				props = append(props, "Local/"+k)
+			}
+			for k := range c.Inheritable {
+				props = append(props, "Inheritable/"+k)
+			}
+
 			props = append(props, proptype+"/"+propname)
 			v := js.ValueOf(props)
 			store.Set(element.ID+"/"+category, v)
 		}
-		for k := range c.Default {
-			props = append(props, "Default/"+k)
-		}
-		for k := range c.Inherited {
-			props = append(props, "Inherited/"+k)
-		}
-		for k := range c.Local {
-			props = append(props, "Local/"+k)
-		}
-		for k := range c.Inheritable {
-			props = append(props, "Inheritable/"+k)
-		}
-
-		props = append(props, proptype+"/"+propname)
-		v := js.ValueOf(props)
-		store.Set(element.ID+"/"+category, v)
+		item := value.RawValue()
+		v := stringify(item)
+		store.Set(element.ID+"/"+category+"/"+propname, js.ValueOf(v))
+		return
 	}
-	v := js.ValueOf(map[string]interface{}(value.RawValue()))
-	store.Set(element.ID+"/"+category+"/"+propname, v)
-	return
 }
 
-var localstoragefn = func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-	store := jsStore{js.Global().Get("localStorage")}
-	categoryExists := element.Properties.HasCategory(category)
-	propertyExists := element.Properties.HasProperty(category, propname)
-
-	if !categoryExists {
-		categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
-		for k := range element.Properties.Categories {
-			categories = append(categories, k)
+/*func stringify(v interface{}) js.Value {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Print(v)
+			log.Print(r)
 		}
-		categories = append(categories, category)
-		v := js.ValueOf(categories)
-		store.Set(element.ID, v)
-	}
-	proptype := "Local"
-	if len(flags) > 0 {
-		if flags[0] {
-			proptype = "Inheritable"
-		}
-	}
-	if !propertyExists {
-		props := make([]interface{}, 0, 1)
-		c, ok := element.Properties.Categories[category]
-		if !ok {
-			props = append(props, proptype+"/"+propname)
-			v := js.ValueOf(props)
-			store.Set(element.ID+"/"+category, v)
-		}
-		for k := range c.Default {
-			props = append(props, "Default/"+k)
-		}
-		for k := range c.Inherited {
-			props = append(props, "Inherited/"+k)
-		}
-		for k := range c.Local {
-			props = append(props, "Local/"+k)
-		}
-		for k := range c.Inheritable {
-			props = append(props, "Inheritable/"+k)
-		}
-
-		props = append(props, proptype+"/"+propname)
-		v := js.ValueOf(props)
-		store.Set(element.ID+"/"+category, v)
-	}
-	v := js.ValueOf(map[string]interface{}(value.RawValue()))
-	store.Set(element.ID+"/"+category+"/"+propname, v)
-	return
-}
-
-var loadfromsession = func(e *ui.Element) error {
-	store := jsStore{js.Global().Get("sessionStorage")}
-	id := e.ID
-
-	// Let's retrieve the category index for this element, if it exists in the sessionstore
-	jsoncategories, ok := store.Get(id)
-	if !ok {
-		return nil // Not necessarily an error in the general case. element just does not exist in store
-	}
-	categories := make([]string, 0)
-	properties := make([]string, 0)
-	err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
+	}()
+	res := js.ValueOf(v)
+	return res
+}*/
+func stringify(v interface{}) string {
+	res, err := json.Marshal(v)
 	if err != nil {
-		return err
+		panic(err)
 	}
-	for _, category := range categories {
-		jsonproperties, ok := store.Get(e.ID + "/" + category)
+	return string(res)
+}
+
+var sessionstorefn = storer("sessionStorage")
+var localstoragefn = storer("localStorage")
+
+func loader(s string) func(e *ui.Element) error {
+	return func(e *ui.Element) error {
+		store := jsStore{js.Global().Get(s)}
+		id := e.ID
+
+		// Let's retrieve the category index for this element, if it exists in the sessionstore
+		jsoncategories, ok := store.Get(id)
 		if !ok {
-			return nil
+			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
-		err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
+
+		categories := make([]string, 0)
+		properties := make([]string, 0)
+		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
 		if err != nil {
 			return err
 		}
-		for _, property := range properties {
-			// let's retrieve the propname (it is suffixed by the proptype)
-			// then we can retrieve the value
-			proptypename := strings.SplitAfter(property, "/")
-			proptype := proptypename[0]
-			propname := proptypename[1]
-			jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
-			if ok {
-				rawvalue := ui.NewObject()
-				err = json.Unmarshal([]byte(jsonvalue.String()), rawvalue)
-				if err != nil {
-					return err
-				}
-				if category != "ui" && propname != "mutationrecords" {
-					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-				}
-				rawmutationrecords := rawvalue.Value()
-				if rawmutationrecords.ValueType() != "List" {
-					return errors.New("mutationrecords are not of type List")
-				}
-				mutationrecordlist, ok := rawmutationrecords.(ui.List)
-				if !ok {
-					return errors.New("mutationrecords are not of List type")
-				}
+		for _, category := range categories {
+			jsonproperties, ok := store.Get(e.ID + "/" + category)
+			if !ok {
+				continue
+			}
+			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
+			if err != nil {
+				log.Print(err)
+				return err
+			}
+			for _, property := range properties {
+				// let's retrieve the propname (it is suffixed by the proptype)
+				// then we can retrieve the value
+				log.Print(property)
+				proptypename := strings.Split(property, "/")
+				proptype := proptypename[0]
+				propname := proptypename[1]
+				jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
+				if ok {
+					var rawvaluemapstring string
+					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
+					if err != nil {
+						return err
+					}
+					rawvalue := ui.NewObject()
+					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
+					if err != nil {
+						return err
+					}
+					if category != "ui" && propname != "mutationrecords" {
+						log.Print(rawvalue.Value())
+						ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
+						log.Print(e.Properties)
+					} else {
+						rawmutationrecords := rawvalue.Value()
+						log.Print(rawvalue.ValueType(), rawmutationrecords) // DEBUG
+						if rawmutationrecords.ValueType() != "List" {
+							return errors.New("mutationrecords are not of type List")
+						}
+						mutationrecordlist, ok := rawmutationrecords.(ui.List)
+						if !ok {
+							return errors.New("mutationrecords are not of List type")
+						}
 
-				for _, mutationrecord := range mutationrecordlist {
-					record, ok := mutationrecord.(ui.Object)
-					if !ok {
-						return errors.New("mutationrecord is not of expected type.")
-					}
-					vcategory, ok := record.Get("category")
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
-					category, ok := vcategory.(ui.String)
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
+						for _, mutationrecord := range mutationrecordlist {
+							record, ok := mutationrecord.(ui.Object)
+							if !ok {
+								return errors.New("mutationrecord is not of expected type.")
+							}
+							vcategory, ok := record.Get("category")
+							if !ok {
+								return errors.New("mutationrecord bad encoding")
+							}
+							category, ok := vcategory.(ui.String)
+							if !ok {
+								return errors.New("mutationrecord bad encoding")
+							}
 
-					vpropname, ok := record.Get("property")
-					if !ok {
-						return errors.New("propname not found")
+							vpropname, ok := record.Get("property")
+							if !ok {
+								return errors.New("propname not found")
+							}
+							propname, ok := vpropname.(ui.String)
+							if !ok {
+								return errors.New("mutationrecord bad encoding")
+							}
+							value, ok := record.Get("value")
+							if !ok {
+								return errors.New("value not found")
+							}
+							tval, ok := value.(ui.Value)
+							if !ok {
+								return errors.New("value should implement ui.Value")
+							}
+							e.Set(string(category), string(propname), tval)
+						}
 					}
-					propname, ok := vpropname.(ui.String)
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
-					value, ok := record.Get("value")
-					if !ok {
-						return errors.New("value not found")
-					}
-					e.Set(string(category), string(propname), value)
 				}
 			}
 		}
+		return nil
 	}
-	return nil
 }
 
-var loadfromlocalstorage = func(e *ui.Element) error {
-	store := jsStore{js.Global().Get("localStorage")}
-	id := e.ID
-
-	// Let's retrieve the category index for this element, if it exists in the sessionstore
-	jsoncategories, ok := store.Get(id)
-	if !ok {
-		return nil // Not necessarily an error in the general case. element just does not exist in store
-	}
-	categories := make([]string, 0)
-	properties := make([]string, 0)
-	err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
-	if err != nil {
-		return err
-	}
-	for _, category := range categories {
-		jsonproperties, ok := store.Get(e.ID + "/" + category)
-		if !ok {
-			return nil
-		}
-		err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
-		if err != nil {
-			return err
-		}
-		for _, property := range properties {
-			// let's retrieve the propname (it is suffixed by the proptype)
-			// then we can retrieve the value
-			proptypename := strings.SplitAfter(property, "/")
-			proptype := proptypename[0]
-			propname := proptypename[1]
-			jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
-			if ok {
-				rawvalue := ui.NewObject()
-				err = json.Unmarshal([]byte(jsonvalue.String()), rawvalue)
-				if err != nil {
-					return err
-				}
-				if category != "ui" && propname != "mutationrecords" {
-					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-				}
-				rawmutationrecords := rawvalue.Value()
-				if rawmutationrecords.ValueType() != "List" {
-					return errors.New("mutationrecords are not of type List")
-				}
-				mutationrecordlist, ok := rawmutationrecords.(ui.List)
-				if !ok {
-					return errors.New("mutationrecords are not of List type")
-				}
-
-				for _, mutationrecord := range mutationrecordlist {
-					record, ok := mutationrecord.(ui.Object)
-					if !ok {
-						return errors.New("mutationrecord is not of expected type.")
-					}
-					vcategory, ok := record.Get("category")
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
-					category, ok := vcategory.(ui.String)
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
-
-					vpropname, ok := record.Get("property")
-					if !ok {
-						return errors.New("propname not found")
-					}
-					propname, ok := vpropname.(ui.String)
-					if !ok {
-						return errors.New("mutationrecord bad encoding")
-					}
-					value, ok := record.Get("value")
-					if !ok {
-						return errors.New("value not found")
-					}
-					e.Set(string(category), string(propname), value)
-				}
-			}
-		}
-	}
-	return nil
-}
+var loadfromsession = loader("sessionStorage")
+var loadfromlocalstorage = loader("localStorage")
 
 // Window is a ype that represents a browser window
 type Window struct {
@@ -488,9 +400,6 @@ func EnableLocalPersistence() string {
 // document which holds the head element for instance.
 var NewDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
 	DefaultWindow = GetWindow()
-
-	Elements.AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn)
-	Elements.AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
 
 	e := Elements.NewAppRoot(id)
 
@@ -1452,7 +1361,7 @@ func (t TextNode) Value() ui.String {
 func NewTextNode() TextNode {
 	var NewNode = Elements.NewConstructor("text", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
-		htmlTextNode := js.Global().Get("document").Call("createTextNode", "") // DEBUG
+		htmlTextNode := js.Global().Get("document").Call("createTextNode", "")
 		n := NewNativeElementWrapper(htmlTextNode)
 		e.Native = n
 
@@ -1789,7 +1698,11 @@ func ListValueInfo(v ui.Value) (index int, newvalue ui.Value, ok bool) {
 	if !ok {
 		return -1, nil, false
 	}
-	return int(idx), value, true
+	tval, ok := value.(ui.Value)
+	if !ok {
+		return -1, nil, false
+	}
+	return int(idx), tval, true
 }
 
 func listAppend(list *ui.Element, values ...ui.Value) *ui.Element {

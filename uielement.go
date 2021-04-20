@@ -86,7 +86,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 	fn := func(e *Element) *Element {
 		a, ok := e.Get("internals", "constructoroptions")
 		if !ok {
-			a := NewList(String(name))
+			a = NewList(String(name))
 			e.Set("internals", "constructoroptions", a)
 		}
 		l, ok := a.(List)
@@ -94,6 +94,11 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 			log.Print("Unexpected error. constructoroptions should be stored as a ui.List")
 			a := NewList(String(name))
 			e.Set("internals", "constructoroptions", a)
+		}
+		for _, copt := range l {
+			if copt == String(name) {
+				return configuratorFn(e)
+			}
 		}
 		e.Set("internals", "constructoroptions", append(l, String(name)))
 
@@ -122,8 +127,9 @@ func (e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore {
 // from the default in-memory.
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
-func (e ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool)) {
+func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool)) *ElementStore {
 	e.PersistentStorer[name] = storageFunctions{loadFromStore, store}
+	return e
 }
 
 func (e *ElementStore) NewAppRoot(id string) *Element {
@@ -147,6 +153,7 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 			optlist, ok := e.ConstructorsOptions[elementname]
 			if !ok {
 				optlist = make(map[string]func(*Element) *Element)
+				e.ConstructorsOptions[elementname] = optlist
 			}
 			optlist[n] = f
 		}
@@ -163,7 +170,6 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 		for _, fn := range e.GlobalConstructorOptions {
 			element = fn(element)
 		}
-
 		// TODO optionalArgs  apply the corresponding options
 		for _, opt := range optionNames {
 			r, ok := e.ConstructorsOptions[elementname]
@@ -1443,7 +1449,7 @@ func (p PropertyStore) Load(category string, propname string, proptype string, v
 		p.Categories[category] = ps
 	}
 	proptype = strings.ToLower(proptype)
-
+	log.Print(proptype)
 	switch proptype {
 	case "default":
 		ps.Default[propname] = value
@@ -1626,8 +1632,9 @@ func (e *Element) discriminant() discriminant { return "particleui" }
 func (e *Element) ValueType() string          { return "Element" }
 func (e *Element) RawValue() Object {
 	o := NewObject().SetType("Element")
-	o.Set("id", String(e.ID))
-	o.Set("name", String(e.Name))
+
+	o["id"] = String(e.ID)
+	o["name"] = String(e.Name)
 	constructoroptions, ok := e.Get("internals", "constructoroptions")
 	if ok {
 		o.Set("constructoroptions", constructoroptions)
@@ -1637,19 +1644,24 @@ func (e *Element) RawValue() Object {
 	if !ok {
 		return nil
 	}
-	o.Set("constructorname", constructorname)
+	cname, ok := constructorname.(String)
+	if !ok {
+		return nil
+	}
+	o["constructorname"] = cname
 
-	o.Set("elementstoreid", String(e.ElementStore.Global.ID))
-	return o
+	o["elementstoreid"] = String(e.ElementStore.Global.ID)
+	return o.RawValue()
 }
 
 type Bool bool
 
 func (b Bool) discriminant() discriminant { return "particleui" }
 func (b Bool) RawValue() Object {
-	o := NewObject().SetType("Bool")
-	o.Set("value", b)
-	return o
+	o := NewObject()
+	o["typ"] = "Bool"
+	o["value"] = bool(b)
+	return o.RawValue()
 }
 func (b Bool) ValueType() string { return "Bool" }
 
@@ -1657,9 +1669,10 @@ type String string
 
 func (s String) discriminant() discriminant { return "particleui" }
 func (s String) RawValue() Object {
-	o := NewObject().SetType("String")
-	o.Set("value", s)
-	return o
+	o := NewObject()
+	o["typ"] = "String"
+	o["value"] = string(s)
+	return o.RawValue()
 }
 func (s String) ValueType() string { return "String" }
 
@@ -1667,9 +1680,10 @@ type Number float64
 
 func (n Number) discriminant() discriminant { return "particleui" }
 func (n Number) RawValue() Object {
-	o := NewObject().SetType("Number")
-	o.Set("value", n)
-	return o
+	o := NewObject()
+	o["typ"] = "Number"
+	o["value"] = float64(n)
+	return o.RawValue()
 }
 func (n Number) ValueType() string { return "Number" }
 
@@ -1678,17 +1692,15 @@ type Object map[string]interface{}
 func (o Object) discriminant() discriminant { return "particleui" }
 
 func (o Object) RawValue() Object {
-	if o.ValueType() != "Object" {
-		return o
-	}
 	p := NewObject()
 	for k, val := range o {
 		v, ok := val.(Value)
 		if ok {
-			p[k] = v.RawValue()
+			p[k] = map[string]interface{}(v.RawValue())
 			continue
 		}
-		p[k] = val
+		p[k] = val // typ should still be a plain string, calling RawValue twice in a row should be idempotent
+		continue
 	}
 	return p
 }
@@ -1696,76 +1708,78 @@ func (o Object) RawValue() Object {
 func (o Object) ValueType() string {
 	t, ok := o.Get("typ")
 	if !ok {
-		return "Object"
+		return "undefined"
 	}
-	s, ok := t.(String)
+	s, ok := t.(string)
 	if !ok {
-		return "Object"
+		return "undefined object"
 	}
 	return string(s)
 }
 
-func (o Object) Get(key string) (Value, bool) {
+func (o Object) Get(key string) (interface{}, bool) {
 	v, ok := o[key]
-	if !ok {
-		return nil, ok
-	}
-	tv, ok := v.(Value)
-	if !ok {
-		return nil, ok
-	}
-
-	u, ok := tv.(Object)
-	if !ok {
-		return tv, true
-	}
-	return u.Value(), ok
+	return v, ok
 }
 
 func (o Object) Set(key string, value Value) {
 	o[key] = value
 }
 func (o Object) SetType(typ string) Object {
-	o.Set("typ", String(typ))
+	o["typ"] = typ
 	return o
 }
-func (o Object) Value() Value { // TODO Add Element and Command
+func (o Object) Value() Value {
 	switch o.ValueType() {
 	case "Bool":
 		v, ok := o.Get("value")
 		if !ok {
 			return nil
 		}
-		return v
+		res, ok := v.(bool)
+		if !ok {
+			return nil
+		}
+		return Bool(res)
 	case "String":
 		v, ok := o.Get("value")
 		if !ok {
 			return nil
 		}
-		return v
+		res, ok := v.(string)
+		if !ok {
+			return nil
+		}
+		return String(res)
 	case "Number":
 		v, ok := o.Get("value")
 		if !ok {
 			return nil
 		}
-		return v
+		res, ok := v.(float64)
+		if !ok {
+			return nil
+		}
+		return Number(res)
 	case "List":
 		v, ok := o.Get("value")
 		if !ok {
 			return nil
 		}
-		l, ok := v.(List)
+		l, ok := v.([]interface{})
 		if !ok {
 			return nil
 		}
 		m := NewList()
-		for i, val := range l {
-			o, ok := val.(Object)
+		for _, val := range l {
+			r, ok := val.(map[string]interface{})
 			if ok {
-				m[i] = o.Value()
+				v := Object(r).Value()
+				m = append(m, v)
 				continue
+			} else {
+				return nil
 			}
-			m[i] = val
 		}
 		return m
 	case "Object":
@@ -1780,27 +1794,75 @@ func (o Object) Value() Value { // TODO Add Element and Command
 				p.Set(k, v)
 				continue
 			}
+			m, ok := val.(map[string]interface{})
+			if ok {
+				obj := Object(m)
+				p.Set(k, obj.Value())
+			}
 			p.Set(k, u.Value())
 		}
 		return p
 	case "Command":
-		return Command(o)
+		p := NewObject()
+		for k, val := range o {
+			v, ok := val.(Value)
+			if !ok {
+				p[k] = val
+				continue
+			}
+			u, ok := v.(Object)
+			if ok {
+				p.Set(k, u.Value())
+				continue
+			}
+			p.Set(k, v)
+		}
+		return Command(p)
 	case "MutationRecord":
-		return MutationRecord(o)
+		p := NewObject()
+		for k, val := range o {
+			v, ok := val.(Value)
+			if !ok {
+				p[k] = val
+				continue
+			}
+			u, ok := v.(Object)
+			if ok {
+				p.Set(k, u.Value())
+				continue
+			}
+			p.Set(k, v)
+		}
+		return MutationRecord(p)
 	case "Element":
-		id, ok := o.Get("id")
+		p := NewObject()
+		for k, val := range o {
+			v, ok := val.(Value)
+			if !ok {
+				p[k] = val
+				continue
+			}
+			u, ok := v.(Object)
+			if ok {
+				p.Set(k, u.Value())
+				continue
+			}
+			p.Set(k, v)
+		}
+
+		id, ok := p.Get("id")
 		if !ok {
 			return nil
 		}
-		name, ok := o.Get("name")
+		name, ok := p.Get("name")
 		if !ok {
 			return nil
 		}
-		elementstoreid, ok := o.Get("elementstoreid")
+		elementstoreid, ok := p.Get("elementstoreid")
 		if !ok {
 			return nil
 		}
-		constructorname, ok := o.Get("constructorname")
+		constructorname, ok := p.Get("constructorname")
 		if !ok {
 			return nil
 		}
@@ -1841,16 +1903,20 @@ func (o Object) Value() Value { // TODO Add Element and Command
 		}
 
 		coptions := make([]string, 0)
-		constructoroptions, ok := o.Get("constructoroptions")
+		constructoroptions, ok := p.Get("constructoroptions")
 		if ok {
-			optlist, ok := constructoroptions.(List)
+			objoptlist, ok := constructoroptions.(Object)
 			if ok {
-				for _, opt := range optlist {
-					sopt, ok := opt.(String)
-					if !ok {
-						return nil
+				voptlist := objoptlist.Value()
+				optlist, ok := voptlist.(List)
+				if ok {
+					for _, opt := range optlist {
+						sopt, ok := opt.(String)
+						if !ok {
+							return nil
+						}
+						coptions = append(coptions, string(sopt))
 					}
-					coptions = append(coptions, string(sopt))
 				}
 			}
 		}
@@ -1863,7 +1929,7 @@ func (o Object) Value() Value { // TODO Add Element and Command
 
 func NewObject() Object {
 	o := Object(make(map[string]interface{}))
-	o.Set("typ", String("Object"))
+	o["typ"] = "Object"
 	return o
 }
 
@@ -1872,12 +1938,13 @@ type List []Value
 func (l List) discriminant() discriminant { return "particleui" }
 func (l List) RawValue() Object {
 	o := NewObject().SetType("List")
-	raw := make([]Value, 0)
+
+	raw := make([]interface{}, 0)
 	for _, v := range l {
 		raw = append(raw, v.RawValue())
 	}
-	o.Set("value", List(raw))
-	return o
+	o["value"] = raw
+	return o.RawValue()
 }
 func (l List) ValueType() string { return "List" }
 
