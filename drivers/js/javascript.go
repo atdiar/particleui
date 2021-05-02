@@ -64,16 +64,62 @@ func (s jsStore) Set(key string, value js.Value) {
 
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+		/* if propname == "mutationrecords" {
+			log.Print("Storing the mutation record", value)
+		} */ // DEBUG
 		store := jsStore{js.Global().Get(s)}
 		categoryExists := element.Properties.HasCategory(category)
 		propertyExists := element.Properties.HasProperty(category, propname)
 
-		if !categoryExists {
+		// log.Print("CALL TO STORE: ", category, categoryExists, propname, propertyExists) // DEBUG
+
+		// Let's check whether the element exists ins store. In the negative case,
+		// we can act as if no category has been registered.
+		// Every indices need to be generated and stored.
+		var indexed bool
+
+		storedcategories, ok := element.Get("index", "categories")
+		if ok {
+			sc, ok := storedcategories.(ui.List)
+			if ok {
+				for _, cat := range sc {
+					catstr, ok := cat.(ui.String)
+					if !ok {
+						indexed = false
+						break
+					}
+					if string(catstr) != category {
+						continue
+					}
+					indexed = true
+					break
+				}
+			}
+		}
+		if !(category == "index" && propname == "categories") {
+			if !indexed {
+				catlist := ui.NewList()
+				for k := range element.Properties.Categories {
+					catlist = append(catlist, ui.String(k))
+				}
+				if !categoryExists {
+					catlist = append(catlist, ui.String(category))
+				}
+				catlist = append(catlist, ui.String("index"))
+				// log.Print("indexed catlist", catlist) // DEBUG
+				element.Set("index", "categories", catlist)
+			}
+		}
+
+		if !categoryExists || !indexed {
 			categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
+
 			for k := range element.Properties.Categories {
 				categories = append(categories, k)
 			}
-			categories = append(categories, category)
+			if !categoryExists {
+				categories = append(categories, category)
+			}
 			v := js.ValueOf(categories)
 			store.Set(element.ID, v)
 		}
@@ -83,6 +129,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				proptype = "Inheritable"
 			}
 		}
+		// log.Print("Existence check..., ", propertyExists, propname, indexed) // DEBUG
 		if !propertyExists {
 			props := make([]interface{}, 0, 1)
 			c, ok := element.Properties.Categories[category]
@@ -90,23 +137,25 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				props = append(props, proptype+"/"+propname)
 				v := js.ValueOf(props)
 				store.Set(element.ID+"/"+category, v)
-			}
-			for k := range c.Default {
-				props = append(props, "Default/"+k)
-			}
-			for k := range c.Inherited {
-				props = append(props, "Inherited/"+k)
-			}
-			for k := range c.Local {
-				props = append(props, "Local/"+k)
-			}
-			for k := range c.Inheritable {
-				props = append(props, "Inheritable/"+k)
-			}
+			} else {
+				for k := range c.Default {
+					props = append(props, "Default/"+k)
+				}
+				for k := range c.Inherited {
+					props = append(props, "Inherited/"+k)
+				}
+				for k := range c.Local {
+					props = append(props, "Local/"+k)
+				}
+				for k := range c.Inheritable {
+					props = append(props, "Inheritable/"+k)
+				}
 
-			props = append(props, proptype+"/"+propname)
-			v := js.ValueOf(props)
-			store.Set(element.ID+"/"+category, v)
+				props = append(props, proptype+"/"+propname)
+				// log.Print("all props stored...", props) // DEBUG
+				v := js.ValueOf(props)
+				store.Set(element.ID+"/"+category, v)
+			}
 		}
 		item := value.RawValue()
 		v := stringify(item)
@@ -153,6 +202,7 @@ func loader(s string) func(e *ui.Element) error {
 		if err != nil {
 			return err
 		}
+		//log.Print(categories, properties) //DEBUG
 		for _, category := range categories {
 			jsonproperties, ok := store.Get(e.ID + "/" + category)
 			if !ok {
@@ -163,10 +213,11 @@ func loader(s string) func(e *ui.Element) error {
 				log.Print(err)
 				return err
 			}
+
 			for _, property := range properties {
 				// let's retrieve the propname (it is suffixed by the proptype)
 				// then we can retrieve the value
-				log.Print(property)
+				// log.Print("debug...", category, property) // DEBUG
 				proptypename := strings.Split(property, "/")
 				proptype := proptypename[0]
 				propname := proptypename[1]
@@ -182,13 +233,13 @@ func loader(s string) func(e *ui.Element) error {
 					if err != nil {
 						return err
 					}
-					if category != "ui" && propname != "mutationrecords" {
-						log.Print(rawvalue.Value())
+					if !(category == "ui" && propname == "mutationrecords") {
 						ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-						log.Print(e.Properties)
+						//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 					} else {
+						ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
 						rawmutationrecords := rawvalue.Value()
-						log.Print(rawvalue.ValueType(), rawmutationrecords) // DEBUG
+						// log.Print("mutationrecords storage...", rawvalue.ValueType(), rawmutationrecords) // DEBUG
 						if rawmutationrecords.ValueType() != "List" {
 							return errors.New("mutationrecords are not of type List")
 						}
@@ -198,28 +249,30 @@ func loader(s string) func(e *ui.Element) error {
 						}
 
 						for _, mutationrecord := range mutationrecordlist {
-							record, ok := mutationrecord.(ui.Object)
+							record, ok := mutationrecord.(ui.MutationRecord)
 							if !ok {
+								log.Print("MUTATION RECORD: ", mutationrecord.ValueType()) // DEBUG
 								return errors.New("mutationrecord is not of expected type.")
 							}
-							vcategory, ok := record.Get("category")
+							vcategory, ok := ui.Object(record).Get("category")
 							if !ok {
-								return errors.New("mutationrecord bad encoding")
+								return errors.New("mutationrecord bad encoding, unable to retrieve category.")
 							}
 							category, ok := vcategory.(ui.String)
 							if !ok {
-								return errors.New("mutationrecord bad encoding")
+								log.Print("category is still in raw format", vcategory)
+								return errors.New("mutationrecord bad encoding, expected ui.String category.")
 							}
 
-							vpropname, ok := record.Get("property")
+							vpropname, ok := ui.Object(record).Get("property")
 							if !ok {
 								return errors.New("propname not found")
 							}
 							propname, ok := vpropname.(ui.String)
 							if !ok {
-								return errors.New("mutationrecord bad encoding")
+								return errors.New("mutationrecord bad encoding, expected ui.String property")
 							}
-							value, ok := record.Get("value")
+							value, ok := ui.Object(record).Get("value")
 							if !ok {
 								return errors.New("value not found")
 							}
@@ -227,7 +280,10 @@ func loader(s string) func(e *ui.Element) error {
 							if !ok {
 								return errors.New("value should implement ui.Value")
 							}
-							e.Set(string(category), string(propname), tval)
+							e.Properties.Set(string(category), string(propname), tval)
+							evt := e.NewMutationEvent(string(category), string(propname), tval)
+							e.PropMutationHandlers.DispatchEvent(evt)
+							log.Print("Replaying MUTATION RECORD: ", category, propname, tval) // DEBUG
 						}
 					}
 				}

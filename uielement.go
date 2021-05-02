@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+	"encoding/base64"
 )
 
 var (
@@ -24,7 +25,8 @@ func NewIDgenerator(seed int64) func() string {
 		bstr := make([]byte, 32)
 		rand.Seed(seed)
 		_, _ = rand.Read(bstr)
-		return string(bstr)
+		str:= base64.RawStdEncoding.EncodeToString(bstr)
+		return str
 	}
 }
 
@@ -613,6 +615,7 @@ func detach(e *Element) {
 // AppendChild appends a new element to the element's children list for the active
 // view being rendered.
 func (e *Element) AppendChild(child *Element) *Element {
+	log.Print(child) // DEBUG
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -728,6 +731,7 @@ func (c Command) Name(s string) Command {
 }
 
 func (c Command) SourceID(s string) Command {
+	log.Print("source: ",s) // DEBUG
 	Object(c).Set("sourceid", String(s))
 	return c
 }
@@ -753,11 +757,11 @@ func NewUICommand() Command {
 }
 
 func AppendChildCommand(child *Element) Command {
-	return NewUICommand().Name("appenchild").SourceID(child.ID)
+	return NewUICommand().Name("appendchild").SourceID(child.ID)
 }
 
 func PrependChildCommand(child *Element) Command {
-	return NewUICommand().Name("prepenchild").SourceID(child.ID)
+	return NewUICommand().Name("prependchild").SourceID(child.ID)
 }
 
 func InsertChildCommand(child *Element, index int) Command {
@@ -817,7 +821,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 	}
 
 	switch string(cname) {
-	case "appenchild":
+	case "appendchild":
 		sourceid, ok := command["sourceid"]
 		if !ok {
 			log.Print("Command malformed. Missing source id to append to")
@@ -830,7 +834,9 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			return true
 		}
 		child := e.ElementStore.GetByID(string(sid))
+		log.Print(string(sid))
 		if child == nil {
+			log.Print("could not find item in element store") // DEBUG
 			return true
 		}
 		e.AppendChild(child)
@@ -1052,7 +1058,6 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	if len(flags) > 0 {
 		inheritable = flags[0]
 	}
-
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
 
@@ -1064,8 +1069,6 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 			}
 		}
 	}
-
-	e.Properties.Set(category, propname, value, inheritable)
 
 	if category == "ui" && propname != "mutationrecords" {
 		mrs, ok := e.Get("ui", "mutationrecords")
@@ -1087,7 +1090,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 			storage.Store(e, category, propname, value, flags...)
 		}
 	}
-
+	e.Properties.Set(category, propname, value, inheritable)
 	evt := e.NewMutationEvent(category, propname, value)
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
@@ -1449,7 +1452,6 @@ func (p PropertyStore) Load(category string, propname string, proptype string, v
 		p.Categories[category] = ps
 	}
 	proptype = strings.ToLower(proptype)
-	log.Print(proptype)
 	switch proptype {
 	case "default":
 		ps.Default[propname] = value
@@ -1787,7 +1789,14 @@ func (o Object) Value() Value {
 		for k, val := range o {
 			v, ok := val.(Value)
 			if !ok {
-				return nil
+				m, ok := val.(map[string]interface{})
+				if ok {
+					obj := Object(m)
+					p.Set(k, obj.Value())
+					continue
+				}
+				p[k] = val
+				continue
 			}
 			u, ok := v.(Object)
 			if !ok {
@@ -1807,6 +1816,12 @@ func (o Object) Value() Value {
 		for k, val := range o {
 			v, ok := val.(Value)
 			if !ok {
+				m, ok := val.(map[string]interface{})
+				if ok {
+					obj := Object(m)
+					p.Set(k, obj.Value())
+					continue
+				}
 				p[k] = val
 				continue
 			}
@@ -1823,6 +1838,12 @@ func (o Object) Value() Value {
 		for k, val := range o {
 			v, ok := val.(Value)
 			if !ok {
+				m, ok := val.(map[string]interface{})
+				if ok {
+					obj := Object(m)
+					p.Set(k, obj.Value())
+					continue
+				}
 				p[k] = val
 				continue
 			}
@@ -1839,6 +1860,12 @@ func (o Object) Value() Value {
 		for k, val := range o {
 			v, ok := val.(Value)
 			if !ok {
+				m, ok := val.(map[string]interface{})
+				if ok {
+					obj := Object(m)
+					p.Set(k, obj.Value())
+					continue
+				}
 				p[k] = val
 				continue
 			}
