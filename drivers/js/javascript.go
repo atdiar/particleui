@@ -22,7 +22,6 @@ var (
 	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
 	EventTable                    = NewEventTranslationTable()
 	DefaultWindow                 Window
-	DefaultWindowTitle            = "Powered by ParticleUI"
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
@@ -64,9 +63,6 @@ func (s jsStore) Set(key string, value js.Value) {
 
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-		/* if propname == "mutationrecords" {
-			log.Print("Storing the mutation record", value)
-		} */ // DEBUG
 		store := jsStore{js.Global().Get(s)}
 		categoryExists := element.Properties.HasCategory(category)
 		propertyExists := element.Properties.HasProperty(category, propname)
@@ -129,8 +125,8 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				proptype = "Inheritable"
 			}
 		}
-		// log.Print("Existence check..., ", propertyExists, propname, indexed) // DEBUG
-		if !propertyExists {
+
+		if !propertyExists || !indexed {
 			props := make([]interface{}, 0, 1)
 			c, ok := element.Properties.Categories[category]
 			if !ok {
@@ -251,7 +247,7 @@ func loader(s string) func(e *ui.Element) error {
 						for _, mutationrecord := range mutationrecordlist {
 							record, ok := mutationrecord.(ui.MutationRecord)
 							if !ok {
-								log.Print("MUTATION RECORD: ", mutationrecord.ValueType()) // DEBUG
+								// log.Print("MUTATION RECORD: ", mutationrecord.ValueType()) // DEBUG
 								return errors.New("mutationrecord is not of expected type.")
 							}
 							vcategory, ok := ui.Object(record).Get("category")
@@ -284,6 +280,7 @@ func loader(s string) func(e *ui.Element) error {
 							evt := e.NewMutationEvent(string(category), string(propname), tval)
 							e.PropMutationHandlers.DispatchEvent(evt)
 							log.Print("Replaying MUTATION RECORD: ", category, propname, tval) // DEBUG
+							log.Print(mutationrecordlist)
 						}
 					}
 				}
@@ -311,43 +308,63 @@ func (w Window) SetTitle(title string) {
 
 // TODO see if can get height width of window view port, etc.
 
-func GetWindow() Window {
-	e := ui.NewElement("window", DefaultWindowTitle, DOCTYPE)
-	e.ElementStore = Elements
-	wd := js.Global()
-	if !wd.Truthy() {
-		log.Print("unable to access windows")
-		return Window{}
+func newWindow(name string, options ...string) Window{
+	c := Elements.NewConstructor("window", func(name string, id string) *ui.Element {
+		e := ui.NewElement("window", name, DOCTYPE)
+		e.ElementStore = Elements
+		wd := js.Global()
+		if !wd.Truthy() {
+			log.Print("unable to access windows")
+			return Window{}
+		}
+		e.Native = NewNativeElementWrapper(wd)
+
+		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			target := evt.Origin()
+			newtitle, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+
+			if target != e {
+				return true
+			}
+			nat, ok := target.Native.(js.Wrapper)
+			if !ok {
+				return true
+			}
+			jswindow := nat.JSValue()
+			if !jswindow.Truthy() {
+				log.Print("Unable to access native Window object")
+				return true
+			}
+			jswindow.Get("document").Set("title", string(newtitle))
+			return false
+		})
+
+		e.Watch("ui", "title", e, h)
+		e.Set("ui", "title", ui.String(name), false)
+	return Window{tryLoad(c("window", name, options...))}
+}
+
+func GetWindow(name string, options ...string) Window {
+	w:= Elements.GetByID(name)
+	if w == nil{
+		return newWindow(name,options...)
 	}
-	e.Native = NewNativeElementWrapper(wd)
-
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		target := evt.Origin()
-		newtitle, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-
-		if target != e {
-			return true
-		}
-		nat, ok := target.Native.(js.Wrapper)
-		if !ok {
-			return true
-		}
-		jswindow := nat.JSValue()
-		if !jswindow.Truthy() {
-			log.Print("Unable to access native Window object")
-			return true
-		}
-		jswindow.Get("document").Set("title", string(newtitle))
-		return false
-	})
-
-	e.Watch("ui", "title", e, h)
-	e.Set("ui", "title", ui.String(DefaultWindowTitle), false)
-
-	return Window{e}
+	cname,ok:= w.Get("internals","constructor")
+	if !ok{
+		return newWindow(name,options...)
+	}
+	name,ok:= cname.(ui.String)
+	if !ok{
+		return newWindow(name,options...)
+	}
+	if string(name) != "window"{
+		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
+		return Window{nil}
+	}
+	return Window{w}
 }
 
 // NativeElement defines a wrapper around a js.Value that implements the
@@ -455,7 +472,7 @@ func EnableLocalPersistence() string {
 // By default, it represents document.body. As such, it is different from the
 // document which holds the head element for instance.
 var NewDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
-	DefaultWindow = GetWindow()
+	DefaultWindow = GetWindow(name)
 
 	e := Elements.NewAppRoot(id)
 
@@ -478,6 +495,11 @@ type Div struct {
 func (d Div) Element() *ui.Element { return d.UIElement }
 func (d Div) Contenteditable(b bool) Div {
 	d.Element().SetDataSyncUI("contenteditable", ui.Bool(b))
+	return d
+}
+
+func (d Div) SetText(str string) Div {
+	d.Element().SetDataSyncUI("text", ui.String(str))
 	return d
 }
 
@@ -512,6 +534,19 @@ func NewDiv(name string, id string, options ...string) Div {
 			}
 			return false
 		}))
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			// TODO check if children is not a text node singleton
+			e.Mutate(ui.RemoveChildrenCommand())
+			tn := NewTextNode().SetValue(str)
+			e.Mutate(ui.AppendChildCommand(tn.Element()))
+			return false
+		}))
+
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 

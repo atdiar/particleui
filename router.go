@@ -32,29 +32,18 @@ type Router struct {
 // NewRouter takes an Element object which should be the entry point of the router
 // as well as the document root which should be the entry point of the document/application tree.
 // TODO eliminate documentroot ... redundant
-func NewRouter(rootview *Element, documentroot *Element) (*Router, error) {
-	if rootview.viewAdjacence() {
-		return nil, errors.New("The router cannot be created on a view that has siblings. It should be a unique entry point ot the app. ")
-	}
-	documentroot.Set("internals", "baseurl", String(rootview.Route()), true) // TODO Set baseurl in global scope
-	return &Router{make([]RouteChangeHandler, 0), rootview.Route(), documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
-}
-
-// SetBaseURL is useful when the application is embedded within a webpage which is
-// different from the main page entry ("/")
-// It allows to essentially inform of the prefix the links within the application
-// should be expecting.
-func (r *Router) SetBaseURL(base string) *Router { // TODO may delete this
-	u, err := url.Parse(base)
+func NewRouter(baseurl string, documentroot *Element) (*Router, error) {
+	u, err := url.Parse(baseurl)
 	if err != nil {
-		return r
+		return nil,err
 	}
-	r.BaseURL = strings.TrimSuffix(u.Path, "/")
-	r.root.Set("internals", "baseurl", String(r.BaseURL), true)
-	return r
+	base := strings.TrimSuffix(u.Path, "/")
+	documentroot.Global.Set("internals", "baseurl", String(baseurl), true)
+	return &Router{make([]RouteChangeHandler, 0), base, documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
 }
 
 // AddCatchAllHandlers allows to add routing request handlers applying to  every route.
+// Successive calls to this method will append handlers to the current list.
 func (r *Router) AddCatchAllHandlers(handlers ...RouteChangeHandler) {
 	if r.GlobalHandlers == nil {
 		r.GlobalHandlers = make([]RouteChangeHandler, 0)
@@ -72,18 +61,18 @@ func (r *Router) Register(view *Element, middleware ...RouteChangeHandler) { // 
 	r.Registrees = append(r.Registrees, newRegistree(view, middleware...))
 }
 
-// NotFoundView allows to specify a view that is displayed by the router when the
+// InsertNotFoundView allows to specify a view that is displayed by the router when the
 // routing request fails.
-func (r *Router) NotFoundView(viewElements ...*Element) {
+func (r *Router) InsertNotFoundView(viewElements ...*Element) {
 	r.Element.AddView(NewViewElements("NotFound", viewElements...))
 }
 
 
-func (r *Router) UnauthorizedView(viewElements ...*Element) {
+func (r *Router) InsertUnauthorizedView(viewElements ...*Element) {
 	r.Element.AddView(NewViewElements("Unauthorized", viewElements...))
 }
 
-func (r *Router) AppErrorView(viewElements ...*Element) {
+func (r *Router) InsertAppErrorView(viewElements ...*Element) {
 	r.Element.AddView(NewViewElements("AppError", viewElements...))
 }
 
@@ -162,7 +151,7 @@ func (r *Router) Redirect(route string, nativebinding NativeDispatch) {
 // A route URI represents a serie of states for the User-Interface that needs to be
 // activated for an element to show up on screen.
 func (r *Router) mount(element *Element, middleware ...RouteChangeHandler) {
-	if element.ViewAccessPath == nil || len(element.ViewAccessPath.nodes) == 0 {
+	if element.ViewAccessPath == nil || len(element.ViewAccessPath.Nodes) == 0 {
 		return
 	}
 	route := element.Route()
@@ -236,9 +225,7 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 		root.Set("events", event.Type(), String(event.NewRoute()), false)
 		return false
 	})
-	// TODO create a litst of events handled by Go
-	// Native drivers will be in charge of mapping the events to their native names
-	// for binding.
+
 	root.AddEventListener("routechange", routeChangeHandler, nativebinding)
 	r.Watch("events", "routechange", root, r.handler())
 	r.serve()
@@ -359,7 +346,7 @@ func (r *routeNode) Match(route string, NavigateFn func() error) (*Element, func
 				return errors.New("Unauthorized")
 			}
 		}
-		if r.Element.Target.AlternateViews != nil {
+		if r.Element.Target.InactiveViews != nil {
 			err := r.Element.Target.ActivateView(pathsegment)
 			if err != nil {
 				return err

@@ -2,12 +2,12 @@
 package ui
 
 import (
+	"encoding/base64"
 	"errors"
 	"log"
 	"math/rand"
 	"strings"
 	"time"
-	"encoding/base64"
 )
 
 var (
@@ -25,7 +25,7 @@ func NewIDgenerator(seed int64) func() string {
 		bstr := make([]byte, 32)
 		rand.Seed(seed)
 		_, _ = rand.Read(bstr)
-		str:= base64.RawStdEncoding.EncodeToString(bstr)
+		str := base64.RawStdEncoding.EncodeToString(bstr)
 		return str
 	}
 }
@@ -137,6 +137,7 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 func (e *ElementStore) NewAppRoot(id string) *Element {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
+	el.Parent = el
 	el.subtreeRoot = el
 	el.ElementStore = e
 	el.Global = e.Global
@@ -224,7 +225,7 @@ type Element struct {
 
 	ViewAccessPath *viewNodes // List of views that lay on the path to the Element
 
-	AlternateViews map[string]ViewElements // this is a  store for  named views: alternative to the Children field, used for instance to implement routes/ conditional rendering.
+	InactiveViews map[string]View // this is a  store for  named views: alternative to the Children field, used for instance to implement routes/ conditional rendering.
 
 	Native NativeElement
 }
@@ -256,6 +257,23 @@ func NewElement(name string, id string, doctype string) *Element {
 	}
 	e.Watch("ui", "command", e, DefaultCommandHandler)
 	return e
+}
+
+// AnyElement is an interface type fo rany object that is instrinsically an Element.
+// Typically, an Element or a ViewElement.
+// An Element is generally a mostly static* structure.
+// A ViewElement is a kind of Element for which the structure is dynamic in a
+// predefined, predictable way. It allows for an Element to have different versions
+// of its internal structure, each version being called a View.
+type AnyElement interface{
+	Element() *Element
+}
+
+func(e *Element) isRoot() bool{
+	if e == nil{
+		return false
+	}
+	return e == e.Parent
 }
 
 func PersistenceMode(e *Element) string {
@@ -404,57 +422,108 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	}
 	return e
 }
+// ViewElement defines a type of Element which can display different named versions.
+// A version is defined as a View.
+type ViewElement struct{
+	Raw *Element
+}
 
-// func (e *Element) Parse(payload string) *Element      { return e }
-// func (e *Element) Unparse(outputformat string) string {}
+// Element returns the underlying *Element corresponding to the view.
+// A ViewElement constitutes merely an interface for specific *Element objects.
+func(v ViewElement) Element() *Element{
+	return v.Raw
+}
 
-// AddView adds a named list of children Elements to an Element creating as such
-// a named version of the internal state of an Element.
-// In a sense, it enables conditional rendering for an Element by allowing to
-// switch between the different named internal states.
-func (e *Element) AddView(v ViewElements) *Element {
+func NewViewElement(e *Element, defaultview View) ViewElement{
+	v:= ViewElement{e}.AddView(defaultview)
+	e.Set("ui","defaultview",String(defaultview.Name()))
+	return v
+}
+
+// ActivateDefaultOnMount will set the activeview to its default onMount event.
+func(v ViewElement) ActivateDefaultOnMount() ViewElement{
+	v.Element().OnMount(NewMutationHandler(func(evt MutationEvent) bool{
+		rdef,ok:= v.Element().Get("ui","defaultview")
+		if !ok{
+			panic("View does not have default. Should not be possible.")
+			return true
+		}
+		def,ok:= rdef.(String)
+		if !ok{
+			panic("Wrong format for value of defaultview.Should not be possible.")
+			return true
+		}
+		rcurr,ok:= v.Element().Get("ui","activeview")
+		if !ok{
+			err:=v.ActivateView(string(def))
+			if err!= nil{
+				log.Print(err)
+				return true
+			}
+		}
+		curr,ok:=rcurr.(String)
+		if !ok{
+			panic("Wrong format for value of active view. Should not be possible.")
+		}
+
+		if curr != def{
+			err:=v.ActivateView(string(def))
+			if err!= nil{
+				log.Print(err)
+				return true
+			}
+		}
+		return false
+	}))
+	return v
+}
+
+// AddView adds a view to a ViewElement.
+func(v ViewElement) AddView(view View) ViewElement{
+	v.Element().addView(view)
+	return v
+}
+
+// RetrieveView returns a pointer to a View if it exists. The View should not
+// be active.
+func(v ViewElement) RetrieveView(name string) *View{
+	return v.Element().retrieveView(name)
+}
+
+// ActivateView sets the active view of  a ViewElement.
+// If no View exists for the name argument, an error is returned.
+// TODO: implement conditional view activation?
+func(v ViewElement) ActivateView(name string) error{
+	return v.Element().activateView(name)
+}
+
+func (e *Element) addView(v View) *Element {
 	for _, child := range v.Elements().List {
-		child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v)).Prepend(e.ViewAccessPath.nodes...)
+		child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v))
 		attach(e, child, false)
 	}
 
-	e.AlternateViews[v.Name()] = v
+	e.InactiveViews[v.Name()] = v
 	return e
 }
 
-// DeleteView  deletes any view that exists for the current Element but is not
-// displayed.
-func (e *Element) DeleteView(name string) *Element {
-	v, ok := e.AlternateViews[name]
-	if !ok {
-		return e
-	}
-	for _, el := range v.Elements().List {
-		detach(el)
-	}
-	delete(e.AlternateViews, name)
-	return e
-}
-
-// RetrieveView will return a pointer to a non-displayed view for the current element.
-// If the named ViewElements does not exist, nil is returned.
-func (e *Element) RetrieveView(name string) *ViewElements {
-	v, ok := e.AlternateViews[name]
+func (e *Element) retrieveView(name string) *View {
+	v, ok := e.InactiveViews[name]
 	if !ok {
 		return nil
 	}
 	return &v
 }
 
-// ActivateVIew is used to render the desired named view for a given Element.
-func (e *Element) ActivateView(name string) error {
-	newview, ok := e.AlternateViews[name]
+
+func (e *Element) activateView(name string) error {
+	newview, ok := e.InactiveViews[name]
 	if !ok {
 		// Support for parameterized views
-		if len(e.AlternateViews) != 0 {
-			var view ViewElements
+		if len(e.InactiveViews) != 0 {
+			var view View
 			var parameterName string
-			for k, v := range e.AlternateViews {
+			for k, v := range e.InactiveViews {
 				if strings.HasPrefix(k, ":") {
 					parameterName = k
 					view = v
@@ -487,13 +556,13 @@ func (e *Element) ActivateView(name string) error {
 					}
 					if !viewIsParameterized {
 						// the view is not parameterized
-						e.AlternateViews[string(oldviewname)] = NewViewElements(string(oldviewname), e.Children.List...)
+						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), e.Children.List...)
 					}
 				}
 
 				// Let's append the new view Elements
 				for _, newchild := range view.Elements().List {
-					e.AppendChild(newchild)
+					e.appendChild(newchild)
 				}
 				e.Set("ui", "activeview", String(name), false)
 				e.ActiveView = parameterName
@@ -507,7 +576,7 @@ func (e *Element) ActivateView(name string) error {
 	oldview, ok := e.Get("ui", "activeview")
 	oldviewname, ok2 := oldview.(String)
 	viewIsParameterized := (string(oldviewname) != e.ActiveView)
-	if ok && ok2 && oldviewname != "" && e.Children != nil {
+	if ok && ok2 && e.Children != nil {
 		for _, child := range e.Children.List {
 			detach(child)
 			if !viewIsParameterized {
@@ -515,15 +584,15 @@ func (e *Element) ActivateView(name string) error {
 			}
 		}
 		if !viewIsParameterized {
-			// the view is not parameterized
-			e.AlternateViews[string(oldviewname)] = NewViewElements(string(oldviewname), e.Children.List...)
+			// the view is not parameterized, we put it back in the set of activable views
+			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), e.Children.List...)
 		}
 	}
 	// we attach and activate the desired view
 	for _, child := range newview.Elements().List {
-		e.AppendChild(child)
+		e.appendChild(child)
 	}
-	delete(e.AlternateViews, name)
+	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name), false)
 	e.ActiveView = name
 
@@ -548,18 +617,18 @@ func attach(parent *Element, child *Element, activeview bool) {
 	child.subtreeRoot = parent.subtreeRoot
 
 	// if the child is not a navigable view(meaning that its alternateViews is nil, then it's viewadress is its parent's)
-	// otherwise, it's its own to which is prepended its parent's viewAddress.
-	if child.AlternateViews == nil {
+	// otherwise, it's its own to which is prepended its parent's view path(ordered list of parent views).
+	if child.InactiveViews == nil {
 		child.ViewAccessPath = parent.ViewAccessPath
 	} else {
-		child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.nodes...)
+		child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.Nodes...)
 	}
 
 	for _, descendant := range child.Children.List {
 		attach(child, descendant, true)
 	}
 
-	for _, descendants := range child.AlternateViews {
+	for _, descendants := range child.InactiveViews {
 		for _, descendant := range descendants.Elements().List {
 			attach(child, descendant, false)
 		}
@@ -591,10 +660,10 @@ func detach(e *Element) {
 	e.Parent = nil
 
 	// ViewAccessPath handling:
-	if e.AlternateViews == nil {
+	if e.InactiveViews == nil {
 		e.ViewAccessPath = nil
 	} else {
-		e.ViewAccessPath.nodes = e.ViewAccessPath.nodes[len(e.ViewAccessPath.nodes)-1:]
+		e.ViewAccessPath.Nodes = e.ViewAccessPath.Nodes[len(e.ViewAccessPath.Nodes)-1:]
 	}
 
 	e.Set("event", "attached", Bool(false))
@@ -605,7 +674,7 @@ func detach(e *Element) {
 		attach(e, descendant, true)
 	}
 
-	for _, descendants := range e.AlternateViews {
+	for _, descendants := range e.InactiveViews {
 		for _, descendant := range descendants.Elements().List {
 			attach(e, descendant, false)
 		}
@@ -614,14 +683,15 @@ func detach(e *Element) {
 
 // AppendChild appends a new element to the element's children list for the active
 // view being rendered.
-func (e *Element) AppendChild(child *Element) *Element {
-	log.Print(child) // DEBUG
+func (e *Element) AppendChild(childEl AnyElement) *Element {
+
+	child:= childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 	if child.Parent != nil {
-		child.Parent.RemoveChild(child)
+		child.Parent.removeChild(child)
 	}
 
 	attach(e, child, true)
@@ -633,14 +703,34 @@ func (e *Element) AppendChild(child *Element) *Element {
 	return e
 }
 
-func (e *Element) PrependChild(child *Element) *Element {
+func (e *Element) appendChild(childEl AnyElement) *Element {
+	child:= childEl.Element()
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+	if child.Parent != nil {
+		child.Parent.removeChild(child)
+	}
+
+	attach(e, child, true)
+
+	e.Children.InsertLast(child)
+	if e.Native != nil {
+		e.Native.AppendChild(child)
+	}
+	return e
+}
+
+func (e *Element) PrependChild(childEl AnyElement) *Element {
+	child:= childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 
 	if child.Parent != nil {
-		child.Parent.RemoveChild(child)
+		child.Parent.removeChild(child)
 	}
 
 	attach(e, child, true)
@@ -652,13 +742,34 @@ func (e *Element) PrependChild(child *Element) *Element {
 	return e
 }
 
-func (e *Element) InsertChild(child *Element, index int) *Element {
+func (e *Element) prependChild(childEl AnyElement) *Element {
+	child:= childEl.Element()
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+
+	if child.Parent != nil {
+		child.Parent.removeChild(child)
+	}
+
+	attach(e, child, true)
+
+	e.Children.InsertFirst(child)
+	if e.Native != nil {
+		e.Native.PrependChild(child)
+	}
+	return e
+}
+
+func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
+	child:= childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 	if child.Parent != nil {
-		child.Parent.RemoveChild(child)
+		child.Parent.removeChild(child)
 	}
 
 	attach(e, child, true)
@@ -670,17 +781,38 @@ func (e *Element) InsertChild(child *Element, index int) *Element {
 	return e
 }
 
-// ReplaceChild will replace the target child Element with another.
+func (e *Element) insertChild(childEl AnyElement, index int) *Element {
+	child:= childEl.Element()
+	if e.DocType != child.DocType {
+		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
+		return e
+	}
+	if child.Parent != nil {
+		child.Parent.removeChild(child)
+	}
+
+	attach(e, child, true)
+
+	e.Children.Insert(child, index)
+	if e.Native != nil {
+		e.Native.InsertChild(child, index)
+	}
+	return e
+}
+
+// replaceChild will replace the target child Element with another.
 // Be wary that mutation Watchers and event listeners remain unchanged by default.
 // The addition or removal of change observing obk=jects is left at the discretion
 // of the user.
-func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
+func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
+	old := oldEl.Element()
+	new:= newEl.Element()
 	if e.DocType != new.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
 	}
 	if new.Parent != nil {
-		new.Parent.RemoveChild(new)
+		new.Parent.removeChild(new)
 	}
 	attach(e, new, true)
 
@@ -693,7 +825,8 @@ func (e *Element) ReplaceChild(old *Element, new *Element) *Element {
 	return e
 }
 
-func (e *Element) RemoveChild(child *Element) *Element {
+func (e *Element) removeChild(childEl AnyElement) *Element {
+	child:= childEl.Element()
 	detach(child)
 	e.Children.Remove(child)
 
@@ -703,9 +836,9 @@ func (e *Element) RemoveChild(child *Element) *Element {
 	return e
 }
 
-func (e *Element) RemoveChildren() *Element {
+func (e *Element) removeChildren() *Element {
 	for _, child := range e.Children.List {
-		e.RemoveChild(child)
+		e.removeChild(child)
 	}
 	return e
 }
@@ -731,7 +864,7 @@ func (c Command) Name(s string) Command {
 }
 
 func (c Command) SourceID(s string) Command {
-	log.Print("source: ",s) // DEBUG
+	// log.Print("source: ", s) // DEBUG
 	Object(c).Set("sourceid", String(s))
 	return c
 }
@@ -917,7 +1050,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 		if newc == nil || oldc == nil {
 			return true
 		}
-		e.ReplaceChild(oldc, newc)
+		e.replaceChild(oldc, newc)
 		return false
 	case "removechild":
 		sourceid, ok := command["sourceid"]
@@ -935,10 +1068,10 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 		if child == nil {
 			return true
 		}
-		e.RemoveChild(child)
+		e.removeChild(child)
 		return false
 	case "removechildren":
-		evt.Origin().RemoveChildren()
+		evt.Origin().removeChildren()
 		return false
 	case "activateview":
 		sourceid, ok := command["sourceid"]
@@ -951,7 +1084,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			log.Print("Error viewname/sourceid is not a string ?!")
 			return true
 		}
-		err := evt.Origin().ActivateView(string(viewname))
+		err := evt.Origin().activateView(string(viewname))
 		if err != nil {
 			log.Print(err)
 		}
@@ -1065,12 +1198,13 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
 			if category != "ui" {
+				log.Print("cat/props being set is : ",category, propname) // DEBUG
 				storage.Store(e, category, propname, value, flags...)
 			}
 		}
 	}
 
-	if category == "ui" && propname != "mutationrecords" {
+	if category == "ui" && propname != "mutationrecords" && propname != "command" {
 		mrs, ok := e.Get("ui", "mutationrecords")
 		if !ok {
 			mrs = NewList()
@@ -1123,6 +1257,15 @@ func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
 	if len(flags) > 0 {
 		inheritable = flags[0]
 	}
+	// Persist property if persistence mode has been set at Element creation
+	pmode := PersistenceMode(e)
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok {
+				storage.Store(e, "data", propname, value, flags...)
+			}
+	}
 	e.Properties.Set("data", propname, value, inheritable)
 
 	e.Set("ui", propname, value, flags...)
@@ -1144,6 +1287,17 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	if len(flags) > 0 {
 		inheritable = flags[0]
 	}
+
+	// Persist property if persistence mode has been set at Element creation
+	pmode := PersistenceMode(e)
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok {
+				storage.Store(e, "ui", propname, value, flags...)
+			}
+	}
+
 	e.Properties.Set("ui", propname, value, inheritable)
 	if propname != "mutationrecords" {
 		mrs, ok := e.Get("ui", "mutationrecords")
@@ -1246,41 +1400,57 @@ func EnablePropertyAutoInheritance() string {
 	return "propertyinheritance"
 }
 
-func Get(e *Element, key string) (Value, bool) {
-	return e.Get("data", key)
-}
-
-func Set(e *Element, key string, value Value) {
-	e.Set("data", key, value, false)
-}
-
-func Watcher(e *Element, target *Element, key string, h *MutationHandler) {
-	e.Watch("data", key, target, h)
-}
-
 // Route returns the path to an Element.
 // If the path to an Element includes a parameterized view, the returned route is
 // parameterized as well.
 //
 // Important notice: views that are nested within a fixed element use that Element ID for routing.
+// In effect, the id acts as a namespace.
 // In order for links using the routes to these views to not be breaking between refresh/reruns of an app (hard requirement for online link-sharing), the ID of the parent element
 // should be generated so as to not change. Using the default PRNG-based ID generator is very likely to not be a good-fit here.
 //
 // For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use the default ID generator but probably reuse the tweet ID gotten via http call for each Element.
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
 func (e *Element) Route() string {
-	// TODO if root is window and not app root, might need to implement additional logic to make link creation process stop at app root.
 	var Route string
-	if e.Mounted() {
-		return ""
+	baseurl,ok:= e.Global.Get("internals","baseurl")
+	if !ok{
+		log.Print("base url seems to be missing")
+		return Route
 	}
-	if e.ViewAccessPath == nil {
-		return "/"
+	bu,ok:= baseurl.(String)
+	if !ok{
+		log.Print("baseurl seems to be of wrong type. Expected ui.String.")
+		return Route
+	}
+	Route = string(bu)
+	if strings.HasSuffix(Route,"/"){
+		Route = strings.TrimSuffix(Route, "/")
 	}
 
-	for _, n := range e.path.List {
-		rpath := pathSegment(n, e.ViewAccessPath)
-		Route = Route + "/" + rpath
+	if e.ViewAccessPath == nil {
+		return Route
+	}
+
+	var i int
+	if e.InactiveViews != nil{
+		i++
+	}
+
+	for index, n := range e.ViewAccessPath.Nodes[:len(e.ViewAccessPath.Nodes)-i] {
+		path := n.Element.ID + "/" + n.View.Name()
+		if n.Element.root == n.Element{
+			path= n.View.Name()
+			if index != 0{
+				log.Print("error: the root view should be the topmost view")
+				return ""
+			}
+			if n.Element.viewAdjacence(){
+				log.Print("the root element cannot be adjacent to other views")
+				return ""
+			}
+		}
+		Route = Route + "/" + path
 	}
 	return Route
 }
@@ -1289,15 +1459,15 @@ func (e *Element) Route() string {
 // sibling view.
 func (e *Element) viewAdjacence() bool {
 	var count int
-	if e.AlternateViews != nil {
+	if e.InactiveViews != nil {
 		count++
 	}
 	if e.path != nil && len(e.path.List) > 1 {
 		firstAncestor := e.path.List[len(e.path.List)-1]
-		if firstAncestor.AlternateViews != nil {
-			vnode := e.ViewAccessPath.nodes[len(e.ViewAccessPath.nodes)-1]
-			for _, c := range vnode.ViewElements.Elements().List {
-				if c.AlternateViews != nil {
+		if firstAncestor.InactiveViews != nil {
+			vnode := e.ViewAccessPath.Nodes[len(e.ViewAccessPath.Nodes)-1]
+			for _, c := range vnode.View.Elements().List {
+				if c.InactiveViews != nil {
 					count++
 				}
 			}
@@ -1308,7 +1478,7 @@ func (e *Element) viewAdjacence() bool {
 		}
 
 		for _, c := range firstAncestor.Children.List {
-			if c.AlternateViews != nil {
+			if c.InactiveViews != nil {
 				count++
 			}
 		}
@@ -1320,15 +1490,15 @@ func (e *Element) viewAdjacence() bool {
 	return false
 }
 
-// pathSegment returns true if the path belongs to a View besides returning the
-// first degree relative path of an Element.
-// If the view holds Elements which are adjecent view objects, t
+// pathSegment returns either an elment id, or the name of the view it belongs to,
+// or the name of the view it belongs to prefixed by the view Element id.
+// (if the view Element is not the only child view, i.e. there are adjacent views)
 func pathSegment(p *Element, views *viewNodes) string {
 	rp := p.ID
 	if views != nil {
-		for _, v := range views.nodes {
+		for _, v := range views.Nodes {
 			if v.Element.ID == rp {
-				rp = v.ViewElements.Name()
+				rp = v.View.Name()
 				if p.viewAdjacence() {
 					rp = p.ID + "/" + rp
 				}
@@ -1339,12 +1509,13 @@ func pathSegment(p *Element, views *viewNodes) string {
 	return rp
 }
 
+/*
 // MakeToggable is a simple example of conditional rendering.
 // It allows an Element to have a single child Element that can be switched with another one.
 //
 // For example, if we have a toggable button, one for login and one for logout,
 // We can implement the switch between login and logout by switching the inner Elements.
-func MakeToggable(conditionName string, e *Element, firstView ViewElements, secondView ViewElements, initialconditionvalue Bool) *Element {
+func MakeToggable(conditionName string, e *Element, firstView View, secondView View, initialconditionvalue Bool) *Element {
 	e.AddView(firstView).AddView(secondView)
 
 	toggle := NewMutationHandler(func(evt MutationEvent) bool {
@@ -1365,33 +1536,34 @@ func MakeToggable(conditionName string, e *Element, firstView ViewElements, seco
 	return e
 }
 
-// ViewElements defines a type for a named list of children Element that can be appended
-// to an Element, constituting as such a "view".
-// ViewElements can be parameterized.
-type ViewElements struct {
+*/
+
+// View defines a type for a named list of children Element
+// A View can depend on a parameter.
+type View struct {
 	name         string
 	elements     *Elements
-	Parameterize func(parameter string, v ViewElements) (*ViewElements, error)
+	Parameterize func(parameter string, v View) (*View, error)
 }
 
-func (v ViewElements) Name() string        { return v.name }
-func (v ViewElements) Elements() *Elements { return v.elements }
-func (v ViewElements) ApplyParameter(paramvalue string) (*ViewElements, error) {
+func (v View) Name() string        { return v.name }
+func (v View) Elements() *Elements { return v.elements }
+func (v View) ApplyParameter(paramvalue string) (*View, error) {
 	return v.Parameterize(paramvalue, v)
 }
 
-// NewViewElements can be used to create a list of children Elements to append to an element, for display.
+// NewView can be used to create a list of children Elements to append to an element, for display.
 // In effect, allowing to create a named view. (note the lower case letter)
-// The true definition of a view is: an *Element and a named list of child Elements (ViewElements) constitute a view.
+// The true definition of a view is: an *Element and a named list of child Elements (View) constitute a view.
 // An example of use would be an empty window that would be filled with different child elements
 // upon navigation.
 // A parameterized view can be created by using a naming scheme such as ":parameter" (string with a leading colon)
 // In the case, the parameter can be retrieve by the router.
-func NewViewElements(name string, elements ...*Element) ViewElements {
+func NewView(name string, elements ...*Element) View {
 	for _, el := range elements {
 		el.ActiveView = name
 	}
-	return ViewElements{name, NewElements(elements...), nil}
+	return View{name, NewElements(elements...), nil}
 }
 
 // NewParameterizedView defines a parameterized, named, list of *Element composing a view.
@@ -1399,39 +1571,39 @@ func NewViewElements(name string, elements ...*Element) ViewElements {
 // This function can and probably should implement validation.
 // It may for instance be used to verify that the parameter value belongs to a finite
 // set of accepted values.
-func NewParameterizedView(parametername string, paramFn func(string, ViewElements) (*ViewElements, error), elements ...*Element) ViewElements {
+func NewParameterizedView(parametername string, paramFn func(string, View) (*View, error), elements ...*Element) View {
 	if !strings.HasPrefix(parametername, ":") {
 		parametername = ":" + parametername
 	}
-	n := NewViewElements(parametername, elements...)
+	n := NewView(parametername, elements...)
 	n.Parameterize = paramFn
 	return n
 }
 
 type viewNodes struct {
-	nodes []viewNode
+	Nodes []viewNode
 }
 
 func newViewNodes() *viewNodes {
 	return &viewNodes{make([]viewNode, 0)}
 }
 
-func (v *viewNodes) Append(nodes ...viewNode) *viewNodes {
-	v.nodes = append(v.nodes, nodes...)
+func (v *viewNodes) Append(Nodes ...viewNode) *viewNodes {
+	v.Nodes = append(v.Nodes, Nodes...)
 	return v
 }
 
-func (v *viewNodes) Prepend(nodes ...viewNode) *viewNodes {
-	v.nodes = append(nodes, v.nodes...)
+func (v *viewNodes) Prepend(Nodes ...viewNode) *viewNodes {
+	v.Nodes = append(Nodes, v.Nodes...)
 	return v
 }
 
 type viewNode struct {
 	*Element
-	ViewElements
+	View
 }
 
-func newViewNode(e *Element, view ViewElements) viewNode {
+func newViewNode(e *Element, view View) viewNode {
 	return viewNode{e, view}
 }
 
