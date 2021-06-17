@@ -225,7 +225,7 @@ type Element struct {
 
 	ViewAccessPath *viewNodes // List of views that lay on the path to the Element
 
-	InactiveViews map[string]View // this is a  store for  named views: alternative to the Children field, used for instance to implement routes/ conditional rendering.
+	InactiveViews map[string]View
 
 	Native NativeElement
 }
@@ -683,7 +683,12 @@ func detach(e *Element) {
 
 // AppendChild appends a new element to the element's children list for the active
 // view being rendered.
+// If the element being appended is mounted on the main tree that starts from a
+// root Element, the root Element will see its ("event","treemutation") property
+// set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
+	_,wasmountedOnce:= e.Get("event","mounted")
+
 
 	child:= childEl.Element()
 	if e.DocType != child.DocType {
@@ -699,6 +704,10 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 	e.Children.InsertLast(child)
 	if e.Native != nil {
 		e.Native.AppendChild(child)
+	}
+
+	if e.Mounted() && !wasmountedOnce{
+		e.root.Set("event","treemutation",e)
 	}
 	return e
 }
