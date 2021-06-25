@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+var(
+	ErrNotFound = errors.New("Not Found")
+	ErrUnauthorized = errors.New("Unauthorized")
+	ErrFrameworkFailure = errors.New("Framework Failure")
+)
+
+
 // Router stores shortcuts to given states of the application.
 // These shortcuts take the form of URIs.
 // The router is also in charge of modifying the application state to reach any
@@ -15,16 +22,13 @@ import (
 type Router struct {
 	GlobalHandlers []RouteChangeHandler // used to implement guards such as when user has not the access rights to reach some app state. (authentication?)
 	BaseURL        string
-	root           *Element
+	root           ViewElement
 
-	*Element // used to watch over the *root
+	Links map[string]Link
 
 	Routes *routeNode
 
-	// may not need the below
-	CurrentRoute string // this is the string value corresponding to the current app state
-	CurrentView  *Element
-	Registrees   []*registree // Holds the views that have not been added to the
+	History *NavHistory
 
 	LeaveTrailingSlash bool
 }
@@ -32,15 +36,16 @@ type Router struct {
 // NewRouter takes an Element object which should be the entry point of the router
 // as well as the document root which should be the entry point of the document/application tree.
 // TODO eliminate documentroot ... redundant
-func NewRouter(baseurl string, documentroot *Element) (*Router, error) {
+func NewRouter(baseurl string, documentroot ViewElement) *Router {
 	u, err := url.Parse(baseurl)
 	if err != nil {
-		return nil,err
+		return panic(err)
 	}
 	base := strings.TrimSuffix(u.Path, "/")
-	documentroot.Global.Set("internals", "baseurl", String(baseurl), true)
-	return &Router{make([]RouteChangeHandler, 0), base, documentroot, nil, newRouteNode("/"), "/", nil, nil, false}, nil
-}
+	documentroot.Element().Global.Set("internals", "baseurl", String(baseurl), true)
+	r:= &Router{make([]RouteChangeHandler, 0), base, documentroot, make(map[string]Link,300), newRouteNode("/"), NewNavigationHistory().Push("/"), false}
+	return r
+
 
 // AddCatchAllHandlers allows to add routing request handlers applying to  every route.
 // Successive calls to this method will append handlers to the current list.
@@ -51,100 +56,60 @@ func (r *Router) AddCatchAllHandlers(handlers ...RouteChangeHandler) {
 	r.GlobalHandlers = append(r.GlobalHandlers, handlers...)
 }
 
-// Register stores the route leading to the display of an *Element. It should
-// typically used for view-type Elements (i.e. Elements with named internal versions)
-//
-func (r *Router) Register(view *Element, middleware ...RouteChangeHandler) { // TODO RegisterWithName (for shorter alias so we can do Redirect("notfound"))
-	if r.Registrees == nil {
-		r.Registrees = make([]*registree, 0)
-	}
-	r.Registrees = append(r.Registrees, newRegistree(view, middleware...))
+
+// GoTo changes the application state by updating the current route
+func (r *Router) GoTo(route string) {
+	r.root.Element().SetDataSyncUI("currentroute", String(route))
+	r.History.Push(route)
 }
 
-// InsertNotFoundView allows to specify a view that is displayed by the router when the
-// routing request fails.
-func (r *Router) InsertNotFoundView(viewElements ...*Element) {
-	r.Element.AddView(NewViewElements("NotFound", viewElements...))
+func(r *Router) GoBack(){
+	if r.History.BackAllowed(){
+		r.root.Element().SetDataSyncUI("currentroute", String(r.History.GoBack()))
+	}
 }
 
-
-func (r *Router) InsertUnauthorizedView(viewElements ...*Element) {
-	r.Element.AddView(NewViewElements("Unauthorized", viewElements...))
+func(r *Router) GoForward(){
+	if r.History.ForwardAllowed(){
+		r.root.Element().SetDataSyncUI("currentroute", String(r.History.GoForward()))
+	}
 }
 
-func (r *Router) InsertAppErrorView(viewElements ...*Element) {
-	r.Element.AddView(NewViewElements("AppError", viewElements...))
+// OnNotFound enables the addition of a special view to the root ViewElement.
+// The router should navigate toward it when no match has been found for a given input route.
+func(r *Router) OnNotFound(dest View) *Router{
+	r.root.AddView(dest)
+
+	r.root.Element().Watch("navigation","notfound",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
+			r.GoTo(r.BaseURL + "/" + View.Name())
+			return false
+	}))
+	return r
 }
 
-func (r *Router) ErrorNotFound() {
-	v := r.Element.RetrieveView("NotFound")
-	if v == nil {
-		log.Print("Page not found but unable to redirect toward the error page")
-		return
-	}
-	els := v.Elements().List
-	if len(els) <= 0 {
-		log.Print("View element missing to the Page not found")
-		return
-	}
-	var e *Element
-	for _, el := range els {
-		if el != nil {
-			e = el
-			break
-		}
-	}
-	r.Redirect(e.Route(), nil)
+// OnUnAuthorized enables the addition of a special view to the root ViewElement.
+// The router should navigate toward it when access to an input route is not granted
+// due to insufficient rights.
+func(r *Router) OnUnAuthorized(dest View) *Router{
+	r.root.AddView(dest)
+
+	r.root.Element().Watch("navigation","unauthorized",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
+			r.GoTo(r.BaseURL + "/" + View.Name())
+			return false
+	}))
+	return r
 }
 
-func (r *Router) ErrorUnauthorized() {
-	v := r.Element.RetrieveView("Unauthorized")
-	if v == nil {
-		log.Print("Unauthorized but unable to redirect toward the Unauthorized page")
-		return
-	}
-	els := v.Elements().List
-	if len(els) <= 0 {
-		log.Print("View element missing to the Unauthorized notice page")
-		return
-	}
-	var e *Element
-	for _, el := range els {
-		if el != nil {
-			e = el
-			break
-		}
-	}
-	r.Redirect(e.Route(), nil)
-}
+// OnAppFailure enables the addition of a special view to the root ViewElement.
+// The router should navigate toward it when a malfunction occured.
+func(r *Router) OnAppFailure(dest View) *Router{
+	r.root.AddView(dest)
 
-func (r *Router) ErrorAppLogic() {
-	v := r.Element.RetrieveView("AppError")
-	if v == nil {
-		log.Print("AppError but unable to redirect toward the AppError page")
-		return
-	}
-	els := v.Elements().List
-	if len(els) <= 0 {
-		log.Print("View element missing to the AppError notice page")
-		return
-	}
-	var e *Element
-	for _, el := range els {
-		if el != nil {
-			e = el
-			break
-		}
-	}
-	r.Redirect(e.Route(), nil)
-}
-
-// Redirect creates and dispatches an event from the router to the root
-// of the app, requesting for a route change. This request is
-// typically dispatched to the native host via the nativebinding function instead
-// when provided.
-func (r *Router) Redirect(route string, nativebinding NativeDispatch) {
-	r.root.DispatchEvent(NewRouteChangeEvent(route, r.root), nativebinding)
+	r.root.Element().Watch("navigation","appfailure",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
+			r.GoTo(r.BaseURL + "/" + View.Name())
+			return false
+	}))
+	return r
 }
 
 // mount stores the route of an Element (it is also the route of the view if the Element belongs to one)
@@ -164,7 +129,7 @@ func (r *Router) handler() *MutationHandler {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
-			r.ErrorAppLogic()
+			r.root.Element().Set("navigation","appfailure",Bool(true)) // TODO document should watch itself and Activate the relevant view
 			return true
 		}
 		newroute:=string(nroute)
@@ -178,33 +143,25 @@ func (r *Router) handler() *MutationHandler {
 		Target, ApplyRouteFn := r.Routes.Match(newroute, nil)
 		if ApplyRouteFn == nil {
 			// No route match
-			r.ErrorNotFound()
+			r.root.Element().Set("navigation","notfound",Bool(true)) // TODO document should watch itself and Activate the relevant view
 			return true
 		}
 		for _, glmiddleware := range r.GlobalHandlers {
 			stop := glmiddleware.Handle(Target)
 			if stop {
-				r.ErrorUnauthorized()
+				r.root.Element().Set("navigation","unauthorized",Bool(true)) // TODO document should watch itself and Activate the relevant view
 				return stop
 			}
 		}
 		err := ApplyRouteFn()
 		if err != nil {
-			r.ErrorUnauthorized()
+			r.root.Element().Set("navigation","unauthorized",Bool(true)) // TODO document should watch itself and Activate the relevant view
 			return true
 		}
+		r.History.Push(nroute) // TODO doe sit belong there? does it not interfere with back and forward?
 		return false // todo  i'm wondering if this is the right value to return.
 	})
 	return mh
-}
-
-func (r *Router) serve() {
-	if r.Registrees == nil {
-		log.Print("No route has been registered it seems.")
-	}
-	for _, registree := range r.Registrees {
-		r.mount(registree.Target, registree.Handlers...)
-	}
 }
 
 // ListenAndServe registers a listener for route change.
@@ -214,21 +171,32 @@ func (r *Router) serve() {
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
 func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
+	r.verifyLinkActivation()
 	root := r.root
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
 		event, ok := evt.(RouteChangeEvent)
 		if !ok {
 			log.Print("Event of wrong type. Expected a RouteChangeEvent firing")
+			root.Element().Set("navigation","appfailure", String("500: RouteChangeEvent of wrong type."))
 			return true // means that event handling has to stop
 		}
 		// the target element route should be changed to the event NewRoute value.
-		root.Set("events", event.Type(), String(event.NewRoute()), false)
+		root.Element().SyncUISetData("currentroute", String(event.NewRoute()), false)
 		return false
 	})
 
-	root.AddEventListener("routechange", routeChangeHandler, nativebinding)
-	r.Watch("events", "routechange", root, r.handler())
+	root.Element().AddEventListener("routechange", routeChangeHandler, nativebinding)
+	root.Element().Watch("data", "currentroute", root.Element(), r.handler())
 	r.serve()
+}
+
+func(r *Router) verifyLinkActivation(){
+	for _,l:=range rLinks{
+		_,ok:= l.Get("event","activated")
+		if !ok{
+			panic("Link activation failure: " + l.URI())
+		}
+	}
 }
 
 type RouteChangeEvent interface {
@@ -271,139 +239,252 @@ func (r RouteChangeHandleFunc) Handle(e *Element) bool {
 	return r(e)
 }
 
-// Each Element is uniquely qualified by a route which represents the serie of
-// partial states (values for named Views) that the app should be in.
-//
-// We build a datastructure shaped like a trie which will hold the registered
-// routes decomposed in segments (potentially shared between routes).
-type routeNode struct {
-	value    string
-	Children map[string]*routeNode
+/*
 
-	Element *registree // Holds Element we want to have visual access to. Just need to  run the middlewaer and then activate the views on its ViewAccessPath field
+   router nodes
+
+
+*/
+// A rnode is a router node. It holds information about the viewElement,
+// the value field holding the viewid for the corresponding ViewElement,
+// and a map of the potential children ViewElements classified by views (via viewnames)
+type rnode struct{
+	root *rnode
+	value string // just a copy of the ViewElement.Element().ID
+	ViewElement
+	next map[string]map[string]*rnode // Each rnode has a list of views and each view may link to multiple same level ViewElement map[viewname]map[viewid]rnode
 }
 
-func newRouteNode(value string) *routeNode {
-	return &routeNode{value, nil, nil}
-}
-
-func (r *routeNode) Insert(route string, element *registree) {
-	segments := strings.SplitAfter(route, "/")
-	if segments[0] != r.value {
-		panic("Inserting route into router's trie failed. This is a library error.")
+func newchildrnode(v ViewElement, root *rnode) *rnode{
+	m:=make(map[string]map[string]*rnode)
+	for k,_:=range v.Element().InactiveViews{
+		m[k]= nil
 	}
-	if len(segments) <= 1 {
-		r.Element = element
+	if a:=v.Element().ActiveView;a!= ""{
+		m[a] = nil
+	}
+	return &rnode{root,v.Element().ID,v,nil}
+}
+
+func newrootrnode(v ViewElement) *rnode{
+	r:= newchildrnode(v)
+	r.root = r
+	return r
+}
+
+// insert  adds an arbitrary rnode to the rnode trie if  possible (the root
+// ViewElement of the rnode ViewAccessPath should be that of the root rnode )
+func(rn *rnode) insert(nrn *rnode){
+	v:= nrn.ViewElement
+
+	viewpath:= v.Element().ViewAccessPath
+	if viewpathnodes == nil{
 		return
 	}
-	next := segments[1:]
-	if r.Children == nil {
-		r.Children = make(map[string]*routeNode)
+	viewpathnodes:= viewpath.Nodes
+	if viewpathnodes[0].Element.ID != rn.root.ViewElement.Element().ID{
+		return
 	}
-	c, ok := r.Children[next[0]]
-	if !ok {
-		c = newRouteNode(next[0])
-		r.Children[next[0]] = c
+	l:= len(viewpathnodes)
+	// attach iteratively the rnodes
+	refnode := rn
+	for i,node:=range viewpathnodes{
+		if i+1 < l{
+			// each view should be a rootnode and should be attached in succession. The end node is our argument.
+			view:= ViewElement(viewpathnodes[i+1].Element)
+			nr:=newchildrnode(view,rn)
+			refnode.attach(node.View.Name(),nr)
+			refnode = nr
+		}
 	}
-	c.Insert(strings.TrimPrefix(route, segments[0]), element)
+	refnode.attach(nrn)
 }
 
-// Match will check whether the input route usually retrieved from the RouteChangeEvent
-// corresponds to one of the routes that was registered.
-// If a match is found, it returns the target Element wanted for display and a
-// function that mutates the app state, activating the serie of wiews necessary
-// to display the target Element.
-// If the route contains a query string, it is stored in the target Element datatstore
-// under the "querystring" Key.
-func (r *routeNode) Match(route string, NavigateFn func() error) (*Element, func() error) {
+// attach links to rnodes that corresponds to viewElements that succeeds each other
+func(r *rnode) attach(targetviewname string, nr *rnode){
+	m,ok:=r.next[targetviewname]
+	if !ok{
+		m=make(map[string]*rnode)
+		r.next[targetviewname] = m
+	}
+	r,ok:=m[nr.ViewElement.Element().ID]
+	if !ok{
+		m[nr.ViewElement.Element().ID]=nr
+	} // else it has already been attached
+}
+
+// match verifies that a route passed as arguments corresponds to a given view state.
+func(r *rnode) match(route string) error{
+	route = strings.TrimPrefix(route,"/")
 	segments := strings.SplitAfter(route, "/")
-	pathsegment := segments[0]
-	var querystring string
-	if len(segments) == 1 {
-		u, err := url.Parse(pathsegment)
-		if err != nil {
-			log.Print("route format is invalid")
-			return nil, nil
-		}
-		pathsegment = u.Path
-		querystring = u.RawQuery
+	ls:= len(segment)
+
+	if ls==0{
+		return ErrNotFound
 	}
-	if pathsegment != r.value {
-		if r.value[:1] != ":" {
-			return nil, nil
-		}
-	}
-	NewNavigateFn := func() error {
-		if NavigateFn != nil {
-			err := NavigateFn()
-			if err != nil {
-				return err
+
+
+	var param string
+	m,ok:= r.next[segments[0]] // 0 is the index of the viewname at the root ViewElement m is of type map[string]*rnode
+	if !ok{
+		// Let's see if the ViewElement has a parameterizable view
+		param,ok= r.ViewElement.hasParameterizedView()
+		r.ViewElement.Element().Set("navigation",param,String(segment[0]))
+		if ls !=1{ // we get the next rnodes by uding the segment[1]
+			m,ok=r.next[param]
+			if !ok{
+				return ErrFrameworkFailure
 			}
 		}
-		for _, h := range r.Element.Handlers {
-			stop := h.Handle(r.Element.Target)
-			if stop {
-				return errors.New("Unauthorized")
+	}
+
+	// Does other children views need activation? Let's check for it.
+	if ls==1{
+		// check authorization
+		if param != ""{
+			if r.ViewElement.isViewAuthorized(param){
+				return nil
+			}
+			return ErrUnauthorized
+		}
+		if r.ViewElement.isViewAuthorized(segment[0]){
+			return nil
+		}
+		return ErrUnauthorized
+	}
+
+	if ls%2 != 1 {
+		return false
+	}
+
+	viewcount:= (ls - ls%2)/2
+
+	// Let's get the next rnode and check that the view mentionned in the route exists (segment[2i+2])
+
+	for i:=1;i<=viewcount;i++{
+		routesegment:= segments[2i]
+		nextroutesegment[2i+1]
+		r,ok= m[routesegment]
+		if !ok{
+			return ErrNotFound
+		}
+
+		if r.value != routesegment{
+			return ErrNotFound
+		}
+
+		// Now that we have the rnode, we can try to see if the nextroutesegment holding the viewname
+		// is in the r.next. If not, we check whether the viewElement can be parameterized
+		// and the new map pf next rnode is then retrieved if possible.
+		m,ok=r.next[nextroutesegment]
+		if !ok{
+			// Let's see if the ViewElement has a parameterizable view
+			param,ok= r.ViewElement.hasParameterizedView()
+			if !r.ViewElement.isViewAuthorized(param){
+				return ErrUnauthorized
+			}
+			r.ViewElement.Element().Set("navigation",param,String(segment[0]))
+			if r.next{ // we get the next rnodes by using the segment[1]
+				m,ok=r.next[param]
+				if !ok{
+					return ErrFrameworkFailure
+				}
+
 			}
 		}
-		if r.Element.Target.InactiveViews != nil {
-			err := r.Element.Target.ActivateView(pathsegment)
-			if err != nil {
-				return err
-			}
-			if querystring != "" {
-				r.Element.Target.Set("router", "query", String(querystring), false)
-			}
+		if !r.ViewElement.isViewAuthorized(nextroutesegment){
+			return ErrUnauthorized
 		}
-		return nil
-	}
-
-	if len(segments) <= 1 {
-		return r.Element.Target, NewNavigateFn
-	}
-	next := segments[1:]
-	if r.Children == nil {
-		return nil, nil // No route seems to be registered
-	}
-	c, ok := r.Children[next[0]]
-	if !ok {
-		return nil, nil // here again, no route seems to have been registered
-	}
-	return c.Match(strings.TrimPrefix(route, segments[0]), NewNavigateFn)
-}
-
-type routeParameters struct {
-	List []struct {
-		Name  string
-		Value string
 	}
 }
 
-func newRouteParameters() *routeParameters {
-	return &routeParameters{make([]struct {
-		Name  string
-		Value string
-	}, 0)}
+
+
+
+/*
+
+		Navigation link creation
+
+*/
+
+// Link holds the representation (under the form of an URI) of the application state
+// required for the target View to be available for display on screen.
+type Link struct{
+	Raw *Element
+
+	Target ViewElement
+	ViewName string
+
+	Router *Router
 }
 
-func (r *routeParameters) Set(name string, value string) {
-	if r.List != nil {
-		r.List = make([]struct {
-			Name  string
-			Value string
-		}, 0)
+func(l Link) URI() string{
+	return l.Target.Element().Route() +"/" + l.Target.ID +"/" + l.ViewName
+}
+
+func(l Link) Activate(){
+	l.Router.GoTo(l.URI())
+}
+
+func(r *Router) NewLink(target ViewElement, viewname string) Link{
+	// If previously created, it has been memoized. let's retrieve it then. otherwise,
+	// let's create it.
+	l,ok:= r.Links[target.Element().ID+"/"+viewname]
+	if ok{
+		return l
 	}
-	r.List = append(r.List, struct {
-		Name  string
-		Value string
-	}{name, value})
+
+	e:= NewElement(viewname,target.Element().ID+"/"+viewname,r.documentroot.Element().DocType)
+	nh:= NewMutationHandler(func(evt MutationEvent)bool{
+			e.Set("event","activated",Bool(true))
+	})
+	e.Watch("event","mounted",target.Element(), nh)
+	l= Link{e,target,viewname,r}
+	r.Links[target.Element().ID+"/"+viewname] = l
+
+	return l
 }
 
-type registree struct {
-	Target   *Element
-	Handlers []RouteChangeHandler
+/*
+
+    Navigation History
+
+*/
+
+// NavHistory holds the Navigation History. (aka NavStack)
+type NavHistory struct{
+	Stack []string
+	Cursor int
 }
 
-func newRegistree(e *Element, handlers ...RouteChangeHandler) *registree {
-	return &registree{e, handlers}
+func NewNavigationHistory() *NavHistory{
+	return &NavHistory{make([]string,0,300),0}
+}
+
+func(n *NavHistory) Push(URI string) *NavHistory{
+	n.Stack = append(n.Stack[:n.Cursor],URI)
+	n.Cursor++
+	return n
+}
+
+func(n *NavHistory) Back() string{
+	if BackAllowed(){
+		n.Cursor--
+	}
+	return n.Stack[n.Cursor]
+}
+
+func(n *NavHistory) Forward() string{
+	if ForwardAllowed(){
+		n.Cursor++
+	}
+	return n.Stack[n.Cursor]
+}
+
+func(n *NavHistory) BackAllowed() bool{
+	return n.Cursor>0
+}
+
+func(n *NavHistory) ForwardAllowed() bool{
+	return n.Cursor < len(n.Stack)-1
 }

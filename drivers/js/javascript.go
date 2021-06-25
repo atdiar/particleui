@@ -315,7 +315,7 @@ func newWindow(name string, options ...string) Window{
 		wd := js.Global()
 		if !wd.Truthy() {
 			log.Print("unable to access windows")
-			return Window{}
+			return nil
 		}
 		e.Native = NewNativeElementWrapper(wd)
 
@@ -344,6 +344,9 @@ func newWindow(name string, options ...string) Window{
 
 		e.Watch("ui", "title", e, h)
 		e.Set("ui", "title", ui.String(name), false)
+		return e
+	})
+
 	return Window{tryLoad(c("window", name, options...))}
 }
 
@@ -356,11 +359,11 @@ func GetWindow(name string, options ...string) Window {
 	if !ok{
 		return newWindow(name,options...)
 	}
-	name,ok:= cname.(ui.String)
+	nname,ok:= cname.(ui.String)
 	if !ok{
-		return newWindow(name,options...)
+		return newWindow("",options...)
 	}
-	if string(name) != "window"{
+	if string(nname) != "window"{
 		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
 		return Window{nil}
 	}
@@ -483,6 +486,17 @@ var NewDocument = Elements.NewConstructor("root", func(name string, id string) *
 	}
 	n := NewNativeElementWrapper(root)
 	e.Native = n
+	e.Watch("ui","currentroute",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			v:=evt.NewValue()
+			nroute,ok:= v.(ui.String)
+			if !ok{
+				panic(nroute)
+				return true
+			}
+			route:= string(nroute)
+			js.Global().Get("history").Call("pushState","{}","",route)
+			return false
+	}))
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2160,4 +2174,13 @@ func RemoveAttribute(target *ui.Element, name string) {
 		return
 	}
 	native.JSValue().Call("removeAttribute", name)
+}
+
+// Buttonify turns an Element into a clickable link
+func Buttonify(any ui.AnyElement, link ui.Link){
+	callback := ui.NewEventHandler(func(evt ui.Event) bool {
+		link.Activate()
+		return false
+	})
+	any.Element().AddEventListener("click",callback,EventTable.NativeEventBridge)
 }

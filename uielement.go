@@ -142,7 +142,8 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.ElementStore = e
 	el.Global = e.Global
 	// DEBUG el.path isn't set
-	return el
+	v:=NewViewElement(el,NewView(id,nil))
+	return v.Element()
 }
 
 // NewConstructor registers and returns a new Element construcor function.
@@ -202,6 +203,7 @@ func (e *ElementStore) GetByID(id string) *Element {
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
+// Elements may have a unique parent: hence, Views cannot share any Element.
 type Element struct {
 	ElementStore *ElementStore
 	Global       *Element // holds ownership of the global state
@@ -231,6 +233,7 @@ type Element struct {
 }
 
 func (e *Element) Element() *Element { return e }
+func(e *Element) isViewElement() bool {return e.InactiveViews != nil}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
@@ -434,6 +437,21 @@ func(v ViewElement) Element() *Element{
 	return v.Raw
 }
 
+// hasParameterizedView return the parameter name stripped from the initial colon ( ":")
+// if it exists.
+func(v ViewElement) hasParameterizedView() (string,bool){
+	e:= v.Element()
+	if strings.HasPrefix(e.ActiveView,":"){
+		return strings.TrimPrefix(e.ActiveView,":"),true
+	}
+	for k,v:= range e.InactiveViews{
+		if v.viewIsParameterized(){
+			return strings.TrimPrefix(k,":"), true
+		}
+	}
+	return "",false
+}
+
 func NewViewElement(e *Element, defaultview View) ViewElement{
 	v:= ViewElement{e}.AddView(defaultview)
 	e.Set("ui","defaultview",String(defaultview.Name()))
@@ -481,6 +499,7 @@ func(v ViewElement) ActivateDefaultOnMount() ViewElement{
 // AddView adds a view to a ViewElement.
 func(v ViewElement) AddView(view View) ViewElement{
 	v.Element().addView(view)
+	v.Element().Set("authorized",view.Name(),Bool(true))
 	return v
 }
 
@@ -490,10 +509,49 @@ func(v ViewElement) RetrieveView(name string) *View{
 	return v.Element().retrieveView(name)
 }
 
+// AythorizeViewIf allows to make the activation of a view conditional to a boolean
+// Value set for the property of a target ELement. For instance, it can be useful
+// to restrict View activation to a subset of users in an app.
+func(v ViewElement) AuthorizeViewIf(viewname string,category string property string,target *Element){
+	var authorized bool
+	val,ok:= target.Get(category, property)
+	if ok{
+		if val == Bool(true){
+			authorized = true
+		}
+	}
+	v.Element().Set("authorized",view.Name(),authozied)
+	v.Element().Watch(category,property,target,NewMutationHandler(function(evt MutationEvent)bool{
+			val:= evt.NewValue()
+			if val == Bool(true){
+				v.Element().Set("authorized",view.Name(),Bool(true))
+			}else{
+				v.Element().Set("authorized",view.Name(),Bool(false))
+			}
+	}))
+}
+
+func(v ViewElement) isViewAuthorized(name string) bool{
+	val,ok:=v.Element().Get("authorized",name)
+	if !ok{
+		return false
+	}
+	if val != Bool(true){
+		return return false
+	}
+	return true
+}
+
 // ActivateView sets the active view of  a ViewElement.
-// If no View exists for the name argument, an error is returned.
-// TODO: implement conditional view activation?
+// If no View exists for the name argument or is not authorized, an error is returned.
 func(v ViewElement) ActivateView(name string) error{
+	val,ok:=v.Element().Get("authorized",name)
+	if !ok{
+		panic(errors.New("authorization error")) // it's ok to panic here. the client can send the stacktrace. Should not happen.
+	}
+	if val != Bool(true){
+		return errors.New("Unauthorized")
+	}
 	return v.Element().activateView(name)
 }
 
@@ -564,7 +622,7 @@ func (e *Element) activateView(name string) error {
 				for _, newchild := range view.Elements().List {
 					e.appendChild(newchild)
 				}
-				e.Set("ui", "activeview", String(name), false)
+				e.SetDataSyncUI("activeview", String(name), false)
 				e.ActiveView = parameterName
 				return nil
 			}
@@ -681,13 +739,12 @@ func detach(e *Element) {
 	}
 }
 
-// AppendChild appends a new element to the element's children list for the active
-// view being rendered.
+// AppendChild appends a new element to the Element's children.
 // If the element being appended is mounted on the main tree that starts from a
-// root Element, the root Element will see its ("event","treemutation") property
+// root Element, the root Element will see its ("event","docupdate") property
 // set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
-	_,wasmountedOnce:= e.Get("event","mounted")
+	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
 
 
 	child:= childEl.Element()
@@ -706,8 +763,24 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 		e.Native.AppendChild(child)
 	}
 
-	if e.Mounted() && !wasmountedOnce{
-		e.root.Set("event","treemutation",e)
+	if e.Mounted() && !wasmountedOnce && ChildEl.Element().isViewElement(){
+		e.root.Set("event","docupdate",e)
+
+		l,ok:=e.root.Get("internals","views")
+		if !ok{
+			list:= NewList(childEl)
+			e.root.Set("internals","views",list)
+		} else{
+			list,ok:= l.(List)
+			if!ok{
+				list = NewList(childEl)
+				e.root.Set("internals","views",list)
+			} else{
+				list = append(l,childEl)
+				e.root.Set("internals","views",list)
+			}
+		}
+
 	}
 	return e
 }
@@ -732,6 +805,8 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) PrependChild(childEl AnyElement) *Element {
+	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
+
 	child:= childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
@@ -747,6 +822,24 @@ func (e *Element) PrependChild(childEl AnyElement) *Element {
 	e.Children.InsertFirst(child)
 	if e.Native != nil {
 		e.Native.PrependChild(child)
+	}
+	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement(){ // if an element gets mounted, the first time, it triggers a document update mutation event
+		e.root.Set("event","docupdate",e)
+
+		l,ok:=e.root.Get("internals","views")
+		if !ok{
+			list:= NewList(childEl)
+			e.root.Set("internals","views",list)
+		} else{
+			list,ok:= l.(List)
+			if!ok{
+				list = NewList(childEl)
+				e.root.Set("internals","views",list)
+			} else{
+				list = append(l,childEl)
+				e.root.Set("internals","views",list)
+			}
+		}
 	}
 	return e
 }
@@ -772,6 +865,8 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
+	_,wasmountedOnce:= childEl.Get("event","mounted")
+
 	child:= childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
@@ -787,6 +882,26 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 	if e.Native != nil {
 		e.Native.InsertChild(child, index)
 	}
+
+	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement(){ // if an element gets mounted, the first time, it triggers a document update mutation event
+		e.root.Set("event","docupdate",e)
+
+		l,ok:=e.root.Get("internals","views") // A list of viewElement is stored in the root element so the router can access it on instantiation and register the preexististing routes.
+		if !ok{
+			list:= NewList(childEl)
+			e.root.Set("internals","views",list)
+		} else{
+			list,ok:= l.(List)
+			if!ok{
+				list = NewList(childEl)
+				e.root.Set("internals","views",list)
+			} else{
+				list = append(l,childEl)
+				e.root.Set("internals","views",list)
+			}
+		}
+	}
+
 	return e
 }
 
@@ -981,7 +1096,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 			log.Print("could not find item in element store") // DEBUG
 			return true
 		}
-		e.AppendChild(child)
+		e.appendChild(child)
 		return false
 	case "prependchild":
 		sourceid, ok := command["sourceid"]
@@ -999,7 +1114,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 		if child == nil {
 			return true
 		}
-		e.PrependChild(child)
+		e.prependChild(child)
 		return false
 	case "insertChild":
 		sourceid, ok := command["sourceid"]
@@ -1030,7 +1145,7 @@ var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
 		if child == nil {
 			return true
 		}
-		e.InsertChild(child, int(commandpos))
+		e.insertChild(child, int(commandpos))
 		return false
 	case "replacechild":
 		sourceid, ok := command["sourceid"]
@@ -1441,12 +1556,7 @@ func (e *Element) Route() string {
 		return Route
 	}
 
-	var i int
-	if e.InactiveViews != nil{
-		i++
-	}
-
-	for index, n := range e.ViewAccessPath.Nodes[:len(e.ViewAccessPath.Nodes)-i] {
+	for index, n := range e.ViewAccessPath.Nodes[:len(e.ViewAccessPath.Nodes)] {
 		path := n.Element.ID + "/" + n.View.Name()
 		if n.Element.root == n.Element{
 			path= n.View.Name()
@@ -1454,98 +1564,11 @@ func (e *Element) Route() string {
 				log.Print("error: the root view should be the topmost view")
 				return ""
 			}
-			if n.Element.viewAdjacence(){
-				log.Print("the root element cannot be adjacent to other views")
-				return ""
-			}
 		}
 		Route = Route + "/" + path
 	}
 	return Route
 }
-
-// viewAdjacence determines whether an Element has more than one adjacent
-// sibling view.
-func (e *Element) viewAdjacence() bool {
-	var count int
-	if e.InactiveViews != nil {
-		count++
-	}
-	if e.path != nil && len(e.path.List) > 1 {
-		firstAncestor := e.path.List[len(e.path.List)-1]
-		if firstAncestor.InactiveViews != nil {
-			vnode := e.ViewAccessPath.Nodes[len(e.ViewAccessPath.Nodes)-1]
-			for _, c := range vnode.View.Elements().List {
-				if c.InactiveViews != nil {
-					count++
-				}
-			}
-			if count > 1 {
-				return true
-			}
-			return false
-		}
-
-		for _, c := range firstAncestor.Children.List {
-			if c.InactiveViews != nil {
-				count++
-			}
-		}
-		if count > 1 {
-			return true
-		}
-		return false
-	}
-	return false
-}
-
-// pathSegment returns either an elment id, or the name of the view it belongs to,
-// or the name of the view it belongs to prefixed by the view Element id.
-// (if the view Element is not the only child view, i.e. there are adjacent views)
-func pathSegment(p *Element, views *viewNodes) string {
-	rp := p.ID
-	if views != nil {
-		for _, v := range views.Nodes {
-			if v.Element.ID == rp {
-				rp = v.View.Name()
-				if p.viewAdjacence() {
-					rp = p.ID + "/" + rp
-				}
-				return rp
-			}
-		}
-	}
-	return rp
-}
-
-/*
-// MakeToggable is a simple example of conditional rendering.
-// It allows an Element to have a single child Element that can be switched with another one.
-//
-// For example, if we have a toggable button, one for login and one for logout,
-// We can implement the switch between login and logout by switching the inner Elements.
-func MakeToggable(conditionName string, e *Element, firstView View, secondView View, initialconditionvalue Bool) *Element {
-	e.AddView(firstView).AddView(secondView)
-
-	toggle := NewMutationHandler(func(evt MutationEvent) bool {
-		value, ok := evt.NewValue().(Bool)
-		if !ok {
-			value = false
-		}
-		if bool(value) {
-			Mutate(e, ActivateViewCommand(firstView.Name()))
-		}
-		Mutate(e, ActivateViewCommand(secondView.Name()))
-		return true
-	})
-
-	e.Watch("data", conditionName, e, toggle)
-
-	e.Set("data", conditionName, initialconditionvalue, false)
-	return e
-}
-
-*/
 
 // View defines a type for a named list of children Element
 // A View can depend on a parameter.
