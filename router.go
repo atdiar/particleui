@@ -26,7 +26,7 @@ type Router struct {
 
 	Links map[string]Link
 
-	Routes *routeNode
+	Routes *rnode
 
 	History *NavHistory
 
@@ -39,13 +39,13 @@ type Router struct {
 func NewRouter(baseurl string, documentroot ViewElement) *Router {
 	u, err := url.Parse(baseurl)
 	if err != nil {
-		return panic(err)
+		panic(err)
 	}
 	base := strings.TrimSuffix(u.Path, "/")
 	documentroot.Element().Global.Set("internals", "baseurl", String(baseurl), true)
-	r:= &Router{make([]RouteChangeHandler, 0), base, documentroot, make(map[string]Link,300), newRouteNode("/"), NewNavigationHistory().Push("/"), false}
+	r:= &Router{make([]RouteChangeHandler, 0), base, documentroot, make(map[string]Link,300), newrootrnode(documentroot), NewNavigationHistory().Push("/"), false}
 	return r
-
+}
 
 // AddCatchAllHandlers allows to add routing request handlers applying to  every route.
 // Successive calls to this method will append handlers to the current list.
@@ -65,13 +65,13 @@ func (r *Router) GoTo(route string) {
 
 func(r *Router) GoBack(){
 	if r.History.BackAllowed(){
-		r.root.Element().SetDataSyncUI("currentroute", String(r.History.GoBack()))
+		r.root.Element().SetDataSyncUI("currentroute", String(r.History.Back()))
 	}
 }
 
 func(r *Router) GoForward(){
 	if r.History.ForwardAllowed(){
-		r.root.Element().SetDataSyncUI("currentroute", String(r.History.GoForward()))
+		r.root.Element().SetDataSyncUI("currentroute", String(r.History.Forward()))
 	}
 }
 
@@ -81,7 +81,7 @@ func(r *Router) OnNotFound(dest View) *Router{
 	r.root.AddView(dest)
 
 	r.root.Element().Watch("navigation","notfound",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
-			r.GoTo(r.BaseURL + "/" + View.Name())
+			r.GoTo(r.BaseURL + "/" + dest.Name())
 			return false
 	}))
 	return r
@@ -94,7 +94,7 @@ func(r *Router) OnUnAuthorized(dest View) *Router{
 	r.root.AddView(dest)
 
 	r.root.Element().Watch("navigation","unauthorized",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
-			r.GoTo(r.BaseURL + "/" + View.Name())
+			r.GoTo(r.BaseURL + "/" + dest.Name())
 			return false
 	}))
 	return r
@@ -106,7 +106,7 @@ func(r *Router) OnAppFailure(dest View) *Router{
 	r.root.AddView(dest)
 
 	r.root.Element().Watch("navigation","appfailure",r.root.Element(), NewMutationHandler(func(evt MutationEvent)bool{
-			r.GoTo(r.BaseURL + "/" + View.Name())
+			r.GoTo(r.BaseURL + "/" + dest.Name())
 			return false
 	}))
 	return r
@@ -191,8 +191,8 @@ func (r *Router) ListenAndServe(nativebinding NativeEventBridge) {
 }
 
 func(r *Router) verifyLinkActivation(){
-	for _,l:=range rLinks{
-		_,ok:= l.Get("event","activated")
+	for _,l:=range r.Links{
+		_,ok:= l.Raw.Get("event","activated")
 		if !ok{
 			panic("Link activation failure: " + l.URI())
 		}
@@ -434,9 +434,10 @@ func(r *Router) NewLink(target ViewElement, viewname string) Link{
 		return l
 	}
 
-	e:= NewElement(viewname,target.Element().ID+"/"+viewname,r.documentroot.Element().DocType)
+	e:= NewElement(viewname,target.Element().ID+"/"+viewname,r.root.Element().DocType)
 	nh:= NewMutationHandler(func(evt MutationEvent)bool{
 			e.Set("event","activated",Bool(true))
+			return false
 	})
 	e.Watch("event","mounted",target.Element(), nh)
 	l= Link{e,target,viewname,r}

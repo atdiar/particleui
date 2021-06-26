@@ -444,8 +444,8 @@ func(v ViewElement) hasParameterizedView() (string,bool){
 	if strings.HasPrefix(e.ActiveView,":"){
 		return strings.TrimPrefix(e.ActiveView,":"),true
 	}
-	for k,v:= range e.InactiveViews{
-		if v.viewIsParameterized(){
+	for k,_:= range e.InactiveViews{
+		if strings.HasPrefix(k,":"){
 			return strings.TrimPrefix(k,":"), true
 		}
 	}
@@ -512,7 +512,7 @@ func(v ViewElement) RetrieveView(name string) *View{
 // AythorizeViewIf allows to make the activation of a view conditional to a boolean
 // Value set for the property of a target ELement. For instance, it can be useful
 // to restrict View activation to a subset of users in an app.
-func(v ViewElement) AuthorizeViewIf(viewname string,category string property string,target *Element){
+func(v ViewElement) AuthorizeViewIf(viewname string,category string, property string,target *Element){
 	var authorized bool
 	val,ok:= target.Get(category, property)
 	if ok{
@@ -520,14 +520,15 @@ func(v ViewElement) AuthorizeViewIf(viewname string,category string property str
 			authorized = true
 		}
 	}
-	v.Element().Set("authorized",view.Name(),authozied)
-	v.Element().Watch(category,property,target,NewMutationHandler(function(evt MutationEvent)bool{
+	v.Element().Set("authorized",viewname,Bool(authorized))
+	v.Element().Watch(category,property,target,NewMutationHandler(func(evt MutationEvent)bool{
 			val:= evt.NewValue()
 			if val == Bool(true){
-				v.Element().Set("authorized",view.Name(),Bool(true))
+				v.Element().Set("authorized",viewname,Bool(true))
 			}else{
-				v.Element().Set("authorized",view.Name(),Bool(false))
+				v.Element().Set("authorized",viewname,Bool(false))
 			}
+			return false
 	}))
 }
 
@@ -537,7 +538,7 @@ func(v ViewElement) isViewAuthorized(name string) bool{
 		return false
 	}
 	if val != Bool(true){
-		return return false
+		return false
 	}
 	return true
 }
@@ -763,20 +764,20 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 		e.Native.AppendChild(child)
 	}
 
-	if e.Mounted() && !wasmountedOnce && ChildEl.Element().isViewElement(){
+	if e.Mounted() && !wasmountedOnce && child.isViewElement(){
 		e.root.Set("event","docupdate",e)
 
 		l,ok:=e.root.Get("internals","views")
 		if !ok{
-			list:= NewList(childEl)
+			list:= NewList(child)
 			e.root.Set("internals","views",list)
 		} else{
 			list,ok:= l.(List)
 			if!ok{
-				list = NewList(childEl)
+				list = NewList(child)
 				e.root.Set("internals","views",list)
 			} else{
-				list = append(l,childEl)
+				list = append(list,child)
 				e.root.Set("internals","views",list)
 			}
 		}
@@ -828,15 +829,15 @@ func (e *Element) PrependChild(childEl AnyElement) *Element {
 
 		l,ok:=e.root.Get("internals","views")
 		if !ok{
-			list:= NewList(childEl)
+			list:= NewList(child)
 			e.root.Set("internals","views",list)
 		} else{
 			list,ok:= l.(List)
 			if!ok{
-				list = NewList(childEl)
+				list = NewList(child)
 				e.root.Set("internals","views",list)
 			} else{
-				list = append(l,childEl)
+				list = append(list,child)
 				e.root.Set("internals","views",list)
 			}
 		}
@@ -865,7 +866,7 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
-	_,wasmountedOnce:= childEl.Get("event","mounted")
+	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
 
 	child:= childEl.Element()
 	if e.DocType != child.DocType {
@@ -888,15 +889,15 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 
 		l,ok:=e.root.Get("internals","views") // A list of viewElement is stored in the root element so the router can access it on instantiation and register the preexististing routes.
 		if !ok{
-			list:= NewList(childEl)
+			list:= NewList(child)
 			e.root.Set("internals","views",list)
 		} else{
 			list,ok:= l.(List)
 			if!ok{
-				list = NewList(childEl)
+				list = NewList(child)
 				e.root.Set("internals","views",list)
 			} else{
-				list = append(l,childEl)
+				list = append(list,child)
 				e.root.Set("internals","views",list)
 			}
 		}
