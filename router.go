@@ -123,6 +123,16 @@ func (r *Router) mount(element *Element, middleware ...RouteChangeHandler) {
 	r.Routes.Insert(route, newRegistree(element, middleware...))
 }
 
+func(r *Router) insert(v ViewElement){
+	nrn:= newchildrnode(v,r.Routes)
+	r.Routes.insert(nrn)
+}
+
+func(r *Router) match(route string) (activationFn func() error, err error){
+	return r.Routes.match(route)
+
+}
+
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
@@ -158,7 +168,7 @@ func (r *Router) handler() *MutationHandler {
 			r.root.Element().Set("navigation","unauthorized",Bool(true)) // TODO document should watch itself and Activate the relevant view
 			return true
 		}
-		r.History.Push(nroute) // TODO doe sit belong there? does it not interfere with back and forward?
+		r.History.Push(string(nroute)) // TODO doe sit belong there? does it not interfere with back and forward?
 		return false // todo  i'm wondering if this is the right value to return.
 	})
 	return mh
@@ -267,7 +277,7 @@ func newchildrnode(v ViewElement, root *rnode) *rnode{
 }
 
 func newrootrnode(v ViewElement) *rnode{
-	r:= newchildrnode(v)
+	r:= newchildrnode(v,nil)
 	r.root = r
 	return r
 }
@@ -278,7 +288,7 @@ func(rn *rnode) insert(nrn *rnode){
 	v:= nrn.ViewElement
 
 	viewpath:= v.Element().ViewAccessPath
-	if viewpathnodes == nil{
+	if viewpath == nil{
 		return
 	}
 	viewpathnodes:= viewpath.Nodes
@@ -288,16 +298,18 @@ func(rn *rnode) insert(nrn *rnode){
 	l:= len(viewpathnodes)
 	// attach iteratively the rnodes
 	refnode := rn
+	viewname:= ""
 	for i,node:=range viewpathnodes{
 		if i+1 < l{
 			// each view should be a rootnode and should be attached in succession. The end node is our argument.
-			view:= ViewElement(viewpathnodes[i+1].Element)
+			view:= ViewElement{viewpathnodes[i+1].Element}
 			nr:=newchildrnode(view,rn)
 			refnode.attach(node.View.Name(),nr)
 			refnode = nr
+			viewname = node.View.Name()
 		}
 	}
-	refnode.attach(nrn)
+	refnode.attach(viewname,nrn)
 }
 
 // attach links to rnodes that corresponds to viewElements that succeeds each other
@@ -307,20 +319,21 @@ func(r *rnode) attach(targetviewname string, nr *rnode){
 		m=make(map[string]*rnode)
 		r.next[targetviewname] = m
 	}
-	r,ok:=m[nr.ViewElement.Element().ID]
+	r,ok=m[nr.ViewElement.Element().ID]
 	if !ok{
 		m[nr.ViewElement.Element().ID]=nr
 	} // else it has already been attached
 }
 
 // match verifies that a route passed as arguments corresponds to a given view state.
-func(r *rnode) match(route string) error{
+func(r *rnode) match(route string) (activationFn func() error, err error){
+	activations:= make([]func()error)
 	route = strings.TrimPrefix(route,"/")
 	segments := strings.SplitAfter(route, "/")
-	ls:= len(segment)
+	ls:= len(segments)
 
 	if ls==0{
-		return ErrNotFound
+		return nil,ErrNotFound
 	}
 
 
@@ -329,13 +342,20 @@ func(r *rnode) match(route string) error{
 	if !ok{
 		// Let's see if the ViewElement has a parameterizable view
 		param,ok= r.ViewElement.hasParameterizedView()
-		r.ViewElement.Element().Set("navigation",param,String(segment[0]))
-		if ls !=1{ // we get the next rnodes by uding the segment[1]
-			m,ok=r.next[param]
-			if !ok{
-				return ErrFrameworkFailure
+
+		if ok{
+			if !r.ViewElement.isViewAuthorized(param){
+				return nil,ErrUnauthorized
+			}
+			r.ViewElement.Element().Set("navigation",param,String(segments[0]))
+			if ls !=1{ // we get the next rnodes mapped by viewname
+				m,ok=r.next[param]
+				if !ok{
+					return nil,ErrFrameworkFailure
+				}
 			}
 		}
+
 	}
 
 	// Does other children views need activation? Let's check for it.
@@ -343,18 +363,24 @@ func(r *rnode) match(route string) error{
 		// check authorization
 		if param != ""{
 			if r.ViewElement.isViewAuthorized(param){
-				return nil
+				a:= func() errpr{
+					return r.ViewElement.ActivateView(segments[0])
+				}
+				return a,nil
 			}
-			return ErrUnauthorized
+			return nil,ErrUnauthorized
 		}
-		if r.ViewElement.isViewAuthorized(segment[0]){
-			return nil
+		if r.ViewElement.isViewAuthorized(segments[0]){
+			a:= func() errpr{
+				return r.ViewElement.ActivateView(segments[0])
+			}
+			return a,nil
 		}
-		return ErrUnauthorized
+		return nil,ErrUnauthorized
 	}
 
 	if ls%2 != 1 {
-		return false
+		return nil,ErrNotFound
 	}
 
 	viewcount:= (ls - ls%2)/2
@@ -362,15 +388,15 @@ func(r *rnode) match(route string) error{
 	// Let's get the next rnode and check that the view mentionned in the route exists (segment[2i+2])
 
 	for i:=1;i<=viewcount;i++{
-		routesegment:= segments[2i]
-		nextroutesegment[2i+1]
+		routesegment:= segments[2*i] //ids
+		nextroutesegment:= segments[2*i+1] //viewnames
 		r,ok= m[routesegment]
 		if !ok{
-			return ErrNotFound
+			return nil,ErrNotFound
 		}
 
 		if r.value != routesegment{
-			return ErrNotFound
+			return nil,ErrNotFound
 		}
 
 		// Now that we have the rnode, we can try to see if the nextroutesegment holding the viewname
@@ -380,22 +406,40 @@ func(r *rnode) match(route string) error{
 		if !ok{
 			// Let's see if the ViewElement has a parameterizable view
 			param,ok= r.ViewElement.hasParameterizedView()
-			if !r.ViewElement.isViewAuthorized(param){
-				return ErrUnauthorized
-			}
-			r.ViewElement.Element().Set("navigation",param,String(segment[0]))
-			if r.next{ // we get the next rnodes by using the segment[1]
-				m,ok=r.next[param]
+
+			if ok{
+				if !r.ViewElement.isViewAuthorized(param){
+					return nil,ErrUnauthorized
+				}
+				r.ViewElement.Element().Set("navigation",param,String(segments[2*i])) // TODO check
+
+				m,ok=r.next[param] // we get the next rnodes mapped by viewnames
 				if !ok{
-					return ErrFrameworkFailure
+					return nil,ErrFrameworkFailure
 				}
 
+			} else{
+				return nil,ErrNotFound
 			}
 		}
 		if !r.ViewElement.isViewAuthorized(nextroutesegment){
-			return ErrUnauthorized
+			return nil,ErrUnauthorized
+		}
+		a:= func()error{
+			return r.ViewElement.ActivateView(nextroutesegment)
+		}
+		activations = append(activations,a)
+		continue
+	}
+	activationFn = func() error{
+		for _,a:=range activations{
+			err:= a()
+			if err!= nil{
+				return err
+			}
 		}
 	}
+	return activationFn, nil
 }
 
 
@@ -419,7 +463,7 @@ type Link struct{
 }
 
 func(l Link) URI() string{
-	return l.Target.Element().Route() +"/" + l.Target.ID +"/" + l.ViewName
+	return l.Target.Element().Route() +"/" + l.Target.Element().ID +"/" + l.ViewName
 }
 
 func(l Link) Activate(){
@@ -469,14 +513,14 @@ func(n *NavHistory) Push(URI string) *NavHistory{
 }
 
 func(n *NavHistory) Back() string{
-	if BackAllowed(){
+	if n.BackAllowed(){
 		n.Cursor--
 	}
 	return n.Stack[n.Cursor]
 }
 
 func(n *NavHistory) Forward() string{
-	if ForwardAllowed(){
+	if n.ForwardAllowed(){
 		n.Cursor++
 	}
 	return n.Stack[n.Cursor]

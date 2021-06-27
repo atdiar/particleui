@@ -1401,6 +1401,7 @@ func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
 
 // SyncUISetData is used in event handlers when a user changed a value accessible
 // via the User Interface, typically.
+// It does not trigger mutationahdnler of the "ui" namespace
 //
 // For instance, after a User event changes the value via a GUI control, we would set
 // this value to the new value chosen by the user and then set the corresponding data
