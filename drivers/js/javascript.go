@@ -308,7 +308,7 @@ func (w Window) SetTitle(title string) {
 
 // TODO see if can get height width of window view port, etc.
 
-func newWindow(name string, options ...string) Window{
+func newWindow(name string, options ...string) Window {
 	c := Elements.NewConstructor("window", func(name string, id string) *ui.Element {
 		e := ui.NewElement("window", name, DOCTYPE)
 		e.ElementStore = Elements
@@ -351,19 +351,19 @@ func newWindow(name string, options ...string) Window{
 }
 
 func GetWindow(name string, options ...string) Window {
-	w:= Elements.GetByID(name)
-	if w == nil{
-		return newWindow(name,options...)
+	w := Elements.GetByID(name)
+	if w == nil {
+		return newWindow(name, options...)
 	}
-	cname,ok:= w.Get("internals","constructor")
-	if !ok{
-		return newWindow(name,options...)
+	cname, ok := w.Get("internals", "constructor")
+	if !ok {
+		return newWindow(name, options...)
 	}
-	nname,ok:= cname.(ui.String)
-	if !ok{
-		return newWindow("",options...)
+	nname, ok := cname.(ui.String)
+	if !ok {
+		return newWindow("", options...)
 	}
-	if string(nname) != "window"{
+	if string(nname) != "window" {
 		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
 		return Window{nil}
 	}
@@ -486,16 +486,15 @@ var NewDocument = Elements.NewConstructor("root", func(name string, id string) *
 	}
 	n := NewNativeElementWrapper(root)
 	e.Native = n
-	e.Watch("ui","currentroute",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			v:=evt.NewValue()
-			nroute,ok:= v.(ui.String)
-			if !ok{
-				panic(nroute)
-				return true
-			}
-			route:= string(nroute)
-			js.Global().Get("history").Call("pushState","{}","",route)
-			return false
+	e.Watch("data", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		v := evt.NewValue()
+		nroute, ok := v.(ui.String)
+		if !ok {
+			panic(nroute)
+		}
+		route := string(nroute)
+		js.Global().Get("history").Call("pushState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
+		return false
 	}))
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2177,10 +2176,10 @@ func RemoveAttribute(target *ui.Element, name string) {
 }
 
 // Buttonify turns an Element into a clickable link
-func Buttonify(any ui.AnyElement, link ui.Link){
+func Buttonify(any ui.AnyElement, link ui.Link) {
 	callback := ui.NewEventHandler(func(evt ui.Event) bool {
 		link.Activate()
 		return false
 	})
-	any.Element().AddEventListener("click",callback,EventTable.NativeEventBridge)
+	any.Element().AddEventListener("click", callback, EventTable.NativeEventBridge())
 }

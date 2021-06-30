@@ -142,7 +142,7 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.ElementStore = e
 	el.Global = e.Global
 	// DEBUG el.path isn't set
-	v:=NewViewElement(el,NewView(id,nil))
+	v := NewViewElement(el, NewView(id, nil))
 	return v.Element()
 }
 
@@ -232,8 +232,8 @@ type Element struct {
 	Native NativeElement
 }
 
-func (e *Element) Element() *Element { return e }
-func(e *Element) isViewElement() bool {return e.InactiveViews != nil}
+func (e *Element) Element() *Element   { return e }
+func (e *Element) isViewElement() bool { return e.InactiveViews != nil }
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
@@ -268,12 +268,12 @@ func NewElement(name string, id string, doctype string) *Element {
 // A ViewElement is a kind of Element for which the structure is dynamic in a
 // predefined, predictable way. It allows for an Element to have different versions
 // of its internal structure, each version being called a View.
-type AnyElement interface{
+type AnyElement interface {
 	Element() *Element
 }
 
-func(e *Element) isRoot() bool{
-	if e == nil{
+func (e *Element) isRoot() bool {
+	if e == nil {
 		return false
 	}
 	return e == e.Parent
@@ -425,68 +425,69 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	}
 	return e
 }
+
 // ViewElement defines a type of Element which can display different named versions.
 // A version is defined as a View.
-type ViewElement struct{
+type ViewElement struct {
 	Raw *Element
 }
 
 // Element returns the underlying *Element corresponding to the view.
 // A ViewElement constitutes merely an interface for specific *Element objects.
-func(v ViewElement) Element() *Element{
+func (v ViewElement) Element() *Element {
 	return v.Raw
 }
 
 // hasParameterizedView return the parameter name stripped from the initial colon ( ":")
 // if it exists.
-func(v ViewElement) hasParameterizedView() (string,bool){
-	e:= v.Element()
-	if strings.HasPrefix(e.ActiveView,":"){
-		return strings.TrimPrefix(e.ActiveView,":"),true
+func (v ViewElement) hasParameterizedView() (string, bool) {
+	e := v.Element()
+	if strings.HasPrefix(e.ActiveView, ":") {
+		return strings.TrimPrefix(e.ActiveView, ":"), true
 	}
-	for k,_:= range e.InactiveViews{
-		if strings.HasPrefix(k,":"){
-			return strings.TrimPrefix(k,":"), true
+	for k, _ := range e.InactiveViews {
+		if strings.HasPrefix(k, ":") {
+			return strings.TrimPrefix(k, ":"), true
 		}
 	}
-	return "",false
+	return "", false
 }
 
-func NewViewElement(e *Element, defaultview View) ViewElement{
-	v:= ViewElement{e}.AddView(defaultview)
-	e.Set("ui","defaultview",String(defaultview.Name()))
+func NewViewElement(e *Element, defaultview View) ViewElement {
+	v := ViewElement{e}.AddView(defaultview)
+	e.Set("ui", "defaultview", String(defaultview.Name()))
 	return v
 }
 
 // ActivateDefaultOnMount will set the activeview to its default onMount event.
-func(v ViewElement) ActivateDefaultOnMount() ViewElement{
-	v.Element().OnMount(NewMutationHandler(func(evt MutationEvent) bool{
-		rdef,ok:= v.Element().Get("ui","defaultview")
-		if !ok{
+func (v ViewElement) ActivateDefaultOnMount() ViewElement {
+	v.Element().OnMount(NewMutationHandler(func(evt MutationEvent) bool {
+		rdef, ok := v.Element().Get("ui", "defaultview")
+		if !ok {
 			panic("View does not have default. Should not be possible.")
 			return true
 		}
-		def,ok:= rdef.(String)
-		if !ok{
+		def, ok := rdef.(String)
+		if !ok {
 			panic("Wrong format for value of defaultview.Should not be possible.")
 			return true
 		}
-		rcurr,ok:= v.Element().Get("ui","activeview")
-		if !ok{
-			err:=v.ActivateView(string(def))
-			if err!= nil{
+		rcurr, ok := v.Element().Get("ui", "activeview")
+		if !ok {
+			err := v.ActivateView(string(def))
+			if err != nil {
 				log.Print(err)
 				return true
 			}
 		}
-		curr,ok:=rcurr.(String)
-		if !ok{
+		curr, ok := rcurr.(String)
+		if !ok {
 			panic("Wrong format for value of active view. Should not be possible.")
 		}
 
-		if curr != def{
-			err:=v.ActivateView(string(def))
-			if err!= nil{
+		if curr != def {
+			err := v.ActivateView(string(def))
+			if err != nil {
 				log.Print(err)
 				return true
 			}
@@ -497,47 +498,47 @@ func(v ViewElement) ActivateDefaultOnMount() ViewElement{
 }
 
 // AddView adds a view to a ViewElement.
-func(v ViewElement) AddView(view View) ViewElement{
+func (v ViewElement) AddView(view View) ViewElement {
 	v.Element().addView(view)
-	v.Element().Set("authorized",view.Name(),Bool(true))
+	v.Element().Set("authorized", view.Name(), Bool(true))
 	return v
 }
 
 // RetrieveView returns a pointer to a View if it exists. The View should not
 // be active.
-func(v ViewElement) RetrieveView(name string) *View{
+func (v ViewElement) RetrieveView(name string) *View {
 	return v.Element().retrieveView(name)
 }
 
 // AythorizeViewIf allows to make the activation of a view conditional to a boolean
 // Value set for the property of a target ELement. For instance, it can be useful
 // to restrict View activation to a subset of users in an app.
-func(v ViewElement) AuthorizeViewIf(viewname string,category string, property string,target *Element){
+func (v ViewElement) AuthorizeViewIf(viewname string, category string, property string, target *Element) {
 	var authorized bool
-	val,ok:= target.Get(category, property)
-	if ok{
-		if val == Bool(true){
+	val, ok := target.Get(category, property)
+	if ok {
+		if val == Bool(true) {
 			authorized = true
 		}
 	}
-	v.Element().Set("authorized",viewname,Bool(authorized))
-	v.Element().Watch(category,property,target,NewMutationHandler(func(evt MutationEvent)bool{
-			val:= evt.NewValue()
-			if val == Bool(true){
-				v.Element().Set("authorized",viewname,Bool(true))
-			}else{
-				v.Element().Set("authorized",viewname,Bool(false))
-			}
-			return false
+	v.Element().Set("authorized", viewname, Bool(authorized))
+	v.Element().Watch(category, property, target, NewMutationHandler(func(evt MutationEvent) bool {
+		val := evt.NewValue()
+		if val == Bool(true) {
+			v.Element().Set("authorized", viewname, Bool(true))
+		} else {
+			v.Element().Set("authorized", viewname, Bool(false))
+		}
+		return false
 	}))
 }
 
-func(v ViewElement) isViewAuthorized(name string) bool{
-	val,ok:=v.Element().Get("authorized",name)
-	if !ok{
+func (v ViewElement) isViewAuthorized(name string) bool {
+	val, ok := v.Element().Get("authorized", name)
+	if !ok {
 		return false
 	}
-	if val != Bool(true){
+	if val != Bool(true) {
 		return false
 	}
 	return true
@@ -545,13 +546,16 @@ func(v ViewElement) isViewAuthorized(name string) bool{
 
 // ActivateView sets the active view of  a ViewElement.
 // If no View exists for the name argument or is not authorized, an error is returned.
-func(v ViewElement) ActivateView(name string) error{
-	val,ok:=v.Element().Get("authorized",name)
-	if !ok{
+func (v ViewElement) ActivateView(name string) error {
+	val, ok := v.Element().Get("authorized", name)
+	if !ok {
 		panic(errors.New("authorization error")) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
-	if val != Bool(true){
+	if val != Bool(true) {
 		return errors.New("Unauthorized")
+	}
+	if v.Element().ActiveView == name {
+		return nil
 	}
 	return v.Element().activateView(name)
 }
@@ -573,7 +577,6 @@ func (e *Element) retrieveView(name string) *View {
 	}
 	return &v
 }
-
 
 func (e *Element) activateView(name string) error {
 	newview, ok := e.InactiveViews[name]
@@ -745,10 +748,9 @@ func detach(e *Element) {
 // root Element, the root Element will see its ("event","docupdate") property
 // set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
-	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
+	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
-
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -764,21 +766,21 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 		e.Native.AppendChild(child)
 	}
 
-	if e.Mounted() && !wasmountedOnce && child.isViewElement(){
-		e.root.Set("event","docupdate",e)
+	if e.Mounted() && !wasmountedOnce && child.isViewElement() {
+		e.root.Set("event", "docupdate", e)
 
-		l,ok:=e.root.Get("internals","views")
-		if !ok{
-			list:= NewList(child)
-			e.root.Set("internals","views",list)
-		} else{
-			list,ok:= l.(List)
-			if!ok{
+		l, ok := e.root.Get("internals", "views")
+		if !ok {
+			list := NewList(child)
+			e.root.Set("internals", "views", list)
+		} else {
+			list, ok := l.(List)
+			if !ok {
 				list = NewList(child)
-				e.root.Set("internals","views",list)
-			} else{
-				list = append(list,child)
-				e.root.Set("internals","views",list)
+				e.root.Set("internals", "views", list)
+			} else {
+				list = append(list, child)
+				e.root.Set("internals", "views", list)
 			}
 		}
 
@@ -787,7 +789,7 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) appendChild(childEl AnyElement) *Element {
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -806,9 +808,9 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) PrependChild(childEl AnyElement) *Element {
-	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
+	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -824,21 +826,21 @@ func (e *Element) PrependChild(childEl AnyElement) *Element {
 	if e.Native != nil {
 		e.Native.PrependChild(child)
 	}
-	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement(){ // if an element gets mounted, the first time, it triggers a document update mutation event
-		e.root.Set("event","docupdate",e)
+	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement() { // if an element gets mounted, the first time, it triggers a document update mutation event
+		e.root.Set("event", "docupdate", e)
 
-		l,ok:=e.root.Get("internals","views")
-		if !ok{
-			list:= NewList(child)
-			e.root.Set("internals","views",list)
-		} else{
-			list,ok:= l.(List)
-			if!ok{
+		l, ok := e.root.Get("internals", "views")
+		if !ok {
+			list := NewList(child)
+			e.root.Set("internals", "views", list)
+		} else {
+			list, ok := l.(List)
+			if !ok {
 				list = NewList(child)
-				e.root.Set("internals","views",list)
-			} else{
-				list = append(list,child)
-				e.root.Set("internals","views",list)
+				e.root.Set("internals", "views", list)
+			} else {
+				list = append(list, child)
+				e.root.Set("internals", "views", list)
 			}
 		}
 	}
@@ -846,7 +848,7 @@ func (e *Element) PrependChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) prependChild(childEl AnyElement) *Element {
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -866,9 +868,9 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
-	_,wasmountedOnce:= childEl.Element().Get("event","mounted")
+	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -884,21 +886,21 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 		e.Native.InsertChild(child, index)
 	}
 
-	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement(){ // if an element gets mounted, the first time, it triggers a document update mutation event
-		e.root.Set("event","docupdate",e)
+	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement() { // if an element gets mounted, the first time, it triggers a document update mutation event
+		e.root.Set("event", "docupdate", e)
 
-		l,ok:=e.root.Get("internals","views") // A list of viewElement is stored in the root element so the router can access it on instantiation and register the preexististing routes.
-		if !ok{
-			list:= NewList(child)
-			e.root.Set("internals","views",list)
-		} else{
-			list,ok:= l.(List)
-			if!ok{
+		l, ok := e.root.Get("internals", "views") // A list of viewElement is stored in the root element so the router can access it on instantiation and register the preexististing routes.
+		if !ok {
+			list := NewList(child)
+			e.root.Set("internals", "views", list)
+		} else {
+			list, ok := l.(List)
+			if !ok {
 				list = NewList(child)
-				e.root.Set("internals","views",list)
-			} else{
-				list = append(list,child)
-				e.root.Set("internals","views",list)
+				e.root.Set("internals", "views", list)
+			} else {
+				list = append(list, child)
+				e.root.Set("internals", "views", list)
 			}
 		}
 	}
@@ -907,7 +909,7 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 }
 
 func (e *Element) insertChild(childEl AnyElement, index int) *Element {
-	child:= childEl.Element()
+	child := childEl.Element()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
@@ -931,7 +933,7 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 // of the user.
 func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	old := oldEl.Element()
-	new:= newEl.Element()
+	new := newEl.Element()
 	if e.DocType != new.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
@@ -951,7 +953,7 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 }
 
 func (e *Element) removeChild(childEl AnyElement) *Element {
-	child:= childEl.Element()
+	child := childEl.Element()
 	detach(child)
 	e.Children.Remove(child)
 
@@ -1323,7 +1325,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
 			if category != "ui" {
-				log.Print("cat/props being set is : ",category, propname) // DEBUG
+				log.Print("cat/props being set is : ", category, propname) // DEBUG
 				storage.Store(e, category, propname, value, flags...)
 			}
 		}
@@ -1366,10 +1368,10 @@ func (e *Element) SetData(propname string, value Value, flags ...bool) {
 	e.Set("data", propname, value, flags...)
 }
 
-// SetUI inserts a key/value pair under the "data" category in the element property store.
-// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
-// It does not automatically update any potential property representation stored
-// for rendering use in the "ui" category/namespace.
+// SetUI stores data used for Graphical rendering in the "ui" namespace (stands for
+// user interface). This namespace should remain private to an Element.
+// Other Element may want to "watch" the corresponding data namespace instead if
+// there exist inter-dependences.
 func (e *Element) SetUI(propname string, value Value, flags ...bool) {
 	e.Set("ui", propname, value, flags...)
 }
@@ -1388,8 +1390,8 @@ func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
-				storage.Store(e, "data", propname, value, flags...)
-			}
+			storage.Store(e, "data", propname, value, flags...)
+		}
 	}
 	e.Properties.Set("data", propname, value, inheritable)
 
@@ -1420,8 +1422,8 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
-				storage.Store(e, "ui", propname, value, flags...)
-			}
+			storage.Store(e, "ui", propname, value, flags...)
+		}
 	}
 
 	e.Properties.Set("ui", propname, value, inheritable)
@@ -1539,18 +1541,18 @@ func EnablePropertyAutoInheritance() string {
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
 func (e *Element) Route() string {
 	var Route string
-	baseurl,ok:= e.Global.Get("internals","baseurl")
-	if !ok{
+	baseurl, ok := e.Global.Get("internals", "baseurl")
+	if !ok {
 		log.Print("base url seems to be missing")
 		return Route
 	}
-	bu,ok:= baseurl.(String)
-	if !ok{
+	bu, ok := baseurl.(String)
+	if !ok {
 		log.Print("baseurl seems to be of wrong type. Expected ui.String.")
 		return Route
 	}
 	Route = string(bu)
-	if strings.HasSuffix(Route,"/"){
+	if strings.HasSuffix(Route, "/") {
 		Route = strings.TrimSuffix(Route, "/")
 	}
 
@@ -1560,9 +1562,9 @@ func (e *Element) Route() string {
 
 	for index, n := range e.ViewAccessPath.Nodes[:len(e.ViewAccessPath.Nodes)] {
 		path := n.Element.ID + "/" + n.View.Name()
-		if n.Element.root == n.Element{
-			path= n.View.Name()
-			if index != 0{
+		if n.Element.root == n.Element {
+			path = n.View.Name()
+			if index != 0 {
 				log.Print("error: the root view should be the topmost view")
 				return ""
 			}
