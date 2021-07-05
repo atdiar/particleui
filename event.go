@@ -1,10 +1,15 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
+import (
+	"log"
+)
+
 type Event interface {
 	Type() string
 	Target() *Element
 	CurrentTarget() *Element
+	Value() string // at worst, serizalized
 
 	PreventDefault()
 	StopPropagation()          // the phase is stil 1,2,or 3 but Stopped returns true
@@ -33,6 +38,7 @@ type eventObject struct {
 	phase            int
 
 	nativeObject interface{}
+	value string
 }
 
 type defaultPreventer interface {
@@ -64,9 +70,10 @@ func (e *eventObject) DefaultPrevented() bool      { return e.defaultPrevented }
 func (e *eventObject) Stopped() bool               { return e.stopped }
 func (e *eventObject) Cancelable() bool            { return e.cancelable }
 func (e *eventObject) Native() interface{}         { return e.nativeObject }
+func (e *eventObject) Value() string        { return e.value }
 
-func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}) Event {
-	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent}
+func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{},value string) Event {
+	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent,value}
 }
 
 type EventListeners struct {
@@ -74,13 +81,14 @@ type EventListeners struct {
 }
 
 func NewEventListenerStore() EventListeners {
-	return EventListeners{make(map[string]*eventHandlers, 0)}
+	return EventListeners{make(map[string]*eventHandlers,0)}
 }
 
 func (e EventListeners) AddEventHandler(event string, handler *EventHandler) {
 	eh, ok := e.list[event]
 	if !ok {
-		e.list[event] = newEventHandlers().Add(handler)
+		eh = newEventHandlers()
+		e.list[event] = eh
 	}
 	eh.Add(handler)
 }
@@ -161,6 +169,7 @@ func newEventHandlers() *eventHandlers {
 }
 
 func (e *eventHandlers) Add(h *EventHandler) *eventHandlers {
+	log.Print(h)
 	e.List = append(e.List, h)
 	return e
 }

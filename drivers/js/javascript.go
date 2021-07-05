@@ -20,8 +20,6 @@ var (
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
 	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
-	EventTable                    = NewEventTranslationTable()
-	DefaultWindow                 Window
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
@@ -279,8 +277,6 @@ func loader(s string) func(e *ui.Element) error {
 							e.Properties.Set(string(category), string(propname), tval)
 							evt := e.NewMutationEvent(string(category), string(propname), tval)
 							e.PropMutationHandlers.DispatchEvent(evt)
-							log.Print("Replaying MUTATION RECORD: ", category, propname, tval) // DEBUG
-							log.Print(mutationrecordlist)
 						}
 					}
 				}
@@ -308,14 +304,15 @@ func (w Window) SetTitle(title string) {
 
 // TODO see if can get height width of window view port, etc.
 
-func newWindow(name string, options ...string) Window {
+func newWindow(title string, options ...string) Window {
 	c := Elements.NewConstructor("window", func(name string, id string) *ui.Element {
 		e := ui.NewElement("window", name, DOCTYPE)
+		e.Set("event", "mounted", ui.Bool(true))
+		e.Set("event", "attached", ui.Bool(true))
 		e.ElementStore = Elements
-		wd := js.Global()
+		wd := js.Global().Get("document").Get("defaultView")
 		if !wd.Truthy() {
-			log.Print("unable to access windows")
-			return nil
+			panic("unable to access windows")
 		}
 		e.Native = NewNativeElementWrapper(wd)
 
@@ -343,29 +340,29 @@ func newWindow(name string, options ...string) Window {
 		})
 
 		e.Watch("ui", "title", e, h)
-		e.Set("ui", "title", ui.String(name), false)
+		e.Set("ui", "title", ui.String(title), false)
 		return e
 	})
 
-	return Window{tryLoad(c("window", name, options...))}
+	return Window{tryLoad(c("window", "window", options...))}
 }
 
-func GetWindow(name string, options ...string) Window {
-	w := Elements.GetByID(name)
+func GetWindow(options ...string) Window {
+	w := Elements.GetByID("window")
 	if w == nil {
-		return newWindow(name, options...)
+		return newWindow("Powered by ParticleUI", options...)
 	}
 	cname, ok := w.Get("internals", "constructor")
 	if !ok {
-		return newWindow(name, options...)
+		return newWindow("Powered by ParticleUI", options...)
 	}
 	nname, ok := cname.(ui.String)
 	if !ok {
-		return newWindow("", options...)
+		return newWindow("Powered by ParticleUI", options...)
 	}
 	if string(nname) != "window" {
 		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
-		return Window{nil}
+		return Window{}
 	}
 	return Window{w}
 }
@@ -468,36 +465,49 @@ func EnableLocalPersistence() string {
 	return "localstorage"
 }
 
-// NewAppRoot creates a new app entry point. It is the top-most element
+type Document struct {
+	UIElement *ui.Element
+}
+
+func (d Document) Element() *ui.Element {
+	return d.UIElement
+}
+
+// NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
 // It should be the element which is passed to a router to observe for route
 // change.
 // By default, it represents document.body. As such, it is different from the
-// document which holds the head element for instance.
-var NewDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
-	DefaultWindow = GetWindow(name)
+// DOM which holds the head element for instance.
+func NewDocument(id string, options ...string) Document {
+	var newDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
 
-	e := Elements.NewAppRoot(id)
+		e := Elements.NewAppRoot(id)
 
-	root := js.Global().Get("document").Get("body")
-	if !root.Truthy() {
-		log.Print("failed to instantiate root element for the document")
-		return e
-	}
-	n := NewNativeElementWrapper(root)
-	e.Native = n
-	e.Watch("data", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		v := evt.NewValue()
-		nroute, ok := v.(ui.String)
-		if !ok {
-			panic(nroute)
+		root := js.Global().Get("document").Get("body")
+		if !root.Truthy() {
+			log.Print("failed to instantiate root element for the document")
+			return e
 		}
-		route := string(nroute)
-		js.Global().Get("history").Call("pushState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
-		return false
-	}))
-	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+		n := NewNativeElementWrapper(root)
+		e.Native = n
+		SetAttribute(e, "id", id)
+
+		e.Watch("data", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			v := evt.NewValue()
+			nroute, ok := v.(ui.String)
+			if !ok {
+				panic(nroute)
+			}
+			route := string(nroute)
+			js.Global().Get("history").Call("pushState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
+			return false
+		}))
+		return e
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+	return Document{tryLoad(newDocument(id, id, options...))}
+}
 
 // Div is a concrete type that holds the common interface to Div *ui.Element objects.
 // i.e. ui.Element whose constructor name is "div" and represents html div elements.
@@ -506,6 +516,7 @@ type Div struct {
 }
 
 func (d Div) Element() *ui.Element { return d.UIElement }
+
 func (d Div) Contenteditable(b bool) Div {
 	d.Element().SetDataSyncUI("contenteditable", ui.Bool(b))
 	return d
@@ -805,17 +816,17 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 		})
 
 		if datacapturemode == nil || len(datacapturemode) > 1 {
-			e.AddEventListener("blur", callback, EventTable.NativeEventBridge())
+			e.AddEventListener("blur", callback, NativeEventBridge)
 			return e
 		}
 		mode := datacapturemode[0]
 		if mode == onInput {
-			e.AddEventListener("input", callback, EventTable.NativeEventBridge())
+			e.AddEventListener("input", callback, NativeEventBridge)
 			return e
 		}
 
 		// capture textarea value on blur by default
-		e.AddEventListener("blur", callback, EventTable.NativeEventBridge())
+		e.AddEventListener("blur", callback, NativeEventBridge)
 		return e
 	}
 }
@@ -1963,107 +1974,6 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 	return e
 })
 
-type EventTranslationTable struct {
-	FromJS          map[string]func(evt js.Value) ui.Event
-	ToJS            map[string]func(evt ui.Event) js.Value
-	nameTranslation map[nameTranslation]string
-}
-
-type nameTranslation struct {
-	Event  string
-	Native bool
-}
-
-func translationKey(evtname string, js bool) nameTranslation {
-	return nameTranslation{evtname, js}
-}
-
-func NewEventTranslationTable() EventTranslationTable {
-	return EventTranslationTable{make(map[string]func(evt js.Value) ui.Event), make(map[string]func(evt ui.Event) js.Value), make(map[nameTranslation]string)}
-}
-
-// Register enables the storage of an event translation function which is used
-// by ui.Element to listen to events that are actually dispatched from the
-// underlying javascript target.
-func (e EventTranslationTable) GoEventTranslator(goEventName string, nativeEventName string, toJS func(ui.Event) js.Value) {
-	e.ToJS[goEventName] = toJS
-	e.nameTranslation[translationKey(goEventName, false)] = nativeEventName
-}
-
-func (e EventTranslationTable) JSEventTranslator(nativeEventName string, goEventName string, fromJS func(js.Value) ui.Event) {
-	e.FromJS[nativeEventName] = fromJS
-	e.nameTranslation[translationKey(nativeEventName, true)] = goEventName
-}
-
-func (e EventTranslationTable) TranslateEventName(evt string, jsNative bool) string {
-	res, ok := e.nameTranslation[translationKey(evt, jsNative)]
-	if !ok {
-		return evt
-	}
-	return res
-}
-
-func (e EventTranslationTable) NativeEventBridge() ui.NativeEventBridge {
-	return func(evt string, target *ui.Element) {
-		translate, ok := e.FromJS[evt]
-		NativeEventName := e.nameTranslation[translationKey(evt, false)]
-		if !ok {
-			translate = DefaultJSEventTranslator
-			NativeEventName = evt
-		}
-		// Let's create the callback that will be called from the js side
-		cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			nativeEvent := args[0]
-			nativeEvent.Call("stopPropagation")
-			goevt := translate(nativeEvent)
-			target.DispatchEvent(goevt, nil)
-			return nil
-		})
-
-		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
-		if target.NativeEventUnlisteners.List == nil {
-			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-		}
-		target.NativeEventUnlisteners.Add(NativeEventName, func() {
-			js.Global().Get("document").Call("getElementById", target.ID).Call("removeEventListener", NativeEventName, cb)
-			cb.Release()
-		})
-	}
-}
-
-func (e EventTranslationTable) NativeDispatcher() ui.NativeDispatch {
-	return func(evt ui.Event) {
-		translate, ok := e.ToJS[evt.Type()]
-		if !ok {
-			translate = DefaultGoEventTranslator
-		}
-		nativeevent := translate(evt)
-		nelmt, ok := evt.Target().Native.(NativeElement)
-		if !ok {
-			log.Print("Unable to dispatch event for non-javascript html element")
-			return
-		}
-		nelmt.JSValue().Call("dispatchEvent", nativeevent)
-	}
-}
-
-func (e EventTranslationTable) EventFromJS(evt js.Value) ui.Event {
-	typ := evt.Get("type").String()
-	translate, ok := e.FromJS[typ]
-	if !ok {
-		translate = DefaultJSEventTranslator
-	}
-	return translate(evt)
-}
-
-func (e EventTranslationTable) EventToJS(evt ui.Event) js.Wrapper {
-	translate, ok := e.ToJS[evt.Type()]
-	if !ok {
-		translate = DefaultGoEventTranslator
-	}
-	return translate(evt)
-}
-
 func AddClass(target *ui.Element, classname string) {
 	category := "css"
 	classes, ok := target.Get(category, "class")
@@ -2181,5 +2091,5 @@ func Buttonify(any ui.AnyElement, link ui.Link) {
 		link.Activate()
 		return false
 	})
-	any.Element().AddEventListener("click", callback, EventTable.NativeEventBridge())
+	any.Element().AddEventListener("click", callback, NativeEventBridge)
 }

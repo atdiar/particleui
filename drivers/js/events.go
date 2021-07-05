@@ -18,20 +18,6 @@ func (c cancelable) PreventDefault() {
 	c.Value.Call("preventDefault")
 }
 
-func DefaultJSEventTranslator(evt js.Value) ui.Event {
-	typ := evt.Get("type").String()
-	bubbles := evt.Get("bubbles").Bool()
-	cancancel := evt.Get("cancelable").Bool()
-	targetid := evt.Get("target").Get("id").String()
-	target := Elements.GetByID(targetid)
-	var nativeEvent interface{}
-	nativeEvent = evt
-	if cancancel {
-		nativeEvent = cancelable{evt}
-	}
-	return ui.NewEvent(typ, bubbles, cancancel, target, nativeEvent)
-}
-
 func DefaultGoEventTranslator(evt ui.Event) js.Value {
 	var event = js.Global().Get("Event").New(evt.Type(), map[string]interface{}{
 		"bubbles":    evt.Bubbles(),
@@ -40,10 +26,60 @@ func DefaultGoEventTranslator(evt ui.Event) js.Value {
 	return event
 }
 
-func LoadDefaultEventTable(evttbl EventTranslationTable) {
-	evttbl.JSEventTranslator("popstate", "routechange", func(evt js.Value) ui.Event {
-		targetid := evt.Get("target").Get("id").String()
-		target := Elements.GetByID(targetid)
-		return ui.NewRouteChangeEvent(js.Global().Get("location").String(), target)
+var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
+	// Let's create the callback that will be called from the js side
+	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		evt := args[0]
+		evt.Call("stopPropagation")
+
+		// Time to create the corresponding GoEvent
+		typ := evt.Get("type").String()
+		bubbles := evt.Get("bubbles").Bool()
+		cancancel := evt.Get("cancelable").Bool()
+		var target *ui.Element
+		targetid := evt.Get("target").Get("id")
+		value := evt.Get("target").Get("value").String()
+		if targetid.Truthy() {
+			target = Elements.GetByID(targetid.String())
+		} else {
+			// this might be a stretch... but we assume that the only element without
+			// a native side ID is the window in javascript.
+			target = GetWindow().Element()
+		}
+
+		var nativeEvent interface{}
+		nativeEvent = evt
+		if cancancel {
+			nativeEvent = cancelable{evt}
+		}
+		if typ == "popstate" {
+			value = js.Global().Get("document").Get("URL").String()
+			//value = js.Global().Get("location").Get("pathname").String()
+		}
+		goevt := ui.NewEvent(typ, bubbles, cancancel, target, nativeEvent, value)
+
+		target.DispatchEvent(goevt, nil)
+		return nil
 	})
+
+	if target.ID != GetWindow().Element().ID {
+		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
+		if target.NativeEventUnlisteners.List == nil {
+			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+		}
+		target.NativeEventUnlisteners.Add(NativeEventName, func() {
+			js.Global().Get("document").Call("getElementById", target.ID).Call("removeEventListener", NativeEventName, cb)
+			cb.Release()
+		})
+	} else {
+		js.Global().Call("addEventListener", NativeEventName, cb)
+		if target.NativeEventUnlisteners.List == nil {
+			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+		}
+		target.NativeEventUnlisteners.Add(NativeEventName, func() {
+			js.Global().Call("removeEventListener", NativeEventName, cb)
+			cb.Release()
+		})
+	}
+
 }

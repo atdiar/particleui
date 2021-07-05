@@ -134,6 +134,8 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 	return e
 }
 
+// NewAppRoot returns the starting point of an app. It is a viewElement whose main
+// view neame is the root id.
 func (e *ElementStore) NewAppRoot(id string) *Element {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
@@ -142,8 +144,10 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.ElementStore = e
 	el.Global = e.Global
 	// DEBUG el.path isn't set
-	v := NewViewElement(el, NewView(id, nil))
-	return v.Element()
+
+	el.Set("event","attached",Bool(true))
+	el.Set("event","mounted",Bool(true))
+	return el
 }
 
 // NewConstructor registers and returns a new Element construcor function.
@@ -254,12 +258,18 @@ func NewElement(name string, id string, doctype string) *Element {
 		NewNativeEventUnlisteners(),
 		NewElements(),
 		"",
-		nil,
+		newViewNodes(),
 		nil,
 		nil,
 	}
 	e.Watch("ui", "command", e, DefaultCommandHandler)
 	return e
+}
+
+// Root returns the top-most eklement in the *Element tree.
+// All navigation properties are registred on it.
+func (e *Element) Root() *Element {
+	return e.root
 }
 
 // AnyElement is an interface type fo rany object that is instrinsically an Element.
@@ -375,13 +385,13 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 		return e
 	}
 
-	if !e.Mounted() {
-		log.Print("Error: Element detached. should not happen.")
-		// TODO review which type of event could walk up a detached subtree
-		// for instance, how to update darkmode on detached elements especially
-		// on attachment. (life cycles? +  globally propagated values from root + mutations propagated in spite of detachment status)
-		return e // can happen if we are building a document fragment and try to dispatch a custom event
-	}
+	/*if !e.Mounted() {
+			log.Print("Error: Element detached. should not happen.")
+			// TODO review which type of event could walk up a detached subtree
+			// for instance, how to update darkmode on detached elements especially
+			// on attachment. (life cycles? +  globally propagated values from root + mutations propagated in spite of detachment status)
+			return e // can happen if we are building a document fragment and try to dispatch a custom event
+	}*/
 	if e.path == nil {
 		log.Print("Error: Element path does not exist (yet).")
 		return e
@@ -445,7 +455,7 @@ func (v ViewElement) hasParameterizedView() (string, bool) {
 	if strings.HasPrefix(e.ActiveView, ":") {
 		return strings.TrimPrefix(e.ActiveView, ":"), true
 	}
-	for k, _ := range e.InactiveViews {
+	for k := range e.InactiveViews {
 		if strings.HasPrefix(k, ":") {
 			return strings.TrimPrefix(k, ":"), true
 		}
@@ -465,12 +475,10 @@ func (v ViewElement) ActivateDefaultOnMount() ViewElement {
 		rdef, ok := v.Element().Get("ui", "defaultview")
 		if !ok {
 			panic("View does not have default. Should not be possible.")
-			return true
 		}
 		def, ok := rdef.(String)
 		if !ok {
 			panic("Wrong format for value of defaultview.Should not be possible.")
-			return true
 		}
 		rcurr, ok := v.Element().Get("ui", "activeview")
 		if !ok {
@@ -561,11 +569,15 @@ func (v ViewElement) ActivateView(name string) error {
 }
 
 func (e *Element) addView(v View) *Element {
-	for _, child := range v.Elements().List {
-		child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v))
-		attach(e, child, false)
+	if v.Elements() != nil {
+		for _, child := range v.Elements().List {
+			child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v))
+			attach(e, child, false)
+		}
 	}
-
+	if e.InactiveViews == nil {
+		e.InactiveViews = make(map[string]View)
+	}
 	e.InactiveViews[v.Name()] = v
 	return e
 }
@@ -683,6 +695,9 @@ func attach(parent *Element, child *Element, activeview bool) {
 	if child.InactiveViews == nil {
 		child.ViewAccessPath = parent.ViewAccessPath
 	} else {
+		if child.ViewAccessPath == nil {
+			child.ViewAccessPath = newViewNodes()
+		}
 		child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.Nodes...)
 	}
 
@@ -1325,7 +1340,6 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
 			if category != "ui" {
-				log.Print("cat/props being set is : ", category, propname) // DEBUG
 				storage.Store(e, category, propname, value, flags...)
 			}
 		}

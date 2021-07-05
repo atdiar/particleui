@@ -33,18 +33,17 @@ type Router struct {
 
 // NewRouter takes an Element object which should be the entry point of the router
 // as well as the document root which should be the entry point of the document/application tree.
-// TODO eliminate documentroot ... redundant
-func NewRouter(baseurl string, documentroot ViewElement) *Router {
+func NewRouter(baseurl string, rootview ViewElement) *Router {
 	u, err := url.Parse(baseurl)
 	if err != nil {
 		panic(err)
 	}
 	base := strings.TrimSuffix(u.Path, "/")
-	documentroot.Element().Global.Set("internals", "baseurl", String(baseurl), true)
-	r := &Router{base, documentroot, make(map[string]Link, 300), newrootrnode(documentroot), NewNavigationHistory().Push("/"), false}
+	rootview.Element().Global.Set("internals", "baseurl", String(baseurl), true)
+	r := &Router{base, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory().Push("/"), false}
 
 	// Routes registration and treemutation based registration
-	v, ok := r.root.Element().Get("internals", "views")
+	v, ok := r.root.Element().Root().Get("internals", "views")
 	if ok {
 		l, ok := v.(List)
 		if ok {
@@ -57,7 +56,7 @@ func NewRouter(baseurl string, documentroot ViewElement) *Router {
 			}
 		}
 	}
-	r.root.Element().Watch("event", "docupdate", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
+	r.root.Element().Root().Watch("event", "docupdate", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
 		v, ok := evt.NewValue().(*Element)
 		if !ok {
 			panic("Framework error: only an *Element is an acceptable value for docupdate")
@@ -74,19 +73,19 @@ func NewRouter(baseurl string, documentroot ViewElement) *Router {
 
 // GoTo changes the application state by updating the current route
 func (r *Router) GoTo(route string) {
-	r.root.Element().Set("navigation", "routechangerequest", String(route))
+	r.root.Element().Root().Set("navigation", "routechangerequest", String(route))
 	r.History.Push(route)
 }
 
 func (r *Router) GoBack() {
 	if r.History.BackAllowed() {
-		r.root.Element().Set("navigation", "routechangerequest", String(r.History.Back()))
+		r.root.Element().Root().Set("navigation", "routechangerequest", String(r.History.Back()))
 	}
 }
 
 func (r *Router) GoForward() {
 	if r.History.ForwardAllowed() {
-		r.root.Element().Set("navigation", "routechangerequest", String(r.History.Forward()))
+		r.root.Element().Root().Set("navigation", "routechangerequest", String(r.History.Forward()))
 	}
 }
 
@@ -95,7 +94,7 @@ func (r *Router) GoForward() {
 func (r *Router) OnNotfound(dest View) *Router {
 	r.root.AddView(dest)
 
-	r.root.Element().Watch("navigation", "notfound", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
+	r.root.Element().Root().Watch("navigation", "notfound", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		r.GoTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
@@ -108,7 +107,7 @@ func (r *Router) OnNotfound(dest View) *Router {
 func (r *Router) OnUnauthorized(dest View) *Router {
 	r.root.AddView(dest)
 
-	r.root.Element().Watch("navigation", "unauthorized", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
+	r.root.Element().Root().Watch("navigation", "unauthorized", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		r.GoTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
@@ -120,7 +119,7 @@ func (r *Router) OnUnauthorized(dest View) *Router {
 func (r *Router) OnAppfailure(dest View) *Router {
 	r.root.AddView(dest)
 
-	r.root.Element().Watch("navigation", "appfailure", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
+	r.root.Element().Root().Watch("navigation", "appfailure", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		r.GoTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
@@ -128,12 +127,24 @@ func (r *Router) OnAppfailure(dest View) *Router {
 }
 
 func (r *Router) insert(v ViewElement) {
+	// check that v has r.root as ancestor
+	vap := v.Element().ViewAccessPath
+	if vap == nil {
+		return
+	}
+	ancestry := vap.Nodes[0].Element
+	if ancestry.ID != r.root.Element().ID {
+		return
+	}
 	nrn := newchildrnode(v, r.Routes)
 	r.Routes.insert(nrn)
 }
 
-func (r *Router) match(route string) (activationFn func() error, err error) {
-	return r.Routes.match(route)
+// Match returns whether a route is valid or not. It can be used in tests to
+// Make sure that an app links are not breaking.
+func (r *Router) Match(route string) error {
+	_, err := r.Routes.match(route)
+	return err
 
 }
 
@@ -143,7 +154,7 @@ func (r *Router) handler() *MutationHandler {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
-			r.root.Element().Set("navigation", "appfailure", Bool(true))
+			r.root.Element().Root().Set("navigation", "appfailure", Bool(true))
 			return true
 		}
 		newroute := string(nroute)
@@ -155,18 +166,18 @@ func (r *Router) handler() *MutationHandler {
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
 
 		// 1. Let's see if the URI matches any of the registered routes. (TODO)
-		a, err := r.match(newroute)
+		a, err := r.Routes.match(newroute)
 		if err != nil {
-			r.root.Element().Set("navigation", "unauthorized", Bool(true))
+			r.root.Element().Root().Set("navigation", "unauthorized", Bool(true))
 			return true
 		}
 		err = a()
 		if err != nil {
-			r.root.Element().Set("navigation", "unauthorized", Bool(true))
+			r.root.Element().Root().Set("navigation", "unauthorized", Bool(true))
 			return true
 		}
 
-		r.root.Element().SyncUISetData("currentroute", evt.NewValue())
+		r.root.Element().Root().SyncUISetData("currentroute", evt.NewValue())
 		return false
 	})
 	return mh
@@ -176,34 +187,34 @@ func (r *Router) handler() *MutationHandler {
 // is effective. It needs to be called before ListenAndServe. Returning true should
 // cancel the current routechangerequest. (enables hijacking of the route change process)
 func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
-	r.root.Element().Watch("navigation", "routechangerequest", r.root.Element(), m)
+	r.root.Element().Root().Watch("navigation", "routechangerequest", r.root.Element().Root(), m)
 }
 
 // ListenAndServe registers a listener for route change.
 // It should only be called after the app structure has been fully built.
+// It listens on the element that receives routechangeevent (first argument)
+//
 //
 // Example of JS bridging : the nativeEventBridge should add a popstate event listener to window
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
-func (r *Router) ListenAndServe(nativebinding NativeEventBridge) *Router {
+func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding NativeEventBridge) {
 	r.verifyLinkActivation()
 	root := r.root
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		event, ok := evt.(RouteChangeEvent)
-		if !ok {
-			log.Print("Event of wrong type. Expected a RouteChangeEvent firing")
-			root.Element().Set("navigation", "appfailure", String("500: RouteChangeEvent of wrong type."))
+		log.Print("this is a router test: " + evt.Value()) // DEBUG
+		if evt.Type() != eventname {
+			log.Print("Event of wrong type. Expected: " + eventname)
+			root.Element().Root().Set("navigation", "appfailure", String("500: RouteChangeEvent of wrong type."))
 			return true // means that event handling has to stop
 		}
 		// the target element route should be changed to the event NewRoute value.
-		root.Element().Set("navigation", "routechangerequest", String(event.NewRoute()), false)
+		root.Element().Root().Set("navigation", "routechangerequest", String(evt.Value()), false)
 		return false
 	})
 
-	root.Element().AddEventListener("routechange", routeChangeHandler, nativebinding)
-	root.Element().Watch("navigation", "routechangerequest", root.Element(), r.handler())
-
-	return r
+	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
+	root.Element().Root().Watch("navigation", "routechangerequest", root.Element().Root(), r.handler())
 }
 
 func (r *Router) verifyLinkActivation() {
@@ -213,46 +224,6 @@ func (r *Router) verifyLinkActivation() {
 			panic("Link activation failure: " + l.URI())
 		}
 	}
-}
-
-type RouteChangeEvent interface {
-	NewRoute() string
-	Event
-}
-
-// NewRouteChangeEvent creates a new Event that is specifically structured to
-// inform about a change in the current route. In other terms, aprt from the
-// basic Event interface, it implements a NewRoute method which returns the newly
-// created current route.
-// It takes as second argument the Element which holds the route variable.
-// In javascript browser, that would be the Element representing the window
-// element, window.location being the route as a URL.
-func NewRouteChangeEvent(newroute string, routeChangeTarget *Element) RouteChangeEvent {
-	return newroutechangeEvent(newroute, routeChangeTarget)
-}
-
-type routeChangeEvent struct {
-	Event
-	route string
-}
-
-func (r routeChangeEvent) NewRoute() string {
-	return r.route
-}
-
-func newroutechangeEvent(newroute string, root *Element) routeChangeEvent {
-	e := NewEvent("routechange", false, false, root, nil)
-	return routeChangeEvent{e, newroute}
-}
-
-type RouteChangeHandler interface {
-	Handle(target *Element) bool
-}
-
-type RouteChangeHandleFunc func(target *Element) bool
-
-func (r RouteChangeHandleFunc) Handle(e *Element) bool {
-	return r(e)
 }
 
 /*
