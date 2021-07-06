@@ -501,8 +501,22 @@ func NewDocument(id string, options ...string) Document {
 			}
 			route := string(nroute)
 			js.Global().Get("history").Call("pushState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
+			e.Set("ui","currentroute",v)
 			return false
 		}))
+
+		e.Watch("data", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			v := evt.NewValue()
+			nroute, ok := v.(ui.String)
+			if !ok {
+				panic(nroute)
+			}
+			route := string(nroute)
+			js.Global().Get("history").Call("replaceState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
+			e.Set("ui","currentroute",v)
+			return false
+		}))
+
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 

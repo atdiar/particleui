@@ -20,7 +20,7 @@ var (
 // state registered as a shortcut upon request.
 type Router struct {
 	BaseURL string
-	root    ViewElement
+	outlet  ViewElement
 
 	Links map[string]Link
 
@@ -40,10 +40,11 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 	}
 	base := strings.TrimSuffix(u.Path, "/")
 	rootview.Element().Global.Set("internals", "baseurl", String(baseurl), true)
-	r := &Router{base, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory().Push("/"), false}
+	r := &Router{base, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
 
 	// Routes registration and treemutation based registration
-	v, ok := r.root.Element().Root().Get("internals", "views")
+	r.insert(rootview)
+	v, ok := r.outlet.Element().Root().Get("internals", "views")
 	if ok {
 		l, ok := v.(List)
 		if ok {
@@ -56,7 +57,7 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 			}
 		}
 	}
-	r.root.Element().Root().Watch("event", "docupdate", r.root.Element(), NewMutationHandler(func(evt MutationEvent) bool {
+	r.outlet.Element().Root().Watch("event", "docupdate", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		v, ok := evt.NewValue().(*Element)
 		if !ok {
 			panic("Framework error: only an *Element is an acceptable value for docupdate")
@@ -64,6 +65,7 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 		if !v.isViewElement() {
 			panic("Only a view is acceptable for a docupdate")
 		}
+		log.Println(v.Element()) //DEBUG
 		r.insert(ViewElement{v})
 		return false
 	}))
@@ -73,67 +75,83 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 
 // GoTo changes the application state by updating the current route
 func (r *Router) GoTo(route string) {
-	r.root.Element().Root().Set("navigation", "routechangerequest", String(route))
-	r.History.Push(route)
+	r.outlet.Element().Root().Set("navigation", "routechangerequest", String(route))
+	//r.outlet.Element().Set("navigation","index",Number(r.History.Cursor))
+	log.Println(*r.History) //DEBUG
 }
 
 func (r *Router) GoBack() {
 	if r.History.BackAllowed() {
-		r.root.Element().Root().Set("navigation", "routechangerequest", String(r.History.Back()))
+		r.outlet.Element().Root().Set("navigation", "routechangerequest", String(r.History.Back()))
 	}
 }
 
 func (r *Router) GoForward() {
 	if r.History.ForwardAllowed() {
-		r.root.Element().Root().Set("navigation", "routechangerequest", String(r.History.Forward()))
+		r.outlet.Element().Root().Set("navigation", "routechangerequest", String(r.History.Forward()))
 	}
 }
 
-// OnNotfound enables the addition of a special view to the root ViewElement.
+func (r *Router) RedirectTo(route string) {
+	r.outlet.Element().Root().Set("navigation", "routeredirectrequest", String(route))
+	r.History.Replace(route)
+}
+
+// OnNotfound enables the addition of a special view to the outlet ViewElement.
 // The router should navigate toward it when no match has been found for a given input route.
 func (r *Router) OnNotfound(dest View) *Router {
-	r.root.AddView(dest)
-
-	r.root.Element().Root().Watch("navigation", "notfound", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(r.BaseURL + "/" + dest.Name())
+	r.outlet.AddView(dest)
+	//r.insert(r.outlet)
+	r.outlet.Element().Root().Watch("navigation", "notfound", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
+		r.RedirectTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
 	return r
 }
 
-// OnUnauthorized enables the addition of a special view to the root ViewElement.
+// OnUnauthorized enables the addition of a special view to the outlet ViewElement.
 // The router should navigate toward it when access to an input route is not granted
 // due to insufficient rights.
 func (r *Router) OnUnauthorized(dest View) *Router {
-	r.root.AddView(dest)
+	r.outlet.AddView(dest)
 
-	r.root.Element().Root().Watch("navigation", "unauthorized", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(r.BaseURL + "/" + dest.Name())
+	r.outlet.Element().Root().Watch("navigation", "unauthorized", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
+		r.RedirectTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
 	return r
 }
 
-// OnAppfailure enables the addition of a special view to the root ViewElement.
+// OnAppfailure enables the addition of a special view to the outlet ViewElement.
 // The router should navigate toward it when a malfunction occured.
 func (r *Router) OnAppfailure(dest View) *Router {
-	r.root.AddView(dest)
+	r.outlet.AddView(dest)
 
-	r.root.Element().Root().Watch("navigation", "appfailure", r.root.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(r.BaseURL + "/" + dest.Name())
+	r.outlet.Element().Root().Watch("navigation", "appfailure", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
+		r.RedirectTo(r.BaseURL + "/" + dest.Name())
 		return false
 	}))
 	return r
 }
 
 func (r *Router) insert(v ViewElement) {
-	// check that v has r.root as ancestor
+	// check that v has r.outlet as ancestor
 	vap := v.Element().ViewAccessPath
-	if vap == nil {
+	if vap == nil || len(vap.Nodes) == 0 {
+		if r.Routes.ID() == v.Element().ID {
+			nrn := newchildrnode(v, r.Routes)
+			r.Routes.insert(nrn)
+		}
 		return
 	}
-	ancestry := vap.Nodes[0].Element
-	if ancestry.ID != r.root.Element().ID {
+	var ancestry *Element
+	if len(vap.Nodes) == 0 {
+		return // this is the outlet view
+	} else {
+		ancestry = vap.Nodes[0].Element
+	}
+
+	if ancestry.ID != r.outlet.Element().ID {
 		return
 	}
 	nrn := newchildrnode(v, r.Routes)
@@ -154,30 +172,95 @@ func (r *Router) handler() *MutationHandler {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
-			r.root.Element().Root().Set("navigation", "appfailure", Bool(true))
+			r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
 			return true
 		}
 		newroute := string(nroute)
 		if !r.LeaveTrailingSlash {
-			if newroute[len(newroute)-1:] == "/" {
-				newroute = newroute[:len(newroute)-1]
-			}
+			newroute = strings.TrimSuffix(newroute, "/")
 		}
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
 
 		// 1. Let's see if the URI matches any of the registered routes. (TODO)
 		a, err := r.Routes.match(newroute)
 		if err != nil {
-			r.root.Element().Root().Set("navigation", "unauthorized", Bool(true))
-			return true
+			log.Print("DEBUG", err, newroute) // DEBUG
+			if err == ErrNotFound {
+				r.outlet.Element().Root().Set("navigation", "notfound", Bool(true))
+				return false
+			}
+			if err == ErrUnauthorized {
+				log.Print("unauthorized for: " + newroute) //DEBUG
+				r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+				return false
+			}
+			if err == ErrFrameworkFailure {
+				log.Print(err) // DEBUG
+				r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
+				return false
+			}
 		}
 		err = a()
 		if err != nil {
-			r.root.Element().Root().Set("navigation", "unauthorized", Bool(true))
-			return true
+			log.Print(err) // DEBUG
+			log.Print("unauthorized for: " + newroute)
+			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+			return false
 		}
 
-		r.root.Element().Root().SyncUISetData("currentroute", evt.NewValue())
+		r.outlet.Element().Root().SyncUISetData("currentroute", evt.NewValue())
+		r.History.Push(newroute)
+		log.Println(*r.History) //DEBUG
+		return false
+	})
+	return mh
+}
+
+// redirecthandler returns a mutation handler which deals with route redirections.
+func (r *Router) redirecthandler() *MutationHandler {
+	mh := NewMutationHandler(func(evt MutationEvent) bool {
+		nroute, ok := evt.NewValue().(String)
+		if !ok {
+			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
+			r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
+			return true
+		}
+		newroute := string(nroute)
+		if !r.LeaveTrailingSlash {
+			newroute = strings.TrimSuffix(newroute, "/")
+		}
+		newroute = strings.TrimPrefix(newroute, r.BaseURL)
+
+		// 1. Let's see if the URI matches any of the registered routes. (TODO)
+		a, err := r.Routes.match(newroute)
+		if err != nil {
+			log.Print(err, newroute) // DEBUG
+			if err == ErrNotFound {
+				r.outlet.Element().Root().Set("navigation", "notfound", Bool(true))
+				return false
+			}
+			if err == ErrUnauthorized {
+				log.Print("unauthorized for: " + newroute) //DEBUG
+				r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+				return false
+			}
+			if err == ErrFrameworkFailure {
+				log.Print(err) //DEBUG
+				r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
+				return false
+			}
+		}
+		err = a()
+		if err != nil {
+			log.Print(err) // DEBUG
+			log.Print("unauthorized for: " + newroute)
+			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+			return false
+		}
+
+		r.outlet.Element().Root().SyncUISetData("redirectroute", evt.NewValue())
+		r.History.Push(newroute)
+		log.Println(*r.History) //DEBUG
 		return false
 	})
 	return mh
@@ -187,7 +270,7 @@ func (r *Router) handler() *MutationHandler {
 // is effective. It needs to be called before ListenAndServe. Returning true should
 // cancel the current routechangerequest. (enables hijacking of the route change process)
 func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
-	r.root.Element().Root().Watch("navigation", "routechangerequest", r.root.Element().Root(), m)
+	r.outlet.Element().Root().Watch("navigation", "routechangerequest", r.outlet.Element().Root(), m)
 }
 
 // ListenAndServe registers a listener for route change.
@@ -200,9 +283,8 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 // after receiving notice of popstate event firing.
 func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding NativeEventBridge) {
 	r.verifyLinkActivation()
-	root := r.root
+	root := r.outlet
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		log.Print("this is a router test: " + evt.Value()) // DEBUG
 		if evt.Type() != eventname {
 			log.Print("Event of wrong type. Expected: " + eventname)
 			root.Element().Root().Set("navigation", "appfailure", String("500: RouteChangeEvent of wrong type."))
@@ -215,6 +297,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 
 	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
 	root.Element().Root().Watch("navigation", "routechangerequest", root.Element().Root(), r.handler())
+	root.Element().Root().Watch("navigation", "routeredirectrequest", root.Element().Root(), r.redirecthandler())
 }
 
 func (r *Router) verifyLinkActivation() {
@@ -242,6 +325,10 @@ type rnode struct {
 	next map[string]map[string]*rnode // Each rnode has a list of views and each view may link to multiple same level ViewElement map[viewname]map[viewid]rnode
 }
 
+func (r *rnode) ID() string {
+	return r.ViewElement.Element().ID
+}
+
 func newchildrnode(v ViewElement, root *rnode) *rnode {
 	m := make(map[string]map[string]*rnode)
 	for k := range v.Element().InactiveViews {
@@ -250,7 +337,7 @@ func newchildrnode(v ViewElement, root *rnode) *rnode {
 	if a := v.Element().ActiveView; a != "" {
 		m[a] = nil
 	}
-	return &rnode{root, v.Element().ID, v, nil}
+	return &rnode{root, v.Element().ID, v, m}
 }
 
 func newrootrnode(v ViewElement) *rnode {
@@ -264,12 +351,28 @@ func newrootrnode(v ViewElement) *rnode {
 func (rn *rnode) insert(nrn *rnode) {
 	v := nrn.ViewElement
 
+	if nrn.ID() == rn.root.ID() {
+		for k := range v.Element().InactiveViews {
+			rn.next[k] = nil
+		}
+		if a := v.Element().ActiveView; a != "" {
+			rn.next[a] = nil
+		}
+		return
+	}
+
 	viewpath := v.Element().ViewAccessPath
 	if viewpath == nil {
 		return
 	}
 	viewpathnodes := viewpath.Nodes
-	if viewpathnodes[0].Element.ID != rn.root.ViewElement.Element().ID {
+	var ancestor *Element
+	if len(viewpathnodes) == 0 {
+		return
+	} else {
+		ancestor = viewpathnodes[0].Element
+	}
+	if ancestor.ID != rn.root.ViewElement.Element().ID {
 		return
 	}
 	l := len(viewpathnodes)
@@ -304,21 +407,21 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 
 // match verifies that a route passed as arguments corresponds to a given view state.
 func (r *rnode) match(route string) (activationFn func() error, err error) {
+	log.Print(route) // DEBUG
 	activations := make([]func() error, 0)
 	route = strings.TrimPrefix(route, "/")
 	segments := strings.SplitAfter(route, "/")
 	ls := len(segments)
-
 	if ls == 0 {
-		return nil, ErrNotFound
+		return nil, nil
 	}
 
 	var param string
+
 	m, ok := r.next[segments[0]] // 0 is the index of the viewname at the root ViewElement m is of type map[string]*rnode
 	if !ok {
 		// Let's see if the ViewElement has a parameterizable view
 		param, ok = r.ViewElement.hasParameterizedView()
-
 		if ok {
 			if !r.ViewElement.isViewAuthorized(param) {
 				return nil, ErrUnauthorized
@@ -330,11 +433,12 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 					return nil, ErrFrameworkFailure
 				}
 			}
+		} else {
+			return nil, ErrNotFound
 		}
-
 	}
 
-	// Does other children views need activation? Let's check for it.
+	// Do other children views need activation? Let's check for it.
 	if ls == 1 {
 		// check authorization
 		if param != "" {
@@ -382,7 +486,6 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 		if !ok {
 			// Let's see if the ViewElement has a parameterizable view
 			param, ok = r.ViewElement.hasParameterizedView()
-
 			if ok {
 				if !r.ViewElement.isViewAuthorized(param) {
 					return nil, ErrUnauthorized
@@ -451,7 +554,7 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 		return l
 	}
 
-	e := NewElement(viewname, target.Element().ID+"/"+viewname, r.root.Element().DocType)
+	e := NewElement(viewname, target.Element().ID+"/"+viewname, r.outlet.Element().DocType)
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		e.Set("event", "activated", Bool(true))
 		return false
@@ -476,12 +579,18 @@ type NavHistory struct {
 }
 
 func NewNavigationHistory() *NavHistory {
-	return &NavHistory{make([]string, 0, 300), 0}
+	return &NavHistory{make([]string, 0, 300), -1}
 }
 
 func (n *NavHistory) Push(URI string) *NavHistory {
-	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.Cursor++
+	n.Stack = append(n.Stack[:n.Cursor], URI)
+
+	return n
+}
+
+func (n *NavHistory) Replace(URI string) *NavHistory {
+	n.Stack[n.Cursor] = URI
 	return n
 }
 

@@ -6,7 +6,7 @@ package doc
 
 import (
 	"syscall/js"
-
+	//"net/url"
 	"github.com/atdiar/particleui"
 )
 
@@ -53,8 +53,15 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			nativeEvent = cancelable{evt}
 		}
 		if typ == "popstate" {
-			value = js.Global().Get("document").Get("URL").String()
-			//value = js.Global().Get("location").Get("pathname").String()
+			//value = js.Global().Get("document").Get("URL").String()
+			value = js.Global().Get("location").Get("pathname").String()
+			/*u,err:= url.ParseRequestURI(value)
+			if err!= nil{
+				value = ""
+			} else{
+				value = u.Path
+			}*/
+
 		}
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target, nativeEvent, value)
 

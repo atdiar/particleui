@@ -139,7 +139,7 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 func (e *ElementStore) NewAppRoot(id string) *Element {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
-	el.Parent = el
+	el.Parent = nil
 	el.subtreeRoot = el
 	el.ElementStore = e
 	el.Global = e.Global
@@ -509,6 +509,10 @@ func (v ViewElement) ActivateDefaultOnMount() ViewElement {
 func (v ViewElement) AddView(view View) ViewElement {
 	v.Element().addView(view)
 	v.Element().Set("authorized", view.Name(), Bool(true))
+
+	if v.Element().Mounted() {
+		v.Element().Root().Set("event", "docupdate", v.Element())
+	}
 	return v
 }
 
@@ -780,7 +784,7 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
-
+	
 	if e.Mounted() && !wasmountedOnce && child.isViewElement() {
 		e.root.Set("event", "docupdate", e)
 

@@ -1,10 +1,6 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
-import (
-	"log"
-)
-
 type Event interface {
 	Type() string
 	Target() *Element
@@ -169,7 +165,6 @@ func newEventHandlers() *eventHandlers {
 }
 
 func (e *eventHandlers) Add(h *EventHandler) *eventHandlers {
-	log.Print(h)
 	e.List = append(e.List, h)
 	return e
 }
