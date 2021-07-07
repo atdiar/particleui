@@ -34,6 +34,9 @@ type Router struct {
 // NewRouter takes an Element object which should be the entry point of the router
 // as well as the document root which should be the entry point of the document/application tree.
 func NewRouter(baseurl string, rootview ViewElement) *Router {
+	if !rootview.Element().Mounted() {
+		panic("router can only use a view attached to the main tree as a navigation outlet.")
+	}
 	u, err := url.Parse(baseurl)
 	if err != nil {
 		panic(err)
@@ -73,9 +76,45 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 	return r
 }
 
+func (r *Router) tryNavigate(newroute string) bool {
+	if !r.LeaveTrailingSlash {
+		newroute = strings.TrimSuffix(newroute, "/")
+	}
+	newroute = strings.TrimPrefix(newroute, r.BaseURL)
+
+	// 1. Let's see if the URI matches any of the registered routes. (TODO)
+	a, err := r.Routes.match(newroute)
+	if err != nil {
+		if err == ErrNotFound {
+			r.outlet.Element().Root().Set("navigation", "notfound", Bool(true))
+			return false
+		}
+		if err == ErrUnauthorized {
+			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+			return false
+		}
+		if err == ErrFrameworkFailure {
+			r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
+			return false
+		}
+	}
+	err = a()
+	if err != nil {
+		r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
+		return false
+	}
+	return true
+}
+
 // GoTo changes the application state by updating the current route
-func (r *Router) GoTo(route string) {
-	r.outlet.Element().Root().Set("navigation", "routechangerequest", String(route))
+func (r *Router) GoTo(newroute string) {
+	ok := r.tryNavigate(newroute)
+	if !ok {
+		return
+	}
+
+	r.outlet.Element().Root().SetDataSyncUI("currentroute", String(newroute))
+	r.History.Push(newroute)
 	//r.outlet.Element().Set("navigation","index",Number(r.History.Cursor))
 	log.Println(*r.History) //DEBUG
 }
@@ -298,6 +337,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
 	root.Element().Root().Watch("navigation", "routechangerequest", root.Element().Root(), r.handler())
 	root.Element().Root().Watch("navigation", "routeredirectrequest", root.Element().Root(), r.redirecthandler())
+	r.outlet.Element().Root().Set("navigation", "ready", Bool(true))
 }
 
 func (r *Router) verifyLinkActivation() {

@@ -145,8 +145,8 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.Global = e.Global
 	// DEBUG el.path isn't set
 
-	el.Set("event","attached",Bool(true))
-	el.Set("event","mounted",Bool(true))
+	el.Set("event", "attached", Bool(true))
+	el.Set("event", "mounted", Bool(true))
 	return el
 }
 
@@ -625,16 +625,18 @@ func (e *Element) activateView(name string) error {
 				oldview, ok := e.Get("ui", "activeview")
 				oldviewname, ok2 := oldview.(String)
 				viewIsParameterized := (string(oldviewname) != e.ActiveView)
+				cccl := make([]*Element, len(e.Children.List))
+				copy(cccl, e.Children.List)
 				if ok && ok2 && oldviewname != "" && e.Children != nil {
 					for _, child := range e.Children.List {
-						detach(child)
 						if !viewIsParameterized {
+							e.removeChild(child)
 							attach(e, child, false)
 						}
 					}
 					if !viewIsParameterized {
 						// the view is not parameterized
-						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), e.Children.List...)
+						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
 					}
 				}
 
@@ -654,16 +656,19 @@ func (e *Element) activateView(name string) error {
 	oldview, ok := e.Get("ui", "activeview")
 	oldviewname, ok2 := oldview.(String)
 	viewIsParameterized := (string(oldviewname) != e.ActiveView)
+	log.Print(ok, ok2) // DEBUG
+	cccl := make([]*Element, len(e.Children.List))
+	copy(cccl, e.Children.List)
 	if ok && ok2 && e.Children != nil {
 		for _, child := range e.Children.List {
-			detach(child)
 			if !viewIsParameterized {
+				e.removeChild(child)
 				attach(e, child, false)
 			}
 		}
 		if !viewIsParameterized {
 			// the view is not parameterized, we put it back in the set of activable views
-			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), e.Children.List...)
+			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
 		}
 	}
 	// we attach and activate the desired view
@@ -784,7 +789,7 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
-	
+
 	if e.Mounted() && !wasmountedOnce && child.isViewElement() {
 		e.root.Set("event", "docupdate", e)
 

@@ -52,7 +52,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		if cancancel {
 			nativeEvent = cancelable{evt}
 		}
-		if typ == "popstate" {
+		if typ == "popstate" || typ == "load" {
 			//value = js.Global().Get("document").Get("URL").String()
 			value = js.Global().Get("location").Get("pathname").String()
 			/*u,err:= url.ParseRequestURI(value)

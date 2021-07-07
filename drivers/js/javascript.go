@@ -341,6 +341,7 @@ func newWindow(title string, options ...string) Window {
 
 		e.Watch("ui", "title", e, h)
 		e.Set("ui", "title", ui.String(title), false)
+
 		return e
 	})
 
@@ -493,18 +494,6 @@ func NewDocument(id string, options ...string) Document {
 		e.Native = n
 		SetAttribute(e, "id", id)
 
-		e.Watch("data", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			v := evt.NewValue()
-			nroute, ok := v.(ui.String)
-			if !ok {
-				panic(nroute)
-			}
-			route := string(nroute)
-			js.Global().Get("history").Call("pushState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
-			e.Set("ui","currentroute",v)
-			return false
-		}))
-
 		e.Watch("data", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			v := evt.NewValue()
 			nroute, ok := v.(ui.String)
@@ -512,8 +501,26 @@ func NewDocument(id string, options ...string) Document {
 				panic(nroute)
 			}
 			route := string(nroute)
-			js.Global().Get("history").Call("replaceState", "{}", "", route) // this is state so data namespace. It is impossible to programatically influence user nav (would eb bad ux, pulling the rug etc)
-			e.Set("ui","currentroute",v)
+			js.Global().Get("history").Call("pushState", "{}", "", route)
+			e.SyncUISetData("currentroute", v)
+			return false
+		}))
+
+		e.Watch("ui", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			v := evt.NewValue()
+			nroute, ok := v.(ui.String)
+			if !ok {
+				panic(nroute)
+			}
+			route := string(nroute)
+			js.Global().Get("history").Call("pushState", "{}", "", route)
+			return false
+		}))
+
+		e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			route := js.Global().Get("location").Get("pathname").String()
+			log.Println("init", route) //DEBUG
+			e.Set("navigation","routechangerequest",ui.String(route))
 			return false
 		}))
 
