@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"time"
 )
 
 var (
@@ -145,6 +144,7 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.Global = e.Global
 	// DEBUG el.path isn't set
 
+	el.Set("internals", "root", Bool(true))
 	el.Set("event", "attached", Bool(true))
 	el.Set("event", "mounted", Bool(true))
 	return el
@@ -436,278 +436,58 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	return e
 }
 
-// ViewElement defines a type of Element which can display different named versions.
-// A version is defined as a View.
-type ViewElement struct {
-	Raw *Element
-}
-
-// Element returns the underlying *Element corresponding to the view.
-// A ViewElement constitutes merely an interface for specific *Element objects.
-func (v ViewElement) Element() *Element {
-	return v.Raw
-}
-
-// hasParameterizedView return the parameter name stripped from the initial colon ( ":")
-// if it exists.
-func (v ViewElement) hasParameterizedView() (string, bool) {
-	e := v.Element()
-	if strings.HasPrefix(e.ActiveView, ":") {
-		return strings.TrimPrefix(e.ActiveView, ":"), true
-	}
-	for k := range e.InactiveViews {
-		if strings.HasPrefix(k, ":") {
-			return strings.TrimPrefix(k, ":"), true
-		}
-	}
-	return "", false
-}
-
-func NewViewElement(e *Element, defaultview View) ViewElement {
-	v := ViewElement{e}.AddView(defaultview)
-	e.Set("ui", "defaultview", String(defaultview.Name()))
-	return v
-}
-
-// ActivateDefaultOnMount will set the activeview to its default onMount event.
-func (v ViewElement) ActivateDefaultOnMount() ViewElement {
-	v.Element().OnMount(NewMutationHandler(func(evt MutationEvent) bool {
-		rdef, ok := v.Element().Get("ui", "defaultview")
-		if !ok {
-			panic("View does not have default. Should not be possible.")
-		}
-		def, ok := rdef.(String)
-		if !ok {
-			panic("Wrong format for value of defaultview.Should not be possible.")
-		}
-		rcurr, ok := v.Element().Get("ui", "activeview")
-		if !ok {
-			err := v.ActivateView(string(def))
-			if err != nil {
-				log.Print(err)
-				return true
-			}
-		}
-		curr, ok := rcurr.(String)
-		if !ok {
-			panic("Wrong format for value of active view. Should not be possible.")
-		}
-
-		if curr != def {
-			err := v.ActivateView(string(def))
-			if err != nil {
-				log.Print(err)
-				return true
-			}
-		}
-		return false
-	}))
-	return v
-}
-
-// AddView adds a view to a ViewElement.
-func (v ViewElement) AddView(view View) ViewElement {
-	v.Element().addView(view)
-	v.Element().Set("authorized", view.Name(), Bool(true))
-
-	if v.Element().Mounted() {
-		v.Element().Root().Set("event", "docupdate", v.Element())
-	}
-	return v
-}
-
-// RetrieveView returns a pointer to a View if it exists. The View should not
-// be active.
-func (v ViewElement) RetrieveView(name string) *View {
-	return v.Element().retrieveView(name)
-}
-
-// AythorizeViewIf allows to make the activation of a view conditional to a boolean
-// Value set for the property of a target ELement. For instance, it can be useful
-// to restrict View activation to a subset of users in an app.
-func (v ViewElement) AuthorizeViewIf(viewname string, category string, property string, target *Element) {
-	var authorized bool
-	val, ok := target.Get(category, property)
-	if ok {
-		if val == Bool(true) {
-			authorized = true
-		}
-	}
-	v.Element().Set("authorized", viewname, Bool(authorized))
-	v.Element().Watch(category, property, target, NewMutationHandler(func(evt MutationEvent) bool {
-		val := evt.NewValue()
-		if val == Bool(true) {
-			v.Element().Set("authorized", viewname, Bool(true))
-		} else {
-			v.Element().Set("authorized", viewname, Bool(false))
-		}
-		return false
-	}))
-}
-
-func (v ViewElement) isViewAuthorized(name string) bool {
-	val, ok := v.Element().Get("authorized", name)
-	if !ok {
-		return false
-	}
-	if val != Bool(true) {
-		return false
-	}
-	return true
-}
-
-// ActivateView sets the active view of  a ViewElement.
-// If no View exists for the name argument or is not authorized, an error is returned.
-func (v ViewElement) ActivateView(name string) error {
-	val, ok := v.Element().Get("authorized", name)
-	if !ok {
-		panic(errors.New("authorization error")) // it's ok to panic here. the client can send the stacktrace. Should not happen.
-	}
-	if val != Bool(true) {
-		return errors.New("Unauthorized")
-	}
-	if v.Element().ActiveView == name {
-		return nil
-	}
-	return v.Element().activateView(name)
-}
-
-func (e *Element) addView(v View) *Element {
-	if v.Elements() != nil {
-		for _, child := range v.Elements().List {
-			child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v))
-			attach(e, child, false)
-		}
-	}
-	if e.InactiveViews == nil {
-		e.InactiveViews = make(map[string]View)
-	}
-	e.InactiveViews[v.Name()] = v
-	return e
-}
-
-func (e *Element) retrieveView(name string) *View {
-	v, ok := e.InactiveViews[name]
-	if !ok {
-		return nil
-	}
-	return &v
-}
-
-func (e *Element) activateView(name string) error {
-	newview, ok := e.InactiveViews[name]
-	if !ok {
-		// Support for parameterized views
-		if len(e.InactiveViews) != 0 {
-			var view View
-			var parameterName string
-			for k, v := range e.InactiveViews {
-				if strings.HasPrefix(k, ":") {
-					parameterName = k
-					view = v
-					break
-				}
-			}
-			if parameterName != "" {
-				if len(parameterName) == 1 {
-					return errors.New("Bad view name parameter. Needs to be longer than 0 character.")
-				}
-				// Now that we have found a matching parameterized view, let's try to retrieve the actual
-				// view corresponding to the submitted value "name"
-				v, err := view.ApplyParameter(name)
-				if err != nil {
-					// This parameter does not seem to be accepted.
-					return err
-				}
-				view = *v
-
-				// Let's detach the former view items
-				oldview, ok := e.Get("ui", "activeview")
-				oldviewname, ok2 := oldview.(String)
-				viewIsParameterized := (string(oldviewname) != e.ActiveView)
-				cccl := make([]*Element, len(e.Children.List))
-				copy(cccl, e.Children.List)
-				if ok && ok2 && oldviewname != "" && e.Children != nil {
-					for _, child := range e.Children.List {
-						if !viewIsParameterized {
-							e.removeChild(child)
-							attach(e, child, false)
-						}
-					}
-					if !viewIsParameterized {
-						// the view is not parameterized
-						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
-					}
-				}
-
-				// Let's append the new view Elements
-				for _, newchild := range view.Elements().List {
-					e.appendChild(newchild)
-				}
-				e.SetDataSyncUI("activeview", String(name), false)
-				e.ActiveView = parameterName
-				return nil
-			}
-		}
-		return errors.New("View does not exist.")
-	}
-
-	// first we detach the current active View and reattach it as an alternative View if non-parameterized
-	oldview, ok := e.Get("ui", "activeview")
-	oldviewname, ok2 := oldview.(String)
-	viewIsParameterized := (string(oldviewname) != e.ActiveView)
-	log.Print(ok, ok2) // DEBUG
-	cccl := make([]*Element, len(e.Children.List))
-	copy(cccl, e.Children.List)
-	if ok && ok2 && e.Children != nil {
-		for _, child := range e.Children.List {
-			if !viewIsParameterized {
-				e.removeChild(child)
-				attach(e, child, false)
-			}
-		}
-		if !viewIsParameterized {
-			// the view is not parameterized, we put it back in the set of activable views
-			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
-		}
-	}
-	// we attach and activate the desired view
-	for _, child := range newview.Elements().List {
-		e.appendChild(child)
-	}
-	delete(e.InactiveViews, name)
-	e.Set("ui", "activeview", String(name), false)
-	e.ActiveView = name
-
-	return nil
-}
-
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
 	defer func() {
-		child.Set("event", "attached", Bool(true), false)
+		child.Set("event", "attached", Bool(true))
+		var wasmountedOnce bool
+		if child.isViewElement() {
+			_, wasmountedOnce = child.Element().Get("event", "mounted")
+		}
 		if child.Mounted() {
-			child.Set("event", "mounted", Bool(true), false)
+			child.Set("event", "mounted", Bool(true))
+			if !wasmountedOnce && child.isViewElement() {
+				log.Println("DOCUPDATE", child.Route()) //DEBUG
+				child.Root().Set("event", "docupdate", Bool(true))
+				l, ok := child.Global.Get("internals", "views")
+				if !ok {
+					list := NewList(child)
+					child.Global.Set("internals", "views", list)
+				} else {
+					list, ok := l.(List)
+					if !ok {
+						list = NewList(child)
+						child.Global.Set("internals", "views", list)
+					} else {
+						list = append(list, child)
+						child.Global.Set("internals", "views", list)
+					}
+				}
+			}
 		}
 	}()
+
 	if activeview {
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
-	child.root = parent.root // attached once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
+	child.root = parent.root // mounted once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
 	child.subtreeRoot = parent.subtreeRoot
 
-	// if the child is not a navigable view(meaning that its alternateViews is nil, then it's viewadress is its parent's)
+	// if the child is not a ViewElement, then it's viewadress is its parent's)
 	// otherwise, it's its own to which is prepended its parent's view path(ordered list of parent views).
-	if child.InactiveViews == nil {
-		child.ViewAccessPath = parent.ViewAccessPath
+	if !parent.isViewElement() {
+		child.ViewAccessPath = parent.ViewAccessPath.Copy()
 	} else {
 		if child.ViewAccessPath == nil {
 			child.ViewAccessPath = newViewNodes()
 		}
-		child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.Nodes...)
+		if parent.ViewAccessPath != nil {
+			child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.Nodes...)
+		}
+		child.ViewAccessPath.Append(newViewNode(parent, parent.ActiveView))
 	}
 
 	for _, descendant := range child.Children.List {
@@ -723,7 +503,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 
 // detach will unlink an Element from its parent. If the element was in a view,
 // the element is still being rendered until it is removed. However, it should
-// not be anle to react to events or mutations. TODO review the latter part.
+// not be able to react to events or mutations. TODO review the latter part.
 func detach(e *Element) {
 	if e.Parent == nil {
 		return
@@ -746,11 +526,7 @@ func detach(e *Element) {
 	e.Parent = nil
 
 	// ViewAccessPath handling:
-	if e.InactiveViews == nil {
-		e.ViewAccessPath = nil
-	} else {
-		e.ViewAccessPath.Nodes = e.ViewAccessPath.Nodes[len(e.ViewAccessPath.Nodes)-1:]
-	}
+	e.ViewAccessPath = nil
 
 	e.Set("event", "attached", Bool(false))
 	e.Set("event", "mounted", Bool(false))
@@ -772,7 +548,6 @@ func detach(e *Element) {
 // root Element, the root Element will see its ("event","docupdate") property
 // set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
-	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
 	child := childEl.Element()
 	if e.DocType != child.DocType {
@@ -788,26 +563,6 @@ func (e *Element) AppendChild(childEl AnyElement) *Element {
 	e.Children.InsertLast(child)
 	if e.Native != nil {
 		e.Native.AppendChild(child)
-	}
-
-	if e.Mounted() && !wasmountedOnce && child.isViewElement() {
-		e.root.Set("event", "docupdate", e)
-
-		l, ok := e.root.Get("internals", "views")
-		if !ok {
-			list := NewList(child)
-			e.root.Set("internals", "views", list)
-		} else {
-			list, ok := l.(List)
-			if !ok {
-				list = NewList(child)
-				e.root.Set("internals", "views", list)
-			} else {
-				list = append(list, child)
-				e.root.Set("internals", "views", list)
-			}
-		}
-
 	}
 	return e
 }
@@ -832,7 +587,6 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) PrependChild(childEl AnyElement) *Element {
-	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
 	child := childEl.Element()
 	if e.DocType != child.DocType {
@@ -849,24 +603,6 @@ func (e *Element) PrependChild(childEl AnyElement) *Element {
 	e.Children.InsertFirst(child)
 	if e.Native != nil {
 		e.Native.PrependChild(child)
-	}
-	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement() { // if an element gets mounted, the first time, it triggers a document update mutation event
-		e.root.Set("event", "docupdate", e)
-
-		l, ok := e.root.Get("internals", "views")
-		if !ok {
-			list := NewList(child)
-			e.root.Set("internals", "views", list)
-		} else {
-			list, ok := l.(List)
-			if !ok {
-				list = NewList(child)
-				e.root.Set("internals", "views", list)
-			} else {
-				list = append(list, child)
-				e.root.Set("internals", "views", list)
-			}
-		}
 	}
 	return e
 }
@@ -892,7 +628,6 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
-	_, wasmountedOnce := childEl.Element().Get("event", "mounted")
 
 	child := childEl.Element()
 	if e.DocType != child.DocType {
@@ -908,25 +643,6 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 	e.Children.Insert(child, index)
 	if e.Native != nil {
 		e.Native.InsertChild(child, index)
-	}
-
-	if e.Mounted() && !wasmountedOnce && childEl.Element().isViewElement() { // if an element gets mounted, the first time, it triggers a document update mutation event
-		e.root.Set("event", "docupdate", e)
-
-		l, ok := e.root.Get("internals", "views") // A list of viewElement is stored in the root element so the router can access it on instantiation and register the preexististing routes.
-		if !ok {
-			list := NewList(child)
-			e.root.Set("internals", "views", list)
-		} else {
-			list, ok := l.(List)
-			if !ok {
-				list = NewList(child)
-				e.root.Set("internals", "views", list)
-			} else {
-				list = append(list, child)
-				e.root.Set("internals", "views", list)
-			}
-		}
 	}
 
 	return e
@@ -994,257 +710,6 @@ func (e *Element) removeChildren() *Element {
 	return e
 }
 
-// Command defines a type used to represent a UI mutation request.
-//
-// These commands can be logged in an append-only manner so that they are replayable
-// in the order they were registered to recover UI state.
-//
-// In order to register a command, one just needs to Set the "command" property
-// of the "ui" namespace of an Element.
-//  Element.Set("ui","command",Command{...})
-// As such, the Command type implements the Value interface.
-type Command Object
-
-func (c Command) discriminant() discriminant { return "particleui" }
-func (c Command) ValueType() string          { return Object(c).ValueType() }
-func (c Command) RawValue() Object           { return Object(c).RawValue() }
-
-func (c Command) Name(s string) Command {
-	Object(c).Set("name", String(s))
-	return c
-}
-
-func (c Command) SourceID(s string) Command {
-	// log.Print("source: ", s) // DEBUG
-	Object(c).Set("sourceid", String(s))
-	return c
-}
-
-func (c Command) TargetID(s string) Command {
-	Object(c).Set("targetid", String(s))
-	return c
-}
-
-func (c Command) Position(p int) Command {
-	Object(c).Set("position", Number(p))
-	return c
-}
-
-func (c Command) Timestamp(t time.Time) Command {
-	Object(c).Set("timestamp", String(t.String()))
-	return c
-}
-
-func NewUICommand() Command {
-	c := Command(NewObject().SetType("Command"))
-	return c.Timestamp(time.Now().UTC())
-}
-
-func AppendChildCommand(child *Element) Command {
-	return NewUICommand().Name("appendchild").SourceID(child.ID)
-}
-
-func PrependChildCommand(child *Element) Command {
-	return NewUICommand().Name("prependchild").SourceID(child.ID)
-}
-
-func InsertChildCommand(child *Element, index int) Command {
-	return NewUICommand().Name("insertchild").SourceID(child.ID).Position(index)
-}
-
-func ReplaceChildCommand(old *Element, new *Element) Command {
-	return NewUICommand().Name("replacechild").SourceID(new.ID).TargetID(old.ID)
-}
-
-func RemoveChildCommand(child *Element) Command {
-	return NewUICommand().Name("removechild").SourceID(child.ID)
-}
-
-func RemoveChildrenCommand() Command {
-	return NewUICommand().Name("removechildren")
-}
-
-func ActivateViewCommand(viewname string) Command {
-	return NewUICommand().Name("activateview").SourceID(viewname)
-}
-
-// Mutate allows to send a command that aims to change an element, modifying the
-// underlying User Interface.
-// The default commands allow to change the ActiveView, AppendChild, PrependChild,
-// InsertChild, ReplaceChild, RemoveChild, RemoveChildren.
-//
-// Why not simply use the Element methods?
-//
-// For the simple reason that commands can be stored to be replayed later whereas
-// using the commands directly would not be a recordable action.
-func Mutate(e *Element, command Command) {
-	e.SetUI("command", command)
-}
-
-func (e *Element) Mutate(command Command) *Element {
-	Mutate(e, command)
-	return e
-}
-
-var DefaultCommandHandler = NewMutationHandler(func(evt MutationEvent) bool {
-	command, ok := evt.NewValue().(Command)
-	if !ok || (command.ValueType() != "Command") {
-		log.Print("Wrong format for command property value ")
-		return false // returning false so that handling may continue. E.g. a custom Command object was created and a handler for it is registered further down the chain
-	}
-
-	commandname, ok := Object(command).Get("name")
-	if !ok {
-		log.Print("Command is invalid. Missing command name")
-		return true
-	}
-	cname, ok := commandname.(String)
-	if !ok {
-		log.Print("Command is invalid. Wrong type for command name value")
-		return true
-	}
-
-	switch string(cname) {
-	case "appendchild":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing source id to append to")
-			return true
-		}
-		e := evt.Origin()
-		sid, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error sourceid is not a string ?!")
-			return true
-		}
-		child := e.ElementStore.GetByID(string(sid))
-		log.Print(string(sid))
-		if child == nil {
-			log.Print("could not find item in element store") // DEBUG
-			return true
-		}
-		e.appendChild(child)
-		return false
-	case "prependchild":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing source id to append to")
-			return true
-		}
-		e := evt.Origin()
-		sid, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error sourceid is not a string ?!")
-			return true
-		}
-		child := e.ElementStore.GetByID(string(sid))
-		if child == nil {
-			return true
-		}
-		e.prependChild(child)
-		return false
-	case "insertChild":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing source id to append to")
-			return true
-		}
-		pos, ok := command["position"]
-		if !ok {
-			log.Print("Command malformed. Missing insertion positiob.")
-			return true
-		}
-		commandpos, ok := pos.(Number)
-		if !ok {
-			log.Print("position to insert at is not stored as a valid numeric type")
-			return true
-		}
-		if commandpos < 0 {
-			return true
-		}
-		e := evt.Origin()
-		sid, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error sourceid is not a string ?!")
-			return true
-		}
-		child := e.ElementStore.GetByID(string(sid))
-		if child == nil {
-			return true
-		}
-		e.insertChild(child, int(commandpos))
-		return false
-	case "replacechild":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing source id to append to")
-			return true
-		}
-		targetid, ok := command["targetid"]
-		if !ok {
-			log.Print("Command malformed. Missing id of target that should be replaced")
-			return true
-		}
-		e := evt.Origin()
-		sid, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error sourceid is not a string ?!")
-			return true
-		}
-		tid, ok := targetid.(String)
-		if !ok {
-			log.Print("Error targetid is not a string ?!")
-			return true
-		}
-		newc := e.ElementStore.GetByID(string(sid))
-		oldc := e.ElementStore.GetByID(string(tid))
-		if newc == nil || oldc == nil {
-			return true
-		}
-		e.replaceChild(oldc, newc)
-		return false
-	case "removechild":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing id of source of mutation")
-			return true
-		}
-		e := evt.Origin()
-		sid, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error sourceid is not a string ?!")
-			return true
-		}
-		child := e.ElementStore.GetByID(string(sid))
-		if child == nil {
-			return true
-		}
-		e.removeChild(child)
-		return false
-	case "removechildren":
-		evt.Origin().removeChildren()
-		return false
-	case "activateview":
-		sourceid, ok := command["sourceid"]
-		if !ok {
-			log.Print("Command malformed. Missing viewname to activate, stored in sourceid")
-			return true
-		}
-		viewname, ok := sourceid.(String)
-		if !ok {
-			log.Print("Error viewname/sourceid is not a string ?!")
-			return true
-		}
-		err := evt.Origin().activateView(string(viewname))
-		if err != nil {
-			log.Print(err)
-		}
-		return false
-	default:
-		return true
-	}
-})
-
 func (e *Element) Watch(category string, propname string, owner *Element, h *MutationHandler) *Element {
 	p, ok := owner.Properties.Categories[category]
 	if !ok {
@@ -1305,13 +770,11 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 // Mounted returns whether the subtree the current Element belongs to is attached
 // to the main tree or not.
 func (e *Element) Mounted() bool {
-	if e.subtreeRoot == nil {
-		return false // kinda DEBUG left because whole implementation sketchy
+	if e.Root() == nil {
+		return false
 	}
-	if e.subtreeRoot.Parent == nil && e.subtreeRoot == e.root {
-		return true
-	}
-	return false
+	_, isroot := e.Root().Get("internals", "root")
+	return isroot
 }
 
 func (e *Element) OnMount(h *MutationHandler) {
@@ -1466,22 +929,6 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	e.SetData(propname, value, flags...)
 }
 
-type MutationRecord Object
-
-func (m MutationRecord) discriminant() discriminant { return "particleui" }
-func (m MutationRecord) ValueType() string          { return "MutationRecord" }
-func (m MutationRecord) RawValue() Object           { return Object(m).RawValue() }
-
-func NewMutationRecord(category string, propname string, value Value) MutationRecord {
-	mr := NewObject().SetType("MutationRecord")
-	mr.Set("category", String(category))
-	mr.Set("property", String(propname))
-	mr.Set("value", value)
-	mr.Set("timestamp", String(time.Now().UTC().String()))
-
-	return MutationRecord(mr)
-}
-
 // LoadProperty is a function typically used to return a UI Element to a
 // given state. As such, it does not trigger a mutation event
 // The proptype is a string that describes the property (default,inherited, local, or inheritable).
@@ -1563,38 +1010,17 @@ func EnablePropertyAutoInheritance() string {
 // For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use the default ID generator but probably reuse the tweet ID gotten via http call for each Element.
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
 func (e *Element) Route() string {
-	var Route string
-	baseurl, ok := e.Global.Get("internals", "baseurl")
-	if !ok {
-		log.Print("base url seems to be missing")
-		return Route
-	}
-	bu, ok := baseurl.(String)
-	if !ok {
-		log.Print("baseurl seems to be of wrong type. Expected ui.String.")
-		return Route
-	}
-	Route = string(bu)
-	if strings.HasSuffix(Route, "/") {
-		Route = strings.TrimSuffix(Route, "/")
-	}
+	var Route = ""
+	var uri string
 
 	if e.ViewAccessPath == nil {
-		return Route
+		return Route + "/" + uri
 	}
-
-	for index, n := range e.ViewAccessPath.Nodes[:len(e.ViewAccessPath.Nodes)] {
-		path := n.Element.ID + "/" + n.View.Name()
-		if n.Element.root == n.Element {
-			path = n.View.Name()
-			if index != 0 {
-				log.Print("error: the root view should be the topmost view")
-				return ""
-			}
-		}
-		Route = Route + "/" + path
+	for _, n := range e.ViewAccessPath.Nodes {
+		path := n.Element.ID + "/" + n.Name
+		uri = uri + "/" + path
 	}
-	return Route
+	return Route + "/" + uri
 }
 
 // View defines a type for a named list of children Element
@@ -1647,6 +1073,15 @@ func newViewNodes() *viewNodes {
 	return &viewNodes{make([]viewNode, 0)}
 }
 
+func (v *viewNodes) Copy() *viewNodes {
+	if v == nil {
+		return nil
+	}
+	c := make([]viewNode, len(v.Nodes))
+	copy(c, v.Nodes)
+	return &viewNodes{c}
+}
+
 func (v *viewNodes) Append(Nodes ...viewNode) *viewNodes {
 	v.Nodes = append(v.Nodes, Nodes...)
 	return v
@@ -1659,11 +1094,11 @@ func (v *viewNodes) Prepend(Nodes ...viewNode) *viewNodes {
 
 type viewNode struct {
 	*Element
-	View
+	Name string
 }
 
-func newViewNode(e *Element, view View) viewNode {
-	return viewNode{e, view}
+func newViewNode(e *Element, viewname string) viewNode {
+	return viewNode{e, viewname}
 }
 
 // PropertyStore allows for the storage of Key Value pairs grouped by namespaces
@@ -1850,366 +1285,4 @@ func (p Properties) PropertyGroup(propname string) string {
 
 func (p Properties) SetDefault(propName string, value Value) {
 	p.Default[propName] = value
-}
-
-type discriminant string // just here to pin the definition of the Value interface to this package
-
-// Value is the type for Element property values.
-type Value interface {
-	discriminant() discriminant
-	RawValue() Object
-	ValueType() string
-}
-
-func (e *Element) discriminant() discriminant { return "particleui" }
-func (e *Element) ValueType() string          { return "Element" }
-func (e *Element) RawValue() Object {
-	o := NewObject().SetType("Element")
-
-	o["id"] = String(e.ID)
-	o["name"] = String(e.Name)
-	constructoroptions, ok := e.Get("internals", "constructoroptions")
-	if ok {
-		o.Set("constructoroptions", constructoroptions)
-	}
-
-	constructorname, ok := e.Get("internals", "constructorname")
-	if !ok {
-		return nil
-	}
-	cname, ok := constructorname.(String)
-	if !ok {
-		return nil
-	}
-	o["constructorname"] = cname
-
-	o["elementstoreid"] = String(e.ElementStore.Global.ID)
-	return o.RawValue()
-}
-
-type Bool bool
-
-func (b Bool) discriminant() discriminant { return "particleui" }
-func (b Bool) RawValue() Object {
-	o := NewObject()
-	o["typ"] = "Bool"
-	o["value"] = bool(b)
-	return o.RawValue()
-}
-func (b Bool) ValueType() string { return "Bool" }
-
-type String string
-
-func (s String) discriminant() discriminant { return "particleui" }
-func (s String) RawValue() Object {
-	o := NewObject()
-	o["typ"] = "String"
-	o["value"] = string(s)
-	return o.RawValue()
-}
-func (s String) ValueType() string { return "String" }
-
-type Number float64
-
-func (n Number) discriminant() discriminant { return "particleui" }
-func (n Number) RawValue() Object {
-	o := NewObject()
-	o["typ"] = "Number"
-	o["value"] = float64(n)
-	return o.RawValue()
-}
-func (n Number) ValueType() string { return "Number" }
-
-type Object map[string]interface{}
-
-func (o Object) discriminant() discriminant { return "particleui" }
-
-func (o Object) RawValue() Object {
-	p := NewObject()
-	for k, val := range o {
-		v, ok := val.(Value)
-		if ok {
-			p[k] = map[string]interface{}(v.RawValue())
-			continue
-		}
-		p[k] = val // typ should still be a plain string, calling RawValue twice in a row should be idempotent
-		continue
-	}
-	return p
-}
-
-func (o Object) ValueType() string {
-	t, ok := o.Get("typ")
-	if !ok {
-		return "undefined"
-	}
-	s, ok := t.(string)
-	if !ok {
-		return "undefined object"
-	}
-	return string(s)
-}
-
-func (o Object) Get(key string) (interface{}, bool) {
-	v, ok := o[key]
-	return v, ok
-}
-
-func (o Object) Set(key string, value Value) {
-	o[key] = value
-}
-func (o Object) SetType(typ string) Object {
-	o["typ"] = typ
-	return o
-}
-func (o Object) Value() Value {
-	switch o.ValueType() {
-	case "Bool":
-		v, ok := o.Get("value")
-		if !ok {
-			return nil
-		}
-		res, ok := v.(bool)
-		if !ok {
-			return nil
-		}
-		return Bool(res)
-	case "String":
-		v, ok := o.Get("value")
-		if !ok {
-			return nil
-		}
-		res, ok := v.(string)
-		if !ok {
-			return nil
-		}
-		return String(res)
-	case "Number":
-		v, ok := o.Get("value")
-		if !ok {
-			return nil
-		}
-		res, ok := v.(float64)
-		if !ok {
-			return nil
-		}
-		return Number(res)
-	case "List":
-		v, ok := o.Get("value")
-		if !ok {
-			return nil
-		}
-		l, ok := v.([]interface{})
-		if !ok {
-			return nil
-		}
-		m := NewList()
-		for _, val := range l {
-			r, ok := val.(map[string]interface{})
-			if ok {
-				v := Object(r).Value()
-				m = append(m, v)
-				continue
-			} else {
-				return nil
-			}
-		}
-		return m
-	case "Object":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if !ok {
-				p.Set(k, v)
-				continue
-			}
-			m, ok := val.(map[string]interface{})
-			if ok {
-				obj := Object(m)
-				p.Set(k, obj.Value())
-			}
-			p.Set(k, u.Value())
-		}
-		return p
-	case "Command":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-		return Command(p)
-	case "MutationRecord":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-		return MutationRecord(p)
-	case "Element":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-
-		id, ok := p.Get("id")
-		if !ok {
-			return nil
-		}
-		name, ok := p.Get("name")
-		if !ok {
-			return nil
-		}
-		elementstoreid, ok := p.Get("elementstoreid")
-		if !ok {
-			return nil
-		}
-		constructorname, ok := p.Get("constructorname")
-		if !ok {
-			return nil
-		}
-		elstoreid, ok := elementstoreid.(String)
-		if !ok {
-			log.Print("Wrong type for ElementStore ID")
-			return nil
-		}
-		// Let's get the elementstore
-		elstore, ok := Stores.Get(string(elstoreid))
-		if !ok {
-			return nil
-		}
-		// Let's try to see if the element is in the ElementStore already
-		elid, ok := id.(String)
-		if !ok {
-			log.Print("Wrong type for Element ID stored in ui.Value")
-			return nil
-		}
-		element := elstore.GetByID(string(elid))
-		if element != nil {
-			return element
-		}
-		// Otherwise we construct it. (TODO: make sure that element constructors try to get the data in store)
-		cname, ok := constructorname.(String)
-		if !ok {
-			log.Print("Wrong type for constructor name.")
-			return nil
-		}
-		constructor, ok := elstore.Constructors[string(cname)]
-		if !ok {
-			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
-		}
-		ename, ok := name.(String)
-		if !ok {
-			log.Print("Element name in Value of wring type.")
-			return nil
-		}
-
-		coptions := make([]string, 0)
-		constructoroptions, ok := p.Get("constructoroptions")
-		if ok {
-			objoptlist, ok := constructoroptions.(Object)
-			if ok {
-				voptlist := objoptlist.Value()
-				optlist, ok := voptlist.(List)
-				if ok {
-					for _, opt := range optlist {
-						sopt, ok := opt.(String)
-						if !ok {
-							return nil
-						}
-						coptions = append(coptions, string(sopt))
-					}
-				}
-			}
-		}
-		return constructor(string(ename), string(elid), coptions...)
-
-	default:
-		return o
-	}
-}
-
-func NewObject() Object {
-	o := Object(make(map[string]interface{}))
-	o["typ"] = "Object"
-	return o
-}
-
-type List []Value
-
-func (l List) discriminant() discriminant { return "particleui" }
-func (l List) RawValue() Object {
-	o := NewObject().SetType("List")
-
-	raw := make([]interface{}, 0)
-	for _, v := range l {
-		raw = append(raw, v.RawValue())
-	}
-	o["value"] = raw
-	return o.RawValue()
-}
-func (l List) ValueType() string { return "List" }
-
-func NewList(val ...Value) List {
-	if val != nil {
-		return List(val)
-	}
-	l := make([]Value, 0)
-	return List(l)
 }

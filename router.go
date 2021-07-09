@@ -41,35 +41,26 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 	if err != nil {
 		panic(err)
 	}
-	base := strings.TrimSuffix(u.Path, "/")
-	rootview.Element().Global.Set("internals", "baseurl", String(baseurl), true)
-	r := &Router{base, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
 
-	// Routes registration and treemutation based registration
-	r.insert(rootview)
-	v, ok := r.outlet.Element().Root().Get("internals", "views")
-	if ok {
-		l, ok := v.(List)
-		if ok {
-			for _, val := range l {
-				viewEl, ok := val.(*Element)
-				if !ok || !viewEl.isViewElement() {
-					panic("internals/views does not hold a proper Element")
+	r := &Router{u.Path, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
+
+	r.outlet.Element().Root().Watch("event", "docupdate", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
+		_, navready := r.outlet.Element().Root().Get("navigation", "ready")
+		if !navready {
+			v, ok := r.outlet.Element().Global.Get("internals", "views")
+			if ok {
+				l, ok := v.(List)
+				if ok {
+					for _, val := range l {
+						viewEl, ok := val.(*Element)
+						if !ok || !viewEl.isViewElement() {
+							panic("internals/views does not hold a proper Element")
+						}
+						r.insert(ViewElement{viewEl})
+					}
 				}
-				r.insert(ViewElement{viewEl})
 			}
 		}
-	}
-	r.outlet.Element().Root().Watch("event", "docupdate", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		v, ok := evt.NewValue().(*Element)
-		if !ok {
-			panic("Framework error: only an *Element is an acceptable value for docupdate")
-		}
-		if !v.isViewElement() {
-			panic("Only a view is acceptable for a docupdate")
-		}
-		log.Println(v.Element()) //DEBUG
-		r.insert(ViewElement{v})
 		return false
 	}))
 
@@ -107,14 +98,19 @@ func (r *Router) tryNavigate(newroute string) bool {
 }
 
 // GoTo changes the application state by updating the current route
-func (r *Router) GoTo(newroute string) {
-	ok := r.tryNavigate(newroute)
+func (r *Router) GoTo(route string) {
+	route = strings.TrimPrefix(route, r.BaseURL)
+	route = strings.TrimPrefix(route, "/")
+	if !r.LeaveTrailingSlash {
+		route = strings.TrimSuffix(route, "/")
+	}
+	ok := r.tryNavigate(route)
 	if !ok {
 		return
 	}
 
-	r.outlet.Element().Root().SetDataSyncUI("currentroute", String(newroute))
-	r.History.Push(newroute)
+	r.outlet.Element().Root().SetDataSyncUI("currentroute", String(route))
+	r.History.Push(route)
 	//r.outlet.Element().Set("navigation","index",Number(r.History.Cursor))
 	log.Println(*r.History) //DEBUG
 }
@@ -132,6 +128,11 @@ func (r *Router) GoForward() {
 }
 
 func (r *Router) RedirectTo(route string) {
+	route = strings.TrimPrefix(route, r.BaseURL)
+	route = strings.TrimPrefix(route, "/")
+	if !r.LeaveTrailingSlash {
+		route = strings.TrimSuffix(route, "/")
+	}
 	r.outlet.Element().Root().Set("navigation", "routeredirectrequest", String(route))
 	r.History.Replace(route)
 }
@@ -142,7 +143,7 @@ func (r *Router) OnNotfound(dest View) *Router {
 	r.outlet.AddView(dest)
 	//r.insert(r.outlet)
 	r.outlet.Element().Root().Watch("navigation", "notfound", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(r.BaseURL + "/" + dest.Name())
+		r.RedirectTo(dest.Name())
 		return false
 	}))
 	return r
@@ -155,7 +156,7 @@ func (r *Router) OnUnauthorized(dest View) *Router {
 	r.outlet.AddView(dest)
 
 	r.outlet.Element().Root().Watch("navigation", "unauthorized", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(r.BaseURL + "/" + dest.Name())
+		r.RedirectTo(dest.Name())
 		return false
 	}))
 	return r
@@ -167,13 +168,14 @@ func (r *Router) OnAppfailure(dest View) *Router {
 	r.outlet.AddView(dest)
 
 	r.outlet.Element().Root().Watch("navigation", "appfailure", r.outlet.Element().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(r.BaseURL + "/" + dest.Name())
+		r.RedirectTo(dest.Name())
 		return false
 	}))
 	return r
 }
 
 func (r *Router) insert(v ViewElement) {
+	log.Print("Call to insert: ", v.Element().ID) // DEBUG
 	// check that v has r.outlet as ancestor
 	vap := v.Element().ViewAccessPath
 	if vap == nil || len(vap.Nodes) == 0 {
@@ -219,11 +221,12 @@ func (r *Router) handler() *MutationHandler {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
+		newroute = strings.TrimPrefix(newroute, "/")
 
 		// 1. Let's see if the URI matches any of the registered routes. (TODO)
 		a, err := r.Routes.match(newroute)
 		if err != nil {
-			log.Print("DEBUG", err, newroute) // DEBUG
+			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.outlet.Element().Root().Set("navigation", "notfound", Bool(true))
 				return false
@@ -234,14 +237,14 @@ func (r *Router) handler() *MutationHandler {
 				return false
 			}
 			if err == ErrFrameworkFailure {
-				log.Print(err) // DEBUG
+				log.Print("APPFAILURE: ", err) // DEBUG
 				r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
 				return false
 			}
 		}
 		err = a()
 		if err != nil {
-			log.Print(err) // DEBUG
+			log.Print("UNACTIVABLE: ", err) // DEBUG
 			log.Print("unauthorized for: " + newroute)
 			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
 			return false
@@ -323,6 +326,22 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding NativeEventBridge) {
 	r.verifyLinkActivation()
 	root := r.outlet
+
+	// Let's make sure that all the mounted views have been registered.
+	v, ok := r.outlet.Element().Global.Get("internals", "views")
+	if ok {
+		l, ok := v.(List)
+		if ok {
+			for _, val := range l {
+				viewEl, ok := val.(*Element)
+				if !ok || !viewEl.isViewElement() {
+					panic("internals/views does not hold a proper Element")
+				}
+				r.insert(ViewElement{viewEl})
+			}
+		}
+	}
+
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
 		if evt.Type() != eventname {
 			log.Print("Event of wrong type. Expected: " + eventname)
@@ -424,9 +443,9 @@ func (rn *rnode) insert(nrn *rnode) {
 			// each view should be a rootnode and should be attached in succession. The end node is our argument.
 			view := ViewElement{viewpathnodes[i+1].Element}
 			nr := newchildrnode(view, rn)
-			refnode.attach(node.View.Name(), nr)
+			refnode.attach(node.Name, nr)
 			refnode = nr
-			viewname = node.View.Name()
+			viewname = node.Name
 		}
 	}
 	refnode.attach(viewname, nrn)
@@ -434,10 +453,14 @@ func (rn *rnode) insert(nrn *rnode) {
 
 // attach links to rnodes that corresponds to viewElements that succeeds each other
 func (r *rnode) attach(targetviewname string, nr *rnode) {
+	log.Println("ATTACH: ", targetviewname, nr) // DEBUG
 	m, ok := r.next[targetviewname]
 	if !ok {
 		m = make(map[string]*rnode)
 		r.next[targetviewname] = m
+	}
+	if m == nil {
+		m = make(map[string]*rnode)
 	}
 	r, ok = m[nr.ViewElement.Element().ID]
 	if !ok {
@@ -447,10 +470,10 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 
 // match verifies that a route passed as arguments corresponds to a given view state.
 func (r *rnode) match(route string) (activationFn func() error, err error) {
-	log.Print(route) // DEBUG
 	activations := make([]func() error, 0)
 	route = strings.TrimPrefix(route, "/")
-	segments := strings.SplitAfter(route, "/")
+	segments := strings.Split(route, "/")
+	log.Print(segments) //DEBUG
 	ls := len(segments)
 	if ls == 0 {
 		return nil, nil
@@ -500,6 +523,7 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 	}
 
 	if ls%2 != 1 {
+		log.Print("Not the right number of segments")
 		return nil, ErrNotFound
 	}
 
