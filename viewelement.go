@@ -38,13 +38,6 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	for _, view := range views {
 		v.AddView(view)
 	}
-	if e.Parent != nil {
-		// touch update for children ViewAccessPath
-		_, ok := e.Parent.hasChild(e) // if not, then e belongs to a view
-		parent := e.Parent
-		detach(e)
-		attach(parent, e, ok)
-	}
 
 		// necessary if the element we make a viewElement of was already mounted. It doesn't get reattached unless modification
 		l, ok := e.Global.Get("internals", "views")
@@ -128,16 +121,16 @@ func (v ViewElement) ActivateView(name string) error {
 }
 
 func (e *Element) addView(v View) *Element {
+	if e.InactiveViews == nil {
+		e.InactiveViews = make(map[string]View) // Important to put that on top... it creates
+		// effectively a ViewElement out of an Elmeent. attach below depends on that
+	}
+
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
-			//child.ViewAccessPath = e.ViewAccessPath.Copy().Append(newViewNode(e, v.Name()))
 			child.ViewAccessNode = newViewAccessNode(child,v.Name())
-			child.ViewAccessNode.Link(e)
 			attach(e, child, false)
 		}
-	}
-	if e.InactiveViews == nil {
-		e.InactiveViews = make(map[string]View)
 	}
 	e.InactiveViews[v.Name()] = v
 	return e

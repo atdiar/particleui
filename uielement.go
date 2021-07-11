@@ -455,9 +455,8 @@ func attach(parent *Element, child *Element, activeview bool) {
 	}
 	child.root = parent.root // mounted once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
 	child.subtreeRoot = parent.subtreeRoot
-	log.Println("NODES", child.ID, child.ViewAccessPath.Nodes) //DEBUG
 
-	child.ViewAccessNode.Link(parent)
+	child.link(parent)
 	//child.ViewAccessPath = computePath(child.ViewAccessPath,child.ViewAccessNode)
 
 	for _, descendant := range child.Children.List {
@@ -994,11 +993,11 @@ func EnablePropertyAutoInheritance() string {
 func (e *Element) Route() string {
 	var Route = ""
 	var uri string
-	e.ViewAccessPath = computePath(e.ViewAccessPath,e.ViewAccessNode)
+	e.ViewAccessPath = computePath(newViewNodes(),e.ViewAccessNode)
 	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes)==0{
 		return Route + "/" + uri
 	}
-	log.Print("# of views inbetween: ", len(e.ViewAccessPath.Nodes)) // DEBUG
+
 	for k, n := range e.ViewAccessPath.Nodes {
 		path := n.Element.ID + "/" + n.Name
 		if k == 0 {
@@ -1068,12 +1067,12 @@ func(v *viewAccessNode) Link(any AnyElement){
 	if !e.isViewElement(){
 		if e.ViewAccessNode != nil{
 			v.previous = e.ViewAccessNode.previous
-			v.viewname = e.ViewAccessNode.viewname
+			//v.viewname = e.ViewAccessNode.viewname
 			v.Element = e.ViewAccessNode.Element
 			return
 		}
 		v.previous = nil
-		v.Element = e
+		v.Element = nil
 		v.viewname = ""
 		return
 	}
@@ -1081,11 +1080,22 @@ func(v *viewAccessNode) Link(any AnyElement){
 	v.Element=e
 }
 
+func(child *Element) link(any AnyElement){
+	parent:= any.Element()
+	if !parent.isViewElement(){
+		child.ViewAccessNode=parent.ViewAccessNode
+		return
+	}
+	child.ViewAccessNode.Element = parent
+	child.ViewAccessNode.previous = parent.ViewAccessNode
+}
+
 func computePath(p *viewNodes, v *viewAccessNode) *viewNodes{
 	if v == nil || v.Element == nil{
 		return p
 	}
-	p.Prepend(newViewNode(v.Element,v.viewname))
+	node:= newViewNode(v.Element,v.viewname)
+	p.Prepend(node)
 	if v.previous !=nil{
 		return computePath(p,v.previous)
 	}

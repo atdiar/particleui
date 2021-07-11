@@ -409,7 +409,7 @@ func (rn *rnode) insert(nrn *rnode) {
 		return
 	}
 
-	viewpath := computePath(v.Element().ViewAccessPath,v.Element().ViewAccessNode)
+	viewpath := computePath(newViewNodes(),v.Element().ViewAccessNode)
 	if viewpath == nil {
 		return
 	}
