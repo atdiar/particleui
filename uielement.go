@@ -230,6 +230,7 @@ type Element struct {
 	ActiveView string // holds the name of the view currently displayed. If parameterizable, holds the name of the parameter
 
 	ViewAccessPath *viewNodes // List of views that lay on the path to the Element
+	ViewAccessNode *viewAccessNode
 
 	InactiveViews map[string]View
 
@@ -259,6 +260,7 @@ func NewElement(name string, id string, doctype string) *Element {
 		NewElements(),
 		"",
 		newViewNodes(),
+		newViewAccessNode(nil,""),
 		nil,
 		nil,
 	}
@@ -442,30 +444,8 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 func attach(parent *Element, child *Element, activeview bool) {
 	defer func() {
 		child.Set("event", "attached", Bool(true))
-		var wasmountedOnce bool
-		if child.isViewElement() {
-			_, wasmountedOnce = child.Element().Get("event", "mounted")
-		}
 		if child.Mounted() {
 			child.Set("event", "mounted", Bool(true))
-			if !wasmountedOnce && child.isViewElement() {
-				log.Println("DOCUPDATE", child.Route()) //DEBUG
-				child.Root().Set("event", "docupdate", Bool(true))
-				l, ok := child.Global.Get("internals", "views")
-				if !ok {
-					list := NewList(child)
-					child.Global.Set("internals", "views", list)
-				} else {
-					list, ok := l.(List)
-					if !ok {
-						list = NewList(child)
-						child.Global.Set("internals", "views", list)
-					} else {
-						list = append(list, child)
-						child.Global.Set("internals", "views", list)
-					}
-				}
-			}
 		}
 	}()
 
@@ -475,20 +455,10 @@ func attach(parent *Element, child *Element, activeview bool) {
 	}
 	child.root = parent.root // mounted once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
 	child.subtreeRoot = parent.subtreeRoot
+	log.Println("NODES", child.ID, child.ViewAccessPath.Nodes) //DEBUG
 
-	// if the child is not a ViewElement, then it's viewadress is its parent's)
-	// otherwise, it's its own to which is prepended its parent's view path(ordered list of parent views).
-	if !parent.isViewElement() {
-		child.ViewAccessPath = parent.ViewAccessPath.Copy()
-	} else {
-		if child.ViewAccessPath == nil {
-			child.ViewAccessPath = newViewNodes()
-		}
-		if parent.ViewAccessPath != nil {
-			child.ViewAccessPath = child.ViewAccessPath.Prepend(parent.ViewAccessPath.Nodes...)
-		}
-		child.ViewAccessPath.Append(newViewNode(parent, parent.ActiveView))
-	}
+	child.ViewAccessNode.Link(parent)
+	//child.ViewAccessPath = computePath(child.ViewAccessPath,child.ViewAccessNode)
 
 	for _, descendant := range child.Children.List {
 		attach(child, descendant, true)
@@ -526,7 +496,8 @@ func detach(e *Element) {
 	e.Parent = nil
 
 	// ViewAccessPath handling:
-	e.ViewAccessPath = nil
+	e.ViewAccessNode.previous = nil
+	//e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
 
 	e.Set("event", "attached", Bool(false))
 	e.Set("event", "mounted", Bool(false))
@@ -669,7 +640,7 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 
 // replaceChild will replace the target child Element with another.
 // Be wary that mutation Watchers and event listeners remain unchanged by default.
-// The addition or removal of change observing obk=jects is left at the discretion
+// The addition or removal of change observing objects is left at the discretion
 // of the user.
 func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	old := oldEl.Element()
@@ -681,9 +652,8 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	if new.Parent != nil {
 		new.Parent.removeChild(new)
 	}
-	attach(e, new, true)
-
 	detach(old)
+	attach(e, new, true)
 
 	e.Children.Replace(old, new)
 	if e.Native != nil {
@@ -708,6 +678,18 @@ func (e *Element) removeChildren() *Element {
 		e.removeChild(child)
 	}
 	return e
+}
+
+func (e *Element) hasChild(any AnyElement) (int, bool) {
+	if e.Children == nil {
+		return -1, false
+	}
+	for k, child := range e.Children.List {
+		if child.ID == any.Element().ID {
+			return k, true
+		}
+	}
+	return -1, false
 }
 
 func (e *Element) Watch(category string, propname string, owner *Element, h *MutationHandler) *Element {
@@ -1012,15 +994,21 @@ func EnablePropertyAutoInheritance() string {
 func (e *Element) Route() string {
 	var Route = ""
 	var uri string
-
-	if e.ViewAccessPath == nil {
+	e.ViewAccessPath = computePath(e.ViewAccessPath,e.ViewAccessNode)
+	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes)==0{
 		return Route + "/" + uri
 	}
-	for _, n := range e.ViewAccessPath.Nodes {
+	log.Print("# of views inbetween: ", len(e.ViewAccessPath.Nodes)) // DEBUG
+	for k, n := range e.ViewAccessPath.Nodes {
 		path := n.Element.ID + "/" + n.Name
+		if k == 0 {
+			if e.Mounted() {
+				path = n.Name
+			}
+		}
 		uri = uri + "/" + path
 	}
-	return Route + "/" + uri
+	return uri
 }
 
 // View defines a type for a named list of children Element
@@ -1064,6 +1052,63 @@ func NewParameterizedView(parametername string, paramFn func(string, View) (*Vie
 	n.Parameterize = paramFn
 	return n
 }
+
+type viewAccessNode struct{
+	previous *viewAccessNode
+	*Element
+	viewname string
+}
+
+func newViewAccessNode(v *Element, viewname string) *viewAccessNode{
+	return &viewAccessNode{nil,v,viewname}
+}
+
+func(v *viewAccessNode) Link(any AnyElement){
+	e:= any.Element()
+	if !e.isViewElement(){
+		if e.ViewAccessNode != nil{
+			v.previous = e.ViewAccessNode.previous
+			v.viewname = e.ViewAccessNode.viewname
+			v.Element = e.ViewAccessNode.Element
+			return
+		}
+		v.previous = nil
+		v.Element = e
+		v.viewname = ""
+		return
+	}
+	v.previous = e.ViewAccessNode
+	v.Element=e
+}
+
+func computePath(p *viewNodes, v *viewAccessNode) *viewNodes{
+	if v == nil || v.Element == nil{
+		return p
+	}
+	p.Prepend(newViewNode(v.Element,v.viewname))
+	if v.previous !=nil{
+		return computePath(p,v.previous)
+	}
+	return p
+}
+
+/*
+unc(v *viewAccessNode) LinkView(any ViewElement,viewname string){
+	e:= any.Element()
+
+	insert:= newViewAccessNode(e,viewname)
+	insert.previous = e.ViewAccessNode.previous
+	v.previous = insert
+}
+
+func(v *viewAccessNode) Link(e *Element){
+	if !e.isViewElement(){
+		v.previous = e.ViewAccessNode.previous
+		return
+	}
+}
+
+*/
 
 type viewNodes struct {
 	Nodes []viewNode

@@ -38,6 +38,29 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	for _, view := range views {
 		v.AddView(view)
 	}
+	if e.Parent != nil {
+		// touch update for children ViewAccessPath
+		_, ok := e.Parent.hasChild(e) // if not, then e belongs to a view
+		parent := e.Parent
+		detach(e)
+		attach(parent, e, ok)
+	}
+
+		// necessary if the element we make a viewElement of was already mounted. It doesn't get reattached unless modification
+		l, ok := e.Global.Get("internals", "views")
+		if !ok {
+			list := NewList(e)
+			e.Global.Set("internals", "views", list)
+		} else {
+			list, ok := l.(List)
+			if !ok {
+				list = NewList(e)
+				e.Global.Set("internals", "views", list)
+			} else {
+				list = append(list, e)
+				e.Global.Set("internals", "views", list)
+			}
+		}
 	return v
 }
 
@@ -45,10 +68,6 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 func (v ViewElement) AddView(view View) ViewElement {
 	v.Element().addView(view)
 	v.Element().Set("authorized", view.Name(), Bool(true))
-
-	if v.Element().Mounted() {
-		v.Element().Root().Set("event", "docupdate", v.Element())
-	}
 	return v
 }
 
@@ -111,7 +130,9 @@ func (v ViewElement) ActivateView(name string) error {
 func (e *Element) addView(v View) *Element {
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
-			child.ViewAccessPath = child.ViewAccessPath.Prepend(newViewNode(e, v.Name()))
+			//child.ViewAccessPath = e.ViewAccessPath.Copy().Append(newViewNode(e, v.Name()))
+			child.ViewAccessNode = newViewAccessNode(child,v.Name())
+			child.ViewAccessNode.Link(e)
 			attach(e, child, false)
 		}
 	}
@@ -175,13 +196,13 @@ func (e *Element) activateView(name string) error {
 						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
 					}
 				}
-
+				e.ActiveView = parameterName
 				// Let's append the new view Elements
 				for _, newchild := range view.Elements().List {
 					e.appendChild(newchild)
 				}
 				e.SetDataSyncUI("activeview", String(name), false)
-				e.ActiveView = parameterName
+
 				return nil
 			}
 		}
@@ -206,13 +227,13 @@ func (e *Element) activateView(name string) error {
 			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
 		}
 	}
+	e.ActiveView = name
 	// we attach and activate the desired view
 	for _, child := range newview.Elements().List {
 		e.appendChild(child)
 	}
 	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name), false)
-	e.ActiveView = name
 
 	return nil
 }

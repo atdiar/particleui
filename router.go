@@ -176,25 +176,6 @@ func (r *Router) OnAppfailure(dest View) *Router {
 
 func (r *Router) insert(v ViewElement) {
 	log.Print("Call to insert: ", v.Element().ID) // DEBUG
-	// check that v has r.outlet as ancestor
-	vap := v.Element().ViewAccessPath
-	if vap == nil || len(vap.Nodes) == 0 {
-		if r.Routes.ID() == v.Element().ID {
-			nrn := newchildrnode(v, r.Routes)
-			r.Routes.insert(nrn)
-		}
-		return
-	}
-	var ancestry *Element
-	if len(vap.Nodes) == 0 {
-		return // this is the outlet view
-	} else {
-		ancestry = vap.Nodes[0].Element
-	}
-
-	if ancestry.ID != r.outlet.Element().ID {
-		return
-	}
 	nrn := newchildrnode(v, r.Routes)
 	r.Routes.insert(nrn)
 }
@@ -337,7 +318,9 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 				if !ok || !viewEl.isViewElement() {
 					panic("internals/views does not hold a proper Element")
 				}
-				r.insert(ViewElement{viewEl})
+				if viewEl.Mounted(){
+					r.insert(ViewElement{viewEl})
+				}
 			}
 		}
 	}
@@ -391,10 +374,10 @@ func (r *rnode) ID() string {
 func newchildrnode(v ViewElement, root *rnode) *rnode {
 	m := make(map[string]map[string]*rnode)
 	for k := range v.Element().InactiveViews {
-		m[k] = nil
+		m[k] = make(map[string]*rnode)
 	}
 	if a := v.Element().ActiveView; a != "" {
-		m[a] = nil
+		m[a] = make(map[string]*rnode)
 	}
 	return &rnode{root, v.Element().ID, v, m}
 }
@@ -412,15 +395,21 @@ func (rn *rnode) insert(nrn *rnode) {
 
 	if nrn.ID() == rn.root.ID() {
 		for k := range v.Element().InactiveViews {
-			rn.next[k] = nil
+			_,ok:= rn.next[k]
+			if !ok{
+				rn.next[k]= make(map[string]*rnode)
+			}
 		}
 		if a := v.Element().ActiveView; a != "" {
-			rn.next[a] = nil
+			_,ok:= rn.next[a]
+			if !ok{
+				rn.next[a] = make(map[string]*rnode)
+			}
 		}
 		return
 	}
 
-	viewpath := v.Element().ViewAccessPath
+	viewpath := computePath(v.Element().ViewAccessPath,v.Element().ViewAccessNode)
 	if viewpath == nil {
 		return
 	}
@@ -432,6 +421,7 @@ func (rn *rnode) insert(nrn *rnode) {
 		ancestor = viewpathnodes[0].Element
 	}
 	if ancestor.ID != rn.root.ViewElement.Element().ID {
+		log.Print("trying to route a ViewElement as root when it's not") // DEBUG
 		return
 	}
 	l := len(viewpathnodes)
@@ -440,7 +430,7 @@ func (rn *rnode) insert(nrn *rnode) {
 	viewname := ""
 	for i, node := range viewpathnodes {
 		if i+1 < l {
-			// each view should be a rootnode and should be attached in succession. The end node is our argument.
+			// each ViewElement should be turned into a *rnode and should be attached in succession. The end node is our argument.
 			view := ViewElement{viewpathnodes[i+1].Element}
 			nr := newchildrnode(view, rn)
 			refnode.attach(node.Name, nr)
@@ -458,9 +448,6 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 	if !ok {
 		m = make(map[string]*rnode)
 		r.next[targetviewname] = m
-	}
-	if m == nil {
-		m = make(map[string]*rnode)
 	}
 	r, ok = m[nr.ViewElement.Element().ID]
 	if !ok {
@@ -532,10 +519,11 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 	// Let's get the next rnode and check that the view mentionned in the route exists (segment[2i+2])
 
 	for i := 1; i <= viewcount; i++ {
-		routesegment := segments[2*i]       //ids
-		nextroutesegment := segments[2*i+1] //viewnames
+		routesegment := segments[2*i-1]       //ids
+		nextroutesegment := segments[2*i] //viewnames
 		r, ok = m[routesegment]
 		if !ok {
+			log.Print("id not found : "+routesegment) // DEBUG
 			return nil, ErrNotFound
 		}
 
@@ -548,13 +536,14 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 		// and the new map pf next rnode is then retrieved if possible.
 		m, ok = r.next[nextroutesegment]
 		if !ok {
+			log.Print("view not found : "+nextroutesegment) // DEBUG
 			// Let's see if the ViewElement has a parameterizable view
 			param, ok = r.ViewElement.hasParameterizedView()
 			if ok {
 				if !r.ViewElement.isViewAuthorized(param) {
 					return nil, ErrUnauthorized
 				}
-				r.ViewElement.Element().Set("navigation", param, String(segments[2*i])) // TODO check
+				r.ViewElement.Element().Set("navigation", param, String(segments[2*i-1])) // TODO check
 
 				m, ok = r.next[param] // we get the next rnodes mapped by viewnames
 				if !ok {
