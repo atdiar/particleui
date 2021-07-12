@@ -76,21 +76,26 @@ func (r *Router) tryNavigate(newroute string) bool {
 	// 1. Let's see if the URI matches any of the registered routes. (TODO)
 	a, err := r.Routes.match(newroute)
 	if err != nil {
+		log.Print(err) // DEBUG
 		if err == ErrNotFound {
+			log.Print("this is strange", err) // DEBUG
 			r.outlet.Element().Root().Set("navigation", "notfound", Bool(true))
 			return false
 		}
 		if err == ErrUnauthorized {
+			log.Print(err) // DEBUG
 			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
 			return false
 		}
 		if err == ErrFrameworkFailure {
+			log.Print(err) //DEBUG
 			r.outlet.Element().Root().Set("navigation", "appfailure", Bool(true))
 			return false
 		}
 	}
 	err = a()
 	if err != nil {
+		log.Print("activation failure", err) // DEBUG
 		r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
 		return false
 	}
@@ -106,6 +111,7 @@ func (r *Router) GoTo(route string) {
 	}
 	ok := r.tryNavigate(route)
 	if !ok {
+		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
 		return
 	}
 
@@ -175,7 +181,6 @@ func (r *Router) OnAppfailure(dest View) *Router {
 }
 
 func (r *Router) insert(v ViewElement) {
-	log.Print("Call to insert: ", v.Element().ID) // DEBUG
 	nrn := newchildrnode(v, r.Routes)
 	r.Routes.insert(nrn)
 }
@@ -225,8 +230,6 @@ func (r *Router) handler() *MutationHandler {
 		}
 		err = a()
 		if err != nil {
-			log.Print("UNACTIVABLE: ", err) // DEBUG
-			log.Print("unauthorized for: " + newroute)
 			r.outlet.Element().Root().Set("navigation", "unauthorized", Bool(true))
 			return false
 		}
@@ -318,7 +321,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 				if !ok || !viewEl.isViewElement() {
 					panic("internals/views does not hold a proper Element")
 				}
-				if viewEl.Mounted(){
+				if viewEl.Mounted() {
 					r.insert(ViewElement{viewEl})
 				}
 			}
@@ -371,6 +374,23 @@ func (r *rnode) ID() string {
 	return r.ViewElement.Element().ID
 }
 
+func (r *rnode) update() *rnode {
+	for k := range r.ViewElement.Element().InactiveViews {
+		m, ok := r.next[k]
+		if !ok {
+			m = make(map[string]*rnode)
+			r.next[k] = m
+		}
+	}
+	a := r.ViewElement.Element().ActiveView
+	m, ok := r.next[a]
+	if !ok && a != "" {
+		m = make(map[string]*rnode)
+		r.next[a] = m
+	}
+	return r
+}
+
 func newchildrnode(v ViewElement, root *rnode) *rnode {
 	m := make(map[string]map[string]*rnode)
 	for k := range v.Element().InactiveViews {
@@ -379,7 +399,9 @@ func newchildrnode(v ViewElement, root *rnode) *rnode {
 	if a := v.Element().ActiveView; a != "" {
 		m[a] = make(map[string]*rnode)
 	}
-	return &rnode{root, v.Element().ID, v, m}
+	r:= &rnode{root, v.Element().ID, v, m}
+	r.update()
+	return r
 }
 
 func newrootrnode(v ViewElement) *rnode {
@@ -391,25 +413,18 @@ func newrootrnode(v ViewElement) *rnode {
 // insert  adds an arbitrary rnode to the rnode trie if  possible (the root
 // ViewElement of the rnode ViewAccessPath should be that of the root rnode )
 func (rn *rnode) insert(nrn *rnode) {
+	if rn != rn.root{
+		panic("only root rnode can call insert")
+	}
 	v := nrn.ViewElement
 
 	if nrn.ID() == rn.root.ID() {
-		for k := range v.Element().InactiveViews {
-			_,ok:= rn.next[k]
-			if !ok{
-				rn.next[k]= make(map[string]*rnode)
-			}
-		}
-		if a := v.Element().ActiveView; a != "" {
-			_,ok:= rn.next[a]
-			if !ok{
-				rn.next[a] = make(map[string]*rnode)
-			}
-		}
+		rn.root.update()
 		return
 	}
-
-	viewpath := computePath(newViewNodes(),v.Element().ViewAccessNode)
+	log.Print("This is the insert that fails :",nrn) // DEBUG
+	viewpath := computePath(newViewNodes(), v.Element().ViewAccessNode)
+	log.Print("viewpath", viewpath) //DEBUG
 	if viewpath == nil {
 		return
 	}
@@ -421,13 +436,14 @@ func (rn *rnode) insert(nrn *rnode) {
 		ancestor = viewpathnodes[0].Element
 	}
 	if ancestor.ID != rn.root.ViewElement.Element().ID {
-		log.Print("trying to route a ViewElement as root when it's not") // DEBUG
+		log.Print("Houston we have an issue. Everything shall start from rnode toot ViewElement")
 		return
 	}
 	l := len(viewpathnodes)
 	// attach iteratively the rnodes
 	refnode := rn
-	viewname := ""
+	viewname := viewpathnodes[0].Name
+	log.Println(viewpathnodes,l,rn)
 	for i, node := range viewpathnodes {
 		if i+1 < l {
 			// each ViewElement should be turned into a *rnode and should be attached in succession. The end node is our argument.
@@ -439,28 +455,30 @@ func (rn *rnode) insert(nrn *rnode) {
 		}
 	}
 	refnode.attach(viewname, nrn)
+	log.Println(refnode.next) //DEBUG
 }
 
 // attach links to rnodes that corresponds to viewElements that succeeds each other
 func (r *rnode) attach(targetviewname string, nr *rnode) {
 	log.Println("ATTACH: ", targetviewname, nr) // DEBUG
+	r.update()
 	m, ok := r.next[targetviewname]
 	if !ok {
 		m = make(map[string]*rnode)
-		r.next[targetviewname] = m
+		r.next[targetviewname]=m
 	}
 	r, ok = m[nr.ViewElement.Element().ID]
 	if !ok {
 		m[nr.ViewElement.Element().ID] = nr
 	} // else it has already been attached
+	nr.update()
 }
 
 // match verifies that a route passed as arguments corresponds to a given view state.
 func (r *rnode) match(route string) (activationFn func() error, err error) {
-	activations := make([]func() error, 0)
+	activations := make([]func() error, 0,10)
 	route = strings.TrimPrefix(route, "/")
 	segments := strings.Split(route, "/")
-	log.Print(segments) //DEBUG
 	ls := len(segments)
 	if ls == 0 {
 		return nil, nil
@@ -489,79 +507,85 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 	}
 
 	// Do other children views need activation? Let's check for it.
-	if ls == 1 {
+	if ls >= 1 && ls%2 == 1 {
 		// check authorization
 		if param != "" {
 			if r.ViewElement.isViewAuthorized(param) {
 				a := func() error {
 					return r.ViewElement.ActivateView(segments[0])
 				}
-				return a, nil
+				activations = append(activations, a)
+			}else{
+				return nil, ErrUnauthorized
 			}
-			return nil, ErrUnauthorized
-		}
-		if r.ViewElement.isViewAuthorized(segments[0]) {
-			a := func() error {
-				return r.ViewElement.ActivateView(segments[0])
+		} else{
+			if r.ViewElement.isViewAuthorized(segments[0]) {
+				a := func() error {
+					return r.ViewElement.ActivateView(segments[0])
+				}
+				activations = append(activations, a)
+			} else{
+				return nil, ErrUnauthorized
 			}
-			return a, nil
 		}
-		return nil, ErrUnauthorized
 	}
 
 	if ls%2 != 1 {
-		log.Print("Not the right number of segments")
+		log.Print("Incorrect URI scheme")
 		return nil, ErrNotFound
 	}
+	if ls > 1{
+		viewcount := (ls - ls%2) / 2
 
-	viewcount := (ls - ls%2) / 2
+		// Let's get the next rnode and check that the view mentionned in the route exists (segment[2i+2])
 
-	// Let's get the next rnode and check that the view mentionned in the route exists (segment[2i+2])
-
-	for i := 1; i <= viewcount; i++ {
-		routesegment := segments[2*i-1]       //ids
-		nextroutesegment := segments[2*i] //viewnames
-		r, ok = m[routesegment]
-		if !ok {
-			log.Print("id not found : "+routesegment) // DEBUG
-			return nil, ErrNotFound
-		}
-
-		if r.value != routesegment {
-			return nil, ErrNotFound
-		}
-
-		// Now that we have the rnode, we can try to see if the nextroutesegment holding the viewname
-		// is in the r.next. If not, we check whether the viewElement can be parameterized
-		// and the new map pf next rnode is then retrieved if possible.
-		m, ok = r.next[nextroutesegment]
-		if !ok {
-			log.Print("view not found : "+nextroutesegment) // DEBUG
-			// Let's see if the ViewElement has a parameterizable view
-			param, ok = r.ViewElement.hasParameterizedView()
-			if ok {
-				if !r.ViewElement.isViewAuthorized(param) {
-					return nil, ErrUnauthorized
-				}
-				r.ViewElement.Element().Set("navigation", param, String(segments[2*i-1])) // TODO check
-
-				m, ok = r.next[param] // we get the next rnodes mapped by viewnames
-				if !ok {
-					return nil, ErrFrameworkFailure
-				}
-
-			} else {
+		for i := 1; i <= viewcount; i++ {
+			routesegment := segments[2*i-1]   //ids
+			nextroutesegment := segments[2*i] //viewnames
+			r, ok := m[routesegment]
+			if !ok {
+				log.Print("id not found : " + routesegment) // DEBUG
 				return nil, ErrNotFound
 			}
+
+			if r.value != routesegment {
+				return nil, ErrNotFound
+			}
+
+			// Now that we have the rnode, we can try to see if the nextroutesegment holding the viewname
+			// is in the r.next. If not, we check whether the viewElement can be parameterized
+			// and the new map pf next rnode is then retrieved if possible.
+			m, ok = r.next[nextroutesegment]
+			if !ok {
+				log.Print("view not found : " + nextroutesegment) // DEBUG
+				// Let's see if the ViewElement has a parameterizable view
+				param, ok = r.ViewElement.hasParameterizedView()
+				if ok {
+					if !r.ViewElement.isViewAuthorized(param) {
+						return nil, ErrUnauthorized
+					}
+					r.ViewElement.Element().Set("navigation", param, String(segments[2*i-1])) // TODO check
+
+					m, ok = r.next[param] // we get the next rnodes mapped by viewnames
+					if !ok {
+						return nil, ErrFrameworkFailure
+					}
+
+				} else {
+					return nil, ErrNotFound
+				}
+			}
+			if !r.ViewElement.isViewAuthorized(nextroutesegment) {
+				return nil, ErrUnauthorized
+			}
+			a := func() error {
+				return r.ViewElement.ActivateView(nextroutesegment)
+			}
+			activations = append(activations, a)
 		}
-		if !r.ViewElement.isViewAuthorized(nextroutesegment) {
-			return nil, ErrUnauthorized
-		}
-		a := func() error {
-			return r.ViewElement.ActivateView(nextroutesegment)
-		}
-		activations = append(activations, a)
 	}
+
+	log.Print(route,"view to activate:",len(activations))//DEBUG
 	activationFn = func() error {
 		for _, a := range activations {
 			err := a()

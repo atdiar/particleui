@@ -109,7 +109,7 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 func (v ViewElement) ActivateView(name string) error {
 	val, ok := v.Element().Get("authorized", name)
 	if !ok {
-		panic(errors.New("authorization error")) // it's ok to panic here. the client can send the stacktrace. Should not happen.
+		panic(errors.New("authorization error " + name + v.Element().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
 	if val != Bool(true) {
 		return errors.New("Unauthorized")
