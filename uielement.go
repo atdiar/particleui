@@ -1038,6 +1038,7 @@ func NewView(name string, elements ...*Element) View {
 	return View{name, NewElements(elements...), nil}
 }
 
+/*
 // NewParameterizedView defines a parameterized, named, list of *Element composing a view.
 // The Elements can be parameterized by applying a function submitted as argument.
 // This function can and probably should implement validation.
@@ -1051,6 +1052,7 @@ func NewParameterizedView(parametername string, paramFn func(string, View) (*Vie
 	n.Parameterize = paramFn
 	return n
 }
+*/
 
 type viewAccessNode struct{
 	previous *viewAccessNode

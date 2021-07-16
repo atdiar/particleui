@@ -501,7 +501,7 @@ func NewDocument(id string, options ...string) Document {
 				panic(nroute)
 			}
 			route := string(nroute)
-			js.Global().Get("history").Call("pushState", "{}", "", "/"+route)
+			js.Global().Get("history").Call("replaceState", "{}", "", "/"+route)
 			e.SyncUISetData("currentroute", v)
 			return false
 		}))

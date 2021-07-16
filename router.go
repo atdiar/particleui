@@ -204,7 +204,11 @@ func (r *Router) handler() *MutationHandler {
 		}
 		newroute := string(nroute)
 		if !r.LeaveTrailingSlash {
-			newroute = strings.TrimSuffix(newroute, "/")
+			if strings.HasSuffix(newroute,"/"){
+				newroute = strings.TrimSuffix(newroute, "/")
+				r.RedirectTo(newroute)
+				return true
+			}
 		}
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
 		newroute = strings.TrimPrefix(newroute, "/")
