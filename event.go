@@ -34,7 +34,7 @@ type eventObject struct {
 	phase            int
 
 	nativeObject interface{}
-	value string
+	value        string
 }
 
 type defaultPreventer interface {
@@ -66,10 +66,10 @@ func (e *eventObject) DefaultPrevented() bool      { return e.defaultPrevented }
 func (e *eventObject) Stopped() bool               { return e.stopped }
 func (e *eventObject) Cancelable() bool            { return e.cancelable }
 func (e *eventObject) Native() interface{}         { return e.nativeObject }
-func (e *eventObject) Value() string        { return e.value }
+func (e *eventObject) Value() string               { return e.value }
 
-func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{},value string) Event {
-	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent,value}
+func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}, value string) Event {
+	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent, value}
 }
 
 type EventListeners struct {
@@ -77,7 +77,7 @@ type EventListeners struct {
 }
 
 func NewEventListenerStore() EventListeners {
-	return EventListeners{make(map[string]*eventHandlers,0)}
+	return EventListeners{make(map[string]*eventHandlers, 0)}
 }
 
 func (e EventListeners) AddEventHandler(event string, handler *EventHandler) {
@@ -100,7 +100,7 @@ func (e EventListeners) RemoveEventHandler(event string, handler *EventHandler) 
 func (e EventListeners) Handle(evt Event) bool {
 	evh, ok := e.list[evt.Type()]
 	if !ok {
-		return true
+		return false
 	}
 	switch evt.Phase() {
 	// capture
@@ -123,6 +123,7 @@ func (e EventListeners) Handle(evt Event) bool {
 				return true
 			}
 		}
+		return false
 	case 2:
 		for _, h := range evh.List {
 			done := h.Handle(evt)
@@ -133,6 +134,7 @@ func (e EventListeners) Handle(evt Event) bool {
 				return done
 			}
 		}
+		return false
 	case 3:
 		if !evt.Bubbles() {
 			return true
@@ -152,8 +154,9 @@ func (e EventListeners) Handle(evt Event) bool {
 				return true
 			}
 		}
+		return false
 	}
-	return false // not supposed to be reached anyway
+	return false
 }
 
 type eventHandlers struct {

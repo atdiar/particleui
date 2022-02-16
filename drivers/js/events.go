@@ -7,6 +7,7 @@ package doc
 import (
 	"syscall/js"
 	//"net/url"
+
 	"github.com/atdiar/particleui"
 )
 
@@ -36,15 +37,15 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		typ := evt.Get("type").String()
 		bubbles := evt.Get("bubbles").Bool()
 		cancancel := evt.Get("cancelable").Bool()
-		var target *ui.Element
+		var target ui.BasicElement
 		targetid := evt.Get("target").Get("id")
 		value := evt.Get("target").Get("value").String()
 		if targetid.Truthy() {
-			target = Elements.GetByID(targetid.String())
+			target = ui.BasicElement{Elements.GetByID(targetid.String())}
 		} else {
 			// this might be a stretch... but we assume that the only element without
 			// a native side ID is the window in javascript.
-			target = GetWindow().Element()
+			target = GetWindow().AsBasicElement()
 		}
 
 		var nativeEvent interface{}
@@ -63,13 +64,16 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			}*/
 
 		}
-		goevt := ui.NewEvent(typ, bubbles, cancancel, target, nativeEvent, value)
 
-		target.DispatchEvent(goevt, nil)
+		if typ == "keyup" || typ == "keydown" || typ == "keypress" {
+			value = evt.Get("key").String()
+		}
+		goevt := ui.NewEvent(typ, bubbles, cancancel, target.AsElement(), nativeEvent, value)
+		target.AsElement().DispatchEvent(goevt, nil)
 		return nil
 	})
 
-	if target.ID != GetWindow().Element().ID {
+	if target.ID != GetWindow().AsBasicElement().AsElement().ID {
 		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
 		if target.NativeEventUnlisteners.List == nil {
 			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()

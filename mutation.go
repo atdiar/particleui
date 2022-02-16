@@ -2,7 +2,6 @@
 package ui
 
 import (
-	//"log"
 	"strings"
 )
 
@@ -111,21 +110,24 @@ type MutationEvent interface {
 	Type() string
 	Origin() *Element
 	NewValue() Value
+	OldValue() Value
 }
 
 // Mutation defines a basic implementation for Mutation Events.
 type Mutation struct {
 	KeyName string
 	typ     string
-	Value   Value
+	NewVal  Value
+	OldVal  Value
 	Src     *Element
 }
 
 func (m Mutation) ObservedKey() string { return m.KeyName }
 func (m Mutation) Origin() *Element    { return m.Src }
 func (m Mutation) Type() string        { return m.typ }
-func (m Mutation) NewValue() Value     { return m.Value }
+func (m Mutation) NewValue() Value     { return m.NewVal }
+func (m Mutation) OldValue() Value     { return m.OldVal }
 
-func (e *Element) NewMutationEvent(category string, propname string, newvalue Value) Mutation {
-	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, e}
+func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
+	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, oldvalue, e}
 }

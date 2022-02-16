@@ -2,10 +2,10 @@
 package ui
 
 import (
-	"encoding/base64"
 	"errors"
 	"log"
 	"math/rand"
+	"strconv"
 	"strings"
 )
 
@@ -21,10 +21,8 @@ var (
 // do not expect to have the same id structure for different runs of a same program.
 func NewIDgenerator(seed int64) func() string {
 	return func() string {
-		bstr := make([]byte, 32)
 		rand.Seed(seed)
-		_, _ = rand.Read(bstr)
-		str := base64.RawStdEncoding.EncodeToString(bstr)
+		str := strconv.Itoa(rand.Int())
 		return str
 	}
 }
@@ -135,7 +133,7 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 
 // NewAppRoot returns the starting point of an app. It is a viewElement whose main
 // view neame is the root id.
-func (e *ElementStore) NewAppRoot(id string) *Element {
+func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
 	el.Parent = nil
@@ -147,7 +145,7 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.Set("internals", "root", Bool(true))
 	el.Set("event", "attached", Bool(true))
 	el.Set("event", "mounted", Bool(true))
-	return el
+	return BasicElement{el}
 }
 
 // NewConstructor registers and returns a new Element construcor function.
@@ -237,8 +235,9 @@ type Element struct {
 	Native NativeElement
 }
 
-func (e *Element) Element() *Element   { return e }
+func (e *Element) AsElement() *Element { return e }
 func (e *Element) isViewElement() bool { return e.InactiveViews != nil }
+func (e *Element) watchable()          {}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
@@ -260,11 +259,10 @@ func NewElement(name string, id string, doctype string) *Element {
 		NewElements(),
 		"",
 		newViewNodes(),
-		newViewAccessNode(nil,""),
+		newViewAccessNode(nil, ""),
 		nil,
 		nil,
 	}
-	e.Watch("ui", "command", e, DefaultCommandHandler)
 	return e
 }
 
@@ -274,14 +272,10 @@ func (e *Element) Root() *Element {
 	return e.root
 }
 
-// AnyElement is an interface type fo rany object that is instrinsically an Element.
-// Typically, an Element or a ViewElement.
-// An Element is generally a mostly static* structure.
-// A ViewElement is a kind of Element for which the structure is dynamic in a
-// predefined, predictable way. It allows for an Element to have different versions
-// of its internal structure, each version being called a View.
+// AnyElement is an interface type implemented by *Element :
+// Notably BasicElement and ViewElement.
 type AnyElement interface {
-	Element() *Element
+	AsElement() *Element
 }
 
 func (e *Element) isRoot() bool {
@@ -341,7 +335,7 @@ func (e *Elements) AtIndex(index int) *Element {
 func (e *Elements) Remove(el *Element) *Elements {
 	index := -1
 	for k, element := range e.List {
-		if element == el {
+		if element.ID == el.ID {
 			index = k
 			break
 		}
@@ -387,13 +381,6 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 		return e
 	}
 
-	/*if !e.Mounted() {
-			log.Print("Error: Element detached. should not happen.")
-			// TODO review which type of event could walk up a detached subtree
-			// for instance, how to update darkmode on detached elements especially
-			// on attachment. (life cycles? +  globally propagated values from root + mutations propagated in spite of detachment status)
-			return e // can happen if we are building a document fragment and try to dispatch a custom event
-	}*/
 	if e.path == nil {
 		log.Print("Error: Element path does not exist (yet).")
 		return e
@@ -456,7 +443,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 	child.root = parent.root // mounted once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
 	child.subtreeRoot = parent.subtreeRoot
 
-	child.link(parent)
+	child.link(BasicElement{parent})
 	//child.ViewAccessPath = computePath(child.ViewAccessPath,child.ViewAccessNode)
 
 	for _, descendant := range child.Children.List {
@@ -518,123 +505,97 @@ func detach(e *Element) {
 // root Element, the root Element will see its ("event","docupdate") property
 // set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
-
-	child := childEl.Element()
-	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
-		return e
-	}
-	if child.Parent != nil {
-		child.Parent.removeChild(child)
-	}
-
-	attach(e, child, true)
-
-	e.Children.InsertLast(child)
-	if e.Native != nil {
-		e.Native.AppendChild(child)
-	}
-	return e
+	return e.appendChild(childEl)
 }
 
 func (e *Element) appendChild(childEl AnyElement) *Element {
-	child := childEl.Element()
+	child := childEl.AsElement()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 	if child.Parent != nil {
-		child.Parent.removeChild(child)
+		child.Parent.removeChild(BasicElement{child})
 	}
-
-	attach(e, child, true)
-
-	e.Children.InsertLast(child)
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
+
+	attach(e, child, true)
+	e.Children.InsertLast(child)
+
 	return e
 }
 
 func (e *Element) PrependChild(childEl AnyElement) *Element {
 
-	child := childEl.Element()
+	child := childEl.AsElement()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 
 	if child.Parent != nil {
-		child.Parent.removeChild(child)
+		child.Parent.removeChild(BasicElement{child})
+	}
+	if e.Native != nil {
+		e.Native.PrependChild(child)
 	}
 
 	attach(e, child, true)
 
 	e.Children.InsertFirst(child)
-	if e.Native != nil {
-		e.Native.PrependChild(child)
-	}
+
 	return e
 }
 
 func (e *Element) prependChild(childEl AnyElement) *Element {
-	child := childEl.Element()
+	child := childEl.AsElement()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 
 	if child.Parent != nil {
-		child.Parent.removeChild(child)
+		child.Parent.removeChild(BasicElement{child})
+	}
+	if e.Native != nil {
+		e.Native.PrependChild(child)
 	}
 
 	attach(e, child, true)
 
 	e.Children.InsertFirst(child)
-	if e.Native != nil {
-		e.Native.PrependChild(child)
-	}
+
 	return e
 }
 
 func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
+	return e.insertChild(childEl, index)
+}
 
-	child := childEl.Element()
+func (e *Element) insertChild(childEl AnyElement, index int) *Element {
+	child := childEl.AsElement()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
 		return e
 	}
 	if child.Parent != nil {
-		child.Parent.removeChild(child)
+		child.Parent.removeChild(BasicElement{child})
+	}
+	if e.Native != nil {
+		e.Native.InsertChild(child, index)
 	}
 
 	attach(e, child, true)
 
 	e.Children.Insert(child, index)
-	if e.Native != nil {
-		e.Native.InsertChild(child, index)
-	}
 
 	return e
 }
 
-func (e *Element) insertChild(childEl AnyElement, index int) *Element {
-	child := childEl.Element()
-	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
-		return e
-	}
-	if child.Parent != nil {
-		child.Parent.removeChild(child)
-	}
-
-	attach(e, child, true)
-
-	e.Children.Insert(child, index)
-	if e.Native != nil {
-		e.Native.InsertChild(child, index)
-	}
-	return e
+func (e *Element) ReplaceChild(old AnyElement, new AnyElement) *Element {
+	return e.replaceChild(old, new)
 }
 
 // replaceChild will replace the target child Element with another.
@@ -642,27 +603,42 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 // The addition or removal of change observing objects is left at the discretion
 // of the user.
 func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
-	old := oldEl.Element()
-	new := newEl.Element()
+	old := oldEl.AsElement()
+	new := newEl.AsElement()
 	if e.DocType != new.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
 	}
-	if new.Parent != nil {
-		new.Parent.removeChild(new)
-	}
-	detach(old)
-	attach(e, new, true)
 
-	e.Children.Replace(old, new)
-	if e.Native != nil {
-		e.Native.ReplaceChild(old, new)
+	_, ok := e.hasChild(old)
+	if !ok {
+		return e
 	}
+
+	if new.Parent != nil {
+		new.Parent.removeChild(BasicElement{new})
+	}
+	if e.Native != nil {
+		e.Native.ReplaceChild(old.AsElement(), new.AsElement())
+	}
+	detach(old.AsElement())
+	attach(e, new.AsElement(), true)
+
+	e.Children.Replace(old.AsElement(), new.AsElement())
+
 	return e
 }
 
+func (e *Element) RemoveChild(childEl AnyElement) *Element {
+	return e.removeChild(childEl)
+}
+
 func (e *Element) removeChild(childEl AnyElement) *Element {
-	child := childEl.Element()
+	child := childEl.AsElement()
+	_, ok := e.hasChild(child)
+	if !ok {
+		return e
+	}
 	detach(child)
 	e.Children.Remove(child)
 
@@ -672,38 +648,54 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	return e
 }
 
+func (e *Element) RemoveChildren() *Element {
+	return e.removeChildren()
+}
+
 func (e *Element) removeChildren() *Element {
-	for _, child := range e.Children.List {
-		e.removeChild(child)
+	l:= make([]*Element, len(e.Children.List))
+	copy(l,e.Children.List)
+	for _, child := range l {
+		e.removeChild(BasicElement{child})
 	}
 	return e
 }
 
-func (e *Element) hasChild(any AnyElement) (int, bool) {
+func (e *Element) hasChild(any *Element) (int, bool) {
 	if e.Children == nil {
 		return -1, false
 	}
+
 	for k, child := range e.Children.List {
-		if child.ID == any.Element().ID {
+		if child.ID == any.ID {
 			return k, true
 		}
 	}
 	return -1, false
 }
 
-func (e *Element) Watch(category string, propname string, owner *Element, h *MutationHandler) *Element {
-	p, ok := owner.Properties.Categories[category]
-	if !ok {
-		p = newProperties()
-		owner.Properties.Categories[category] = p
+func (e *Element) SetChildren(any ...AnyElement) *Element {
+	e.RemoveChildren()
+	for _, el := range any {
+		e.AppendChild(el)
 	}
-	p.NewWatcher(propname, e)
-	e.PropMutationHandlers.Add(owner.ID+"/"+category+"/"+propname, h)
 	return e
 }
 
-func (e *Element) Unwatch(category string, propname string, owner *Element) *Element {
-	p, ok := owner.Properties.Categories[category]
+func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+	p, ok := owner.AsElement().Properties.Categories[category]
+	if !ok {
+		p = newProperties()
+		owner.AsElement().Properties.Categories[category] = p
+	}
+	p.NewWatcher(propname, e)
+	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
+
+	return e
+}
+
+func (e *Element) Unwatch(category string, propname string, owner Watchable) *Element {
+	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
 		return e
 	}
@@ -711,14 +703,14 @@ func (e *Element) Unwatch(category string, propname string, owner *Element) *Ele
 	return e
 }
 
-func (e *Element) WatchGroup(category string, target *Element, h *MutationHandler) *Element {
-	p, ok := target.Properties.Categories[category]
+func (e *Element) WatchGroup(category string, target Watchable, h *MutationHandler) *Element {
+	p, ok := target.AsElement().Properties.Categories[category]
 	if !ok {
 		p = newProperties()
-		target.Properties.Categories[category] = p
+		target.AsElement().Properties.Categories[category] = p
 	}
 	p.NewWatcher("existifallpropertieswatched", e)
-	e.PropMutationHandlers.Add(target.ID+"/"+category+"/"+"existifallpropertieswatched", h)
+	e.PropMutationHandlers.Add(target.AsElement().ID+"/"+category+"/"+"existifallpropertieswatched", h)
 	return e
 }
 
@@ -731,13 +723,16 @@ func (e *Element) UnwatchGroup(category string, owner *Element) *Element {
 	return e
 }
 
+/*
 func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	e.EventHandlers.AddEventHandler(event, handler)
 	if nativebinding != nil {
 		nativebinding(event, e)
 	}
 	return e
+
 }
+*/
 func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
 	e.EventHandlers.RemoveEventHandler(event, handler)
 	if native {
@@ -745,6 +740,37 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 			e.NativeEventUnlisteners.Apply(event)
 		}
 	}
+	return e
+}
+
+func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
+	n := 0
+	h := NewMutationHandler(func(evt MutationEvent) bool {
+		if n == 0 {
+			e.EventHandlers.AddEventHandler(event, handler)
+			if nativebinding != nil {
+				nativebinding(event, e)
+			}
+			n++
+		}
+		return false
+	})
+
+	g := NewMutationHandler(func(evt MutationEvent) bool {
+		var native bool
+		if nativebinding != nil {
+			native = true
+		}
+		if n > 0 {
+			e.RemoveEventListener(event, handler, native)
+			n--
+		}
+
+		return false
+	})
+	e.OnMount(h)
+	e.OnDisMount(g)
+
 	return e
 }
 
@@ -762,6 +788,20 @@ func (e *Element) OnMount(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
 		if !ok || !bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.Watch("event", "mounted", e, nh)
+}
+
+func (e *Element) OnDisMount(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok {
+			return true
+		}
+		if bool(b) {
 			return false
 		}
 		return h.Handle(evt)
@@ -789,38 +829,41 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
 
+	oldvalue, ok := e.Get(category, propname)
+
+	/*if category == "ui"{
+		if value == oldvalue && ok{
+			return
+		}
+	}*/
+
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
-			if category != "ui" {
-				storage.Store(e, category, propname, value, flags...)
-			}
-		}
-	}
-
-	if category == "ui" && propname != "mutationrecords" && propname != "command" {
-		mrs, ok := e.Get("ui", "mutationrecords")
-		if !ok {
-			mrs = NewList()
-		}
-		mrslist, ok := mrs.(List)
-		if !ok {
-			mrslist = NewList()
-		}
-		mrslist = append(mrslist, NewMutationRecord(category, propname, value))
-		e.Set("ui", "mutationrecords", mrslist)
-	}
-
-	// Mutationrecords persistence
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && category == "ui" && propname == "mutationrecords" {
 			storage.Store(e, category, propname, value, flags...)
 		}
 	}
+
 	e.Properties.Set(category, propname, value, inheritable)
-	evt := e.NewMutationEvent(category, propname, value)
-	e.PropMutationHandlers.DispatchEvent(evt)
+
+	// Mutation event propagation
+	evt := e.NewMutationEvent(category, propname, value, oldvalue)
+
+	props, ok := e.Properties.Categories[category]
+	if !ok {
+		panic("category should exist since property should have been stored")
+	}
+	watchers, ok := props.Watchers[propname]
+	if !ok {
+		return
+	}
+	if watchers == nil {
+		return
+	}
+	for _, w := range watchers.List {
+		w.PropMutationHandlers.DispatchEvent(evt)
+	}
+	//e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 func (e *Element) GetData(propname string) (Value, bool) {
@@ -836,21 +879,29 @@ func (e *Element) SetData(propname string, value Value, flags ...bool) {
 }
 
 // SetUI stores data used for Graphical rendering in the "ui" namespace (stands for
-// user interface). This namespace should remain private to an Element.
+// user interface). This namespace should remain private to an Element and used
+// to trigger User Interface updates.
+// Hence, the UI State is constituted of the values used for the representation of
+// data to the end-user.
+// Synchronization between the Data and the UI is therfore manual.
+// UI props shall not be interdependent.
 // Other Element may want to "watch" the corresponding data namespace instead if
-// there exist inter-dependences.
+// there exist interconnections.
 func (e *Element) SetUI(propname string, value Value, flags ...bool) {
 	e.Set("ui", propname, value, flags...)
 }
 
-// SetDataSyncUI will set a "data" property and update the same-name property value
-// located in the "ui namespace/category and used by the User Interface, for instance, for rendering..
+// SetDataSetUI will set a "data" property and update the same-name property value
+// located in the "ui namespace/category and used to update the the User Interface, for instance, for rendering..
 // Typically NOT used when the data is being updated from the UI.
-func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
+// This is used where Synchronization between the data and its representation are
+// needed. (in opposition to automatically updating the UI via data mutation observervation)
+func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 	var inheritable bool
 	if len(flags) > 0 {
 		inheritable = flags[0]
 	}
+	oldvalue, _ := e.GetData(propname)
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
 
@@ -864,17 +915,15 @@ func (e *Element) SetDataSyncUI(propname string, value Value, flags ...bool) {
 
 	e.Set("ui", propname, value, flags...)
 
-	evt := e.NewMutationEvent("data", propname, value)
+	evt := e.NewMutationEvent("data", propname, value, oldvalue)
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 // SyncUISetData is used in event handlers when a user changed a value accessible
 // via the User Interface, typically.
 // It does not trigger mutationahdnler of the "ui" namespace
+// (to avoid rerendering an already up-to-date User Interface)
 //
-// For instance, after a User event changes the value via a GUI control, we would set
-// this value to the new value chosen by the user and then set the corresponding data
-// with a call to SetData (and not SetDataSyncUI since the UI value is alread up-to-date).
 //
 // First flag in the variadic argument, if true, denotes whether the property should be inheritable.
 func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
@@ -894,24 +943,13 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	}
 
 	e.Properties.Set("ui", propname, value, inheritable)
-	if propname != "mutationrecords" {
-		mrs, ok := e.Get("ui", "mutationrecords")
-		if !ok {
-			mrs = NewList()
-		}
-		mrslist, ok := mrs.(List)
-		if !ok {
-			mrslist = NewList()
-		}
-		mrslist = append(mrslist, NewMutationRecord("ui", propname, value))
-		e.Set("ui", "mutationrecords", mrslist)
-	}
+
 
 	e.SetData(propname, value, flags...)
 }
 
 // LoadProperty is a function typically used to return a UI Element to a
-// given state. As such, it does not trigger a mutation event
+// given state.
 // The proptype is a string that describes the property (default,inherited, local, or inheritable).
 // For properties of the 'ui' namespace, i.e. properties that are used for rendering,
 // we create and dispatch a mutation event since loading a property is change inducing at the
@@ -919,7 +957,7 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 func LoadProperty(e *Element, category string, propname string, proptype string, value Value) {
 	e.Properties.Load(category, propname, proptype, value)
 	if category == "ui" {
-		evt := e.NewMutationEvent(category, propname, value)
+		evt := e.NewMutationEvent(category, propname, value, nil)
 		e.PropMutationHandlers.DispatchEvent(evt)
 	}
 }
@@ -928,8 +966,9 @@ func LoadProperty(e *Element, category string, propname string, proptype string,
 // Inherited properties cannot be deleted.
 // Default properties cannot be deleted either for now.
 func (e *Element) Delete(category string, propname string) {
+	oldvalue, _ := e.Get(category, propname)
 	e.Properties.Delete(category, propname)
-	evt := e.NewMutationEvent(category, propname, nil)
+	evt := e.NewMutationEvent(category, propname, nil, oldvalue)
 	e.PropMutationHandlers.DispatchEvent(evt)
 }
 
@@ -993,8 +1032,8 @@ func EnablePropertyAutoInheritance() string {
 func (e *Element) Route() string {
 	var Route = ""
 	var uri string
-	e.ViewAccessPath = computePath(newViewNodes(),e.ViewAccessNode)
-	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes)==0{
+	e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
+	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes) == 0 {
 		return Route + "/" + uri
 	}
 
@@ -1054,20 +1093,20 @@ func NewParameterizedView(parametername string, paramFn func(string, View) (*Vie
 }
 */
 
-type viewAccessNode struct{
+type viewAccessNode struct {
 	previous *viewAccessNode
 	*Element
 	viewname string
 }
 
-func newViewAccessNode(v *Element, viewname string) *viewAccessNode{
-	return &viewAccessNode{nil,v,viewname}
+func newViewAccessNode(v *Element, viewname string) *viewAccessNode {
+	return &viewAccessNode{nil, v, viewname}
 }
 
-func(v *viewAccessNode) Link(any AnyElement){
-	e:= any.Element()
-	if !e.isViewElement(){
-		if e.ViewAccessNode != nil{
+func (v *viewAccessNode) Link(any AnyElement) {
+	e := any.AsElement()
+	if !e.isViewElement() {
+		if e.ViewAccessNode != nil {
 			v.previous = e.ViewAccessNode.previous
 			//v.viewname = e.ViewAccessNode.viewname
 			v.Element = e.ViewAccessNode.Element
@@ -1079,34 +1118,34 @@ func(v *viewAccessNode) Link(any AnyElement){
 		return
 	}
 	v.previous = e.ViewAccessNode
-	v.Element=e
+	v.Element = e
 }
 
-func(child *Element) link(any AnyElement){
-	parent:= any.Element()
-	if !parent.isViewElement(){
-		child.ViewAccessNode=parent.ViewAccessNode
+func (child *Element) link(any AnyElement) {
+	parent := any.AsElement()
+	if !parent.isViewElement() {
+		child.ViewAccessNode = parent.ViewAccessNode
 		return
 	}
 	child.ViewAccessNode.Element = parent
 	child.ViewAccessNode.previous = parent.ViewAccessNode
 }
 
-func computePath(p *viewNodes, v *viewAccessNode) *viewNodes{
-	if v == nil || v.Element == nil{
+func computePath(p *viewNodes, v *viewAccessNode) *viewNodes {
+	if v == nil || v.Element == nil {
 		return p
 	}
-	node:= newViewNode(v.Element,v.viewname)
+	node := newViewNode(v.Element, v.viewname)
 	p.Prepend(node)
-	if v.previous !=nil{
-		return computePath(p,v.previous)
+	if v.previous != nil {
+		return computePath(p, v.previous)
 	}
 	return p
 }
 
 /*
 unc(v *viewAccessNode) LinkView(any ViewElement,viewname string){
-	e:= any.Element()
+	e:= any.AsElement()
 
 	insert:= newViewAccessNode(e,viewname)
 	insert.previous = e.ViewAccessNode.previous

@@ -2,10 +2,11 @@
 package ui
 
 import (
-	"time"
 	"log"
+	"time"
 	//"strings"
 )
+
 type MutationRecord Object
 
 func (m MutationRecord) discriminant() discriminant { return "particleui" }
@@ -212,7 +213,7 @@ func (o Object) Value() Value {
 			p.Set(k, u.Value())
 		}
 		return p
-	case "Command":
+	/*case "Command":
 		p := NewObject()
 		for k, val := range o {
 			v, ok := val.(Value)
@@ -255,7 +256,7 @@ func (o Object) Value() Value {
 			}
 			p.Set(k, v)
 		}
-		return MutationRecord(p)
+		return MutationRecord(p)*/
 	case "Element":
 		p := NewObject()
 		for k, val := range o {
@@ -323,10 +324,11 @@ func (o Object) Value() Value {
 		constructor, ok := elstore.Constructors[string(cname)]
 		if !ok {
 			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
+			return nil
 		}
 		ename, ok := name.(String)
 		if !ok {
-			log.Print("Element name in Value of wring type.")
+			log.Print("Element name in Value of wrong type.")
 			return nil
 		}
 
@@ -382,4 +384,61 @@ func NewList(val ...Value) List {
 	}
 	l := make([]Value, 0)
 	return List(l)
+}
+
+type ListofObjects List
+
+func (l ListofObjects) discriminant() discriminant { return "particleui" }
+func (l ListofObjects) RawValue() Object {
+	o := NewObject().SetType("List")
+
+	raw := make([]interface{}, 0)
+	for _, v := range List(l) {
+		raw = append(raw, v.RawValue())
+	}
+	o["value"] = raw
+	return o.RawValue()
+}
+func (l ListofObjects) ValueType() string { return "List" }
+
+func NewListofObjects() ListofObjects {
+	l := make([]Value, 0)
+
+	return ListofObjects(l)
+}
+
+func (l ListofObjects) Push(objs ...Object) ListofObjects {
+	for _, v := range objs {
+		l = append(l, v)
+	}
+	return l
+}
+
+func (l ListofObjects) Pop(index int) ListofObjects {
+	i := len(l)
+	if i == 0 {
+		return l
+	}
+	if index < 0 || index >= i {
+		return l
+	}
+	m := make([]Value, i-1)
+	m = append(l[:index], l[index+1:]...)
+	return m
+}
+
+func (l ListofObjects) Get(index int) Object {
+	i := len(l)
+	if i == 0 {
+		return nil
+	}
+	if index < 0 || index >= i {
+		return nil
+	}
+	v := l[index]
+	o, ok := v.(Object)
+	if !ok {
+		panic("this should be a list of objects. it should contain objects only")
+	}
+	return o
 }

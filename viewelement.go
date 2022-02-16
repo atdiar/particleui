@@ -14,14 +14,18 @@ type ViewElement struct {
 
 // Element returns the underlying *Element corresponding to the view.
 // A ViewElement constitutes merely an interface for specific *Element objects.
-func (v ViewElement) Element() *Element {
+func (v ViewElement) AsElement() *Element {
 	return v.Raw
 }
+
+
+func (v ViewElement) watchable() {}
+func (v ViewElement) uiElement() {}
 
 // hasParameterizedView return the parameter name stripped from the initial colon ( ":")
 // if it exists.
 func (v ViewElement) hasParameterizedView() (string, bool) {
-	e := v.Element()
+	e := v.AsElement()
 	if strings.HasPrefix(e.ActiveView, ":") {
 		return strings.TrimPrefix(e.ActiveView, ":"), true
 	}
@@ -34,40 +38,44 @@ func (v ViewElement) hasParameterizedView() (string, bool) {
 }
 
 func NewViewElement(e *Element, views ...View) ViewElement {
+	if e.InactiveViews == nil {
+		e.InactiveViews = make(map[string]View) // Important to put that on top... it creates
+		// effectively a ViewElement out of an Elmeent. attach below depends on that
+	}
 	v := ViewElement{e}
 	for _, view := range views {
 		v.AddView(view)
 	}
 
-		// necessary if the element we make a viewElement of was already mounted. It doesn't get reattached unless modification
-		l, ok := e.Global.Get("internals", "views")
+	// necessary if the element we make a viewElement of was already mounted. It doesn't get reattached unless modification
+	l, ok := e.Global.Get("internals", "views")
+	if !ok {
+		list := NewList(e)
+		e.Global.Set("internals", "views", list)
+	} else {
+		list, ok := l.(List)
 		if !ok {
-			list := NewList(e)
+			list = NewList(e)
 			e.Global.Set("internals", "views", list)
 		} else {
-			list, ok := l.(List)
-			if !ok {
-				list = NewList(e)
-				e.Global.Set("internals", "views", list)
-			} else {
-				list = append(list, e)
-				e.Global.Set("internals", "views", list)
-			}
+			list = append(list, e)
+			e.Global.Set("internals", "views", list)
 		}
+	}
 	return v
 }
 
 // AddView adds a view to a ViewElement.
 func (v ViewElement) AddView(view View) ViewElement {
-	v.Element().addView(view)
-	v.Element().Set("authorized", view.Name(), Bool(true))
+	v.AsElement().addView(view)
+	v.AsElement().Set("authorized", view.Name(), Bool(true))
 	return v
 }
 
 // RetrieveView returns a pointer to a View if it exists. The View should not
 // be active.
 func (v ViewElement) RetrieveView(name string) *View {
-	return v.Element().retrieveView(name)
+	return v.AsElement().retrieveView(name)
 }
 
 // AythorizeViewIf allows to make the activation of a view conditional to a boolean
@@ -81,20 +89,20 @@ func (v ViewElement) AuthorizeViewIf(viewname string, category string, property 
 			authorized = true
 		}
 	}
-	v.Element().Set("authorized", viewname, Bool(authorized))
-	v.Element().Watch(category, property, target, NewMutationHandler(func(evt MutationEvent) bool {
+	v.AsElement().Set("authorized", viewname, Bool(authorized))
+	v.AsElement().Watch(category, property, target, NewMutationHandler(func(evt MutationEvent) bool {
 		val := evt.NewValue()
 		if val == Bool(true) {
-			v.Element().Set("authorized", viewname, Bool(true))
+			v.AsElement().Set("authorized", viewname, Bool(true))
 		} else {
-			v.Element().Set("authorized", viewname, Bool(false))
+			v.AsElement().Set("authorized", viewname, Bool(false))
 		}
 		return false
 	}))
 }
 
 func (v ViewElement) isViewAuthorized(name string) bool {
-	val, ok := v.Element().Get("authorized", name)
+	val, ok := v.AsElement().Get("authorized", name)
 	if !ok {
 		return false
 	}
@@ -107,17 +115,17 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 // ActivateView sets the active view of  a ViewElement.
 // If no View exists for the name argument or is not authorized, an error is returned.
 func (v ViewElement) ActivateView(name string) error {
-	val, ok := v.Element().Get("authorized", name)
+	val, ok := v.AsElement().Get("authorized", name)
 	if !ok {
-		panic(errors.New("authorization error " + name + v.Element().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
+		panic(errors.New("authorization error " + name + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
 	if val != Bool(true) {
 		return errors.New("Unauthorized")
 	}
-	if v.Element().ActiveView == name {
+	if v.AsElement().ActiveView == name {
 		return nil
 	}
-	return v.Element().activateView(name)
+	return v.AsElement().activateView(name)
 }
 
 func (e *Element) addView(v View) *Element {
@@ -128,7 +136,7 @@ func (e *Element) addView(v View) *Element {
 
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
-			child.ViewAccessNode = newViewAccessNode(child,v.Name())
+			child.ViewAccessNode = newViewAccessNode(child, v.Name())
 			attach(e, child, false)
 		}
 	}
@@ -180,7 +188,7 @@ func (e *Element) activateView(name string) error {
 				if ok && ok2 && oldviewname != "" && e.Children != nil {
 					for _, child := range e.Children.List {
 						if !viewIsParameterized {
-							e.removeChild(child)
+							e.removeChild(BasicElement{child})
 							attach(e, child, false)
 						}
 					}
@@ -192,9 +200,9 @@ func (e *Element) activateView(name string) error {
 				e.ActiveView = parameterName
 				// Let's append the new view Elements
 				for _, newchild := range view.Elements().List {
-					e.appendChild(newchild)
+					e.appendChild(BasicElement{newchild})
 				}
-				e.SetDataSyncUI("activeview", String(name), false)
+				e.SetDataSetUI("activeview", String(name), false)
 
 				return nil
 			}
@@ -211,7 +219,7 @@ func (e *Element) activateView(name string) error {
 	if ok && ok2 && e.Children != nil {
 		for _, child := range e.Children.List {
 			if !viewIsParameterized {
-				e.removeChild(child)
+				e.removeChild(BasicElement{child})
 				attach(e, child, false)
 			}
 		}
@@ -223,7 +231,7 @@ func (e *Element) activateView(name string) error {
 	e.ActiveView = name
 	// we attach and activate the desired view
 	for _, child := range newview.Elements().List {
-		e.appendChild(child)
+		e.appendChild(BasicElement{child})
 	}
 	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name), false)

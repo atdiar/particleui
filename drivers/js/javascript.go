@@ -6,13 +6,16 @@ package doc
 
 import (
 	"encoding/json"
-	"errors"
+	//"errors"
+	"io"
 	"log"
 	"strconv"
 	"strings"
 	"syscall/js"
+	"time"
 
 	"github.com/atdiar/particleui"
+	"golang.org/x/net/html"
 )
 
 var (
@@ -23,7 +26,7 @@ var (
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
-var NewID = ui.NewIDgenerator(56813256545869)
+var NewID = ui.NewIDgenerator(time.Now().UnixNano())
 
 // mutationCaptureMode describes how a Go App may capture textarea value changes
 // that happen in native javascript. For instance, when a blur event is dispatched
@@ -227,58 +230,8 @@ func loader(s string) func(e *ui.Element) error {
 					if err != nil {
 						return err
 					}
-					if !(category == "ui" && propname == "mutationrecords") {
-						ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-						//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
-					} else {
-						ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-						rawmutationrecords := rawvalue.Value()
-						// log.Print("mutationrecords storage...", rawvalue.ValueType(), rawmutationrecords) // DEBUG
-						if rawmutationrecords.ValueType() != "List" {
-							return errors.New("mutationrecords are not of type List")
-						}
-						mutationrecordlist, ok := rawmutationrecords.(ui.List)
-						if !ok {
-							return errors.New("mutationrecords are not of List type")
-						}
-
-						for _, mutationrecord := range mutationrecordlist {
-							record, ok := mutationrecord.(ui.MutationRecord)
-							if !ok {
-								// log.Print("MUTATION RECORD: ", mutationrecord.ValueType()) // DEBUG
-								return errors.New("mutationrecord is not of expected type.")
-							}
-							vcategory, ok := ui.Object(record).Get("category")
-							if !ok {
-								return errors.New("mutationrecord bad encoding, unable to retrieve category.")
-							}
-							category, ok := vcategory.(ui.String)
-							if !ok {
-								log.Print("category is still in raw format", vcategory)
-								return errors.New("mutationrecord bad encoding, expected ui.String category.")
-							}
-
-							vpropname, ok := ui.Object(record).Get("property")
-							if !ok {
-								return errors.New("propname not found")
-							}
-							propname, ok := vpropname.(ui.String)
-							if !ok {
-								return errors.New("mutationrecord bad encoding, expected ui.String property")
-							}
-							value, ok := ui.Object(record).Get("value")
-							if !ok {
-								return errors.New("value not found")
-							}
-							tval, ok := value.(ui.Value)
-							if !ok {
-								return errors.New("value should implement ui.Value")
-							}
-							e.Properties.Set(string(category), string(propname), tval)
-							evt := e.NewMutationEvent(string(category), string(propname), tval)
-							e.PropMutationHandlers.DispatchEvent(evt)
-						}
-					}
+					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
+					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
 		}
@@ -291,15 +244,15 @@ var loadfromlocalstorage = loader("localStorage")
 
 // Window is a ype that represents a browser window
 type Window struct {
-	UIElement *ui.Element
+	UIElement ui.BasicElement
 }
 
-func (w Window) Element() *ui.Element {
+func (w Window) AsBasicElement() ui.BasicElement {
 	return w.UIElement
 }
 
 func (w Window) SetTitle(title string) {
-	w.Element().Set("ui", "title", ui.String(title))
+	w.AsBasicElement().AsElement().Set("ui", "title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -345,7 +298,7 @@ func newWindow(title string, options ...string) Window {
 		return e
 	})
 
-	return Window{tryLoad(c("window", "window", options...))}
+	return Window{ui.BasicElement{LoadElement(c("window", "window", options...))}}
 }
 
 func GetWindow(options ...string) Window {
@@ -365,7 +318,7 @@ func GetWindow(options ...string) Window {
 		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
 		return Window{}
 	}
-	return Window{w}
+	return Window{ui.BasicElement{w}}
 }
 
 // NativeElement defines a wrapper around a js.Value that implements the
@@ -433,7 +386,8 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot insert " + child.Name)
 		return
 	}
-	n.JSValue().Call("removeChild", v.JSValue())
+	//n.JSValue().Call("removeChild", v.JSValue())
+	v.JSValue().Call("remove")
 }
 
 /*
@@ -467,11 +421,11 @@ func EnableLocalPersistence() string {
 }
 
 type Document struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (d Document) Element() *ui.Element {
-	return d.UIElement
+func (d Document) Render(w io.Writer) error {
+	return html.Render(w, NewHTMLTree(d))
 }
 
 // NewDocument returns the root of new js app. It is the top-most element
@@ -483,7 +437,7 @@ func (d Document) Element() *ui.Element {
 func NewDocument(id string, options ...string) Document {
 	var newDocument = Elements.NewConstructor("root", func(name string, id string) *ui.Element {
 
-		e := Elements.NewAppRoot(id)
+		e := Elements.NewAppRoot(id).AsElement()
 
 		root := js.Global().Get("document").Get("body")
 		if !root.Truthy() {
@@ -520,31 +474,29 @@ func NewDocument(id string, options ...string) Document {
 		e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			route := js.Global().Get("location").Get("pathname").String()
 			log.Println("init", route) //DEBUG
-			e.Set("navigation","routechangerequest",ui.String(route))
+			e.Set("navigation", "routechangerequest", ui.String(route))
 			return false
 		}))
 
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	return Document{tryLoad(newDocument(id, id, options...))}
+	return Document{ui.BasicElement{LoadElement(newDocument(id, id, options...))}}
 }
 
 // Div is a concrete type that holds the common interface to Div *ui.Element objects.
 // i.e. ui.Element whose constructor name is "div" and represents html div elements.
 type Div struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (d Div) Element() *ui.Element { return d.UIElement }
-
 func (d Div) Contenteditable(b bool) Div {
-	d.Element().SetDataSyncUI("contenteditable", ui.Bool(b))
+	d.AsElement().SetDataSetUI("contenteditable", ui.Bool(b))
 	return d
 }
 
 func (d Div) SetText(str string) Div {
-	d.Element().SetDataSyncUI("text", ui.String(str))
+	d.AsElement().SetDataSetUI("text", ui.String(str))
 	return d
 }
 
@@ -585,20 +537,19 @@ func NewDiv(name string, id string, options ...string) Div {
 			if !ok {
 				return true
 			}
-			// TODO check if children is not a text node singleton
-			e.Mutate(ui.RemoveChildrenCommand())
-			tn := NewTextNode().SetValue(str)
-			e.Mutate(ui.AppendChildCommand(tn.Element()))
+			htmlDiv.Set("textContent", string(str))
+
 			return false
 		}))
 
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	return Div{tryLoad(newDiv(name, id, options...))}
+	return Div{ui.BasicElement{LoadElement(newDiv(name, id, options...))}}
 }
 
-func tryLoad(d *ui.Element) *ui.Element {
+// LoadElement will load Element properties.
+func LoadElement(d *ui.Element) *ui.Element {
 	pmode := ui.PersistenceMode(d)
 	storage, ok := d.ElementStore.PersistentStorer[pmode]
 	if ok {
@@ -611,23 +562,26 @@ func tryLoad(d *ui.Element) *ui.Element {
 }
 
 // Tooltip defines the type implementing the interface of a tooltip ui.Element.
-// The default ui.Element interface is reachable via a call to the Element() method.
+// The default ui.Element interface is reachable via a call to the   AsBasicElement() method.
 type Tooltip struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (t Tooltip) Element() *ui.Element {
-	return t.UIElement
+// SetContent sets the content of the tooltip.
+func (t Tooltip) SetContent(content ui.BasicElement) Tooltip {
+	t.AsElement().SetData("content", content.AsElement())
+	return t
 }
 
-// SetContent sets the content of the tooltip. To pass some text, use a TextNode.
-func (t Tooltip) SetContent(content *ui.Element) Tooltip {
-	t.Element().SetData("content", content)
+// SetContent sets the content of the tooltip.
+func (t Tooltip) SetText(content string) Tooltip {
+	t.AsElement().SetData("content", ui.String(content))
 	return t
 }
 
 var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
 	e := ui.NewElement(name, id, Elements.DocType)
+	e.Set("internals", "tag", ui.String("div"))
 	e = enableClasses(e)
 
 	htmlTooltip := js.Global().Get("document").Call("getElementById", id)
@@ -640,15 +594,15 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 	n := NewNativeElementWrapper(htmlTooltip)
 	e.Native = n
 	SetAttribute(e, "id", id)
+	AddClass(e, "tooltip")
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		content, ok := evt.NewValue().(*ui.Element)
 		if ok {
 			tooltip := evt.Origin()
-			// tooltip.RemoveChildren()
-			tooltip.Set("ui", "command", ui.RemoveChildrenCommand(), false)
-			// tooltip.AppendChild(content)
-			tooltip.Set("ui", "command", ui.AppendChildCommand(content), false)
+
+			tooltip.AsElement().SetChildren(ui.BasicElement{content})
+
 			return false
 		}
 		strcontent, ok := evt.NewValue().(ui.String)
@@ -657,12 +611,10 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 		}
 
 		tooltip := evt.Origin()
-		// tooltip.RemoveChildren()
-		tooltip.Set("ui", "command", ui.RemoveChildrenCommand(), false)
-		tn := NewTextNode()
-		tn.SetValue(strcontent)
-		//tooltip.AppendChild(tn)
-		tooltip.Set("ui", "command", ui.AppendChildCommand(tn.Element()), false)
+		tooltip.RemoveChildren()
+
+		htmlTooltip.Set("textContent", strcontent)
+
 		return false
 	})
 	e.Watch("data", "content", e, h)
@@ -673,9 +625,9 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 func HasTooltip(target *ui.Element) (Tooltip, bool) {
 	v := target.ElementStore.GetByID(target.ID + "-tooltip")
 	if v == nil {
-		return Tooltip{v}, false
+		return Tooltip{ui.BasicElement{v}}, false
 	}
-	return Tooltip{v}, true
+	return Tooltip{ui.BasicElement{v}}, true
 }
 
 // EnableTooltip, when passed to a constructor which has the AllowTooltip option,
@@ -690,7 +642,7 @@ func EnableTooltip() string {
 }
 
 var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element) *ui.Element {
-	e := tryLoad(tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip"))
+	e := LoadElement(tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip"))
 	// Let's observe the target element which owns the tooltip too so that we can
 	// change the tooltip automatically from there.
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -699,21 +651,17 @@ var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Eleme
 	})
 	target.Watch("tooltip", "content", target, h)
 
-	//target.AppendChild(e)
-	target.Set("ui", "command", ui.AppendChildCommand(e), false)
+	target.AppendChild(ui.BasicElement{e})
+
 	return target
 })
 
 type TextArea struct {
-	UIElement *ui.Element
-}
-
-func (t TextArea) Element() *ui.Element {
-	return t.UIElement
+	ui.BasicElement
 }
 
 func (t TextArea) Text() string {
-	v, ok := t.Element().GetData("text")
+	v, ok := t.AsElement().GetData("text")
 	if !ok {
 		return ""
 	}
@@ -725,17 +673,17 @@ func (t TextArea) Text() string {
 }
 
 func (t TextArea) SetText(text string) TextArea {
-	t.Element().SetDataSyncUI("text", ui.String(text))
+	t.AsElement().SetDataSetUI("text", ui.String(text))
 	return t
 }
 
 func (t TextArea) SetColumns(i int) TextArea {
-	t.Element().SetDataSyncUI("cols", ui.Number(i))
+	t.AsElement().SetDataSetUI("cols", ui.Number(i))
 	return t
 }
 
 func (t TextArea) SetRows(i int) TextArea {
-	t.Element().SetDataSyncUI("rows", ui.Number(i))
+	t.AsElement().SetDataSetUI("rows", ui.Number(i))
 	return t
 }
 
@@ -780,13 +728,13 @@ func NewTextArea(name string, id string, rows int, cols int, options ...string) 
 
 		n := NewNativeElementWrapper(htmlTextArea)
 		e.Native = n
-		SetAttribute(e, "name", ename)
+		//SetAttribute(e, "name", ename)
 		SetAttribute(e, "id", eid)
-		e.SetDataSyncUI("rows", ui.String(strconv.Itoa(rows)))
-		e.SetDataSyncUI("cols", ui.String(strconv.Itoa(cols)))
+		e.SetDataSetUI("rows", ui.String(strconv.Itoa(rows)))
+		e.SetDataSetUI("cols", ui.String(strconv.Itoa(cols)))
 		return e
 	}, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return TextArea{tryLoad(t(name, id, options...))}
+	return TextArea{ui.BasicElement{LoadElement(t(name, id, options...))}}
 }
 
 // allowTextAreaDataBindingOnBlur is a constructor option for TextArea UI elements enabling
@@ -853,11 +801,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 }
 
 type Header struct {
-	UIElement *ui.Element
-}
-
-func (h Header) Element() *ui.Element {
-	return h.UIElement
+	ui.BasicElement
 }
 
 // NewHeader is a constructor for a html header element.
@@ -880,15 +824,11 @@ func NewHeader(name string, id string, options ...string) Header {
 		}
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Header{tryLoad(c(name, id, options...))}
+	return Header{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type Footer struct {
-	UIElement *ui.Element
-}
-
-func (f Footer) Element() *ui.Element {
-	return f.UIElement
+	ui.BasicElement
 }
 
 // NewFooter is a constructor for an html footer element.
@@ -913,15 +853,283 @@ func NewFooter(name string, id string, options ...string) Footer {
 
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Footer{tryLoad(c(name, id, options...))}
+	return Footer{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type Section  struct {
+	ui.BasicElement
+}
+
+// NewSection is a constructor for html section elements.
+func NewSection(name string, id string, options ...string) Section {
+	c := Elements.NewConstructor("section", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlSection := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlSection.IsNull()
+		if !exist {
+			htmlSection = js.Global().Get("document").Call("createElement", "section")
+		}
+
+		n := NewNativeElementWrapper(htmlSection)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Section{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H1  struct {
+	ui.BasicElement
+}
+
+func(h H1) SetText(s string) H1{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH1 is a constructor for html heading H1 elements.
+func NewH1(name string, id string, options ...string) H1 {
+	c := Elements.NewConstructor("h1", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH1 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH1.IsNull()
+		if !exist {
+			htmlH1 = js.Global().Get("document").Call("createElement", "h1")
+		}
+
+		n := NewNativeElementWrapper(htmlH1)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH1.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H1{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H2  struct {
+	ui.BasicElement
+}
+
+func(h H2) SetText(s string) H2{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH2 is a constructor for html heading H2 elements.
+func NewH2(name string, id string, options ...string) H2 {
+	c := Elements.NewConstructor("h2", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH2 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH2.IsNull()
+		if !exist {
+			htmlH2 = js.Global().Get("document").Call("createElement", "h2")
+		}
+
+		n := NewNativeElementWrapper(htmlH2)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH2.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H2{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H3  struct {
+	ui.BasicElement
+}
+
+func(h H3) SetText(s string) H3{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH3 is a constructor for html heading H3 elements.
+func NewH3(name string, id string, options ...string) H3 {
+	c := Elements.NewConstructor("h3", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH3 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH3.IsNull()
+		if !exist {
+			htmlH3 = js.Global().Get("document").Call("createElement", "h3")
+		}
+
+		n := NewNativeElementWrapper(htmlH3)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH3.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H3{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H4  struct {
+	ui.BasicElement
+}
+
+func(h H4) SetText(s string) H4{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH4 is a constructor for html heading H4 elements.
+func NewH4(name string, id string, options ...string) H4 {
+	c := Elements.NewConstructor("h4", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH4 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH4.IsNull()
+		if !exist {
+			htmlH4 = js.Global().Get("document").Call("createElement", "h4")
+		}
+
+		n := NewNativeElementWrapper(htmlH4)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH4.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H4{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H5  struct {
+	ui.BasicElement
+}
+
+func(h H5) SetText(s string) H5{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH5 is a constructor for html heading H5 elements.
+func NewH5(name string, id string, options ...string) H5 {
+	c := Elements.NewConstructor("h5", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH5 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH5.IsNull()
+		if !exist {
+			htmlH5 = js.Global().Get("document").Call("createElement", "h5")
+		}
+
+		n := NewNativeElementWrapper(htmlH5)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH5.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H5{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+type H6  struct {
+	ui.BasicElement
+}
+
+func(h H6) SetText(s string) H6{
+	h.AsElement().SetDataSetUI("text", ui.String(s))
+	return h
+}
+
+// NewH6 is a constructor for html heading H6 elements.
+func NewH6(name string, id string, options ...string) H6 {
+	c := Elements.NewConstructor("h6", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlH6 := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlH6.IsNull()
+		if !exist {
+			htmlH6 = js.Global().Get("document").Call("createElement", "h6")
+		}
+
+		n := NewNativeElementWrapper(htmlH6)
+		e.Native = n
+		if !exist {
+			SetAttribute(e, "id", id)
+		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			str, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlH6.Set("innerHTML", string(str))
+
+			return false
+		}))
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return H6{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type Span struct {
-	UIElement *ui.Element
-}
-
-func (s Span) Element() *ui.Element {
-	return s.UIElement
+	ui.BasicElement
 }
 
 // NewSpan is a constructor for html span elements.
@@ -943,20 +1151,16 @@ func NewSpan(name string, id string, options ...string) Span {
 		}
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Span{tryLoad(c(name, id, options...))}
+	return Span{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type Paragraph struct {
-	UIElement *ui.Element
-}
-
-func (p Paragraph) Element() *ui.Element {
-	return p.UIElement
+	ui.BasicElement
 }
 
 // NewParagraph is a constructor for html paragraph elements.
 func NewParagraph(name string, id string, options ...string) Paragraph {
-	c := Elements.NewConstructor("paragraph", func(name string, id string) *ui.Element {
+	c := Elements.NewConstructor("p", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
@@ -973,10 +1177,10 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 		}
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Paragraph{tryLoad(c(name, id, options...))}
+	return Paragraph{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type Nav struct {
+/*type Nav struct {
 	UIElement *ui.Element
 }
 
@@ -984,7 +1188,7 @@ func (n Nav) Element() *ui.Element {
 	return n.UIElement
 }
 
-func (n Nav) AppendAnchorLink(l Link) Nav {
+func (n Nav) AppendAnchorLink(l Anchor) Nav {
 	// TODO append link element
 	n.Element().AppendChild(l.Element())
 	return n
@@ -1011,31 +1215,37 @@ func NewNavMenu(name string, id string, options ...string) Nav {
 
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Nav{tryLoad(c(name, id, options...))}
+	return Nav{LoadElement(c(name, id, options...))}
+}
+*/
+
+type Anchor struct {
+	ui.BasicElement
 }
 
-type Link struct {
-	UIElement *ui.Element
+func (a Anchor) SetHREF(target string) Anchor {
+	a.AsElement().SetDataSetUI("href", ui.String(target))
+	return a
 }
 
-func (l Link) Element() *ui.Element {
-	return l.UIElement
+func (a Anchor) FromLink(link ui.Link) Anchor {
+	a.AsElement().Watch("event", "activated", link.Raw, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		a.SetHREF(link.URI())
+		return false
+	}))
+
+	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
+		evt.PreventDefault()
+		link.Activate()
+		return false
+	}), NativeEventBridge)
+
+	return a
 }
 
-// NewAnchor creates an html anchor element which points to the object
-// passed as argument. The anchor id becomes the target Element ID prepended
-// with the string "link_"
-// If the object does not exist, it points to itself. The link uses the id passed
-// as argument without prepending anything.
-// TODO replace name,id string arguments by *ui.Element argument
-func NewLink(target *ui.Element, options ...string) Link {
-	var Name = "link"
-	var ID = NewID()
-	if target != nil {
-		Name = target.Name + "_link"
-		ID = target.ID + "_link"
-	}
-	c := Elements.NewConstructor("link", func(name string, id string) *ui.Element {
+// NewAnchor creates an html anchor element.
+func NewAnchor(target string, name string, id string, options ...string) Anchor {
+	c := Elements.NewConstructor("a", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
@@ -1045,29 +1255,6 @@ func NewLink(target *ui.Element, options ...string) Link {
 			htmlAnchor = js.Global().Get("document").Call("createElement", "a")
 		}
 
-		// finds the element whose id has been passed as argument: if search returns nil
-		// then the Link element references itself.
-		lnkTarget := target
-		if target == nil {
-			lnkTarget = e
-		}
-
-		// Set a mutation Handler on lnkTarget which observes the tree insertion event (attach event)
-		// At each attachment, we should rewrite href with the new route.
-		lnkTarget.Watch("event", "attached", lnkTarget, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			// SetAttribute(e, "href", e.Route())
-			r, ok := e.GetData("href")
-			if ok {
-				oldroute, ok := r.(ui.String)
-				if ok {
-					if string(oldroute) == e.Route() {
-						return false
-					}
-				}
-			}
-			e.SetDataSyncUI("href", ui.String(e.Route()))
-			return false
-		}))
 		n := NewNativeElementWrapper(htmlAnchor)
 		e.Native = n
 		if !exist {
@@ -1085,28 +1272,29 @@ func NewLink(target *ui.Element, options ...string) Link {
 
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Link{tryLoad(c(Name, ID, options...))}
+	return Anchor{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type Button struct {
-	UIElement *ui.Element
-}
-
-func (b Button) Element() *ui.Element {
-	return b.UIElement
+	ui.BasicElement
 }
 
 func (b Button) Autofocus(t bool) Button {
-	b.Element().SetDataSyncUI("autofocus", ui.Bool(t))
+	b.AsElement().SetDataSetUI("autofocus", ui.Bool(t))
 	return b
 }
 
 func (b Button) Disabled(t bool) Button {
-	b.Element().SetDataSyncUI("disabled", ui.Bool(t))
+	b.AsElement().SetDataSetUI("disabled", ui.Bool(t))
 	return b
 }
 
-// NewButton returns a button ui.Element.
+func (b Button) SetText(str string) Button {
+	b.AsElement().SetDataSetUI("content", ui.String(str))
+	return b
+}
+
+// NewButton returns a button ui.BasicElement.
 // TODO (create the type interface for a form button element)
 func NewButton(name string, id string, typ string, options ...string) Button {
 	f := Elements.NewConstructor("button", func(elementname string, elementid string) *ui.Element {
@@ -1147,47 +1335,105 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 			return false
 		}))
 
-		SetAttribute(e, "name", elementname)
+		e.Watch("ui", "content", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			s, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlButton.Set("innerHTML", string(s))
+			return false
+		}))
+
+		//SetAttribute(e, "name", elementname)
 		SetAttribute(e, "id", elementid)
 		SetAttribute(e, "type", typ)
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Button{tryLoad(f(name, id, options...))}
+	return Button{ui.BasicElement{LoadElement(f(name, id, options...))}}
 }
 
 type Label struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (l Label) Element() *ui.Element {
-	return l.UIElement
+func (l Label) SetText(s string) Label {
+	l.AsElement().SetUI("content", ui.String(s))
+	return l
 }
 
-func NewLabel(name string, id string, text string, options ...string) Label {
+func(l Label) For(e *ui.Element) Label{
+	SetAttribute(l.AsElement(),"for",e.ID)
+	return l
+}
+
+func NewLabel(name string, id string, options ...string) Label {
 	c := Elements.NewConstructor("label", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlLabel := js.Global().Get("document").Call("getElmentByID", id)
+		htmlLabel := js.Global().Get("document").Call("getElementById", id)
 		if htmlLabel.IsNull() {
 			htmlLabel = js.Global().Get("document").Call("createElement", "label")
 		}
 
 		n := NewNativeElementWrapper(htmlLabel)
 		e.Native = n
-		target := Elements.GetByID(id)
-		if target != nil {
-			e.ID = "label_" + id
-			SetAttribute(e, "for", id)
-		}
-		t := NewTextNode().SetValue(ui.String(text))
-		e.Mutate(ui.AppendChildCommand(t.Element()))
+
+		SetAttribute(e, "id", id)
+		e.Watch("ui", "content", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			c, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlLabel.Set("innerHTML", string(c))
+			return false
+		}))
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Label{tryLoad(c(name, id, options...))}
+	return Label{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-var NewInput = func(name string, id string, typ string, options ...string) *ui.Element {
+type Input struct {
+	ui.BasicElement
+}
+
+func (i Input) Value() ui.String {
+	v, ok := i.AsElement().GetData("value")
+	if !ok {
+		return ui.String("")
+	}
+	val, ok := v.(ui.String)
+	if !ok {
+		return ui.String("")
+	}
+	return val
+}
+
+func (i Input) Blur() {
+	native, ok := i.AsElement().Native.(NativeElement)
+	if !ok {
+		panic("native element should be of doc.NativeELement type")
+	}
+	native.Value.Call("blur")
+}
+
+func (i Input) Focus() {
+	native, ok := i.AsElement().Native.(NativeElement)
+	if !ok {
+		panic("native element should be of doc.NativeELement type")
+	}
+	native.Value.Call("focus")
+}
+
+func(i Input) Clear() {
+	native, ok := i.AsElement().Native.(NativeElement)
+	if !ok {
+		panic("native element should be of doc.NativeELement type")
+	}
+	native.Value.Set("value","")
+}
+
+func NewInput(typ string, name string, id string, options ...string) Input {
 	f := Elements.NewConstructor("input", func(elementname string, elementid string) *ui.Element {
 		e := ui.NewElement(elementname, elementid, Elements.DocType)
 		e = enableClasses(e)
@@ -1333,34 +1579,31 @@ var NewInput = func(name string, id string, typ string, options ...string) *ui.E
 			return false
 		}))
 
-		SetAttribute(e, "name", elementname)
+		//SetAttribute(e, "name", elementname)
 		SetAttribute(e, "id", elementid)
 		SetAttribute(e, "type", typ)
+
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return tryLoad(f(name, id, options...))
+	return Input{ui.BasicElement{LoadElement(f(name, id, options...))}}
 }
 
-type Image struct {
-	UIElement *ui.Element
+type Img struct {
+	ui.BasicElement
 }
 
-func (i Image) Element() *ui.Element {
-	return i.UIElement
-}
-
-func (i Image) Src(s string) Image {
-	i.Element().SetDataSyncUI("src", ui.String(s))
+func (i Img) Src(s string) Img {
+	i.AsElement().SetDataSetUI("src", ui.String(s))
 	return i
 }
 
-func (i Image) Alt(s string) Image {
-	i.Element().SetDataSyncUI("alt", ui.String(s))
+func (i Img) Alt(s string) Img {
+	i.AsElement().SetDataSetUI("alt", ui.String(s))
 	return i
 }
 
-func NewImage(name, id string, options ...string) Image {
-	c := Elements.NewConstructor("image", func(name string, imgid string) *ui.Element {
+func NewImage(name, id string, options ...string) Img {
+	c := Elements.NewConstructor("img", func(name string, imgid string) *ui.Element {
 		e := ui.NewElement(name, imgid, Elements.DocType)
 		e = enableClasses(e)
 
@@ -1395,7 +1638,7 @@ func NewImage(name, id string, options ...string) Image {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	return Image{tryLoad(c(name, id, options...))}
+	return Img{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui.Element {
@@ -1410,7 +1653,7 @@ var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui
 
 	n := NewNativeElementWrapper(htmlAudio)
 	e.Native = n
-	SetAttribute(e, "name", name)
+	//SetAttribute(e, "name", name)
 	SetAttribute(e, "id", id)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1425,7 +1668,7 @@ var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui
 		htmlVideo = js.Global().Get("document").Call("createElement", "video")
 	}
 
-	SetAttribute(e, "name", name)
+	//SetAttribute(e, "name", name)
 	SetAttribute(e, "id", id)
 
 	n := NewNativeElementWrapper(htmlVideo)
@@ -1476,7 +1719,7 @@ func (t TextNode) Element() *ui.Element {
 	return t.UIElement
 }
 func (t TextNode) SetValue(s ui.String) TextNode {
-	t.Element().SetDataSyncUI("text", s)
+	t.Element().SetDataSetUI("text", s)
 	return t
 }
 
@@ -1515,15 +1758,15 @@ func NewTextNode() TextNode {
 }
 
 type TemplatedTextNode struct {
-	UIElement *ui.Element
+	*ui.Element
 }
 
-func (t TemplatedTextNode) Element() *ui.Element {
-	return t.UIElement
+func (t TemplatedTextNode) AsElement() *ui.Element {
+	return t.Element
 }
 
 func (t TemplatedTextNode) SetParam(paramName string, value ui.String) TemplatedTextNode {
-	params, ok := t.Element().GetData("listparams")
+	params, ok := t.AsElement().GetData("listparams")
 	if !ok {
 		return t
 	}
@@ -1537,14 +1780,14 @@ func (t TemplatedTextNode) SetParam(paramName string, value ui.String) Templated
 			continue
 		}
 		if paramName == string(p) {
-			t.Element().SetData(paramName, value)
+			t.Element.SetData(paramName, value)
 		}
 	}
 	return t
 }
 
 func (t TemplatedTextNode) Value() ui.String {
-	v, ok := t.UIElement.Get("data", "text")
+	v, ok := t.Element.Get("data", "text")
 	if !ok {
 		return ""
 	}
@@ -1589,7 +1832,7 @@ func NewTemplatedText(template string) TemplatedTextNode {
 					res = strings.ReplaceAll(template, param, string(str))
 				}
 			}
-			evt.Origin().SetDataSyncUI("text", ui.String(res))
+			evt.Origin().SetDataSetUI("text", ui.String(res))
 			return false
 		})
 		return m
@@ -1642,34 +1885,27 @@ func parse(input string, tokenstart string, tokenend string) ui.Object {
 }
 
 type List struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (l List) Element() *ui.Element {
-	return l.UIElement
-}
-
-func (l List) Append(values ...ui.Value) List {
-	listAppend(l.Element(), values...)
+func (l List) FromValues(values ...ui.Value) List {
+	l.AsElement().SetDataSetUI("list", ui.NewList(values...))
 	return l
 }
 
-func (l List) Prepend(values ...ui.Value) List {
-	listPrepend(l.Element(), values...)
-	return l
+func (l List) Values() ui.List {
+	v, ok := l.AsElement().GetData("list")
+	if !ok {
+		return ui.NewList()
+	}
+	list, ok := v.(ui.List)
+	if !ok {
+		panic("data/list got overwritten with wrong type or something bad has happened")
+	}
+	return list
 }
 
-func (l List) InsertAt(index int, values ...ui.Value) List {
-	listInsertAt(l.Element(), index, values...)
-	return l
-}
-
-func (l List) Delete(itemindex int) List {
-	listDelete(l.Element(), itemindex)
-	return l
-}
-
-func NewList(name string, id string, options ...string) List {
+func NewUl(name string, id string, options ...string) List {
 	c := Elements.NewConstructor("ul", func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
@@ -1682,42 +1918,44 @@ func NewList(name string, id string, options ...string) List {
 
 		n := NewNativeElementWrapper(htmlList)
 		e.Native = n
-		SetAttribute(e, "name", ename)
+		//SetAttribute(e, "name", ename)
 		SetAttribute(e, "id", eid)
+
+		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			list, ok := evt.NewValue().(ui.List)
+			if !ok {
+				return true
+			}
+
+			for i, v := range list {
+				item := Elements.GetByID(eid + "-item-" + strconv.Itoa(i))
+				if item != nil {
+					ListItem{ui.BasicElement{item}}.SetValue(v)
+				} else {
+					item = NewListItem(ename+"-item", eid+"-item-"+strconv.Itoa(i)).SetValue(v).AsBasicElement().AsElement()
+				}
+
+				evt.Origin().AppendChild(ui.BasicElement{item})
+			}
+			return false
+		})
+		e.Watch("ui", "list", e, h)
+
 		return e
 	}, AllowListAutoSync, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return List{tryLoad(c(name, id, options...))}
+	return List{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type OrderedList struct {
-	UIElement *ui.Element
+	ui.BasicElement
 }
 
-func (l OrderedList) Element() *ui.Element {
-	return l.UIElement
-}
-
-func (l OrderedList) Append(values ...ui.Value) OrderedList {
-	listAppend(l.Element(), values...)
+func (l OrderedList) SetValue(lobjs ui.ListofObjects) OrderedList {
+	l.AsElement().Set("data", "value", lobjs)
 	return l
 }
 
-func (l OrderedList) Prepend(values ...ui.Value) OrderedList {
-	listPrepend(l.Element(), values...)
-	return l
-}
-
-func (l OrderedList) InsertAt(index int, values ...ui.Value) OrderedList {
-	listInsertAt(l.Element(), index, values...)
-	return l
-}
-
-func (l OrderedList) Delete(itemindex int) OrderedList {
-	listDelete(l.Element(), itemindex)
-	return l
-}
-
-func NewOrderedList(name string, id string, typ string, numberingstart int, options ...string) OrderedList {
+func NewOl(name string, id string, typ string, numberingstart int, options ...string) OrderedList {
 	c := Elements.NewConstructor("ol", func(ename, eid string) *ui.Element {
 		e := ui.NewElement(ename, eid, Elements.DocType)
 		e = enableClasses(e)
@@ -1730,25 +1968,21 @@ func NewOrderedList(name string, id string, typ string, numberingstart int, opti
 
 		n := NewNativeElementWrapper(htmlList)
 		e.Native = n
-		SetAttribute(e, "name", ename)
+		//SetAttribute(e, "name", ename)
 		SetAttribute(e, "id", eid)
 		SetAttribute(e, "type", typ)
 		SetAttribute(e, "start", strconv.Itoa(numberingstart))
 		return e
 	}, AllowListAutoSync, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return OrderedList{tryLoad(c(name, id, options...))}
+	return OrderedList{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
 type ListItem struct {
-	UIElement *ui.Element
-}
-
-func (li ListItem) Element() *ui.Element {
-	return li.UIElement
+	ui.BasicElement
 }
 
 func (li ListItem) SetValue(v ui.Value) ListItem {
-	li.Element().SetDataSyncUI("content", v)
+	li.AsElement().SetDataSetUI("value", v)
 	return li
 }
 
@@ -1765,62 +1999,55 @@ func NewListItem(name string, id string, options ...string) ListItem {
 
 		n := NewNativeElementWrapper(htmlListItem)
 		e.Native = n
-		SetAttribute(e, "name", name)
+		//SetAttribute(e, "name", name)
 		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 		onuimutation := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			cat := evt.Type()
-			if cat != "ui" {
-				return true
-			}
-
-			propname := evt.ObservedKey()
-			if propname != "content" {
-				return true
-			}
 
 			// we apply the modifications to the UI
 			v := evt.NewValue()
 			var item *ui.Element
 			switch t := v.(type) {
 			case ui.String:
-				item = NewTextNode().Element().Element()
-				item.SetDataSyncUI("text", t, false)
+				item = NewTextNode().SetValue(t).Element()
 			case ui.Bool:
 				item = NewTextNode().Element()
-				item.SetDataSyncUI("text", t, false)
+				item.SetDataSetUI("text", t, false)
 			case ui.Number:
 				item = NewTextNode().Element()
-				item.SetDataSyncUI("text", t, false)
+				item.SetDataSetUI("text", t, false)
 			case ui.Object:
 				item = NewTextNode().Element()
-				item.SetDataSyncUI("text", t, false)
+				item.SetDataSetUI("text", t, false)
 			case *ui.Element:
-				evt.Origin().Mutate(ui.RemoveChildrenCommand())
-				evt.Origin().Mutate(ui.AppendChildCommand(t))
-				return false
+				if t != nil {
+					item = t
+				} else {
+					return true
+				}
+
 			default:
+				log.Print("not the type we want") // DEBUG
 				return true
 			}
 
-			evt.Origin().Mutate(ui.RemoveChildrenCommand())
-			evt.Origin().Mutate(ui.AppendChildCommand(item))
+			evt.Origin().SetChildren(ui.BasicElement{item})
 			return false
 		})
-		e.Watch("ui", "content", e, onuimutation)
+		e.Watch("ui", "value", e, onuimutation)
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return ListItem{tryLoad(c(name, id, options...))}
+	return ListItem{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-func newListValue(index int, value ui.Value) ui.Object {
+func NewListValue(index int, value ui.Value) ui.Object {
 	o := ui.NewObject()
 	o.Set("index", ui.Number(index))
 	o.Set("value", value)
 	return o
 }
 
-func ListValueInfo(v ui.Value) (index int, newvalue ui.Value, ok bool) {
+func listValueInfo(v ui.Value) (index int, newvalue ui.Value, ok bool) {
 	res, ok := v.(ui.Object)
 	i, ok := res.Get("index")
 	if !ok {
@@ -1841,100 +2068,6 @@ func ListValueInfo(v ui.Value) (index int, newvalue ui.Value, ok bool) {
 	return int(idx), tval, true
 }
 
-func listAppend(list *ui.Element, values ...ui.Value) *ui.Element {
-	var backinglist ui.List
-
-	bkglist, ok := list.Get("internals", list.Name)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-	backinglist, ok = bkglist.(ui.List)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-
-	length := len(backinglist)
-
-	backinglist = append(backinglist, values...)
-	list.Set("internals", list.Name, backinglist, false)
-	for i, value := range values {
-		list.Set(list.Name, "append", newListValue(i+length, value), false)
-	}
-	return list
-}
-
-func listPrepend(list *ui.Element, values ...ui.Value) *ui.Element {
-	var backinglist ui.List
-
-	bkglist, ok := list.Get("internals", list.Name)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-	backinglist, ok = bkglist.(ui.List)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-
-	backinglist = append(values, backinglist...)
-	list.Set("internals", list.Name, backinglist, false)
-	for i := len(values) - 1; i >= 0; i-- {
-		list.Set(list.Name, "prepend", newListValue(i, values[i]), false)
-	}
-	return list
-}
-
-func listInsertAt(list *ui.Element, offset int, values ...ui.Value) *ui.Element {
-	var backinglist ui.List
-
-	bkglist, ok := list.Get("internals", list.Name)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-	backinglist, ok = bkglist.(ui.List)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-
-	length := len(backinglist)
-	if offset >= length || offset <= 0 {
-		log.Print("Cannot insert element in list at that position.")
-		return list
-	}
-
-	nel := ui.NewList(backinglist[:offset]...)
-	nel = append(nel, values...)
-	nel = append(nel, backinglist[offset:]...)
-	backinglist = nel
-	list.Set("internals", list.Name, backinglist, false)
-	for i, value := range values {
-		list.Set(list.Name, "insert", newListValue(offset+i, value), false)
-	}
-	return list
-}
-
-func listDelete(list *ui.Element, offset int) *ui.Element {
-	var backinglist ui.List
-
-	bkglist, ok := list.Get("internals", list.Name)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-	backinglist, ok = bkglist.(ui.List)
-	if !ok {
-		backinglist = ui.NewList()
-	}
-
-	length := len(backinglist)
-	if offset >= length || offset <= 0 {
-		log.Print("Cannot insert element in list at that position.")
-		return list
-	}
-	backinglist = append(backinglist[:offset], backinglist[offset+1:])
-	list.Set("internals", list.Name, backinglist, false)
-	list.Set(list.Name, "delete", newListValue(offset, nil), false)
-	return list
-}
-
 // EnableListAutoSync is passed as an optional Argument to a list constructor call in
 // order to trigger list autosyncing.
 // When a list is autosyncing, any modification to the list (item adjunction, deletion, modification)
@@ -1948,7 +2081,7 @@ func EnableListAutoSync() string {
 // a change occurs in the chosen namespace/category of a list Element.
 var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Element) *ui.Element {
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		i, v, ok := ListValueInfo(evt.NewValue())
+		i, v, ok := listValueInfo(evt.NewValue())
 		if !ok {
 			return true
 		}
@@ -1956,36 +2089,36 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 		if evt.ObservedKey() == "append" {
 			id := NewID()
 			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.Element().SetDataSyncUI("content", v, false)
+			n.AsElement().SetDataSetUI("content", v, false)
 
 			// evt.Origin().AppendChild(n)
-			evt.Origin().Mutate(ui.AppendChildCommand(n.Element()))
+			evt.Origin().AppendChild(n)
 		}
 
 		if evt.ObservedKey() == "prepend" {
 			id := NewID()
 			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.Element().SetDataSyncUI("content", v, false)
+			n.AsElement().SetDataSetUI("content", v, false)
 
 			// evt.Origin().PrependChild(n)
-			evt.Origin().Set("ui", "command", ui.PrependChildCommand(n.Element()))
+			evt.Origin().PrependChild(n)
 		}
 
 		if evt.ObservedKey() == "insert" {
 			id := NewID()
 			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.Element().SetDataSyncUI("content", v, false)
+			n.AsElement().SetDataSetUI("content", v, false)
 
 			// evt.Origin().InsertChild(n, i)
-			evt.Origin().Mutate(ui.InsertChildCommand(n.Element(), i))
+			evt.Origin().InsertChild(n, i)
 		}
 
 		if evt.ObservedKey() == "delete" {
 			target := evt.Origin()
 			deletee := target.Children.AtIndex(i)
 			if deletee != nil {
-				// target.RemoveChild(deletee)
-				target.Mutate(ui.RemoveChildCommand(deletee))
+				target.RemoveChild(deletee)
+
 			}
 		}
 		return false
@@ -1994,6 +2127,241 @@ var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Eleme
 	e.WatchGroup(e.Name, e, h)
 	return e
 })
+
+type Table struct {
+	ui.BasicElement
+}
+
+type Thead struct {
+	ui.BasicElement
+}
+
+type Tbody struct {
+	ui.BasicElement
+}
+
+type Tr struct {
+	ui.BasicElement
+}
+
+type Td struct {
+	ui.BasicElement
+}
+
+type Th struct {
+	ui.BasicElement
+}
+
+type TableCell struct {
+	ui.BasicElement
+}
+
+func NewThead(name string, id string, options ...string) Thead {
+	c := Elements.NewConstructor("thead", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlThead := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlThead.IsNull()
+		if !exist {
+			htmlThead = js.Global().Get("document").Call("createElement", "thead")
+		}
+
+		n := NewNativeElementWrapper(htmlThead)
+		e.Native = n
+		//SetAttribute(e, "name", name)
+		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Thead{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+func (t Thead) AddRow(rows ...Tr) Thead {
+	for _, row := range rows {
+		t.AsElement().AppendChild(row)
+	}
+	return t
+}
+
+func (row Tr) AppendThChild(th Th) Tr {
+	row.AsElement().AppendChild(th)
+	return row
+}
+
+func (row Tr) AppendTdChild(td Td) Tr {
+	row.AsElement().AppendChild(td)
+	return row
+}
+
+func NewTr(name string, id string, options ...string) Tr {
+	c := Elements.NewConstructor("tr", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlTr := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlTr.IsNull()
+		if !exist {
+			htmlTr = js.Global().Get("document").Call("createElement", "tr")
+		}
+
+		n := NewNativeElementWrapper(htmlTr)
+		e.Native = n
+		//SetAttribute(e, "name", name)
+		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Tr{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+func NewTd(name string, id string, options ...string) Td {
+	c := Elements.NewConstructor("td", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlTableData := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlTableData.IsNull()
+		if !exist {
+			htmlTableData = js.Global().Get("document").Call("createElement", "td")
+		}
+
+		n := NewNativeElementWrapper(htmlTableData)
+		e.Native = n
+		//SetAttribute(e, "name", name)
+		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Td{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+func NewTh(name string, id string, options ...string) Th {
+	c := Elements.NewConstructor("td", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlTableDataHeader := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlTableDataHeader.IsNull()
+		if !exist {
+			htmlTableDataHeader = js.Global().Get("document").Call("createElement", "th")
+		}
+
+		n := NewNativeElementWrapper(htmlTableDataHeader)
+		e.Native = n
+		//SetAttribute(e, "name", name)
+		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Th{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+func NewTable(name string, id string, options ...string) Table {
+	c := Elements.NewConstructor("table", func(name string, id string) *ui.Element {
+		e := ui.NewElement(name, id, Elements.DocType)
+		e = enableClasses(e)
+
+		htmlTable := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlTable.IsNull()
+		if !exist {
+			htmlTable = js.Global().Get("document").Call("createElement", "table")
+		}
+
+		n := NewNativeElementWrapper(htmlTable)
+		e.Native = n
+		//SetAttribute(e, "name", name)
+		SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+		return e
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return Table{ui.BasicElement{LoadElement(c(name, id, options...))}}
+}
+
+/*
+func (t Table) AddRow(values ...ui.Value) error { // TODO
+	var rowcount int
+	c, ok := t.Element().GetData("rowcount")
+	if ok {
+		count, ok := c.(ui.Number)
+		if ok {
+			rowcount = int(count)
+		}
+	}
+
+}
+*/
+func (t Table) SetColumns(cols ...ColumnDesc) Table {
+	c := make([]ui.Value, 0)
+	for _, col := range cols {
+		c = append(c, ui.Value(col.RawObject()))
+	}
+	l := ui.NewList(c...)
+	t.AsElement().Set("data", "columndesc", l)
+	return t
+}
+
+type ColumnDesc ui.Object
+
+func (c ColumnDesc) RawObject() ui.Object { return ui.Object(c) }
+func (c ColumnDesc) Name() string {
+	n, ok := c.RawObject().Get("name")
+	if !ok {
+		return ""
+	}
+	name, ok := n.(ui.String)
+	if !ok {
+		panic("columndesc expects a string for name")
+	}
+	return string(name)
+}
+func (c ColumnDesc) DataType() string {
+	n, ok := c.RawObject().Get("datatype")
+	if !ok {
+		return ""
+	}
+	dt, ok := n.(ui.String)
+	if !ok {
+		panic("columndesc expects a string for datatype")
+	}
+	return string(dt)
+}
+func (c ColumnDesc) Sortable() bool {
+	n, ok := c.RawObject().Get("sortable")
+	if !ok {
+		return false
+	}
+	sort, ok := n.(ui.Bool)
+	if !ok {
+		panic("columndesc expects a boolean for sortable")
+	}
+	return bool(sort)
+}
+func (c ColumnDesc) Editablel() bool {
+	n, ok := c.RawObject().Get("editable")
+	if !ok {
+		return false
+	}
+	edit, ok := n.(ui.Bool)
+	if !ok {
+		panic("columndesc expects a boolean for editable")
+	}
+	return bool(edit)
+}
+func NewColumnDesc(name string, datatype string, sortable bool, editable bool) ColumnDesc {
+	c := ui.NewObject()
+	c.Set("name", ui.String(name))
+	c.Set("datatype", ui.String(datatype))
+	c.Set("sortable", ui.Bool(sortable))
+	c.Set("editable", ui.Bool(editable))
+	return ColumnDesc(c)
+}
+
+// Code tag TODO
+
+type Code struct {
+	ui.BasicElement
+}
 
 func AddClass(target *ui.Element, classname string) {
 	category := "css"
@@ -2073,7 +2441,7 @@ func GetInlineCSS(target *ui.Element) string {
 	return GetAttribute(target, "style")
 }
 
-func AppendInlineCSS(target *ui.Element, str string) {
+func AppendInlineCSS(target *ui.Element, str string) { // TODO space separated?
 	css := GetInlineCSS(target)
 	css = css + str
 	SetInlineCSS(target, css)
@@ -2089,6 +2457,21 @@ func GetAttribute(target *ui.Element, name string) string {
 }
 
 func SetAttribute(target *ui.Element, name string, value string) {
+	var attrmap ui.Object
+	m, ok := target.Get("data", "attrs")
+	if !ok {
+		attrmap = ui.NewObject()
+	} else {
+		attrmap, ok = m.(ui.Object)
+		if !ok {
+			panic("data/attrs should be stored as a ui.Object")
+			//log.Print(m,attrmap) // SEBUG
+		}
+	}
+
+	attrmap.Set(name, ui.String(value))
+	target.SetData("attrs", attrmap)
+
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot set Attribute on non-expected wrapper type")
@@ -2098,6 +2481,17 @@ func SetAttribute(target *ui.Element, name string, value string) {
 }
 
 func RemoveAttribute(target *ui.Element, name string) {
+	m, ok := target.Get("data", "attrs")
+	if !ok {
+		return
+	}
+	attrmap, ok := m.(ui.Object)
+	if !ok {
+		panic("data/attrs should be stored as a ui.Object")
+	}
+	delete(attrmap, name)
+	target.SetData("attrs", attrmap)
+
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot delete Attribute using non-expected wrapper type")
@@ -2112,5 +2506,66 @@ func Buttonify(any ui.AnyElement, link ui.Link) {
 		link.Activate()
 		return false
 	})
-	any.Element().AddEventListener("click", callback, NativeEventBridge)
+	any.AsElement().AddEventListener("click", callback, NativeEventBridge)
+}
+
+/*
+ HTML rendering
+
+*/
+
+func NewHTMLNode(e *ui.Element) *html.Node {
+	if e.DocType != Elements.DocType {
+		panic("Bad Element doctype")
+	}
+	v, ok := e.Get("internals", "constructor")
+	if !ok {
+		return nil
+	}
+	tag, ok := v.(ui.String)
+	if !ok {
+		panic("constructor name should be a string")
+	}
+	data := string(tag)
+	nodetype := html.RawNode
+	if string(tag) == "root" {
+		data = "body"
+	}
+	n := &html.Node{}
+	n.Type = nodetype
+	n.Data = data
+
+	attrs, ok := e.GetData("attrs")
+	if !ok {
+		return n
+	}
+	tattrs, ok := attrs.(ui.Object)
+	if !ok {
+		panic("attributes is supossed to be a ui.Object type")
+	}
+	for k, v := range tattrs {
+		val, ok := v.(ui.String)
+		if !ok {
+			continue // should panic probably instead
+		}
+		a := html.Attribute{"", k, string(val)}
+		n.Attr = append(n.Attr, a)
+	}
+	return n
+}
+
+func NewHTMLTree(document Document) *html.Node {
+	doc := document.AsBasicElement()
+	return newHTMLTree(doc.AsElement())
+}
+
+func newHTMLTree(e *ui.Element) *html.Node {
+	d := NewHTMLNode(e)
+	if e.Children != nil && e.Children.List != nil {
+		for _, child := range e.Children.List {
+			c := newHTMLTree(child)
+			d.AppendChild(c)
+		}
+	}
+	return d
 }
