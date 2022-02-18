@@ -383,11 +383,11 @@ func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
 func (n NativeElement) RemoveChild(child *ui.Element) {
 	v, ok := child.Native.(NativeElement)
 	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot insert " + child.Name)
+		log.Print("wrong format for native element underlying objects.Cannot remove " , child.Native)
 		return
 	}
 	//n.JSValue().Call("removeChild", v.JSValue())
-	v.JSValue().Call("remove")
+	 v.JSValue().Call("remove")
 }
 
 /*
@@ -448,7 +448,7 @@ func NewDocument(id string, options ...string) Document {
 		e.Native = n
 		SetAttribute(e, "id", id)
 
-		e.Watch("data", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch("ui", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			v := evt.NewValue()
 			nroute, ok := v.(ui.String)
 			if !ok {
@@ -456,9 +456,11 @@ func NewDocument(id string, options ...string) Document {
 			}
 			route := string(nroute)
 			js.Global().Get("history").Call("replaceState", "{}", "", "/"+route)
+
 			e.SyncUISetData("currentroute", v)
 			return false
 		}))
+
 
 		e.Watch("ui", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			v := evt.NewValue()
@@ -1463,6 +1465,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 			}
 			if bool(b) {
 				SetAttribute(e, "autocomplete", "")
+				return false
 			}
 			RemoveAttribute(e, "autocomplete")
 			return false
@@ -1482,8 +1485,9 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 			if !ok {
 				return true
 			}
-			if bool(b) {
+			if b {
 				SetAttribute(e, "checked", "")
+				return false
 			}
 			RemoveAttribute(e, "checked")
 			return false
@@ -1496,6 +1500,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 			}
 			if bool(b) {
 				SetAttribute(e, "disabled", "")
+				return false
 			}
 			RemoveAttribute(e, "disabled")
 			return false
@@ -1574,6 +1579,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 			}
 			if bool(b) {
 				SetAttribute(e, "multiple", "")
+				return false
 			}
 			RemoveAttribute(e, "multiple")
 			return false
@@ -2374,7 +2380,7 @@ func AddClass(target *ui.Element, classname string) {
 		}
 		sc := string(c)
 		if !strings.Contains(sc, classname) {
-			sc = sc + " " + classname
+			sc = strings.TrimSpace(sc + " " + classname)
 			target.Set(category, "class", ui.String(sc), false)
 		}
 		return
@@ -2425,7 +2431,13 @@ func enableClasses(e *ui.Element) *ui.Element {
 			log.Print("new value of non-string type. Unable to use as css class(es)")
 			return true
 		}
-		native.JSValue().Call("setAttribute", "class", classes)
+
+		if len(strings.TrimSpace(string(classes))) != 0{
+			native.JSValue().Call("setAttribute", "class", string(classes))
+			return false
+		}
+		native.JSValue().Call("removeAttribute", "class")
+
 		return false
 	})
 	e.Watch("css", "class", e, h)

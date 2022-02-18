@@ -73,7 +73,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		return nil
 	})
 
-	if target.ID != GetWindow().AsBasicElement().AsElement().ID {
+	if target.ID != GetWindow().AsElement().ID {
 		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
 		if target.NativeEventUnlisteners.List == nil {
 			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()

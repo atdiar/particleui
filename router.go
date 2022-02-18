@@ -238,7 +238,7 @@ func (r *Router) handler() *MutationHandler {
 			return false
 		}
 
-		r.outlet.AsElement().Root().SyncUISetData("currentroute", evt.NewValue())
+		r.outlet.AsElement().Root().SetDataSetUI("currentroute", evt.NewValue())
 		r.History.Push(newroute)
 		log.Println(*r.History) //DEBUG
 		return false
@@ -288,7 +288,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 			return false
 		}
 
-		r.outlet.AsElement().Root().SyncUISetData("redirectroute", evt.NewValue())
+		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", evt.NewValue())
 		r.History.Push(newroute)
 		log.Println(*r.History) //DEBUG
 		return false

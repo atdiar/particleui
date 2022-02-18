@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrNoTemplate = errors.New("Element template missing")
+	DEBUG = log.Print // DEBUG
 )
 
 // NewIDgenerator returns a function used to create new IDs for Elements. It uses
@@ -361,6 +362,15 @@ func (e *Elements) Replace(old *Element, new *Element) *Elements {
 	return e
 }
 
+func (e *Elements) Includes(el *Element) bool {
+	for _, element := range e.List {
+		if element.ID == el.ID {
+			return true
+		}
+	}
+	return false
+}
+
 // Handle calls up the event handlers in charge of processing the event for which
 // the Element is listening.
 func (e *Element) Handle(evt Event) bool {
@@ -653,10 +663,26 @@ func (e *Element) RemoveChildren() *Element {
 }
 
 func (e *Element) removeChildren() *Element {
-	l:= make([]*Element, len(e.Children.List))
-	copy(l,e.Children.List)
+	l := make([]*Element, len(e.Children.List))
+	copy(l, e.Children.List)
 	for _, child := range l {
 		e.removeChild(BasicElement{child})
+	}
+	return e
+}
+
+func (e *Element) DeleteChild(childEl AnyElement) *Element {
+	e.RemoveChild(childEl)
+	childEl.AsElement().Set("internals", "deleted", Bool(true))
+	childEl.AsElement().Native = nil
+	return e
+}
+
+func (e *Element) DeleteChildren() *Element {
+	l := make([]*Element, len(e.Children.List))
+	copy(l, e.Children.List)
+	for _, child := range l {
+		e.DeleteChild(BasicElement{child})
 	}
 	return e
 }
@@ -690,6 +716,22 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	}
 	p.NewWatcher(propname, e)
 	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
+
+	eventcat, ok := owner.AsElement().Properties.Categories["event"]
+	if !ok {
+		eventcat = newProperties()
+		owner.AsElement().Properties.Categories["internals"] = eventcat
+	}
+	alreadywatching := eventcat.IsWatching("deleted", e)
+
+	if alreadywatching {
+		return e
+	}
+	eventcat.NewWatcher("deleted",e)
+	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
+		e.Unwatch(category, propname, owner)
+		return false
+	}))
 
 	return e
 }
@@ -756,7 +798,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 		return false
 	})
 
-	g := NewMutationHandler(func(evt MutationEvent) bool {
+	/*g := NewMutationHandler(func(evt MutationEvent) bool {
 		var native bool
 		if nativebinding != nil {
 			native = true
@@ -767,9 +809,20 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 		}
 
 		return false
-	})
+	})*/
 	e.OnMount(h)
-	e.OnDisMount(g)
+	//e.OnDisMount(g) DEBUG
+	e.Watch("internals","deleted",e,NewMutationHandler(func(evt MutationEvent)bool{
+		var native bool
+		if nativebinding != nil {
+			native = true
+		}
+		if n > 0 {
+			e.RemoveEventListener(event, handler, native)
+			n--
+		}
+		return false
+	}))
 
 	return e
 }
@@ -916,7 +969,21 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 	e.Set("ui", propname, value, flags...)
 
 	evt := e.NewMutationEvent("data", propname, value, oldvalue)
-	e.PropMutationHandlers.DispatchEvent(evt)
+
+	props, ok := e.Properties.Categories["data"]
+	if !ok {
+		panic("category should exist since property should have been stored")
+	}
+	watchers, ok := props.Watchers[propname]
+	if !ok {
+		return
+	}
+	if watchers == nil {
+		return
+	}
+	for _, w := range watchers.List {
+		w.PropMutationHandlers.DispatchEvent(evt)
+	}
 }
 
 // SyncUISetData is used in event handlers when a user changed a value accessible
@@ -944,8 +1011,7 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 
 	e.Properties.Set("ui", propname, value, inheritable)
 
-
-	e.SetData(propname, value, flags...)
+	e.Set("data", propname, value, flags...)
 }
 
 // LoadProperty is a function typically used to return a UI Element to a
@@ -1315,6 +1381,14 @@ func (p Properties) RemoveWatcher(propName string, watcher *Element) {
 		return
 	}
 	list.Remove(watcher)
+}
+
+func (p Properties) IsWatching(propname string, e *Element) bool {
+	list, ok := p.Watchers[propname]
+	if !ok {
+		return false
+	}
+	return list.Includes(e)
 }
 
 func (p Properties) Get(propName string) (Value, bool) {
