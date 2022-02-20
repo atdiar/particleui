@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrNoTemplate = errors.New("Element template missing")
-	DEBUG = log.Print // DEBUG
+	DEBUG         = log.Print // DEBUG
 )
 
 // NewIDgenerator returns a function used to create new IDs for Elements. It uses
@@ -203,6 +203,10 @@ func (e *ElementStore) GetByID(id string) *Element {
 	return v
 }
 
+func (e *ElementStore) Delete(id string) {
+	delete(e.ByID, id)
+}
+
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
@@ -386,6 +390,9 @@ func (e *Element) Handle(evt Event) bool {
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
 func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Element {
+	if !e.Mounted() {
+		return e
+	}
 	if nativebinding != nil {
 		nativebinding(evt)
 		return e
@@ -439,10 +446,14 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
+	_, ok := child.Get("event", "mounted")
 	defer func() {
 		child.Set("event", "attached", Bool(true))
 		if child.Mounted() {
 			child.Set("event", "mounted", Bool(true))
+			if !ok {
+				child.Set("event", "firstmount", Bool(true))
+			}
 		}
 	}()
 
@@ -672,9 +683,10 @@ func (e *Element) removeChildren() *Element {
 }
 
 func (e *Element) DeleteChild(childEl AnyElement) *Element {
+	child := childEl.AsElement()
 	e.RemoveChild(childEl)
-	childEl.AsElement().Set("internals", "deleted", Bool(true))
-	childEl.AsElement().Native = nil
+	child.Set("internals", "deleted", Bool(true))
+	child.ElementStore.Delete(child.ID)
 	return e
 }
 
@@ -682,6 +694,7 @@ func (e *Element) DeleteChildren() *Element {
 	l := make([]*Element, len(e.Children.List))
 	copy(l, e.Children.List)
 	for _, child := range l {
+		child.DeleteChildren()
 		e.DeleteChild(BasicElement{child})
 	}
 	return e
@@ -714,20 +727,25 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		p = newProperties()
 		owner.AsElement().Properties.Categories[category] = p
 	}
-	p.NewWatcher(propname, e)
+	alreadywatching := p.IsWatching(propname, e)
+
+	if !alreadywatching {
+		p.NewWatcher(propname, e)
+	}
+
 	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
 
-	eventcat, ok := owner.AsElement().Properties.Categories["event"]
+	eventcat, ok := owner.AsElement().Properties.Categories["internals"]
 	if !ok {
 		eventcat = newProperties()
 		owner.AsElement().Properties.Categories["internals"] = eventcat
 	}
-	alreadywatching := eventcat.IsWatching("deleted", e)
+	alreadywatching = eventcat.IsWatching("deleted", e)
 
-	if alreadywatching {
-		return e
+	if !alreadywatching {
+		eventcat.NewWatcher("deleted", e)
 	}
-	eventcat.NewWatcher("deleted",e)
+
 	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
 		e.Unwatch(category, propname, owner)
 		return false
@@ -742,6 +760,7 @@ func (e *Element) Unwatch(category string, propname string, owner Watchable) *El
 		return e
 	}
 	p.RemoveWatcher(propname, e)
+	e.PropMutationHandlers.RemoveAll(owner.AsElement().ID + "/" + category + "/" + propname)
 	return e
 }
 
@@ -786,41 +805,38 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 }
 
 func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
-	n := 0
+
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		if n == 0 {
-			e.EventHandlers.AddEventHandler(event, handler)
-			if nativebinding != nil {
-				nativebinding(event, e)
-			}
-			n++
+		e.EventHandlers.AddEventHandler(event, handler)
+		if nativebinding != nil {
+			nativebinding(event, e)
 		}
 		return false
 	})
+	e.OnFirstMount(h)
 
 	/*g := NewMutationHandler(func(evt MutationEvent) bool {
 		var native bool
 		if nativebinding != nil {
 			native = true
 		}
-		if n > 0 {
-			e.RemoveEventListener(event, handler, native)
-			n--
-		}
+		e.RemoveEventListener(event, handler, native)
 
 		return false
-	})*/
-	e.OnMount(h)
-	//e.OnDisMount(g) DEBUG
-	e.Watch("internals","deleted",e,NewMutationHandler(func(evt MutationEvent)bool{
+	})
+
+	e.OnDisMount(g)
+
+	*/
+
+	e.OnDelete(NewMutationHandler(func(evt MutationEvent) bool {
 		var native bool
 		if nativebinding != nil {
 			native = true
 		}
-		if n > 0 {
-			e.RemoveEventListener(event, handler, native)
-			n--
-		}
+
+		e.RemoveEventListener(event, handler, native)
+
 		return false
 	}))
 
@@ -848,6 +864,17 @@ func (e *Element) OnMount(h *MutationHandler) {
 	e.Watch("event", "mounted", e, nh)
 }
 
+func (e *Element) OnFirstMount(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok || !bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.Watch("event", "firstmount", e, nh)
+}
+
 func (e *Element) OnDisMount(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
@@ -860,6 +887,21 @@ func (e *Element) OnDisMount(h *MutationHandler) {
 		return h.Handle(evt)
 	})
 	e.Watch("event", "mounted", e, nh)
+}
+
+func (e *Element) OnDelete(h *MutationHandler) {
+	eventcat, ok := e.Properties.Categories["internals"]
+	if !ok {
+		eventcat = newProperties()
+		e.Properties.Categories["internals"] = eventcat
+	}
+	alreadywatching := eventcat.IsWatching("deleted", e)
+
+	if !alreadywatching {
+		eventcat.NewWatcher("deleted", e)
+	}
+
+	e.PropMutationHandlers.Add(e.ID+"/"+"internals"+"/"+"deleted", h)
 }
 
 // Get retrieves the value stored for the named property located under the given

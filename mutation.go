@@ -33,6 +33,15 @@ func (m *MutationCallbacks) Remove(key string, h *MutationHandler) *MutationCall
 	return m
 }
 
+func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
+	mhs, ok := m.list[key]
+	if !ok {
+		return m
+	}
+	mhs.list = make([]*MutationHandler, 0)
+	return m
+}
+
 func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
 	key := evt.ObservedKey()
 	shards := strings.Split(strings.TrimPrefix(key, "/"), "/")

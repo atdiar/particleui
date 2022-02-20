@@ -7,9 +7,12 @@ package doc
 import (
 	"syscall/js"
 	//"net/url"
+	"log"
 
 	"github.com/atdiar/particleui"
 )
+
+var DEBUG = log.Print // DEBUG
 
 type cancelable struct {
 	js.Value
@@ -38,14 +41,26 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		bubbles := evt.Get("bubbles").Bool()
 		cancancel := evt.Get("cancelable").Bool()
 		var target ui.BasicElement
-		targetid := evt.Get("target").Get("id")
-		value := evt.Get("target").Get("value").String()
+		jstarget := evt.Get("target")
+
+		targetid := jstarget.Get("id")
+		value := jstarget.Get("value").String()
 		if targetid.Truthy() {
-			target = ui.BasicElement{Elements.GetByID(targetid.String())}
+			element := Elements.GetByID(targetid.String())
+			if element != nil {
+				target = ui.BasicElement{element}
+			} else {
+				return nil
+			}
 		} else {
 			// this might be a stretch... but we assume that the only element without
 			// a native side ID is the window in javascript.
-			target = GetWindow().AsBasicElement()
+			if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
+				target = GetWindow().AsBasicElement()
+			} else {
+				// the element has probably been deleted on the Go wasm side
+				return nil
+			}
 		}
 
 		var nativeEvent interface{}
@@ -79,7 +94,12 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
 		}
 		target.NativeEventUnlisteners.Add(NativeEventName, func() {
-			js.Global().Get("document").Call("getElementById", target.ID).Call("removeEventListener", NativeEventName, cb)
+			v := js.Global().Get("document").Call("getElementById", target.ID)
+			if !v.IsNull() {
+				v.Call("removeEventListener", NativeEventName, cb)
+			} else {
+				// DEBUG("Call for event listener removal on ", target.ID)
+			}
 			cb.Release()
 		})
 	} else {

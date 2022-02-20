@@ -251,6 +251,10 @@ func (w Window) AsBasicElement() ui.BasicElement {
 	return w.UIElement
 }
 
+func (w Window) AsElement() *ui.Element {
+	return w.UIElement.AsElement()
+}
+
 func (w Window) SetTitle(title string) {
 	w.AsBasicElement().AsElement().Set("ui", "title", ui.String(title))
 }
@@ -279,11 +283,11 @@ func newWindow(title string, options ...string) Window {
 			if target != e {
 				return true
 			}
-			nat, ok := target.Native.(js.Wrapper)
+			nat, ok := target.Native.(NativeElement)
 			if !ok {
 				return true
 			}
-			jswindow := nat.JSValue()
+			jswindow := nat.Value
 			if !jswindow.Truthy() {
 				log.Print("Unable to access native Window object")
 				return true
@@ -337,7 +341,7 @@ func (n NativeElement) AppendChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot append " + child.Name)
 		return
 	}
-	n.JSValue().Call("append", v.JSValue())
+	n.Value.Call("append", v.Value)
 }
 
 func (n NativeElement) PrependChild(child *ui.Element) {
@@ -346,7 +350,7 @@ func (n NativeElement) PrependChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot prepend " + child.Name)
 		return
 	}
-	n.JSValue().Call("prepend", v.JSValue())
+	n.Value.Call("prepend", v.Value)
 }
 
 func (n NativeElement) InsertChild(child *ui.Element, index int) {
@@ -355,14 +359,14 @@ func (n NativeElement) InsertChild(child *ui.Element, index int) {
 		log.Print("wrong format for native element underlying objects.Cannot insert " + child.Name)
 		return
 	}
-	childlist := n.JSValue().Get("children")
+	childlist := n.Value.Get("children")
 	length := childlist.Get("length").Int()
 	if index >= length {
 		log.Print("insertion attempt out of bounds.")
 		return
 	}
 	r := childlist.Call("item", index)
-	n.JSValue().Call("insertBefore", v, r)
+	n.Value.Call("insertBefore", v, r)
 }
 
 func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
@@ -377,17 +381,18 @@ func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
 		return
 	}
 	//nold.Call("replaceWith", nnew) also works
-	n.JSValue().Call("replaceChild", nnew.JSValue(), nold.JSValue())
+	n.Value.Call("replaceChild", nnew.Value, nold.Value)
 }
 
 func (n NativeElement) RemoveChild(child *ui.Element) {
 	v, ok := child.Native.(NativeElement)
 	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot remove " , child.Native)
+		log.Print("wrong format for native element underlying objects.Cannot remove ", child.Native)
 		return
 	}
-	//n.JSValue().Call("removeChild", v.JSValue())
-	 v.JSValue().Call("remove")
+	v.Value.Call("remove")
+	//n.Value.Call("removeChild", v.Value)
+
 }
 
 /*
@@ -461,7 +466,6 @@ func NewDocument(id string, options ...string) Document {
 			return false
 		}))
 
-
 		e.Watch("ui", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			v := evt.NewValue()
 			nroute, ok := v.(ui.String)
@@ -484,6 +488,16 @@ func NewDocument(id string, options ...string) Document {
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 	return Document{ui.BasicElement{LoadElement(newDocument(id, id, options...))}}
+}
+
+// reset is used to delete all eventlisteners froman Element
+func reset(element js.Value) js.Value {
+	clone := element.Call("cloneNode")
+	parent := element.Get("parentNode")
+	if !parent.IsNull() {
+		element.Call("replaceWith", clone)
+	}
+	return clone
 }
 
 // Div is a concrete type that holds the common interface to Div *ui.Element objects.
@@ -517,7 +531,10 @@ func NewDiv(name string, id string, options ...string) Div {
 		// Let's defer this to the persistence option so that the loading function of the right persistent storage is used.
 		if !exist {
 			htmlDiv = js.Global().Get("document").Call("createElement", "div")
+		} else {
+			htmlDiv = reset(htmlDiv)
 		}
+
 		n := NewNativeElementWrapper(htmlDiv)
 		e.Native = n
 		if !exist {
@@ -591,6 +608,8 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 
 	if !exist {
 		htmlTooltip = js.Global().Get("document").Call("createElement", "div")
+	} else {
+		htmlTooltip = reset(htmlTooltip)
 	}
 
 	n := NewNativeElementWrapper(htmlTooltip)
@@ -700,6 +719,8 @@ func NewTextArea(name string, id string, rows int, cols int, options ...string) 
 
 		if !exist {
 			htmlTextArea = js.Global().Get("document").Call("createElement", "textarea")
+		} else {
+			htmlTextArea = reset(htmlTextArea)
 		}
 
 		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -775,7 +796,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 			if !ok {
 				return true
 			}
-			nn := n.JSValue()
+			nn := n.Value
 			v := nn.Get("value")
 			ok = v.Truthy()
 			if !ok {
@@ -817,6 +838,8 @@ func NewHeader(name string, id string, options ...string) Header {
 
 		if !exist {
 			htmlHeader = js.Global().Get("document").Call("createElement", "header")
+		} else {
+			htmlHeader = reset(htmlHeader)
 		}
 
 		n := NewNativeElementWrapper(htmlHeader)
@@ -844,6 +867,8 @@ func NewFooter(name string, id string, options ...string) Footer {
 
 		if !exist {
 			htmlFooter = js.Global().Get("document").Call("createElement", "footer")
+		} else {
+			htmlFooter = reset(htmlFooter)
 		}
 
 		n := NewNativeElementWrapper(htmlFooter)
@@ -858,7 +883,7 @@ func NewFooter(name string, id string, options ...string) Footer {
 	return Footer{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type Section  struct {
+type Section struct {
 	ui.BasicElement
 }
 
@@ -872,6 +897,8 @@ func NewSection(name string, id string, options ...string) Section {
 		exist := !htmlSection.IsNull()
 		if !exist {
 			htmlSection = js.Global().Get("document").Call("createElement", "section")
+		} else {
+			htmlSection = reset(htmlSection)
 		}
 
 		n := NewNativeElementWrapper(htmlSection)
@@ -884,11 +911,11 @@ func NewSection(name string, id string, options ...string) Section {
 	return Section{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H1  struct {
+type H1 struct {
 	ui.BasicElement
 }
 
-func(h H1) SetText(s string) H1{
+func (h H1) SetText(s string) H1 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -903,6 +930,8 @@ func NewH1(name string, id string, options ...string) H1 {
 		exist := !htmlH1.IsNull()
 		if !exist {
 			htmlH1 = js.Global().Get("document").Call("createElement", "h1")
+		} else {
+			htmlH1 = reset(htmlH1)
 		}
 
 		n := NewNativeElementWrapper(htmlH1)
@@ -925,11 +954,11 @@ func NewH1(name string, id string, options ...string) H1 {
 	return H1{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H2  struct {
+type H2 struct {
 	ui.BasicElement
 }
 
-func(h H2) SetText(s string) H2{
+func (h H2) SetText(s string) H2 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -944,6 +973,8 @@ func NewH2(name string, id string, options ...string) H2 {
 		exist := !htmlH2.IsNull()
 		if !exist {
 			htmlH2 = js.Global().Get("document").Call("createElement", "h2")
+		} else {
+			htmlH2 = reset(htmlH2)
 		}
 
 		n := NewNativeElementWrapper(htmlH2)
@@ -966,11 +997,11 @@ func NewH2(name string, id string, options ...string) H2 {
 	return H2{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H3  struct {
+type H3 struct {
 	ui.BasicElement
 }
 
-func(h H3) SetText(s string) H3{
+func (h H3) SetText(s string) H3 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -985,6 +1016,8 @@ func NewH3(name string, id string, options ...string) H3 {
 		exist := !htmlH3.IsNull()
 		if !exist {
 			htmlH3 = js.Global().Get("document").Call("createElement", "h3")
+		} else {
+			htmlH3 = reset(htmlH3)
 		}
 
 		n := NewNativeElementWrapper(htmlH3)
@@ -1007,11 +1040,11 @@ func NewH3(name string, id string, options ...string) H3 {
 	return H3{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H4  struct {
+type H4 struct {
 	ui.BasicElement
 }
 
-func(h H4) SetText(s string) H4{
+func (h H4) SetText(s string) H4 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -1026,6 +1059,8 @@ func NewH4(name string, id string, options ...string) H4 {
 		exist := !htmlH4.IsNull()
 		if !exist {
 			htmlH4 = js.Global().Get("document").Call("createElement", "h4")
+		} else {
+			htmlH4 = reset(htmlH4)
 		}
 
 		n := NewNativeElementWrapper(htmlH4)
@@ -1048,11 +1083,11 @@ func NewH4(name string, id string, options ...string) H4 {
 	return H4{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H5  struct {
+type H5 struct {
 	ui.BasicElement
 }
 
-func(h H5) SetText(s string) H5{
+func (h H5) SetText(s string) H5 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -1067,6 +1102,8 @@ func NewH5(name string, id string, options ...string) H5 {
 		exist := !htmlH5.IsNull()
 		if !exist {
 			htmlH5 = js.Global().Get("document").Call("createElement", "h5")
+		} else {
+			htmlH5 = reset(htmlH5)
 		}
 
 		n := NewNativeElementWrapper(htmlH5)
@@ -1089,11 +1126,11 @@ func NewH5(name string, id string, options ...string) H5 {
 	return H5{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-type H6  struct {
+type H6 struct {
 	ui.BasicElement
 }
 
-func(h H6) SetText(s string) H6{
+func (h H6) SetText(s string) H6 {
 	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
@@ -1108,6 +1145,8 @@ func NewH6(name string, id string, options ...string) H6 {
 		exist := !htmlH6.IsNull()
 		if !exist {
 			htmlH6 = js.Global().Get("document").Call("createElement", "h6")
+		} else {
+			htmlH6 = reset(htmlH6)
 		}
 
 		n := NewNativeElementWrapper(htmlH6)
@@ -1144,6 +1183,8 @@ func NewSpan(name string, id string, options ...string) Span {
 		exist := !htmlSpan.IsNull()
 		if !exist {
 			htmlSpan = js.Global().Get("document").Call("createElement", "span")
+		} else {
+			htmlSpan = reset(htmlSpan)
 		}
 
 		n := NewNativeElementWrapper(htmlSpan)
@@ -1170,6 +1211,8 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 		exist := !htmlParagraph.IsNull()
 		if !exist {
 			htmlParagraph = js.Global().Get("document").Call("createElement", "p")
+		} else {
+			htmlParagraph = reset(htmlParagraph)
 		}
 
 		n := NewNativeElementWrapper(htmlParagraph)
@@ -1255,6 +1298,8 @@ func NewAnchor(target string, name string, id string, options ...string) Anchor 
 		exist := !htmlAnchor.IsNull()
 		if !exist {
 			htmlAnchor = js.Global().Get("document").Call("createElement", "a")
+		} else {
+			htmlAnchor = reset(htmlAnchor)
 		}
 
 		n := NewNativeElementWrapper(htmlAnchor)
@@ -1307,6 +1352,8 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 		exist := !htmlButton.IsNull()
 		if !exist {
 			htmlButton = js.Global().Get("document").Call("createElement", "button")
+		} else {
+			htmlButton = reset(htmlButton)
 		}
 
 		n := NewNativeElementWrapper(htmlButton)
@@ -1363,8 +1410,8 @@ func (l Label) SetText(s string) Label {
 	return l
 }
 
-func(l Label) For(e *ui.Element) Label{
-	SetAttribute(l.AsElement(),"for",e.ID)
+func (l Label) For(e *ui.Element) Label {
+	SetAttribute(l.AsElement(), "for", e.ID)
 	return l
 }
 
@@ -1376,6 +1423,8 @@ func NewLabel(name string, id string, options ...string) Label {
 		htmlLabel := js.Global().Get("document").Call("getElementById", id)
 		if htmlLabel.IsNull() {
 			htmlLabel = js.Global().Get("document").Call("createElement", "label")
+		} else {
+			htmlLabel = reset(htmlLabel)
 		}
 
 		n := NewNativeElementWrapper(htmlLabel)
@@ -1427,12 +1476,12 @@ func (i Input) Focus() {
 	native.Value.Call("focus")
 }
 
-func(i Input) Clear() {
+func (i Input) Clear() {
 	native, ok := i.AsElement().Native.(NativeElement)
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	native.Value.Set("value","")
+	native.Value.Set("value", "")
 }
 
 func NewInput(typ string, name string, id string, options ...string) Input {
@@ -1444,6 +1493,8 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 		exist := !htmlInput.IsNull()
 		if !exist {
 			htmlInput = js.Global().Get("document").Call("createElement", "input")
+		} else {
+			htmlInput = reset(htmlInput)
 		}
 
 		n := NewNativeElementWrapper(htmlInput)
@@ -1617,6 +1668,8 @@ func NewImage(name, id string, options ...string) Img {
 		exist := !htmlImg.IsNull()
 		if !exist {
 			htmlImg = js.Global().Get("document").Call("createElement", "img")
+		} else {
+			htmlImg = reset(htmlImg)
 		}
 
 		n := NewNativeElementWrapper(htmlImg)
@@ -1655,6 +1708,8 @@ var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui
 	exist := !htmlAudio.IsNull()
 	if !exist {
 		htmlAudio = js.Global().Get("document").Call("createElement", "audio")
+	} else {
+		htmlAudio = reset(htmlAudio)
 	}
 
 	n := NewNativeElementWrapper(htmlAudio)
@@ -1672,6 +1727,8 @@ var NewVideo = Elements.NewConstructor("video", func(name string, id string) *ui
 	exist := !htmlVideo.IsNull()
 	if !exist {
 		htmlVideo = js.Global().Get("document").Call("createElement", "video")
+	} else {
+		htmlVideo = reset(htmlVideo)
 	}
 
 	//SetAttribute(e, "name", name)
@@ -1691,6 +1748,8 @@ var NewMediaSource = func(src string, typ string, options ...string) *ui.Element
 		exist := !htmlSource.IsNull()
 		if !exist {
 			htmlSource = js.Global().Get("document").Call("createElement", "source")
+		} else {
+			htmlSource = reset(htmlSource)
 		}
 
 		n := NewNativeElementWrapper(htmlSource)
@@ -1920,6 +1979,8 @@ func NewUl(name string, id string, options ...string) List {
 		exist := !htmlList.IsNull()
 		if !exist {
 			htmlList = js.Global().Get("document").Call("createElement", "ul")
+		} else {
+			htmlList = reset(htmlList)
 		}
 
 		n := NewNativeElementWrapper(htmlList)
@@ -1948,7 +2009,7 @@ func NewUl(name string, id string, options ...string) List {
 		e.Watch("ui", "list", e, h)
 
 		return e
-	}, AllowListAutoSync, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 	return List{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
@@ -1970,6 +2031,8 @@ func NewOl(name string, id string, typ string, numberingstart int, options ...st
 		exist := !htmlList.IsNull()
 		if !exist {
 			htmlList = js.Global().Get("document").Call("createElement", "ol")
+		} else {
+			htmlList = reset(htmlList)
 		}
 
 		n := NewNativeElementWrapper(htmlList)
@@ -1979,7 +2042,7 @@ func NewOl(name string, id string, typ string, numberingstart int, options ...st
 		SetAttribute(e, "type", typ)
 		SetAttribute(e, "start", strconv.Itoa(numberingstart))
 		return e
-	}, AllowListAutoSync, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 	return OrderedList{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
@@ -2001,6 +2064,8 @@ func NewListItem(name string, id string, options ...string) ListItem {
 		exist := !htmlListItem.IsNull()
 		if !exist {
 			htmlListItem = js.Global().Get("document").Call("createElement", "li")
+		} else {
+			htmlListItem = reset(htmlListItem)
 		}
 
 		n := NewNativeElementWrapper(htmlListItem)
@@ -2046,94 +2111,6 @@ func NewListItem(name string, id string, options ...string) ListItem {
 	return ListItem{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
-func NewListValue(index int, value ui.Value) ui.Object {
-	o := ui.NewObject()
-	o.Set("index", ui.Number(index))
-	o.Set("value", value)
-	return o
-}
-
-func listValueInfo(v ui.Value) (index int, newvalue ui.Value, ok bool) {
-	res, ok := v.(ui.Object)
-	i, ok := res.Get("index")
-	if !ok {
-		return -1, nil, false
-	}
-	idx, ok := i.(ui.Number)
-	if !ok {
-		return -1, nil, false
-	}
-	value, ok := res.Get("value")
-	if !ok {
-		return -1, nil, false
-	}
-	tval, ok := value.(ui.Value)
-	if !ok {
-		return -1, nil, false
-	}
-	return int(idx), tval, true
-}
-
-// EnableListAutoSync is passed as an optional Argument to a list constructor call in
-// order to trigger list autosyncing.
-// When a list is autosyncing, any modification to the list (item adjunction, deletion, modification)
-// will propagate to the User Interface.
-// This is a convenience function that enforces the argument list
-func EnableListAutoSync() string {
-	return "ListAutoSync"
-}
-
-// AutoSyncList enables to set a mutation handler which is called each time
-// a change occurs in the chosen namespace/category of a list Element.
-var AllowListAutoSync = ui.NewConstructorOption("ListAutoSync", func(e *ui.Element) *ui.Element {
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		i, v, ok := listValueInfo(evt.NewValue())
-		if !ok {
-			return true
-		}
-
-		if evt.ObservedKey() == "append" {
-			id := NewID()
-			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.AsElement().SetDataSetUI("content", v, false)
-
-			// evt.Origin().AppendChild(n)
-			evt.Origin().AppendChild(n)
-		}
-
-		if evt.ObservedKey() == "prepend" {
-			id := NewID()
-			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.AsElement().SetDataSetUI("content", v, false)
-
-			// evt.Origin().PrependChild(n)
-			evt.Origin().PrependChild(n)
-		}
-
-		if evt.ObservedKey() == "insert" {
-			id := NewID()
-			n := NewListItem(evt.Origin().Name+"-item", id)
-			n.AsElement().SetDataSetUI("content", v, false)
-
-			// evt.Origin().InsertChild(n, i)
-			evt.Origin().InsertChild(n, i)
-		}
-
-		if evt.ObservedKey() == "delete" {
-			target := evt.Origin()
-			deletee := target.Children.AtIndex(i)
-			if deletee != nil {
-				target.RemoveChild(deletee)
-
-			}
-		}
-		return false
-	})
-
-	e.WatchGroup(e.Name, e, h)
-	return e
-})
-
 type Table struct {
 	ui.BasicElement
 }
@@ -2171,6 +2148,8 @@ func NewThead(name string, id string, options ...string) Thead {
 		exist := !htmlThead.IsNull()
 		if !exist {
 			htmlThead = js.Global().Get("document").Call("createElement", "thead")
+		} else {
+			htmlThead = reset(htmlThead)
 		}
 
 		n := NewNativeElementWrapper(htmlThead)
@@ -2209,6 +2188,8 @@ func NewTr(name string, id string, options ...string) Tr {
 		exist := !htmlTr.IsNull()
 		if !exist {
 			htmlTr = js.Global().Get("document").Call("createElement", "tr")
+		} else {
+			htmlTr = reset(htmlTr)
 		}
 
 		n := NewNativeElementWrapper(htmlTr)
@@ -2230,6 +2211,8 @@ func NewTd(name string, id string, options ...string) Td {
 		exist := !htmlTableData.IsNull()
 		if !exist {
 			htmlTableData = js.Global().Get("document").Call("createElement", "td")
+		} else {
+			htmlTableData = reset(htmlTableData)
 		}
 
 		n := NewNativeElementWrapper(htmlTableData)
@@ -2251,6 +2234,8 @@ func NewTh(name string, id string, options ...string) Th {
 		exist := !htmlTableDataHeader.IsNull()
 		if !exist {
 			htmlTableDataHeader = js.Global().Get("document").Call("createElement", "th")
+		} else {
+			htmlTableDataHeader = reset(htmlTableDataHeader)
 		}
 
 		n := NewNativeElementWrapper(htmlTableDataHeader)
@@ -2272,6 +2257,8 @@ func NewTable(name string, id string, options ...string) Table {
 		exist := !htmlTable.IsNull()
 		if !exist {
 			htmlTable = js.Global().Get("document").Call("createElement", "table")
+		} else {
+			htmlTable = reset(htmlTable)
 		}
 
 		n := NewNativeElementWrapper(htmlTable)
@@ -2432,11 +2419,11 @@ func enableClasses(e *ui.Element) *ui.Element {
 			return true
 		}
 
-		if len(strings.TrimSpace(string(classes))) != 0{
-			native.JSValue().Call("setAttribute", "class", string(classes))
+		if len(strings.TrimSpace(string(classes))) != 0 {
+			native.Value.Call("setAttribute", "class", string(classes))
 			return false
 		}
-		native.JSValue().Call("removeAttribute", "class")
+		native.Value.Call("removeAttribute", "class")
 
 		return false
 	})
@@ -2465,7 +2452,7 @@ func GetAttribute(target *ui.Element, name string) string {
 		log.Print("Cannot retrieve Attribute on non-expected wrapper type")
 		return ""
 	}
-	return native.JSValue().Call("getAttribute", "name").String()
+	return native.Value.Call("getAttribute", "name").String()
 }
 
 func SetAttribute(target *ui.Element, name string, value string) {
@@ -2489,7 +2476,7 @@ func SetAttribute(target *ui.Element, name string, value string) {
 		log.Print("Cannot set Attribute on non-expected wrapper type")
 		return
 	}
-	native.JSValue().Call("setAttribute", name, value)
+	native.Value.Call("setAttribute", name, value)
 }
 
 func RemoveAttribute(target *ui.Element, name string) {
@@ -2506,10 +2493,10 @@ func RemoveAttribute(target *ui.Element, name string) {
 
 	native, ok := target.Native.(NativeElement)
 	if !ok {
-		log.Print("Cannot delete Attribute using non-expected wrapper type")
+		log.Print("Cannot delete Attribute using non-expected wrapper type ", target.ID)
 		return
 	}
-	native.JSValue().Call("removeAttribute", name)
+	native.Value.Call("removeAttribute", name)
 }
 
 // Buttonify turns an Element into a clickable link
