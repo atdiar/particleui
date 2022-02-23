@@ -395,6 +395,24 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 
 }
 
+// JSValue retrieves the js.Value corresponding to the Element submmitted as
+// argument.
+func JSValue(e *ui.Element) js.Value {
+	n, ok := e.Native.(NativeElement)
+	if !ok {
+		panic("js.Value not wrapped in NativeElement type")
+	}
+	return n.Value
+}
+
+// SetInnerHTML sets the innerHTML property of HTML elements.
+// Please note that it is unsafe to sets client submittd HTML inputs.
+func SetInnerHTML(e *ui.Element, html string) *ui.Element {
+	jsv := JSValue(e)
+	jsv.Set("innerHTML", html)
+	return e
+}
+
 /*
 //
 //
@@ -1173,6 +1191,11 @@ type Span struct {
 	ui.BasicElement
 }
 
+func (s Span) SetText(str string) Span {
+	s.AsElement().SetDataSetUI("text", ui.String(str))
+	return s
+}
+
 // NewSpan is a constructor for html span elements.
 func NewSpan(name string, id string, options ...string) Span {
 	c := Elements.NewConstructor("span", func(name string, id string) *ui.Element {
@@ -1189,6 +1212,16 @@ func NewSpan(name string, id string, options ...string) Span {
 
 		n := NewNativeElementWrapper(htmlSpan)
 		e.Native = n
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			rawstr, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlSpan.Set("textContent", string(rawstr))
+			return false
+		}))
+
 		if !exist {
 			SetAttribute(e, "id", id)
 		}
@@ -1274,8 +1307,13 @@ func (a Anchor) SetHREF(target string) Anchor {
 }
 
 func (a Anchor) FromLink(link ui.Link) Anchor {
-	a.AsElement().Watch("event", "activated", link.Raw, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI())
+		return false
+	}))
+
+	a.AsElement().Watch("data", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		a.AsElement().SetDataSetUI("active", evt.NewValue())
 		return false
 	}))
 
@@ -1288,8 +1326,13 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 	return a
 }
 
+func (a Anchor) SetText(text string) Anchor {
+	a.AsElement().SetDataSetUI("text", ui.String(text))
+	return a
+}
+
 // NewAnchor creates an html anchor element.
-func NewAnchor(target string, name string, id string, options ...string) Anchor {
+func NewAnchor(name string, id string, options ...string) Anchor {
 	c := Elements.NewConstructor("a", func(name string, id string) *ui.Element {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
@@ -1314,6 +1357,15 @@ func NewAnchor(target string, name string, id string, options ...string) Anchor 
 				return true
 			}
 			SetAttribute(e, "href", string(r))
+			return false
+		}))
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			s, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			SetInnerHTML(e, string(s))
 			return false
 		}))
 

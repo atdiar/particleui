@@ -351,7 +351,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 
 func (r *Router) verifyLinkActivation() {
 	for _, l := range r.Links {
-		_, ok := l.Raw.Get("event", "activated")
+		_, ok := l.Raw.Get("event", "verified")
 		if !ok {
 			panic("Link activation failure: " + l.URI())
 		}
@@ -609,6 +609,7 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 
 // Link holds the representation (under the form of an URI) of the application state
 // required for the target View to be available for display on screen.
+// A link can be watched.
 type Link struct {
 	Raw *Element
 
@@ -626,6 +627,24 @@ func (l Link) Activate() {
 	l.Router.GoTo(l.URI())
 }
 
+func(l Link) IsActive()bool{
+	status,ok:= l.Raw.GetData("active")
+	if !ok{
+		return false
+	}
+	st,ok:= status.(Bool)
+	if !ok{
+		panic("wrong type for link validation predicate value")
+	}
+	return bool(st)
+}
+
+func(l Link) AsElement() *Element{
+	return l.Raw
+}
+
+func(l Link) watchable(){}
+
 func (r *Router) NewLink(target ViewElement, viewname string) Link {
 	// If previously created, it has been memoized. let's retrieve it then. otherwise,
 	// let's create it.
@@ -635,16 +654,25 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 		return l
 	}
 
-	e := NewElement(viewname, target.AsElement().ID+"/"+viewname, r.outlet.AsElement().DocType)
+	e := NewElement(viewname, target.AsElement().ID+"-"+viewname, r.outlet.AsElement().DocType)
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		v:= target.RetrieveView(viewname)
 		if v!= nil{ // viewname corresponds to an existing view
-			e.Set("event", "activated", Bool(true))
+			e.Set("event", "verified", Bool(true))
 		}
-
 		return false
 	})
 	e.Watch("event", "mounted", target.AsElement(), nh)
+	e.Watch("data","currentroute",r.outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
+		route := evt.NewValue().(String)
+		if string(route) == (target.AsElement().Route()+"/"+target.AsElement().ID+"/"+viewname){
+			e.SyncUISetData("active",Bool(true))
+		}else{
+			e.SyncUISetData("active",Bool(false))
+		}
+
+		return false
+	}))
 	l = Link{e, target, viewname, r}
 	r.Links[target.AsElement().ID+"/"+viewname] = l
 

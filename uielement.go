@@ -916,6 +916,8 @@ func (e *Element) Get(category, propname string) (Value, bool) {
 // First flag in the variadic argument, if true, denotes whether the property should be inheritable.
 // The "ui" category is unformally reserved for properties that are a UI representation
 // of data.
+// NOTE: One category is never persisted: "event" as it corresonds
+// to transient, runtime-only props.
 func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
 	var inheritable bool
 	if len(flags) > 0 {
@@ -934,7 +936,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok {
+		if ok && category != "event" {
 			storage.Store(e, category, propname, value, flags...)
 		}
 	}
