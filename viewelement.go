@@ -81,24 +81,12 @@ func (v ViewElement) RetrieveView(name string) *View {
 // AythorizeViewIf allows to make the activation of a view conditional to a boolean
 // Value set for the property of a target ELement. For instance, it can be useful
 // to restrict View activation to a subset of users in an app.
-func (v ViewElement) AuthorizeViewIf(viewname string, category string, property string, target *Element) {
-	var authorized bool
-	val, ok := target.Get(category, property)
-	if ok {
-		if val == Bool(true) {
-			authorized = true
-		}
-	}
-	v.AsElement().Set("authorized", viewname, Bool(authorized))
-	v.AsElement().Watch(category, property, target, NewMutationHandler(func(evt MutationEvent) bool {
-		val := evt.NewValue()
-		if val == Bool(true) {
-			v.AsElement().Set("authorized", viewname, Bool(true))
-		} else {
-			v.AsElement().Set("authorized", viewname, Bool(false))
-		}
-		return false
-	}))
+func (v ViewElement) SetAuthorization(viewname string, isAuthorized bool) {
+	v.AsElement().Set("authorized", viewname, Bool(isAuthorized))
+}
+
+func (v ViewElement) IsViewAuthorized(name string) bool {
+	return v.isViewAuthorized(name string)
 }
 
 func (v ViewElement) isViewAuthorized(name string) bool {
@@ -119,7 +107,9 @@ func (v ViewElement) ActivateView(name string) error {
 	if !ok {
 		panic(errors.New("authorization error " + name + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
-	if val != Bool(true) {
+	auth:= val.(Bool)
+	}
+	if auth != Bool(true) {
 		return errors.New("Unauthorized")
 	}
 	if v.AsElement().ActiveView == name {
