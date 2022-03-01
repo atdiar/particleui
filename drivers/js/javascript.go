@@ -1307,8 +1307,15 @@ func (a Anchor) SetHREF(target string) Anchor {
 }
 
 func (a Anchor) FromLink(link ui.Link) Anchor {
+	// Check if link is already verified
+	_,ok:=link.AsElement().Get("event","verified")
+	if ok{
+		a.SetHREF(link.URI())
+		log.Print(link.URI(), " test") // DEBUG
+	}
 	a.AsElement().Watch("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI())
+		log.Print(link.URI(), " test") // DEBUG
 		return false
 	}))
 
@@ -1337,7 +1344,7 @@ func NewAnchor(name string, id string, options ...string) Anchor {
 		e := ui.NewElement(name, id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlAnchor := js.Global().Get("document").Call("getElementbyId", id)
+		htmlAnchor := js.Global().Get("document").Call("getElementById", id)
 		exist := !htmlAnchor.IsNull()
 		if !exist {
 			htmlAnchor = js.Global().Get("document").Call("createElement", "a")

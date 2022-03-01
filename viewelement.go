@@ -78,15 +78,25 @@ func (v ViewElement) RetrieveView(name string) *View {
 	return v.AsElement().retrieveView(name)
 }
 
-// AythorizeViewIf allows to make the activation of a view conditional to a boolean
-// Value set for the property of a target ELement. For instance, it can be useful
-// to restrict View activation to a subset of users in an app.
+func(v ViewElement) SetCurrentView(elements ...AnyElement) ViewElement{
+	v.AsElement().SetChildren(elements...)
+	currentviewname:= v.AsElement().ActiveView
+	for _,any:= range elements{
+		any.AsElement().ActiveView = currentviewname
+	}
+	return v
+}
+
+// SetAuthorization is a shortcut for the ("authorized",viewname) prop that allows
+// to determine whether a view is accessible or not.
 func (v ViewElement) SetAuthorization(viewname string, isAuthorized bool) {
 	v.AsElement().Set("authorized", viewname, Bool(isAuthorized))
 }
 
+// isViewAuthorized is a predicate function returning the authorization status
+// of a view.
 func (v ViewElement) IsViewAuthorized(name string) bool {
-	return v.isViewAuthorized(name string)
+	return v.isViewAuthorized(name)
 }
 
 func (v ViewElement) isViewAuthorized(name string) bool {
@@ -94,10 +104,8 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 	if !ok {
 		return false
 	}
-	if val != Bool(true) {
-		return false
-	}
-	return true
+	b:=val.(Bool)
+	return bool(b)
 }
 
 // ActivateView sets the active view of  a ViewElement.
@@ -105,16 +113,14 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 func (v ViewElement) ActivateView(name string) error {
 	val, ok := v.AsElement().Get("authorized", name)
 	if !ok {
-		panic(errors.New("authorization error " + name + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
+		panic(errors.New("authorization error " + name + " " + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
 	auth:= val.(Bool)
-	}
+	
 	if auth != Bool(true) {
 		return errors.New("Unauthorized")
 	}
-	if v.AsElement().ActiveView == name {
-		return nil
-	}
+
 	return v.AsElement().activateView(name)
 }
 
@@ -224,7 +230,7 @@ func (e *Element) activateView(name string) error {
 		e.appendChild(BasicElement{child})
 	}
 	delete(e.InactiveViews, name)
-	e.Set("ui", "activeview", String(name), false)
+	e.SetDataSetUI("activeview", String(name), false)
 
 	return nil
 }

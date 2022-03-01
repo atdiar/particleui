@@ -461,7 +461,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
-	child.root = parent.root // mounted once means attached for ever unless attached to a new app *root (imagining several apps can be ran concurrently and can share ui elements)
+	child.root = parent.root
 	child.subtreeRoot = parent.subtreeRoot
 
 	child.link(BasicElement{parent})

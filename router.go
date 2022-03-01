@@ -31,8 +31,7 @@ type Router struct {
 	LeaveTrailingSlash bool
 }
 
-// NewRouter takes an Element object which should be the entry point of the router
-// as well as the document root which should be the entry point of the document/application tree.
+// NewRouter takes an Element object which should be the entry point of the router.
 func NewRouter(baseurl string, rootview ViewElement) *Router {
 	if !rootview.AsElement().Mounted() {
 		panic("router can only use a view attached to the main tree as a navigation outlet.")
@@ -73,7 +72,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 	}
 	newroute = strings.TrimPrefix(newroute, r.BaseURL)
 
-	// 1. Let's see if the URI matches any of the registered routes. (TODO)
+	// 1. Let's see if the URI matches any of the registered routes.
 	a, err := r.Routes.match(newroute)
 	if err != nil {
 		log.Print(err) // DEBUG
@@ -109,6 +108,7 @@ func (r *Router) GoTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
+	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
 		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
@@ -116,7 +116,7 @@ func (r *Router) GoTo(route string) {
 	}
 
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
-	r.History.Push(route)
+
 	//r.outlet.Element().Set("navigation","index",Number(r.History.Cursor))
 	log.Println(*r.History) //DEBUG
 }
@@ -139,6 +139,7 @@ func (r *Router) RedirectTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
+	log.Print("DEBUG ", route) // DEBUG
 	r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(route))
 	r.History.Replace(route)
 }
@@ -197,6 +198,7 @@ func (r *Router) Match(route string) error {
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
+		DEBUG(nroute)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
 			r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
@@ -206,8 +208,6 @@ func (r *Router) handler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			if strings.HasSuffix(newroute, "/") {
 				newroute = strings.TrimSuffix(newroute, "/")
-				r.RedirectTo(newroute)
-				return true
 			}
 		}
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
@@ -261,7 +261,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 		}
 		newroute = strings.TrimPrefix(newroute, r.BaseURL)
 
-		// 1. Let's see if the URI matches any of the registered routes. (TODO)
+		// 1. Let's see if the URI matches any of the registered routes.
 		a, err := r.Routes.match(newroute)
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
@@ -634,7 +634,7 @@ func(l Link) IsActive()bool{
 	}
 	st,ok:= status.(Bool)
 	if !ok{
-		panic("wrong type for link validation predicate value")
+		panic("wrong type for link validation IsActive predicate value")
 	}
 	return bool(st)
 }
@@ -655,6 +655,9 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 	}
 
 	e := NewElement(viewname, target.AsElement().ID+"-"+viewname, r.outlet.AsElement().DocType)
+	if target.AsElement().Mounted(){
+		e.Set("event", "verified", Bool(true))
+	}
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		v:= target.RetrieveView(viewname)
 		if v!= nil{ // viewname corresponds to an existing view
@@ -692,7 +695,7 @@ type NavHistory struct {
 }
 
 func NewNavigationHistory() *NavHistory {
-	return &NavHistory{make([]string, 0, 300), -1}
+	return &NavHistory{make([]string, 0, 300), -1} // EBU
 }
 
 func (n *NavHistory) Push(URI string) *NavHistory {
