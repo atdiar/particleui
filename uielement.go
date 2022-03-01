@@ -1135,16 +1135,15 @@ func EnablePropertyAutoInheritance() string {
 // Important notice: views that are nested within a fixed element use that Element ID for routing.
 // In effect, the id acts as a namespace.
 // In order for links using the routes to these views to not be breaking between refresh/reruns of an app (hard requirement for online link-sharing), the ID of the parent element
-// should be generated so as to not change. Using the default PRNG-based ID generator is very likely to not be a good-fit here.
+// should be generated so as to not change. Using a PRNG-based ID generator is very likely to not be a good-fit here.
 //
-// For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use the default ID generator but probably reuse the tweet ID gotten via http call for each Element.
+// For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use an ID generator but probably reuse the tweet ID gotten via http call for each Element.
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
 func (e *Element) Route() string {
-	var Route = ""
 	var uri string
 	e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
 	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes) == 0 {
-		return Route + "/" + uri
+		return uri
 	}
 
 	for k, n := range e.ViewAccessPath.Nodes {

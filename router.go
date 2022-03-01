@@ -620,7 +620,11 @@ type Link struct {
 }
 
 func (l Link) URI() string {
-	return l.Target.AsElement().Route() + "/" + l.Target.AsElement().ID + "/" + l.ViewName
+	res:= l.Target.AsElement().Route()
+	if res == ""{
+		return res + "/" + l.ViewName
+	}
+	return res +"/" + l.Target.AsElement().ID + "/" + l.ViewName
 }
 
 func (l Link) Activate() {
@@ -668,7 +672,14 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 	e.Watch("event", "mounted", target.AsElement(), nh)
 	e.Watch("data","currentroute",r.outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
 		route := evt.NewValue().(String)
-		if string(route) == (target.AsElement().Route()+"/"+target.AsElement().ID+"/"+viewname){
+		DEBUG("current route is : ",route)
+		var link string
+		if target.AsElement().Route() == ""{
+			link = "/"+viewname
+		} else{
+			link = target.AsElement().Route()+"/"+target.AsElement().ID+"/"+viewname
+		}
+		if string(route) == link{
 			e.SyncUISetData("active",Bool(true))
 		}else{
 			e.SyncUISetData("active",Bool(false))
