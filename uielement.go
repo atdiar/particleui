@@ -241,12 +241,21 @@ type Element struct {
 }
 
 func (e *Element) AsElement() *Element { return e }
+func(e *Element) AsViewElement() (ViewElement,bool){
+	if e.isViewElement(){
+		return ViewElement{e},true
+	}
+	return ViewElement{nil},false
+}
 func (e *Element) isViewElement() bool { return e.InactiveViews != nil }
 func (e *Element) watchable()          {}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
 func NewElement(name string, id string, doctype string) *Element {
+	if strings.Contains(id,"/"){
+		panic("An id may not use a slash: " + id + " is not valid.")
+	}
 	e := &Element{
 		nil,
 		nil,
@@ -717,6 +726,7 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	e.RemoveChildren()
 	for _, el := range any {
 		e.AppendChild(el)
+		// el.ActiveView = e.ActiveView // TODO verify this is correct
 	}
 	return e
 }
@@ -919,6 +929,9 @@ func (e *Element) Get(category, propname string) (Value, bool) {
 // NOTE: One category is never persisted: "event" as it corresonds
 // to transient, runtime-only props.
 func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
+	if strings.Contains(category, "/") || strings.Contains(propname,"/"){
+		panic("category string and/or propname seems to contain a slash. This is not accepted. ("+category + "," + propname +")")
+	}
 	var inheritable bool
 	if len(flags) > 0 {
 		inheritable = flags[0]
@@ -1147,13 +1160,13 @@ func (e *Element) Route() string {
 	}
 
 	for k, n := range e.ViewAccessPath.Nodes {
-		path := n.Element.ID + "/" + n.Name
+		path := "/" + n.Element.ID + "/" + n.Name
 		if k == 0 {
 			if e.Mounted() {
-				path = n.Name
+				path = "/" + n.Name
 			}
 		}
-		uri = uri + "/" + path
+		uri = uri + path
 	}
 	return uri
 }

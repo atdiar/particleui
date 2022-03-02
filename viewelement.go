@@ -78,15 +78,6 @@ func (v ViewElement) RetrieveView(name string) *View {
 	return v.AsElement().retrieveView(name)
 }
 
-func(v ViewElement) SetCurrentView(elements ...AnyElement) ViewElement{
-	v.AsElement().SetChildren(elements...)
-	currentviewname:= v.AsElement().ActiveView
-	for _,any:= range elements{
-		any.AsElement().ActiveView = currentviewname
-	}
-	return v
-}
-
 // SetAuthorization is a shortcut for the ("authorized",viewname) prop that allows
 // to determine whether a view is accessible or not.
 func (v ViewElement) SetAuthorization(viewname string, isAuthorized bool) {
@@ -116,12 +107,22 @@ func (v ViewElement) ActivateView(name string) error {
 		panic(errors.New("authorization error " + name + " " + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
 	auth:= val.(Bool)
-	
+
 	if auth != Bool(true) {
 		return errors.New("Unauthorized")
 	}
 
 	return v.AsElement().activateView(name)
+}
+
+func(v ViewElement) OnActivation(viewname string, h *MutationHandler){
+	v.AsElement().Watch("ui","activeview",v.AsElement(),NewMutationHandler(func(evt MutationEvent)bool{
+		view:= evt.NewValue().(String)
+		if string(view) != viewname{
+			return false
+		}
+		return h.Handle(evt)
+	}))
 }
 
 func (e *Element) addView(v View) *Element {
@@ -148,9 +149,38 @@ func (e *Element) retrieveView(name string) *View {
 	return &v
 }
 
+func isParameter(name string)bool{
+	if strings.HasPrefix(name,":") && len(name) > 1{
+		return true
+	}
+	return false
+}
+
 func (e *Element) activateView(name string) error {
+	if isParameter(name){
+		panic("this is likely to be a programmer error. VIew name inputs can not lead with a colon.")
+	}
 	newview, ok := e.InactiveViews[name]
 	if !ok {
+		// Check if view is active
+		if e.ActiveView == name{
+			return nil
+		}
+		if isParameter(e.ActiveView){
+			// let's check the name recorded in the state
+			n,ok:= e.Get("ui","activeview")
+			if !ok{
+				return errors.New("View is unknown.")
+			}
+			vname,ok:= n.(String)
+			if !ok{
+				panic("wrong type for view name. This is likely a library error")
+			}
+			if string(vname) != name{
+				return errors.New("View is unknown. Expected " + string(vname) + " instead of " + name)
+			}
+			return nil
+		}
 		// Support for parameterized views
 		if len(e.InactiveViews) != 0 {
 			var view View
@@ -198,7 +228,7 @@ func (e *Element) activateView(name string) error {
 				for _, newchild := range view.Elements().List {
 					e.appendChild(BasicElement{newchild})
 				}
-				e.SetDataSetUI("activeview", String(name), false)
+				e.SetUI("activeview", String(name), false)
 
 				return nil
 			}
@@ -230,7 +260,7 @@ func (e *Element) activateView(name string) error {
 		e.appendChild(BasicElement{child})
 	}
 	delete(e.InactiveViews, name)
-	e.SetDataSetUI("activeview", String(name), false)
+	e.SetUI("activeview", String(name), false)
 
 	return nil
 }

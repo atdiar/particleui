@@ -9,6 +9,8 @@ type BasicElement struct {
 func (e BasicElement) watchable()          {}
 func (e BasicElement) AsElement() *Element { return e.Raw }
 func (e BasicElement) AsBasicElement() BasicElement { return e }
+func(e BasicElement) AsViewElement() (ViewElement,bool){ return e.AsElement().AsViewElement()}
+
 
 func (e BasicElement) RemoveChildren() BasicElement {
 	e.AsElement().removeChildren()

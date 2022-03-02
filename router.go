@@ -19,7 +19,7 @@ var (
 // The router is also in charge of modifying the application state to reach any
 // state registered as a shortcut upon request.
 type Router struct {
-	BaseURL string
+	BasePath string
 	outlet  ViewElement
 
 	Links map[string]Link
@@ -32,11 +32,11 @@ type Router struct {
 }
 
 // NewRouter takes an Element object which should be the entry point of the router.
-func NewRouter(baseurl string, rootview ViewElement) *Router {
+func NewRouter(basepath string, rootview ViewElement) *Router {
 	if !rootview.AsElement().Mounted() {
 		panic("router can only use a view attached to the main tree as a navigation outlet.")
 	}
-	u, err := url.Parse(baseurl)
+	u, err := url.Parse(basepath)
 	if err != nil {
 		panic(err)
 	}
@@ -67,11 +67,6 @@ func NewRouter(baseurl string, rootview ViewElement) *Router {
 }
 
 func (r *Router) tryNavigate(newroute string) bool {
-	if !r.LeaveTrailingSlash {
-		newroute = strings.TrimSuffix(newroute, "/")
-	}
-	newroute = strings.TrimPrefix(newroute, r.BaseURL)
-
 	// 1. Let's see if the URI matches any of the registered routes.
 	a, err := r.Routes.match(newroute)
 	if err != nil {
@@ -103,11 +98,11 @@ func (r *Router) tryNavigate(newroute string) bool {
 
 // GoTo changes the application state by updating the current route
 func (r *Router) GoTo(route string) {
-	route = strings.TrimPrefix(route, r.BaseURL)
-	route = strings.TrimPrefix(route, "/")
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
+	route = strings.TrimPrefix(route, strings.TrimSuffix(canonicalBase(r.BasePath),"/"))
+
 	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
@@ -134,12 +129,10 @@ func (r *Router) GoForward() {
 }
 
 func (r *Router) RedirectTo(route string) {
-	route = strings.TrimPrefix(route, r.BaseURL)
-	route = strings.TrimPrefix(route, "/")
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
-	log.Print("DEBUG ", route) // DEBUG
+	log.Print("redirect to: ", route) // DEBUG
 	r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(route))
 	r.History.Replace(route)
 }
@@ -194,11 +187,20 @@ func (r *Router) Match(route string) error {
 
 }
 
+func canonicalBase(s string) string{
+	t:= strings.SplitAfter(s,"/")
+	var res string
+	for i:= 0;i<len(t)-1;i++{
+		res = res + t[i]
+	}
+	return res
+}
+
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
-		DEBUG(nroute)
+		DEBUG("route to handle is: ",nroute)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
 			r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
@@ -206,12 +208,9 @@ func (r *Router) handler() *MutationHandler {
 		}
 		newroute := string(nroute)
 		if !r.LeaveTrailingSlash {
-			if strings.HasSuffix(newroute, "/") {
-				newroute = strings.TrimSuffix(newroute, "/")
-			}
+			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, r.BaseURL)
-		newroute = strings.TrimPrefix(newroute, "/")
+		newroute = strings.TrimPrefix(newroute, strings.TrimSuffix(canonicalBase(r.BasePath),"/"))
 
 		// 1. Let's see if the URI matches any of the registered routes. (TODO)
 		a, err := r.Routes.match(newroute)
@@ -238,7 +237,7 @@ func (r *Router) handler() *MutationHandler {
 			return false
 		}
 
-		r.outlet.AsElement().Root().SetDataSetUI("currentroute", evt.NewValue())
+		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
 		r.History.Push(newroute)
 		log.Println(*r.History) //DEBUG
 		return false
@@ -259,7 +258,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, r.BaseURL)
+		newroute = strings.TrimPrefix(newroute, strings.TrimSuffix(canonicalBase(r.BasePath),"/"))
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		a, err := r.Routes.match(newroute)
@@ -288,7 +287,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 			return false
 		}
 
-		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", evt.NewValue())
+		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 		r.History.Push(newroute)
 		log.Println(*r.History) //DEBUG
 		return false
