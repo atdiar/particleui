@@ -1234,6 +1234,11 @@ type Paragraph struct {
 	ui.BasicElement
 }
 
+func(p Paragraph) SetText(s string) Paragraph{
+	p.AsElement().SetDataSetUI("text",ui.String(s))
+	return p
+}
+
 // NewParagraph is a constructor for html paragraph elements.
 func NewParagraph(name string, id string, options ...string) Paragraph {
 	c := Elements.NewConstructor("p", func(name string, id string) *ui.Element {
@@ -1253,6 +1258,15 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 		if !exist {
 			SetAttribute(e, "id", id)
 		}
+
+		e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			rawstr, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			htmlParagraph.Set("innerText", string(rawstr))
+			return false
+		}))
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 	return Paragraph{ui.BasicElement{LoadElement(c(name, id, options...))}}
@@ -1558,6 +1572,16 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 
 		n := NewNativeElementWrapper(htmlInput)
 		e.Native = n
+
+		e.Watch("ui", "value",e, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			s, ok := evt.NewValue().(ui.String)
+			if !ok {
+				return true
+			}
+			//SetAttribute(e, "value", string(s))
+			htmlInput.Set("value",string(s))
+			return false
+		}))
 
 		e.Watch("ui", "accept", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			s, ok := evt.NewValue().(ui.String)

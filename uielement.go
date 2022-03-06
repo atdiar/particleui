@@ -241,11 +241,11 @@ type Element struct {
 }
 
 func (e *Element) AsElement() *Element { return e }
-func(e *Element) AsViewElement() (ViewElement,bool){
-	if e.isViewElement(){
-		return ViewElement{e},true
+func (e *Element) AsViewElement() (ViewElement, bool) {
+	if e.isViewElement() {
+		return ViewElement{e}, true
 	}
-	return ViewElement{nil},false
+	return ViewElement{nil}, false
 }
 func (e *Element) isViewElement() bool { return e.InactiveViews != nil }
 func (e *Element) watchable()          {}
@@ -253,7 +253,7 @@ func (e *Element) watchable()          {}
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
 func NewElement(name string, id string, doctype string) *Element {
-	if strings.Contains(id,"/"){
+	if strings.Contains(id, "/") {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
 	e := &Element{
@@ -929,8 +929,8 @@ func (e *Element) Get(category, propname string) (Value, bool) {
 // NOTE: One category is never persisted: "event" as it corresonds
 // to transient, runtime-only props.
 func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
-	if strings.Contains(category, "/") || strings.Contains(propname,"/"){
-		panic("category string and/or propname seems to contain a slash. This is not accepted. ("+category + "," + propname +")")
+	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
+		panic("category string and/or propname seems to contain a slash. This is not accepted. (" + category + "," + propname + ")")
 	}
 	var inheritable bool
 	if len(flags) > 0 {
