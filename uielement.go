@@ -731,7 +731,7 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	return e
 }
 
-func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler, immediately ...bool) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
 		p = newProperties()
@@ -760,6 +760,13 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		e.Unwatch(category, propname, owner)
 		return false
 	}))
+
+	if immediately != nil {
+		val, ok := owner.AsElement().Get(category, propname)
+		if ok {
+			h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
+		}
+	}
 
 	return e
 }
@@ -882,7 +889,7 @@ func (e *Element) OnFirstMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.Watch("event", "firstmount", e, nh)
+	e.Watch("event", "firstmount", e, nh,true)
 }
 
 func (e *Element) OnDisMount(h *MutationHandler) {
@@ -941,11 +948,11 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	oldvalue, ok := e.Get(category, propname)
 
-	/*if category == "ui"{
-		if value == oldvalue && ok{
+	if category == "ui" {
+		if equal(value, oldvalue) && ok { // idempotency
 			return
 		}
-	}*/
+	}
 
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]

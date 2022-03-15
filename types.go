@@ -205,58 +205,14 @@ func (o Object) Value() Value {
 				p.Set(k, v)
 				continue
 			}
-			m, ok := val.(map[string]interface{})
+			/*m, ok := val.(map[string]interface{})
 			if ok {
 				obj := Object(m)
 				p.Set(k, obj.Value())
-			}
+			}*/
 			p.Set(k, u.Value())
 		}
 		return p
-	/*case "Command":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-		return Command(p)
-	case "MutationRecord":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-		return MutationRecord(p)*/
 	case "Element":
 		p := NewObject()
 		for k, val := range o {
@@ -441,4 +397,81 @@ func (l ListofObjects) Get(index int) Object {
 		panic("this should be a list of objects. it should contain objects only")
 	}
 	return o
+}
+
+func equal(v Value, w Value) bool{
+	if v.ValueType() != w.ValueType(){
+		return false
+	}
+	switch v.ValueType(){
+	case "Bool":
+		return v == w
+	case "String":
+		return v == w
+	case "Number":
+		return v == w
+	case "List":
+		vl:= v.(List)
+		wl:= w.(List)
+		if len(vl) != len(wl){
+			return false
+		}
+		for i,item:= range vl{
+			if !equal(item,wl[i]){
+				return false
+			}
+		}
+		return true
+	case "Object":
+		vo:=v.(Object).Value().(Object)
+		wo:= w.(Object).Value().(Object)
+		if len(vo) != len(wo){
+			return false
+		}
+		for k,rval:= range vo{
+			if k == "typ"{
+				continue
+			}
+			val,ok:= rval.(Value)
+			if !ok{
+				return false
+			}
+			rwal,ok:= wo[k]
+			if !ok{
+				return false
+			}
+			wal,ok:= rwal.(Value)
+			if !ok{
+				return false
+			}
+			if !equal(val,wal){
+				return false
+			}
+		}
+		return true
+	case "Element":
+		// First, we need to determine whether these Elements is in raw form (Object) or not
+		ve,ok:= v.(Object)
+		if !ok{
+			ve = v.RawValue()
+		}
+		we,ok:= w.(Object)
+		if !ok{
+			we = w.RawValue()
+		}
+
+		veid,ok:= ve.Get("id")
+		if !ok{
+			return false
+		}
+		weid,ok:= we.Get("id")
+		if !ok{
+			return false
+		}
+
+		if veid != weid{
+			return false
+		}		
+	}
+	return true
 }

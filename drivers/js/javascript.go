@@ -1234,8 +1234,8 @@ type Paragraph struct {
 	ui.BasicElement
 }
 
-func(p Paragraph) SetText(s string) Paragraph{
-	p.AsElement().SetDataSetUI("text",ui.String(s))
+func (p Paragraph) SetText(s string) Paragraph {
+	p.AsElement().SetDataSetUI("text", ui.String(s))
 	return p
 }
 
@@ -1322,8 +1322,8 @@ func (a Anchor) SetHREF(target string) Anchor {
 
 func (a Anchor) FromLink(link ui.Link) Anchor {
 	// Check if link is already verified
-	_,ok:=link.AsElement().Get("event","verified")
-	if ok{
+	_, ok := link.AsElement().Get("event", "verified")
+	if ok {
 		a.SetHREF(link.URI())
 		log.Print(link.URI(), " test") // DEBUG
 	}
@@ -1331,12 +1331,12 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 		a.SetHREF(link.URI())
 		log.Print(link.URI(), " test") // DEBUG
 		return false
-	}))
+	}), true)
 
 	a.AsElement().Watch("data", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.AsElement().SetDataSetUI("active", evt.NewValue())
 		return false
-	}))
+	}), true)
 
 	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
 		evt.PreventDefault()
@@ -1573,13 +1573,13 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 		n := NewNativeElementWrapper(htmlInput)
 		e.Native = n
 
-		e.Watch("ui", "value",e, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		e.Watch("ui", "value", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			s, ok := evt.NewValue().(ui.String)
 			if !ok {
 				return true
 			}
 			//SetAttribute(e, "value", string(s))
-			htmlInput.Set("value",string(s))
+			htmlInput.Set("value", string(s))
 			return false
 		}))
 
