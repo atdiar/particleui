@@ -731,6 +731,73 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	return e
 }
 
+type childrenSet map[string]int
+
+func(s childrenSet) Contains(id string) bool{
+	_,ok:= s[id]
+	return ok
+}
+func intersect(s childrenSet, c childrenSet) childrenSet{
+	m:= make(map[string]int,len(s))
+	for id:=range s{
+		if c.Contains(id){
+			m[id]=0
+		}
+	}
+	return m
+}
+
+func(s childrenSet) Ordered(l []*Element) (childrenSet, []*Element){
+	res := make([]*Element,len(s))
+	m:= make(map[string]int,len(s))
+	n:=0
+	for _,e:= range l{
+		if s.Contains(e.ID){
+			res = append(res,e)
+			m[e.ID]=n
+			n++
+		}
+	}
+	return m,res
+}
+
+func transform(original []*Element, destination []*Element){
+	oriset := newChildrenSet(original)
+	destset := newChildrenSet((destination))
+	inter:= intersect(oriset,destset)
+
+	oset,olist:= inter.Ordered(original)
+	_,dlist:= inter.Ordered(destination)
+
+	for i,e:= range dlist{
+		oldindex:= oset[e.ID]
+		oldpos:= oriset[e.ID]
+
+		if oldindex != i{
+			oldelement:= olist[i]
+			oldelementoldpos := oriset[oldelement.ID]
+
+			e.Parent.ReplaceChild(oldelement,e)
+			e.Parent.InsertChild(oldelement,oldpos)
+			oset[e.ID] = i
+			oset[oldelement.ID]=oldindex
+
+			oriset[e.ID] = oldelementoldpos
+			oriset[oldelement.ID]= oldpos
+		}
+	}	
+}
+
+func newChildrenSet(list []*Element) childrenSet{
+	m:= make(map[string]int,len(list))
+	for index,element:= range list{
+		m[element.ID] = index
+	}
+	return m
+}
+
+
+
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler, immediately ...bool) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
