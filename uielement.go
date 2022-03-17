@@ -731,7 +731,33 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	return e
 }
 
+func(e *Element) MergeChildren(any ...AnyElement) *Element{
+	nc :=make([]*Element,len(any))
+	for _,el:= range any{
+		nc= append(nc,el.AsElement())
+	}
+	transform(e.Children.List,nc,false)
+	return e
+}
+
+func(e *Element) MergeDeleteChildren(any ...AnyElement) *Element{
+	nc :=make([]*Element,len(any))
+	for _,el:= range any{
+		nc= append(nc,el.AsElement())
+	}
+	transform(e.Children.List,nc,true)
+	return e
+}
+
 type childrenSet map[string]int
+
+func newChildrenSet(list ...*Element) childrenSet{
+	m:= make(map[string]int,len(list))
+	for index,element:= range list{
+		m[element.ID] = index
+	}
+	return m
+}
 
 func(s childrenSet) Contains(id string) bool{
 	_,ok:= s[id]
@@ -761,9 +787,9 @@ func(s childrenSet) Ordered(l []*Element) (childrenSet, []*Element){
 	return m,res
 }
 
-func transform(original []*Element, destination []*Element){
-	oriset := newChildrenSet(original)
-	destset := newChildrenSet((destination))
+func transform(original []*Element, destination []*Element, delete bool){
+	oriset := newChildrenSet(original...)
+	destset := newChildrenSet(destination...)
 	inter:= intersect(oriset,destset)
 
 	oset,olist:= inter.Ordered(original)
@@ -784,18 +810,39 @@ func transform(original []*Element, destination []*Element){
 
 			oriset[e.ID] = oldelementoldpos
 			oriset[oldelement.ID]= oldpos
+			original[oldpos]=oldelement
+			original[oldelementoldpos]=e
 		}
-	}	
-}
-
-func newChildrenSet(list []*Element) childrenSet{
-	m:= make(map[string]int,len(list))
-	for index,element:= range list{
-		m[element.ID] = index
 	}
-	return m
-}
+	// Now that the best LCS has been formed, we modify the original slice by
+	// deletion/insertion.
+	orig:= original[:0]
+	for _,e:= range original{
+		if !destset.Contains(e.ID){
+			if delete{
+				e.Parent.DeleteChild(e)
+				continue
+			}
+			e.Parent.RemoveChild(e)
+			continue
+		}
+		orig = append(orig,e)
+	}
 
+	for i:= len(orig);i<len(original);i++{ // cleanup for garbage collection
+		original[i]= nil
+	}
+
+	insertAt:=0
+	for _,e:= range destination{
+		if !oriset.Contains(e.ID){
+			e.Parent.InsertChild(e,insertAt)
+			insertAt++
+			continue
+		}
+		insertAt++
+	}
+}
 
 
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler, immediately ...bool) *Element {
