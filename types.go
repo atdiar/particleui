@@ -400,6 +400,9 @@ func (l ListofObjects) Get(index int) Object {
 }
 
 func equal(v Value, w Value) bool{
+	if v ==nil || w == nil{
+		return false
+	}
 	if v.ValueType() != w.ValueType(){
 		return false
 	}
@@ -471,7 +474,7 @@ func equal(v Value, w Value) bool{
 
 		if veid != weid{
 			return false
-		}		
+		}
 	}
 	return true
 }

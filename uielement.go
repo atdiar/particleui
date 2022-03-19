@@ -731,112 +731,117 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	return e
 }
 
-func(e *Element) MergeChildren(any ...AnyElement) *Element{
-	nc :=make([]*Element,len(any))
-	for _,el:= range any{
-		nc= append(nc,el.AsElement())
+func (e *Element) MergeChildren(any ...AnyElement) *Element {
+	nc := make([]*Element, 0, len(any))
+	for _, el := range any {
+		nc = append(nc, el.AsElement())
 	}
-	transform(e.Children.List,nc,false)
+	transform(e, nc, false)
 	return e
 }
 
-func(e *Element) MergeDeleteChildren(any ...AnyElement) *Element{
-	nc :=make([]*Element,len(any))
-	for _,el:= range any{
-		nc= append(nc,el.AsElement())
+func (e *Element) MergeDeleteChildren(any ...AnyElement) *Element {
+	nc := make([]*Element, 0, len(any))
+	for _, el := range any {
+		nc = append(nc, el.AsElement())
 	}
-	transform(e.Children.List,nc,true)
+	transform(e, nc, true)
 	return e
 }
 
 type childrenSet map[string]int
 
-func newChildrenSet(list ...*Element) childrenSet{
-	m:= make(map[string]int,len(list))
-	for index,element:= range list{
+func newChildrenSet(list ...*Element) childrenSet {
+	m := make(map[string]int, len(list))
+	for index, element := range list {
 		m[element.ID] = index
 	}
 	return m
 }
 
-func(s childrenSet) Contains(id string) bool{
-	_,ok:= s[id]
+func (s childrenSet) Contains(id string) bool {
+	_, ok := s[id]
 	return ok
 }
-func intersect(s childrenSet, c childrenSet) childrenSet{
-	m:= make(map[string]int,len(s))
-	for id:=range s{
-		if c.Contains(id){
-			m[id]=0
+func intersect(s childrenSet, c childrenSet) childrenSet {
+	m := make(map[string]int, len(s))
+	for id := range c {
+		if s.Contains(id) {
+			m[id] = 0
 		}
 	}
 	return m
 }
 
-func(s childrenSet) Ordered(l []*Element) (childrenSet, []*Element){
-	res := make([]*Element,len(s))
-	m:= make(map[string]int,len(s))
-	n:=0
-	for _,e:= range l{
-		if s.Contains(e.ID){
-			res = append(res,e)
-			m[e.ID]=n
+func (s childrenSet) Ordered(l []*Element) (childrenSet, []*Element) {
+	res := make([]*Element, 0, len(s))
+	m := make(map[string]int, len(s))
+	n := 0
+	for _, e := range l {
+		if s.Contains(e.ID) {
+			res = append(res, e)
+			m[e.ID] = n
 			n++
 		}
 	}
-	return m,res
+	return m, res
 }
 
-func transform(original []*Element, destination []*Element, delete bool){
+func transform(parent *Element, destination []*Element, delete bool) {
+	original := parent.Children.List
+	DEBUG(original)
+	DEBUG(destination)
+
 	oriset := newChildrenSet(original...)
 	destset := newChildrenSet(destination...)
-	inter:= intersect(oriset,destset)
+	inter := intersect(oriset, destset)
 
-	oset,olist:= inter.Ordered(original)
-	_,dlist:= inter.Ordered(destination)
+	oset, olist := inter.Ordered(original)
+	_, dlist := inter.Ordered(destination)
 
-	for i,e:= range dlist{
-		oldindex:= oset[e.ID]
-		oldpos:= oriset[e.ID]
+	for i, e := range dlist {
+		oldindex := oset[e.ID]
+		oldpos := oriset[e.ID]
 
-		if oldindex != i{
-			oldelement:= olist[i]
+		if oldindex != i {
+			DEBUG("test")
+			oldelement := olist[i]
 			oldelementoldpos := oriset[oldelement.ID]
 
-			e.Parent.ReplaceChild(oldelement,e)
-			e.Parent.InsertChild(oldelement,oldpos)
+			parent.InsertChild(e, oldelementoldpos)
+			parent.InsertChild(oldelement, oldpos)
 			oset[e.ID] = i
-			oset[oldelement.ID]=oldindex
+			oset[oldelement.ID] = oldindex
 
 			oriset[e.ID] = oldelementoldpos
-			oriset[oldelement.ID]= oldpos
-			original[oldpos]=oldelement
-			original[oldelementoldpos]=e
+			oriset[oldelement.ID] = oldpos
+			original[oldpos] = oldelement
+			original[oldelementoldpos] = e
 		}
 	}
 	// Now that the best LCS has been formed, we modify the original slice by
 	// deletion/insertion.
-	orig:= original[:0]
-	for _,e:= range original{
-		if !destset.Contains(e.ID){
-			if delete{
-				e.Parent.DeleteChild(e)
+	orig := original[:0]
+	for _, e := range original {
+		if !destset.Contains(e.ID) {
+			if delete {
+				parent.DeleteChild(e)
 				continue
 			}
-			e.Parent.RemoveChild(e)
+			parent.RemoveChild(e)
 			continue
 		}
-		orig = append(orig,e)
+		orig = append(orig, e)
 	}
 
-	for i:= len(orig);i<len(original);i++{ // cleanup for garbage collection
-		original[i]= nil
+	for i := len(orig); i < len(original); i++ { // cleanup for garbage collection
+		original[i] = nil
 	}
 
-	insertAt:=0
-	for _,e:= range destination{
-		if !oriset.Contains(e.ID){
-			e.Parent.InsertChild(e,insertAt)
+	insertAt := 0
+	for _, e := range destination {
+		if !oriset.Contains(e.ID) {
+			parent.InsertChild(e, insertAt)
 			insertAt++
 			continue
 		}
@@ -844,8 +849,7 @@ func transform(original []*Element, destination []*Element, delete bool){
 	}
 }
 
-
-func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler, immediately ...bool) *Element {
+func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
 		p = newProperties()
@@ -875,11 +879,42 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		return false
 	}))
 
-	if immediately != nil {
-		val, ok := owner.AsElement().Get(category, propname)
-		if ok {
-			h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
-		}
+	return e
+}
+
+func (e *Element) WatchASAP(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+	p, ok := owner.AsElement().Properties.Categories[category]
+	if !ok {
+		p = newProperties()
+		owner.AsElement().Properties.Categories[category] = p
+	}
+	alreadywatching := p.IsWatching(propname, e)
+
+	if !alreadywatching {
+		p.NewWatcher(propname, e)
+	}
+
+	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
+
+	eventcat, ok := owner.AsElement().Properties.Categories["internals"]
+	if !ok {
+		eventcat = newProperties()
+		owner.AsElement().Properties.Categories["internals"] = eventcat
+	}
+	alreadywatching = eventcat.IsWatching("deleted", e)
+
+	if !alreadywatching {
+		eventcat.NewWatcher("deleted", e)
+	}
+
+	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
+		e.Unwatch(category, propname, owner)
+		return false
+	}))
+
+	val, ok := owner.AsElement().Get(category, propname)
+	if ok {
+		h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
 	}
 
 	return e
@@ -1003,7 +1038,7 @@ func (e *Element) OnFirstMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.Watch("event", "firstmount", e, nh,true)
+	e.Watch("event", "firstmount", e, nh)
 }
 
 func (e *Element) OnDisMount(h *MutationHandler) {
@@ -1062,9 +1097,14 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	oldvalue, ok := e.Get(category, propname)
 
-	if category == "ui" {
-		if equal(value, oldvalue) && ok { // idempotency
-			return
+	if ok{
+		if category == "ui" {
+			_,ok:= e.Get("internals","memoize")
+			if ok{
+				if equal(value, oldvalue){ // idempotence
+					return
+				}
+			}
 		}
 	}
 
@@ -1095,6 +1135,11 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		w.PropMutationHandlers.DispatchEvent(evt)
 	}
 	//e.PropMutationHandlers.DispatchEvent(evt)
+}
+
+func (e *Element) Memoize() *Element{
+	e.Set("internals","memoize", Bool(true))
+	return e
 }
 
 func (e *Element) GetData(propname string) (Value, bool) {
