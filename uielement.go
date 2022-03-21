@@ -361,7 +361,7 @@ func (e *Elements) Remove(el *Element) *Elements {
 }
 
 func (e *Elements) RemoveAll() *Elements {
-	e.List = nil
+	e.List = make([]*Element, 0)
 	return e
 }
 
@@ -788,9 +788,8 @@ func (s childrenSet) Ordered(l []*Element) (childrenSet, []*Element) {
 }
 
 func transform(parent *Element, destination []*Element, delete bool) {
-	original := parent.Children.List
-	DEBUG(original)
-	DEBUG(destination)
+	original := make([]*Element, len(parent.Children.List))
+	copy(original, parent.Children.List)
 
 	oriset := newChildrenSet(original...)
 	destset := newChildrenSet(destination...)
@@ -804,7 +803,6 @@ func transform(parent *Element, destination []*Element, delete bool) {
 		oldpos := oriset[e.ID]
 
 		if oldindex != i {
-			DEBUG("test")
 			oldelement := olist[i]
 			oldelementoldpos := oriset[oldelement.ID]
 
@@ -828,15 +826,17 @@ func transform(parent *Element, destination []*Element, delete bool) {
 				parent.DeleteChild(e)
 				continue
 			}
+			DEBUG(len(parent.Children.List))
 			parent.RemoveChild(e)
+			DEBUG(len(parent.Children.List))
 			continue
 		}
 		orig = append(orig, e)
 	}
-
 	for i := len(orig); i < len(original); i++ { // cleanup for garbage collection
 		original[i] = nil
 	}
+	DEBUG(len(parent.Children.List), " is expected to be 0")
 
 	insertAt := 0
 	for _, e := range destination {
@@ -1097,11 +1097,11 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	oldvalue, ok := e.Get(category, propname)
 
-	if ok{
+	if ok {
 		if category == "ui" {
-			_,ok:= e.Get("internals","memoize")
-			if ok{
-				if equal(value, oldvalue){ // idempotence
+			_, ok := e.Get("internals", "memoize")
+			if ok {
+				if equal(value, oldvalue) { // idempotence
 					return
 				}
 			}
@@ -1137,8 +1137,8 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	//e.PropMutationHandlers.DispatchEvent(evt)
 }
 
-func (e *Element) Memoize() *Element{
-	e.Set("internals","memoize", Bool(true))
+func (e *Element) Memoize() *Element {
+	e.Set("internals", "memoize", Bool(true))
 	return e
 }
 

@@ -510,7 +510,7 @@ func NewDocument(id string, options ...string) Document {
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -521,7 +521,7 @@ func NewDocument(id string, options ...string) Document {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Document{ui.BasicElement{LoadElement(newDocument(id, id, options...))}}
 }
@@ -600,7 +600,7 @@ func NewDiv(name string, id string, options ...string) Div {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -611,7 +611,7 @@ func NewDiv(name string, id string, options ...string) Div {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Div{ui.BasicElement{LoadElement(newDiv(name, id, options...))}}
 }
@@ -648,7 +648,7 @@ func (t Tooltip) SetText(content string) Tooltip {
 }
 
 var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id string) *ui.Element {
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -659,9 +659,9 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(name string, id
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
-	e = ui.NewElement(name, id, Elements.DocType)
+	e := ui.NewElement(name, id, Elements.DocType)
 	e.Set("internals", "tag", ui.String("div"))
 	e = enableClasses(e)
 
@@ -820,7 +820,7 @@ func NewTextArea(name string, id string, rows int, cols int, options ...string) 
 		return e
 	}, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -831,7 +831,7 @@ func NewTextArea(name string, id string, rows int, cols int, options ...string) 
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return TextArea{ui.BasicElement{LoadElement(t(name, id, options...))}}
 }
@@ -927,7 +927,7 @@ func NewHeader(name string, id string, options ...string) Header {
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -938,7 +938,7 @@ func NewHeader(name string, id string, options ...string) Header {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Header{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -972,7 +972,7 @@ func NewFooter(name string, id string, options ...string) Footer {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -983,7 +983,7 @@ func NewFooter(name string, id string, options ...string) Footer {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Footer{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1014,7 +1014,7 @@ func NewSection(name string, id string, options ...string) Section {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1025,7 +1025,7 @@ func NewSection(name string, id string, options ...string) Section {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Section{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1071,7 +1071,7 @@ func NewH1(name string, id string, options ...string) H1 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1082,7 +1082,8 @@ func NewH1(name string, id string, options ...string) H1 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
+
 	return H1{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
@@ -1127,7 +1128,7 @@ func NewH2(name string, id string, options ...string) H2 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1138,7 +1139,7 @@ func NewH2(name string, id string, options ...string) H2 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return H2{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1184,7 +1185,7 @@ func NewH3(name string, id string, options ...string) H3 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1195,7 +1196,7 @@ func NewH3(name string, id string, options ...string) H3 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return H3{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1241,7 +1242,7 @@ func NewH4(name string, id string, options ...string) H4 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1252,7 +1253,7 @@ func NewH4(name string, id string, options ...string) H4 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return H4{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1298,7 +1299,7 @@ func NewH5(name string, id string, options ...string) H5 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1309,7 +1310,7 @@ func NewH5(name string, id string, options ...string) H5 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return H5{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1355,7 +1356,7 @@ func NewH6(name string, id string, options ...string) H6 {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1366,7 +1367,7 @@ func NewH6(name string, id string, options ...string) H6 {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return H6{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1412,7 +1413,7 @@ func NewSpan(name string, id string, options ...string) Span {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1423,7 +1424,7 @@ func NewSpan(name string, id string, options ...string) Span {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Span{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1468,7 +1469,7 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1479,7 +1480,7 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Paragraph{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1605,7 +1606,7 @@ func NewAnchor(name string, id string, options ...string) Anchor {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1616,7 +1617,7 @@ func NewAnchor(name string, id string, options ...string) Anchor {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Anchor{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1698,7 +1699,7 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1709,7 +1710,7 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Button{ui.BasicElement{LoadElement(f(name, id, options...))}}
 }
@@ -1755,7 +1756,7 @@ func NewLabel(name string, id string, options ...string) Label {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1766,7 +1767,7 @@ func NewLabel(name string, id string, options ...string) Label {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Label{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -1980,7 +1981,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -1991,7 +1992,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Input{ui.BasicElement{LoadElement(f(name, id, options...))}}
 }
@@ -2048,7 +2049,7 @@ func NewImage(name, id string, options ...string) Img {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2059,7 +2060,7 @@ func NewImage(name, id string, options ...string) Img {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 
 	return Img{ui.BasicElement{LoadElement(c(name, id, options...))}}
@@ -2376,7 +2377,7 @@ func NewUl(name string, id string, options ...string) List {
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2387,7 +2388,7 @@ func NewUl(name string, id string, options ...string) List {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return List{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2423,7 +2424,7 @@ func NewOl(name string, id string, typ string, numberingstart int, options ...st
 		return e
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2434,7 +2435,7 @@ func NewOl(name string, id string, typ string, numberingstart int, options ...st
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return OrderedList{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2502,7 +2503,7 @@ func NewListItem(name string, id string, options ...string) ListItem {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2513,7 +2514,7 @@ func NewListItem(name string, id string, options ...string) ListItem {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return ListItem{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2567,7 +2568,7 @@ func NewThead(name string, id string, options ...string) Thead {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2578,7 +2579,7 @@ func NewThead(name string, id string, options ...string) Thead {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Thead{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2621,7 +2622,7 @@ func NewTr(name string, id string, options ...string) Tr {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2632,7 +2633,7 @@ func NewTr(name string, id string, options ...string) Tr {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Tr{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2658,7 +2659,7 @@ func NewTd(name string, id string, options ...string) Td {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2669,7 +2670,7 @@ func NewTd(name string, id string, options ...string) Td {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Td{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2695,7 +2696,7 @@ func NewTh(name string, id string, options ...string) Th {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2706,7 +2707,7 @@ func NewTh(name string, id string, options ...string) Th {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
 
 	return Th{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
@@ -2732,7 +2733,7 @@ func NewTable(name string, id string, options ...string) Table {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-	e,ok:= Elements.ByID[id]
+	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
@@ -2743,7 +2744,8 @@ func NewTable(name string, id string, options ...string) Table {
 				panic("An Element already exists with id: " + id)
 			}
 		}
-	}
+	}*/
+
 	return Table{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }
 
