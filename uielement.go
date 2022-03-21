@@ -826,9 +826,7 @@ func transform(parent *Element, destination []*Element, delete bool) {
 				parent.DeleteChild(e)
 				continue
 			}
-			DEBUG(len(parent.Children.List))
 			parent.RemoveChild(e)
-			DEBUG(len(parent.Children.List))
 			continue
 		}
 		orig = append(orig, e)
@@ -836,7 +834,6 @@ func transform(parent *Element, destination []*Element, delete bool) {
 	for i := len(orig); i < len(original); i++ { // cleanup for garbage collection
 		original[i] = nil
 	}
-	DEBUG(len(parent.Children.List), " is expected to be 0")
 
 	insertAt := 0
 	for _, e := range destination {

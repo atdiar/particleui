@@ -926,7 +926,6 @@ func NewHeader(name string, id string, options ...string) Header {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-
 	/*e,ok:= Elements.ByID[id]
 	if ok{
 		cname,ok:= e.Get("internals","construcor")
@@ -1875,10 +1874,12 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 				return true
 			}
 			if b {
-				SetAttribute(e, "checked", "")
+				//SetAttribute(e, "checked", "")
+				htmlInput.Set("checked", true)
 				return false
 			}
-			RemoveAttribute(e, "checked")
+			//RemoveAttribute(e, "checked")
+			htmlInput.Set("checked", false)
 			return false
 		}))
 
@@ -2054,14 +2055,13 @@ func NewImage(name, id string, options ...string) Img {
 		cname,ok:= e.Get("internals","construcor")
 		if ok{
 			cnamestr:=cname.(ui.String)
-			if string(cnamestr) == "iùg"{
+			if string(cnamestr) == "img"{
 				return Img{ui.BasicElement{e}}
 			}else{
 				panic("An Element already exists with id: " + id)
 			}
 		}
 	}*/
-
 
 	return Img{ui.BasicElement{LoadElement(c(name, id, options...))}}
 }

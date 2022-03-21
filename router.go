@@ -346,6 +346,9 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	root.AsElement().Root().Watch("navigation", "routechangerequest", root.AsElement().Root(), r.handler())
 	root.AsElement().Root().Watch("navigation", "routeredirectrequest", root.AsElement().Root(), r.redirecthandler())
 	r.outlet.AsElement().Root().Set("navigation", "ready", Bool(true))
+
+	c := make(chan struct{}, 0)
+	<-c
 }
 
 func (r *Router) verifyLinkActivation() {
