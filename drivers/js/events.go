@@ -7,6 +7,7 @@ package doc
 import (
 	"syscall/js"
 	//"net/url"
+	"encoding/json"
 	"log"
 
 	"github.com/atdiar/particleui"
@@ -78,6 +79,22 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 				value = u.Path
 			}*/
 
+			// TGiven that events are not handled concurrently
+			// but triggered sequentially, we can Set the value of the history state
+			// on the target *ui.Element, knowing that it will be visible before
+			// the event dispatch.
+			hstate := js.Global().Get("history").Get("state")
+			if !hstate.IsNull() {
+				var rawhstatestring string
+				err := json.Unmarshal([]byte(hstate.String()), &rawhstatestring)
+				if err == nil {
+					hstateobj := ui.NewObject()
+					err = json.Unmarshal([]byte(rawhstatestring), &hstateobj)
+					if err == nil {
+						target.AsElement().SyncUISetData("history", hstateobj.Value())
+					}
+				}
+			}
 		}
 
 		if typ == "keyup" || typ == "keydown" || typ == "keypress" {

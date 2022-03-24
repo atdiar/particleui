@@ -483,7 +483,14 @@ func NewDocument(id string, options ...string) Document {
 				panic(nroute)
 			}
 			route := string(nroute)
-			js.Global().Get("history").Call("replaceState", "{}", "", route)
+
+			history, ok := e.Get("ui", "history")
+			if !ok {
+				js.Global().Get("history").Call("replaceState", "{}", "", route)
+			} else {
+				s := stringify(history.RawValue())
+				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+			}
 
 			e.SyncUISetData("currentroute", v)
 			return false
@@ -496,7 +503,13 @@ func NewDocument(id string, options ...string) Document {
 				panic(nroute)
 			}
 			route := string(nroute)
-			js.Global().Get("history").Call("pushState", "{}", "", route)
+			history, ok := e.Get("ui", "history")
+			if !ok {
+				js.Global().Get("history").Call("pushState", "{}", "", route)
+			} else {
+				s := stringify(history.RawValue())
+				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+			}
 			return false
 		}))
 
@@ -2863,10 +2876,12 @@ func RemoveClass(target *ui.Element, classname string) {
 	if !ok {
 		return
 	}
+	DEBUG(rc)
 	c := string(rc)
 	c = strings.TrimPrefix(c, classname)
 	c = strings.TrimPrefix(c, " ")
-	c = strings.ReplaceAll(c, classname+" ", " ")
+	c = strings.ReplaceAll(c, classname, " ")
+	DEBUG(rc)
 	target.Set(category, "class", ui.String(c), false)
 }
 
