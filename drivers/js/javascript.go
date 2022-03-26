@@ -486,7 +486,7 @@ func NewDocument(id string, options ...string) Document {
 
 			history, ok := e.Get("ui", "history")
 			if !ok {
-				js.Global().Get("history").Call("replaceState", "{}", "", route)
+				panic("missing history entry")
 			} else {
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
@@ -503,12 +503,23 @@ func NewDocument(id string, options ...string) Document {
 				panic(nroute)
 			}
 			route := string(nroute)
-			history, ok := e.Get("ui", "history")
+			history, ok := e.Get("data", "history")
 			if !ok {
-				js.Global().Get("history").Call("pushState", "{}", "", route)
+				panic("missing history entry")
 			} else {
+				browserhistory, ok := e.Get("ui", "history")
+				if !ok {
+					s := stringify(history.RawValue())
+					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+					e.SetUI("history", history)
+					return false
+				}
+				if ui.Equal(browserhistory, history) {
+					return false
+				}
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+				e.SetUI("history", history)
 			}
 			return false
 		}))

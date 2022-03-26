@@ -143,7 +143,7 @@ func (r *Router) OnNotfound(dest View) *Router {
 	r.outlet.AddView(dest)
 	//r.insert(r.outlet)
 	r.outlet.AsElement().Root().Watch("navigation", "notfound", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(dest.Name())
+		r.GoTo(dest.Name())
 		return false
 	}))
 	return r
@@ -156,7 +156,7 @@ func (r *Router) OnUnauthorized(dest View) *Router {
 	r.outlet.AddView(dest)
 
 	r.outlet.AsElement().Root().Watch("navigation", "unauthorized", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(dest.Name())
+		r.GoTo(dest.Name())
 		return false
 	}))
 	return r
@@ -168,7 +168,7 @@ func (r *Router) OnAppfailure(dest View) *Router {
 	r.outlet.AddView(dest)
 
 	r.outlet.AsElement().Root().Watch("navigation", "appfailure", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.RedirectTo(dest.Name())
+		r.GoTo(dest.Name())
 		return false
 	}))
 	return r
@@ -200,7 +200,6 @@ func canonicalBase(s string) string {
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
-		DEBUG("route to handle is: ", nroute)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
 			r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
@@ -212,7 +211,7 @@ func (r *Router) handler() *MutationHandler {
 		}
 		newroute = strings.TrimPrefix(newroute, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
 
-		// 1. Let's see if the URI matches any of the registered routes. (TODO)
+		// Let's see if the URI matches any of the registered routes. (TODO)
 		a, err := r.Routes.match(newroute)
 		if err != nil {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
@@ -237,10 +236,11 @@ func (r *Router) handler() *MutationHandler {
 			return false
 		}
 
-		h, ok := r.outlet.AsElement().Root().GetData("history")
+		// Register route in history
+		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
 			r.History.Push(newroute)
-			r.outlet.AsElement().Root().SetUI("history", r.History.Value())
+			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
 			ho, ok := h.(Object)
 			if !ok {
@@ -251,17 +251,20 @@ func (r *Router) handler() *MutationHandler {
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
-			if r.History.Cursor >= n {
+			if r.History.Cursor > n {
 				// we are going back
 				for i := 0; i < r.History.Cursor-n; i++ {
 					r.History.Back()
-					r.outlet.AsElement().Root().SetUI("history", r.History.Value())
 				}
-			} else {
+				r.outlet.AsElement().Root().SetData("history", r.History.Value())
+			} else if r.History.Cursor < n {
 				for i := 0; i < n-r.History.Cursor; i++ {
 					r.History.Forward()
-					r.outlet.AsElement().Root().SetUI("history", r.History.Value())
 				}
+				r.outlet.AsElement().Root().SetData("history", r.History.Value())
+			} else {
+				r.History.Push(newroute)
+				r.outlet.AsElement().Root().SetData("history", r.History.Value())
 			}
 		}
 
@@ -314,8 +317,8 @@ func (r *Router) redirecthandler() *MutationHandler {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
 			return false
 		}
-		r.History.Push(newroute)
-		r.outlet.AsElement().Root().SetUI("history", r.History.Value())
+		r.History.Replace(newroute)
+		r.outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 
 		log.Println(*r.History) //DEBUG

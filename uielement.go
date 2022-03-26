@@ -731,7 +731,9 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 	return e
 }
 
-func (e *Element) MergeChildren(any ...AnyElement) *Element {
+// SetMergeChildren will set an Element children list without removing
+// Elements that are already present.
+func (e *Element) SetMergeChildren(any ...AnyElement) *Element {
 	nc := make([]*Element, 0, len(any))
 	for _, el := range any {
 		nc = append(nc, el.AsElement())
@@ -740,7 +742,10 @@ func (e *Element) MergeChildren(any ...AnyElement) *Element {
 	return e
 }
 
-func (e *Element) MergeDeleteChildren(any ...AnyElement) *Element {
+// SetMergeChildren will set an Element children list without removing
+// Elements that are already present.
+// It deletes the elements that are absent from the children list.
+func (e *Element) SetMergeChildrenClean(any ...AnyElement) *Element {
 	nc := make([]*Element, 0, len(any))
 	for _, el := range any {
 		nc = append(nc, el.AsElement())
@@ -1098,7 +1103,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		if category == "ui" {
 			_, ok := e.Get("internals", "memoize")
 			if ok {
-				if equal(value, oldvalue) { // idempotence
+				if Equal(value, oldvalue) { // idempotence
 					return
 				}
 			}
@@ -1232,6 +1237,33 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	e.Properties.Set("ui", propname, value, inheritable)
 
 	e.Set("data", propname, value, flags...)
+}
+
+// SyncUI can be used to synchronize the UI state. It does not trigger
+// mutation handlers which are typically used to propagate UI state changes to
+// the User Interface.
+// This method can be used when data state and ui state are decoupled. (rare)
+// An example of such decoupling is browser history and the framework handling
+// of the navigation history.
+// In fact, this decoupling is somewhat artificial: navigation history just cannot be
+// recovered entirely from ("ui","history") because it also requires ("ui","currentroute").
+func(e *Element) SyncUI(propname string,value Value, flags ...bool){
+	var inheritable bool
+	if len(flags) > 0 {
+		inheritable = flags[0]
+	}
+
+	// Persist property if persistence mode has been set at Element creation
+	pmode := PersistenceMode(e)
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok {
+			storage.Store(e, "ui", propname, value, flags...)
+		}
+	}
+
+	e.Properties.Set("ui", propname, value, inheritable)
 }
 
 // LoadProperty is a function typically used to return a UI Element to a

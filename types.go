@@ -399,7 +399,7 @@ func (l ListofObjects) Get(index int) Object {
 	return o
 }
 
-func equal(v Value, w Value) bool{
+func Equal(v Value, w Value) bool{
 	if v ==nil || w == nil{
 		return false
 	}
@@ -420,7 +420,7 @@ func equal(v Value, w Value) bool{
 			return false
 		}
 		for i,item:= range vl{
-			if !equal(item,wl[i]){
+			if !Equal(item,wl[i]){
 				return false
 			}
 		}
@@ -447,7 +447,7 @@ func equal(v Value, w Value) bool{
 			if !ok{
 				return false
 			}
-			if !equal(val,wal){
+			if !Equal(val,wal){
 				return false
 			}
 		}
