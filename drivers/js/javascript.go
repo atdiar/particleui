@@ -298,6 +298,9 @@ func newWindow(title string, options ...string) Window {
 
 		e.Watch("ui", "title", e, h)
 		e.Set("ui", "title", ui.String(title), false)
+		e.Set("event", "attached", ui.Bool(true))
+		e.Set("event", "mounted", ui.Bool(true))
+		e.Set("event", "firstmount", ui.Bool(true))
 
 		return e
 	})
@@ -476,6 +479,11 @@ func NewDocument(id string, options ...string) Document {
 		e.Native = n
 		SetAttribute(e, "id", id)
 
+		e.WatchASAP("ui", "history", GetWindow().AsElement(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.SyncUI("history", evt.NewValue())
+			return false
+		}))
+
 		e.Watch("ui", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			v := evt.NewValue()
 			nroute, ok := v.(ui.String)
@@ -484,12 +492,21 @@ func NewDocument(id string, options ...string) Document {
 			}
 			route := string(nroute)
 
-			history, ok := e.Get("ui", "history")
+			history, ok := e.Get("data", "history")
 			if !ok {
 				panic("missing history entry")
 			} else {
-				s := stringify(history.RawValue())
-				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+				_, ok := e.Get("ui", "history")
+				if !ok {
+					DEBUG("pushing")
+					s := stringify(history.RawValue())
+					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+					e.SetUI("history", history)
+				} else {
+					s := stringify(history.RawValue())
+					js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+					e.SetUI("history", history)
+				}
 			}
 
 			e.SyncUISetData("currentroute", v)
@@ -509,12 +526,14 @@ func NewDocument(id string, options ...string) Document {
 			} else {
 				browserhistory, ok := e.Get("ui", "history")
 				if !ok {
+					DEBUG("browser history absent, pushing")
 					s := stringify(history.RawValue())
 					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 					e.SetUI("history", history)
 					return false
 				}
 				if ui.Equal(browserhistory, history) {
+					DEBUG("is equal", history)
 					return false
 				}
 				s := stringify(history.RawValue())
@@ -1561,11 +1580,9 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 	_, ok := link.AsElement().Get("event", "verified")
 	if ok {
 		a.SetHREF(link.URI())
-		log.Print(link.URI(), " test") // DEBUG
 	}
 	a.AsElement().WatchASAP("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI())
-		log.Print(link.URI(), " test") // DEBUG
 		return false
 	}))
 
@@ -2887,12 +2904,12 @@ func RemoveClass(target *ui.Element, classname string) {
 	if !ok {
 		return
 	}
-	DEBUG(rc)
+
 	c := string(rc)
 	c = strings.TrimPrefix(c, classname)
 	c = strings.TrimPrefix(c, " ")
 	c = strings.ReplaceAll(c, classname, " ")
-	DEBUG(rc)
+
 	target.Set(category, "class", ui.String(c), false)
 }
 

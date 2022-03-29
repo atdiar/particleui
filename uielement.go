@@ -146,6 +146,7 @@ func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	el.Set("internals", "root", Bool(true))
 	el.Set("event", "attached", Bool(true))
 	el.Set("event", "mounted", Bool(true))
+	el.Set("event", "firstmount", Bool(true))
 	return BasicElement{el}
 }
 
@@ -1040,7 +1041,7 @@ func (e *Element) OnFirstMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.Watch("event", "firstmount", e, nh)
+	e.WatchASAP("event", "firstmount", e, nh)
 }
 
 func (e *Element) OnDisMount(h *MutationHandler) {
@@ -1247,7 +1248,7 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 // of the navigation history.
 // In fact, this decoupling is somewhat artificial: navigation history just cannot be
 // recovered entirely from ("ui","history") because it also requires ("ui","currentroute").
-func(e *Element) SyncUI(propname string,value Value, flags ...bool){
+func (e *Element) SyncUI(propname string, value Value, flags ...bool) {
 	var inheritable bool
 	if len(flags) > 0 {
 		inheritable = flags[0]

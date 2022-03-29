@@ -103,16 +103,17 @@ func (r *Router) GoTo(route string) {
 	}
 	route = strings.TrimPrefix(route, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
 
-	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
 		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
 		return
 	}
 
+	r.History.Push(route)
+	r.outlet.AsElement().Root().SetData("history", r.History.Value())
+
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
 
-	//r.outlet.Element().Set("navigation","index",Number(r.History.Cursor))
 	log.Println(*r.History) //DEBUG
 }
 
@@ -133,8 +134,16 @@ func (r *Router) RedirectTo(route string) {
 		route = strings.TrimSuffix(route, "/")
 	}
 	log.Print("redirect to: ", route) // DEBUG
-	r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(route))
+	ok := r.tryNavigate(route)
+	if !ok {
+		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
+		return
+	}
 	r.History.Replace(route)
+	DEBUG("on redirect: ", r.History.Value())
+	r.outlet.AsElement().Root().SetData("history", r.History.Value())
+	r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(route))
+
 }
 
 // OnNotfound enables the addition of a special view to the outlet ViewElement.
@@ -236,9 +245,10 @@ func (r *Router) handler() *MutationHandler {
 			return false
 		}
 
-		// Register route in history
+		// Register route in browser history part 1
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
+			DEBUG("browserhistory not present", r.History.Value())
 			r.History.Push(newroute)
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
@@ -251,21 +261,21 @@ func (r *Router) handler() *MutationHandler {
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
+			DEBUG("cursors: b/h ", n, r.History.Cursor)
+
 			if r.History.Cursor > n {
 				// we are going back
 				for i := 0; i < r.History.Cursor-n; i++ {
 					r.History.Back()
 				}
-				r.outlet.AsElement().Root().SetData("history", r.History.Value())
 			} else if r.History.Cursor < n {
 				for i := 0; i < n-r.History.Cursor; i++ {
 					r.History.Forward()
 				}
-				r.outlet.AsElement().Root().SetData("history", r.History.Value())
 			} else {
 				r.History.Push(newroute)
-				r.outlet.AsElement().Root().SetData("history", r.History.Value())
 			}
+			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		}
 
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
@@ -317,8 +327,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
 			return false
 		}
-		r.History.Replace(newroute)
-		r.outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+		r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 
 		log.Println(*r.History) //DEBUG
@@ -461,7 +470,6 @@ func (rn *rnode) insert(nrn *rnode) {
 		return
 	}
 	viewpath := computePath(newViewNodes(), v.AsElement().ViewAccessNode)
-	log.Print("viewpath", viewpath) //DEBUG
 	if viewpath == nil {
 		return
 	}
@@ -579,7 +587,6 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 			nextroutesegment := segments[2*i] //viewnames
 			r, ok := m[routesegment]
 			if !ok {
-				log.Print("id not found : " + routesegment) // DEBUG
 				return nil, ErrNotFound
 			}
 
@@ -592,7 +599,6 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 			// and the new map pf next rnode is then retrieved if possible.
 			m, ok = r.next[nextroutesegment]
 			if !ok {
-				log.Print("view not found : " + nextroutesegment) // DEBUG
 				// Let's see if the ViewElement has a parameterizable view
 				param, ok = r.ViewElement.hasParameterizedView()
 				if ok {
