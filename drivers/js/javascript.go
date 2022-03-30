@@ -498,7 +498,6 @@ func NewDocument(id string, options ...string) Document {
 			} else {
 				_, ok := e.Get("ui", "history")
 				if !ok {
-					DEBUG("pushing")
 					s := stringify(history.RawValue())
 					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 					e.SetUI("history", history)
@@ -526,14 +525,12 @@ func NewDocument(id string, options ...string) Document {
 			} else {
 				browserhistory, ok := e.Get("ui", "history")
 				if !ok {
-					DEBUG("browser history absent, pushing")
 					s := stringify(history.RawValue())
 					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 					e.SetUI("history", history)
 					return false
 				}
 				if ui.Equal(browserhistory, history) {
-					DEBUG("is equal", history)
 					return false
 				}
 				s := stringify(history.RawValue())

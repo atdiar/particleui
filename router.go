@@ -242,13 +242,13 @@ func (r *Router) handler() *MutationHandler {
 		err = a()
 		if err != nil {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+			DEBUG("activation failure")
 			return false
 		}
 
 		// Register route in browser history part 1
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
-			DEBUG("browserhistory not present", r.History.Value())
 			r.History.Push(newroute)
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
@@ -261,7 +261,6 @@ func (r *Router) handler() *MutationHandler {
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
-			DEBUG("cursors: b/h ", n, r.History.Cursor)
 
 			if r.History.Cursor > n {
 				// we are going back
@@ -280,7 +279,7 @@ func (r *Router) handler() *MutationHandler {
 
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
 
-		log.Println(*r.History) //DEBUG
+		DEBUG(*r.History) //DEBUG
 		return false
 	})
 	return mh
@@ -383,10 +382,10 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 		return false
 	})
 
-	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
 	root.AsElement().Root().Watch("navigation", "routechangerequest", root.AsElement().Root(), r.handler())
 	root.AsElement().Root().Watch("navigation", "routeredirectrequest", root.AsElement().Root(), r.redirecthandler())
 	r.outlet.AsElement().Root().Set("navigation", "ready", Bool(true))
+	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
 
 	c := make(chan struct{}, 0)
 	<-c

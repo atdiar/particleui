@@ -34,7 +34,6 @@ func DefaultGoEventTranslator(evt ui.Event) js.Value {
 var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 	// Let's create the callback that will be called from the js side
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		DEBUG("callback called")
 		evt := args[0]
 		evt.Call("stopPropagation")
 
@@ -46,7 +45,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		jstarget := evt.Get("target")
 
 		targetid := jstarget.Get("id")
-		DEBUG(targetid, targetid.IsNull(), targetid.Truthy())
+
 		value := jstarget.Get("value").String()
 		if targetid.Truthy() {
 			element := Elements.GetByID(targetid.String())
@@ -58,7 +57,6 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		} else {
 			// this might be a stretch... but we assume that the only element without
 			// a native side ID is the window in javascript.
-			DEBUG("window event")
 			if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
 				target = GetWindow().AsBasicElement()
 			} else {
@@ -87,16 +85,12 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			// on the target *ui.Element, knowing that it will be visible before
 			// the event dispatch.
 			hstate := js.Global().Get("history").Get("state")
-			DEBUG(hstate)
+
 			if hstate.Truthy() {
-				var rawhstatestring string
-				err := json.Unmarshal([]byte(hstate.String()), &rawhstatestring)
+				hstateobj := ui.NewObject()
+				err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 				if err == nil {
-					hstateobj := ui.NewObject()
-					err = json.Unmarshal([]byte(rawhstatestring), &hstateobj)
-					if err == nil {
-						target.AsElement().SetUI("history", hstateobj.Value())
-					}
+					target.AsElement().SetUI("history", hstateobj.Value())
 				}
 			}
 		}

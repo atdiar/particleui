@@ -400,7 +400,8 @@ func (e *Element) Handle(evt Event) bool {
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
 func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Element {
-	if !e.Mounted() {
+	if !e.Mounted() && e.ID != "window" {
+		DEBUG("notmounted?")
 		return e
 	}
 	if nativebinding != nil {
