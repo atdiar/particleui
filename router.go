@@ -129,6 +129,8 @@ func (r *Router) GoForward() {
 	}
 }
 
+// RedirectTo can be used after having used GoTo as a way to modify the
+// destination after a successful routing.
 func (r *Router) RedirectTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
@@ -140,10 +142,20 @@ func (r *Router) RedirectTo(route string) {
 		return
 	}
 	r.History.Replace(route)
-	DEBUG("on redirect: ", r.History.Value())
+
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(route))
+}
 
+func (r *Router) Hijack(route string, destination string) {
+	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
+		navroute := evt.NewValue().(String)
+		if string(navroute) == route {
+			r.outlet.AsElement().Root().Set("navigation", "routechangerequest", String(destination))
+			return true
+		}
+		return false
+	}))
 }
 
 // OnNotfound enables the addition of a special view to the outlet ViewElement.
@@ -226,24 +238,24 @@ func (r *Router) handler() *MutationHandler {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.outlet.AsElement().Root().Set("navigation", "notfound", Bool(true))
-				return false
+				return true
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
 				r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
-				return false
+				return true
 			}
 			if err == ErrFrameworkFailure {
 				log.Print("APPFAILURE: ", err) // DEBUG
 				r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
-				return false
+				return true
 			}
 		}
 		err = a()
 		if err != nil {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
 			DEBUG("activation failure")
-			return false
+			return true
 		}
 
 		// Register route in browser history part 1
@@ -271,15 +283,13 @@ func (r *Router) handler() *MutationHandler {
 				for i := 0; i < n-r.History.Cursor; i++ {
 					r.History.Forward()
 				}
-			} else {
-				r.History.Push(newroute)
 			}
+
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		}
 
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
 
-		DEBUG(*r.History) //DEBUG
 		return false
 	})
 	return mh
@@ -329,7 +339,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 		r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 
-		log.Println(*r.History) //DEBUG
 		return false
 	})
 	return mh

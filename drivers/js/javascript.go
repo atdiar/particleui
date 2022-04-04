@@ -533,6 +533,7 @@ func NewDocument(id string, options ...string) Document {
 				if ui.Equal(browserhistory, history) {
 					return false
 				}
+
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 				e.SetUI("history", history)
