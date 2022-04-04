@@ -73,24 +73,24 @@ func (r *Router) tryNavigate(newroute string) bool {
 		log.Print(err) // DEBUG
 		if err == ErrNotFound {
 			log.Print("this is strange", err) // DEBUG
-			r.outlet.AsElement().Root().Set("navigation", "notfound", Bool(true))
+			r.outlet.AsElement().Root().Set("navigation", "notfound", String(newroute))
 			return false
 		}
 		if err == ErrUnauthorized {
 			log.Print(err) // DEBUG
-			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			return false
 		}
 		if err == ErrFrameworkFailure {
 			log.Print(err) //DEBUG
-			r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
+			r.outlet.AsElement().Root().Set("navigation", "appfailure", String(newroute))
 			return false
 		}
 	}
 	err = a()
 	if err != nil {
 		log.Print("activation failure", err) // DEBUG
-		r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+		r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 		return false
 	}
 	return true
@@ -158,40 +158,25 @@ func (r *Router) Hijack(route string, destination string) {
 	}))
 }
 
-// OnNotfound enables the addition of a special view to the outlet ViewElement.
-// The router should navigate toward it when no match has been found for a given input route.
-func (r *Router) OnNotfound(dest View) *Router {
-	r.outlet.AddView(dest)
-	//r.insert(r.outlet)
-	r.outlet.AsElement().Root().Watch("navigation", "notfound", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(dest.Name())
-		return false
-	}))
+// OnNotfound reacts to the navigation 'notfound' property being set. It can allow
+// to go to an alternate route for instance, which could display a "page not found"
+// error message for example. This behavior would be defined in the MutationHandler.
+func (r *Router) OnNotfound(h *MutationHandler) *Router {
+	r.outlet.AsElement().Root().Watch("navigation", "notfound", r.outlet.AsElement().Root(), h)
 	return r
 }
 
-// OnUnauthorized enables the addition of a special view to the outlet ViewElement.
-// The router should navigate toward it when access to an input route is not granted
-// due to insufficient rights.
-func (r *Router) OnUnauthorized(dest View) *Router {
-	r.outlet.AddView(dest)
-
-	r.outlet.AsElement().Root().Watch("navigation", "unauthorized", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(dest.Name())
-		return false
-	}))
+// OnUnauthorized reacts to the navigation state being set to unauthorized.
+// It may occur when there are insufficient rights to displaya given view for instance.
+func (r *Router) OnUnauthorized(h *MutationHandler) *Router {
+	r.outlet.AsElement().Root().Watch("navigation", "unauthorized", r.outlet.AsElement().Root(), h)
 	return r
 }
 
-// OnAppfailure enables the addition of a special view to the outlet ViewElement.
-// The router should navigate toward it when a malfunction occured.
-func (r *Router) OnAppfailure(dest View) *Router {
-	r.outlet.AddView(dest)
-
-	r.outlet.AsElement().Root().Watch("navigation", "appfailure", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		r.GoTo(dest.Name())
-		return false
-	}))
+// OnAppfailure reacts to the navigation state being set to "appfailure".
+// It may occur when a malfunction occured.
+func (r *Router) OnAppfailure(h *MutationHandler) *Router {
+	r.outlet.AsElement().Root().Watch("navigation", "appfailure", r.outlet.AsElement().Root(), h)
 	return r
 }
 
@@ -237,23 +222,23 @@ func (r *Router) handler() *MutationHandler {
 		if err != nil {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
-				r.outlet.AsElement().Root().Set("navigation", "notfound", Bool(true))
+				r.outlet.AsElement().Root().Set("navigation", "notfound", String(newroute))
 				return true
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
-				r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+				r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 				return true
 			}
 			if err == ErrFrameworkFailure {
 				log.Print("APPFAILURE: ", err) // DEBUG
-				r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
+				r.outlet.AsElement().Root().Set("navigation", "appfailure", String(newroute))
 				return true
 			}
 		}
 		err = a()
 		if err != nil {
-			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			DEBUG("activation failure")
 			return true
 		}
@@ -315,25 +300,25 @@ func (r *Router) redirecthandler() *MutationHandler {
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {
-				r.outlet.AsElement().Root().Set("navigation", "notfound", Bool(true))
-				return false
+				r.outlet.AsElement().Root().Set("navigation", "notfound", String(newroute))
+				return true
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
-				r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
-				return false
+				r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
+				return true
 			}
 			if err == ErrFrameworkFailure {
 				log.Print(err) //DEBUG
-				r.outlet.AsElement().Root().Set("navigation", "appfailure", Bool(true))
-				return false
+				r.outlet.AsElement().Root().Set("navigation", "appfailure", String(newroute))
+				return true
 			}
 		}
 		err = a()
 		if err != nil {
 			log.Print(err) // DEBUG
 			log.Print("unauthorized for: " + newroute)
-			r.outlet.AsElement().Root().Set("navigation", "unauthorized", Bool(true))
+			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			return false
 		}
 		r.outlet.AsElement().Root().SetData("history", r.History.Value())
