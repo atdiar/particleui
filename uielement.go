@@ -695,6 +695,7 @@ func (e *Element) removeChildren() *Element {
 
 func (e *Element) DeleteChild(childEl AnyElement) *Element {
 	child := childEl.AsElement()
+	child.DeleteChildren()
 	e.RemoveChild(childEl)
 	child.Set("internals", "deleted", Bool(true))
 	child.ElementStore.Delete(child.ID)
@@ -705,9 +706,25 @@ func (e *Element) DeleteChildren() *Element {
 	l := make([]*Element, len(e.Children.List))
 	copy(l, e.Children.List)
 	for _, child := range l {
-		child.DeleteChildren()
 		e.DeleteChild(BasicElement{child})
 	}
+	return e
+}
+
+func(e *Element) ShareLifetimeOf(any AnyElement) *Element{
+	e.Watch("internals","deleted",any.AsElement(),NewMutationHandler(func(evt MutationEvent)bool{
+		if e.Parent!= nil{
+			e.Parent.DeleteChild(e)
+			return false
+		}
+		e.DeleteChildren()
+		_,ok:=e.Get("internals","deleted")
+		if !ok{
+			e.Set("internals", "deleted", Bool(true))
+			e.ElementStore.Delete(e.ID)
+		}
+		return false
+	}))
 	return e
 }
 

@@ -175,6 +175,7 @@ func (r *Router) OnUnauthorized(h *MutationHandler) *Router {
 
 // OnAppfailure reacts to the navigation state being set to "appfailure".
 // It may occur when a malfunction occured.
+// The MutationHandler informs of the behavior to addopt in this case.
 func (r *Router) OnAppfailure(h *MutationHandler) *Router {
 	r.outlet.AsElement().Root().Watch("navigation", "appfailure", r.outlet.AsElement().Root(), h)
 	return r
