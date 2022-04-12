@@ -265,8 +265,12 @@ func newWindow(title string, options ...string) Window {
 	c := Elements.NewConstructor("window", func(name string, id string) *ui.Element {
 		e := ui.NewElement("window", name, DOCTYPE)
 		e.Set("event", "mounted", ui.Bool(true))
+		e.Set("event", "mountable", ui.Bool(true))
 		e.Set("event", "attached", ui.Bool(true))
+		e.Set("event", "firstmount", ui.Bool(true))
+		e.Set("event", "firstmounted", ui.Bool(true))
 		e.ElementStore = Elements
+		e.Parent = e
 		wd := js.Global().Get("document").Get("defaultView")
 		if !wd.Truthy() {
 			panic("unable to access windows")
@@ -298,9 +302,6 @@ func newWindow(title string, options ...string) Window {
 
 		e.Watch("ui", "title", e, h)
 		e.Set("ui", "title", ui.String(title), false)
-		e.Set("event", "attached", ui.Bool(true))
-		e.Set("event", "mounted", ui.Bool(true))
-		e.Set("event", "firstmount", ui.Bool(true))
 
 		return e
 	})

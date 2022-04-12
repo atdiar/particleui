@@ -137,7 +137,7 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
-	el.Parent = nil
+	el.Parent = el // initially nil DEBUG
 	el.subtreeRoot = el
 	el.ElementStore = e
 	el.Global = e.Global
@@ -146,7 +146,9 @@ func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	el.Set("internals", "root", Bool(true))
 	el.Set("event", "attached", Bool(true))
 	el.Set("event", "mounted", Bool(true))
+	el.Set("event", "mountable", Bool(true))
 	el.Set("event", "firstmount", Bool(true))
+	el.Set("event", "firstmounted", Bool(true))
 	return BasicElement{el}
 }
 
@@ -400,7 +402,7 @@ func (e *Element) Handle(evt Event) bool {
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
 func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Element {
-	if !e.Mounted() && e.ID != "window" {
+	if !e.Mountable() && e.ID != "window" {
 		DEBUG("notmounted?")
 		return e
 	}
@@ -460,10 +462,15 @@ func attach(parent *Element, child *Element, activeview bool) {
 	_, ok := child.Get("event", "mounted")
 	defer func() {
 		child.Set("event", "attached", Bool(true))
-		if child.Mounted() {
-			child.Set("event", "mounted", Bool(true))
-			if !ok {
-				child.Set("event", "firstmount", Bool(true))
+		if child.Mountable() {
+			child.Set("event", "mountable", Bool(true))
+			if child.Mounted() {
+				child.Set("event", "mount", Bool(true))
+				if !ok {
+					child.Set("event", "firstmount", Bool(true))
+				} else {
+					child.Set("event", "firstmount", Bool(false))
+				}
 			}
 		}
 	}()
@@ -497,6 +504,10 @@ func detach(e *Element) {
 		return
 	}
 
+	if e.isRoot() {
+		panic("FAILURE: attempt to detach the root element.")
+	}
+
 	e.subtreeRoot = e
 
 	// reset e.path to start with the top-most element i.e. "e" in the current case
@@ -518,7 +529,8 @@ func detach(e *Element) {
 	//e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
 
 	e.Set("event", "attached", Bool(false))
-	e.Set("event", "mounted", Bool(false))
+	e.Set("event", "mountable", Bool(false))
+	e.Set("event", "mount", Bool(false)) // i.e. unmount
 
 	// got to update the subtree with the new subtree root and path
 	for _, descendant := range e.Children.List {
@@ -530,6 +542,15 @@ func detach(e *Element) {
 			attach(e, descendant, false)
 		}
 	}
+}
+
+func (e *Element) firstMount() bool {
+	b, ok := e.Get("event", "firstmount")
+	if !ok {
+		return false
+	}
+	bl := b.(Bool)
+	return bool(bl)
 }
 
 // AppendChild appends a new element to the Element's children.
@@ -549,36 +570,26 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 	if child.Parent != nil {
 		child.Parent.removeChild(BasicElement{child})
 	}
+
+	attach(e, child, true)
+	e.Children.InsertLast(child)
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
 
-	attach(e, child, true)
-	e.Children.InsertLast(child)
+	if child.Mounted() {
+		child.Set("event", "mounted", Bool(true))
+	}
+
+	if child.firstMount() {
+		child.Set("event", "firstmounted", Bool(true))
+	}
 
 	return e
 }
 
 func (e *Element) PrependChild(childEl AnyElement) *Element {
-
-	child := childEl.AsElement()
-	if e.DocType != child.DocType {
-		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
-		return e
-	}
-
-	if child.Parent != nil {
-		child.Parent.removeChild(BasicElement{child})
-	}
-	if e.Native != nil {
-		e.Native.PrependChild(child)
-	}
-
-	attach(e, child, true)
-
-	e.Children.InsertFirst(child)
-
-	return e
+	return e.prependChild(childEl)
 }
 
 func (e *Element) prependChild(childEl AnyElement) *Element {
@@ -591,13 +602,21 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 	if child.Parent != nil {
 		child.Parent.removeChild(BasicElement{child})
 	}
+
+	attach(e, child, true)
+	e.Children.InsertFirst(child)
+
 	if e.Native != nil {
 		e.Native.PrependChild(child)
 	}
 
-	attach(e, child, true)
+	if child.Mounted() {
+		child.Set("event", "mounted", Bool(true))
+	}
 
-	e.Children.InsertFirst(child)
+	if child.firstMount() {
+		child.Set("event", "firstmounted", Bool(true))
+	}
 
 	return e
 }
@@ -615,13 +634,21 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 	if child.Parent != nil {
 		child.Parent.removeChild(BasicElement{child})
 	}
+
+	attach(e, child, true)
+	e.Children.Insert(child, index)
+
 	if e.Native != nil {
 		e.Native.InsertChild(child, index)
 	}
 
-	attach(e, child, true)
+	if child.Mounted() {
+		child.Set("event", "mounted", Bool(true))
+	}
 
-	e.Children.Insert(child, index)
+	if child.firstMount() {
+		child.Set("event", "firstmounted", Bool(true))
+	}
 
 	return e
 }
@@ -647,16 +674,30 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		return e
 	}
 
+	oldwasmounted := old.Mounted()
+
 	if new.Parent != nil {
 		new.Parent.removeChild(BasicElement{new})
 	}
+
+	detach(old.AsElement())
+	attach(e, new.AsElement(), true)
+	e.Children.Replace(old.AsElement(), new.AsElement())
+
 	if e.Native != nil {
 		e.Native.ReplaceChild(old.AsElement(), new.AsElement())
 	}
-	detach(old.AsElement())
-	attach(e, new.AsElement(), true)
+	if oldwasmounted {
+		old.Set("event", "mounted", Bool(false))
+	}
 
-	e.Children.Replace(old.AsElement(), new.AsElement())
+	if new.Mounted() {
+		new.Set("event", "mounted", Bool(true))
+	}
+
+	if new.firstMount() {
+		new.Set("event", "firstmounted", Bool(true))
+	}
 
 	return e
 }
@@ -671,11 +712,17 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	if !ok {
 		return e
 	}
+
+	wasmounted := child.Mounted()
 	detach(child)
 	e.Children.Remove(child)
 
 	if e.Native != nil {
 		e.Native.RemoveChild(child)
+	}
+
+	if wasmounted {
+		child.Set("event", "mounted", Bool(false))
 	}
 	return e
 }
@@ -695,10 +742,22 @@ func (e *Element) removeChildren() *Element {
 
 func (e *Element) DeleteChild(childEl AnyElement) *Element {
 	child := childEl.AsElement()
+	child.Set("event", "deleting", Bool(true))
 	child.DeleteChildren()
 	e.RemoveChild(childEl)
+
+	if child.isViewElement() {
+		for _, view := range child.InactiveViews {
+			for _, el := range view.Elements().List {
+				el.Set("internals", "deleted", Bool(true))
+				e.ElementStore.Delete(el.ID)
+			}
+		}
+	}
+
 	child.Set("internals", "deleted", Bool(true))
-	child.ElementStore.Delete(child.ID)
+	e.ElementStore.Delete(child.ID)
+
 	return e
 }
 
@@ -711,15 +770,15 @@ func (e *Element) DeleteChildren() *Element {
 	return e
 }
 
-func(e *Element) ShareLifetimeOf(any AnyElement) *Element{
-	e.Watch("internals","deleted",any.AsElement(),NewMutationHandler(func(evt MutationEvent)bool{
-		if e.Parent!= nil{
+func (e *Element) ShareLifetimeOf(any AnyElement) *Element {
+	e.Watch("internals", "deleted", any.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+		if e.Parent != nil {
 			e.Parent.DeleteChild(e)
 			return false
 		}
 		e.DeleteChildren()
-		_,ok:=e.Get("internals","deleted")
-		if !ok{
+		_, ok := e.Get("internals", "deleted")
+		if !ok {
 			e.Set("internals", "deleted", Bool(true))
 			e.ElementStore.Delete(e.ID)
 		}
@@ -870,6 +929,8 @@ func transform(parent *Element, destination []*Element, delete bool) {
 	}
 }
 
+// Watch observes the owner of a property registered under a given category for change.
+// When a change has occured, a callback registered as a *MutationHandler is applied.
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
@@ -903,6 +964,13 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	return e
 }
 
+// WatchASAP is similar to watch but triggers the callback as soon as possible,
+// if a value has been detected for the property, while Watch awaits for a
+// mutation event to occur.
+// Mostly useful when a callback should be triggered as soon as we detect that a
+// event property ("event", propname) has occured.
+// (Reminder: event properies are properties that are only mutated at runtime
+// and cannot be stored in any long-term storage. They define transient state).
 func (e *Element) WatchASAP(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
@@ -941,6 +1009,8 @@ func (e *Element) WatchASAP(category string, propname string, owner Watchable, h
 	return e
 }
 
+// Unwatch cancels mutation observing for the property of the owner Element
+// registered under the given category.
 func (e *Element) Unwatch(category string, propname string, owner Watchable) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
@@ -951,6 +1021,7 @@ func (e *Element) Unwatch(category string, propname string, owner Watchable) *El
 	return e
 }
 
+// WatchGroup enables the triggering of a callback for any change to a given catgeory.
 func (e *Element) WatchGroup(category string, target Watchable, h *MutationHandler) *Element {
 	p, ok := target.AsElement().Properties.Categories[category]
 	if !ok {
@@ -962,6 +1033,7 @@ func (e *Element) WatchGroup(category string, target Watchable, h *MutationHandl
 	return e
 }
 
+// UnwatchGroup cancels the monitoring of changes for a given category.
 func (e *Element) UnwatchGroup(category string, owner *Element) *Element {
 	p, ok := owner.Properties.Categories[category]
 	if !ok {
@@ -1000,7 +1072,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 		}
 		return false
 	})
-	e.OnFirstMount(h)
+	e.OnFirstTimeMounted(h)
 
 	/*g := NewMutationHandler(func(evt MutationEvent) bool {
 		var native bool
@@ -1016,7 +1088,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 
 	*/
 
-	e.OnDelete(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
 		var native bool
 		if nativebinding != nil {
 			native = true
@@ -1030,14 +1102,35 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 	return e
 }
 
-// Mounted returns whether the subtree the current Element belongs to is attached
-// to the main tree or not.
-func (e *Element) Mounted() bool {
+// Mountable returns whether the element is attached to the main app tree.
+// This includes Mounted Elements, and Elements that are part of an inactive view.
+func (e *Element) Mountable() bool {
+	if e.isRoot() {
+		return true
+	}
+
 	if e.Root() == nil {
 		return false
 	}
 	_, isroot := e.Root().Get("internals", "root")
 	return isroot
+}
+
+// Mounted returns true if an Element is directly reachable from the root of an app tree.
+// This does not include elements existing on inactivated view paths.
+func (e *Element) Mounted() bool {
+	if e.isRoot() {
+		return true
+	}
+
+	if !e.Mountable() {
+		return false
+	}
+	l := e.path.List
+	if len(l) == 0 {
+		return false
+	}
+	return l[0].isRoot()
 }
 
 func (e *Element) OnMount(h *MutationHandler) {
@@ -1048,10 +1141,10 @@ func (e *Element) OnMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.Watch("event", "mounted", e, nh)
+	e.Watch("event", "mount", e, nh)
 }
 
-func (e *Element) OnFirstMount(h *MutationHandler) {
+func (e *Element) OnMounted(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
 		if !ok || !bool(b) {
@@ -1059,10 +1152,21 @@ func (e *Element) OnFirstMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.WatchASAP("event", "firstmount", e, nh)
+	e.Watch("event", "mounted", e, nh)
 }
 
-func (e *Element) OnDisMount(h *MutationHandler) {
+func (e *Element) OnFirstTimeMounted(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok || !bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.WatchASAP("event", "firstmounted", e, nh)
+}
+
+func (e *Element) OnUnmount(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
 		if !ok {
@@ -1073,10 +1177,10 @@ func (e *Element) OnDisMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.Watch("event", "mounted", e, nh)
+	e.Watch("event", "mount", e, nh)
 }
 
-func (e *Element) OnDelete(h *MutationHandler) {
+func (e *Element) OnDeleted(h *MutationHandler) {
 	eventcat, ok := e.Properties.Categories["internals"]
 	if !ok {
 		eventcat = newProperties()
@@ -1376,7 +1480,7 @@ func (e *Element) Route() string {
 	for k, n := range e.ViewAccessPath.Nodes {
 		path := "/" + n.Element.ID + "/" + n.Name
 		if k == 0 {
-			if e.Mounted() {
+			if e.Mountable() {
 				path = "/" + n.Name
 			}
 		}

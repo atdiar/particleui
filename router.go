@@ -33,7 +33,7 @@ type Router struct {
 
 // NewRouter takes an Element object which should be the entry point of the router.
 func NewRouter(basepath string, rootview ViewElement) *Router {
-	if !rootview.AsElement().Mounted() {
+	if !rootview.AsElement().Mountable() {
 		panic("router can only use a view attached to the main tree as a navigation outlet.")
 	}
 	u, err := url.Parse(basepath)
@@ -359,7 +359,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 				if !ok || !viewEl.isViewElement() {
 					panic("internals/views does not hold a proper Element")
 				}
-				if viewEl.Mounted() {
+				if viewEl.Mountable() {
 					r.insert(ViewElement{viewEl})
 				}
 			}
@@ -690,7 +690,7 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 	}
 
 	e := NewElement(viewname, target.AsElement().ID+"-"+viewname, r.outlet.AsElement().DocType)
-	if target.AsElement().Mounted() {
+	if target.AsElement().Mountable() {
 		e.Set("event", "verified", Bool(true))
 	}
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
