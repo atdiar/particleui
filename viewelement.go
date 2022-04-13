@@ -18,7 +18,6 @@ func (v ViewElement) AsElement() *Element {
 	return v.Raw
 }
 
-
 func (v ViewElement) watchable() {}
 func (v ViewElement) uiElement() {}
 
@@ -95,7 +94,7 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 	if !ok {
 		return false
 	}
-	b:=val.(Bool)
+	b := val.(Bool)
 	return bool(b)
 }
 
@@ -106,7 +105,7 @@ func (v ViewElement) ActivateView(name string) error {
 	if !ok {
 		panic(errors.New("authorization error " + name + " " + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
 	}
-	auth:= val.(Bool)
+	auth := val.(Bool)
 
 	if auth != Bool(true) {
 		return errors.New("Unauthorized")
@@ -115,10 +114,10 @@ func (v ViewElement) ActivateView(name string) error {
 	return v.AsElement().activateView(name)
 }
 
-func(v ViewElement) OnActivation(viewname string, h *MutationHandler){
-	v.AsElement().Watch("ui","activeview",v.AsElement(),NewMutationHandler(func(evt MutationEvent)bool{
-		view:= evt.NewValue().(String)
-		if string(view) != viewname{
+func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {
+	v.AsElement().Watch("ui", "activeview", v.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+		view := evt.NewValue().(String)
+		if string(view) != viewname {
 			return false
 		}
 		return h.Handle(evt)
@@ -149,34 +148,34 @@ func (e *Element) retrieveView(name string) *View {
 	return &v
 }
 
-func isParameter(name string)bool{
-	if strings.HasPrefix(name,":") && len(name) > 1{
+func isParameter(name string) bool {
+	if strings.HasPrefix(name, ":") && len(name) > 1 {
 		return true
 	}
 	return false
 }
 
 func (e *Element) activateView(name string) error {
-	if isParameter(name){
+	if isParameter(name) {
 		panic("this is likely to be a programmer error. VIew name inputs can not lead with a colon.")
 	}
 	newview, ok := e.InactiveViews[name]
 	if !ok {
 		// Check if view is active
-		if e.ActiveView == name{
+		if e.ActiveView == name {
 			return nil
 		}
-		if isParameter(e.ActiveView){
+		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
-			n,ok:= e.Get("ui","activeview")
-			if !ok{
+			n, ok := e.Get("ui", "activeview")
+			if !ok {
 				return errors.New("View is unknown.")
 			}
-			vname,ok:= n.(String)
-			if !ok{
+			vname, ok := n.(String)
+			if !ok {
 				panic("wrong type for view name. This is likely a library error")
 			}
-			if string(vname) != name{
+			if string(vname) != name {
 				return errors.New("View is unknown. Expected " + string(vname) + " instead of " + name)
 			}
 			return nil
