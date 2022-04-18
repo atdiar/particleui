@@ -1179,6 +1179,20 @@ func (e *Element) OnUnmount(h *MutationHandler) {
 	e.Watch("event", "mount", e, nh)
 }
 
+func (e *Element) OnUnmounted(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok {
+			return true
+		}
+		if bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.Watch("event", "mounted", e, nh)
+}
+
 func (e *Element) OnDeleted(h *MutationHandler) {
 	eventcat, ok := e.Properties.Categories["internals"]
 	if !ok {

@@ -1,4 +1,3 @@
-// Package ui is a library of functions for simple, generic gui development.
 package ui
 
 import (
@@ -64,6 +63,24 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	return v
 }
 
+func(v ViewElement) SetDefaultView(name string) ViewElement{ // TODO DEBUG OnUnmount vs OnUnmounted
+	if strings.HasPrefix(name,":"){
+		panic("FAILURE: cannot choose a route parameter as a default route. A value is required.")
+	}
+	ve:= v.AsElement()
+	ve.SetDataSetUI("defaultview",String(name))
+	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent)bool{
+		n,ok:= ve.Get("ui","defaultview")
+		if !ok{
+			return false
+		}
+		nm:=string(n.(String))
+		v.ActivateView(nm)
+		return false
+	}))
+	return v
+}
+
 // AddView adds a view to a ViewElement.
 func (v ViewElement) AddView(view View) ViewElement {
 	v.AsElement().addView(view)
@@ -98,6 +115,19 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 	return bool(b)
 }
 
+func(v ViewElement) hasStaticView(name string) bool{
+	if v.AsElement().ActiveView == name{
+		return true
+	}
+	inactiveviews:= v.AsElement().InactiveViews
+	for k,_:= range inactiveviews{
+		if k ==name{
+			return true
+		}
+	}
+	return false
+}
+
 // ActivateView sets the active view of  a ViewElement.
 // If no View exists for the name argument or is not authorized, an error is returned.
 func (v ViewElement) ActivateView(name string) error {
@@ -112,6 +142,10 @@ func (v ViewElement) ActivateView(name string) error {
 	}
 
 	return v.AsElement().activateView(name)
+}
+
+func(v ViewElement) OnParamChange(parameter string, h *MutationHandler){
+	v.AsElement().WatchASAP("navigation",parameter,v,h) // TODO DEBUG perhaps Watch is sufficient
 }
 
 func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {

@@ -694,10 +694,20 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 		e.Set("event", "verified", Bool(true))
 	}
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		v := target.RetrieveView(viewname)
-		if v != nil { // viewname corresponds to an existing view
-			e.Set("event", "verified", Bool(true))
+		if target.hasStaticView(viewname) { // viewname corresponds to an existing view
+			_, ok := e.Get("event", "verified")
+			if !ok {
+				e.Set("event", "verified", Bool(true))
+			}
 		}
+
+		if _, ok := target.hasParameterizedView(); ok {
+			_, ok := e.Get("event", "verified")
+			if !ok {
+				e.Set("event", "verified", Bool(true))
+			}
+		}
+
 		return false
 	})
 	e.Watch("event", "mounted", target.AsElement(), nh)
