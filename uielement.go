@@ -469,7 +469,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 			if child.Mounted() {
 				_, ok := child.Get("event", "firstmount")
 				if !ok {
-					child.Set("event","firstmount",Bool(true))
+					child.Set("event", "firstmount", Bool(true))
 				}
 				child.Set("event", "mount", Bool(true))
 			}
@@ -497,8 +497,8 @@ func attach(parent *Element, child *Element, activeview bool) {
 	}
 }
 
-func finalize(child *Element, attached bool){
-	if attached{
+func finalize(child *Element, attached bool) {
+	if attached {
 		if child.Mounted() {
 			_, ok := child.Get("event", "firsttimemounted")
 			if !ok {
@@ -507,17 +507,17 @@ func finalize(child *Element, attached bool){
 			child.Set("event", "mounted", Bool(true))
 		}
 
-	} else{
-		m,ok:=child.Get("event", "mounted")
-		if ok{
-			if vm:=m.(Bool);vm{
+	} else {
+		m, ok := child.Get("event", "mounted")
+		if ok {
+			if vm := m.(Bool); vm {
 				child.Set("event", "mounted", Bool(false))
 			}
 		}
 	}
 
 	for _, descendant := range child.Children.List {
-		finalize(descendant,attached)
+		finalize(descendant, attached)
 	}
 }
 
@@ -569,6 +569,19 @@ func detach(e *Element) {
 	}
 }
 
+func(e *Element) hasParent(any AnyElement) bool{
+	anye:= any.AsElement()
+	if e.path == nil{
+		return false
+	}
+	parents:= e.path.List
+	for _,parent:= range parents{
+		if parent.ID == anye.ID{
+			return true
+		}
+	}
+	return false
+}
 
 // AppendChild appends a new element to the Element's children.
 // If the element being appended is mounted on the main tree that starts from a
@@ -588,7 +601,6 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 		child.Parent.removeChild(BasicElement{child})
 	}
 
-
 	attach(e, child, true)
 	e.Children.InsertLast(child)
 
@@ -598,7 +610,7 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 
 	child.Set("event", "attached", Bool(true))
 
-	finalize(child,true)
+	finalize(child, true)
 
 	return e
 }
@@ -627,7 +639,7 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 
 	child.Set("event", "attached", Bool(true))
 
-	finalize(child,true)
+	finalize(child, true)
 
 	return e
 }
@@ -655,7 +667,7 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 
 	child.Set("event", "attached", Bool(true))
 
-	finalize(child,true)
+	finalize(child, true)
 
 	return e
 }
@@ -681,7 +693,6 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		return e
 	}
 
-
 	if new.Parent != nil {
 		new.Parent.removeChild(BasicElement{new})
 	}
@@ -697,8 +708,8 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	old.Set("event", "attached", Bool(false))
 	new.Set("event", "attached", Bool(true))
 
-	finalize(old,false)
-	finalize(new,true)
+	finalize(old, false)
+	finalize(new, true)
 
 	return e
 }
@@ -722,7 +733,7 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	}
 
 	child.Set("event", "attached", Bool(false))
-	finalize(child,false)
+	finalize(child, false)
 
 	return e
 }

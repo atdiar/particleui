@@ -14,6 +14,30 @@ var (
 	ErrFrameworkFailure = errors.New("Framework Failure")
 )
 
+// router is a singleton as only one router can be created at a time.
+// It can be retrieved by a call to GetRouter
+var router *Router
+
+// GetRouter returns the application Router object if it has been created.
+// If it has not yet, it panics.
+func GetRouter() *Router{
+	if router == nil{
+		panic("FAILURE: trying to retrieve router before it has been created.")
+	}
+	return router
+}
+
+// UseRouter is a convenience function that allows for a ViewElement to call a
+// router-using function when mounted.
+// Can be typically used in components that create link-based anchors (deep-linking).
+func UseRouter(user ViewElement, fn func(*Router)){
+	h:= NewMutationHandler(func(evt MutationEvent)bool{
+		fn(GetRouter())
+		return false
+	})
+	user.AsElement().OnMounted(h)
+}
+
 // Router stores shortcuts to given states of the application.
 // These shortcuts take the form of URIs.
 // The router is also in charge of modifying the application state to reach any
@@ -33,6 +57,9 @@ type Router struct {
 
 // NewRouter takes an Element object which should be the entry point of the router.
 func NewRouter(basepath string, rootview ViewElement) *Router {
+	if router != nil{
+		panic("A router has already been created")
+	}
 	if !rootview.AsElement().Mountable() {
 		panic("router can only use a view attached to the main tree as a navigation outlet.")
 	}
@@ -62,7 +89,7 @@ func NewRouter(basepath string, rootview ViewElement) *Router {
 		}
 		return false
 	}))
-
+	router = r
 	return r
 }
 
@@ -531,7 +558,6 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 			if !r.ViewElement.isViewAuthorized(param) {
 				return nil, ErrUnauthorized
 			}
-			r.ViewElement.AsElement().Set("navigation", param, String(segments[0]))
 			if ls != 1 { // we get the next rnodes mapped by viewname
 				m, ok = r.next[param]
 				if !ok {
@@ -599,7 +625,6 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 					if !r.ViewElement.isViewAuthorized(param) {
 						return nil, ErrUnauthorized
 					}
-					r.ViewElement.AsElement().Set("navigation", param, String(segments[2*i-1])) // TODO check
 
 					m, ok = r.next[param] // we get the next rnodes mapped by viewnames
 					if !ok {
@@ -710,7 +735,13 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 
 		return false
 	})
-	e.Watch("event", "mounted", target.AsElement(), nh)
+	e.Watch("event", "mounted", target.AsElement(), NewMutationHandler(func(evt MutationEvent)bool{
+		b:= evt.NewValue().(Bool)
+		if !b{
+			return false
+		}
+		return nh.Handle(evt)
+	}))
 	e.Watch("data", "currentroute", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
 		var link string

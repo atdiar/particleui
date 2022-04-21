@@ -1599,6 +1599,17 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 	return a
 }
 
+func (a Anchor) OnActive(h *ui.MutationHandler) Anchor {
+	a.AsElement().WatchASAP("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		b := evt.NewValue().(ui.Bool)
+		if !b {
+			return false
+		}
+		return h.Handle(evt)
+	}))
+	return a
+}
+
 func (a Anchor) SetText(text string) Anchor {
 	a.AsElement().SetDataSetUI("text", ui.String(text))
 	return a

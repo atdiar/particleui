@@ -63,18 +63,18 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	return v
 }
 
-func(v ViewElement) SetDefaultView(name string) ViewElement{ // TODO DEBUG OnUnmount vs OnUnmounted
-	if strings.HasPrefix(name,":"){
+func (v ViewElement) SetDefaultView(name string) ViewElement { // TODO DEBUG OnUnmount vs OnUnmounted
+	if strings.HasPrefix(name, ":") {
 		panic("FAILURE: cannot choose a route parameter as a default route. A value is required.")
 	}
-	ve:= v.AsElement()
-	ve.SetDataSetUI("defaultview",String(name))
-	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent)bool{
-		n,ok:= ve.Get("ui","defaultview")
-		if !ok{
+	ve := v.AsElement()
+	ve.SetDataSetUI("defaultview", String(name))
+	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent) bool {
+		n, ok := ve.Get("ui", "defaultview")
+		if !ok {
 			return false
 		}
-		nm:=string(n.(String))
+		nm := string(n.(String))
 		v.ActivateView(nm)
 		return false
 	}))
@@ -115,13 +115,13 @@ func (v ViewElement) isViewAuthorized(name string) bool {
 	return bool(b)
 }
 
-func(v ViewElement) hasStaticView(name string) bool{
-	if v.AsElement().ActiveView == name{
+func (v ViewElement) hasStaticView(name string) bool { // name should not start with a colon
+	if v.AsElement().ActiveView == name {
 		return true
 	}
-	inactiveviews:= v.AsElement().InactiveViews
-	for k,_:= range inactiveviews{
-		if k ==name{
+	inactiveviews := v.AsElement().InactiveViews
+	for k, _ := range inactiveviews {
+		if k == name {
 			return true
 		}
 	}
@@ -144,11 +144,11 @@ func (v ViewElement) ActivateView(name string) error {
 	return v.AsElement().activateView(name)
 }
 
-func(v ViewElement) OnParamChange(parameter string, h *MutationHandler){
-	v.AsElement().WatchASAP("navigation",parameter,v,h) // TODO DEBUG perhaps Watch is sufficient
+func (v ViewElement) OnParamChange(h *MutationHandler) {
+	v.AsElement().Watch("ui", "viewparameter", v, h)
 }
 
-func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {
+func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
 	v.AsElement().Watch("ui", "activeview", v.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {
@@ -193,107 +193,66 @@ func (e *Element) activateView(name string) error {
 	if isParameter(name) {
 		panic("this is likely to be a programmer error. VIew name inputs can not lead with a colon.")
 	}
+	if e.ActiveView == name {
+		return nil
+	}
+
 	newview, ok := e.InactiveViews[name]
 	if !ok {
-		// Check if view is active
-		if e.ActiveView == name {
-			return nil
-		}
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
 			n, ok := e.Get("ui", "activeview")
 			if !ok {
-				return errors.New("View is unknown.")
+				panic("FAILURE: parameterized view is activated but no activeview name exists in state")
 			}
-			vname, ok := n.(String)
-			if !ok {
-				panic("wrong type for view name. This is likely a library error")
+			if nm := string(n.(String)); nm == name {
+				return nil
 			}
-			if string(vname) != name {
-				return errors.New("View is unknown. Expected " + string(vname) + " instead of " + name)
-			}
+
+			e.SetDataSetUI("viewparameter", String(name))
 			return nil
 		}
 		// Support for parameterized views
-		if len(e.InactiveViews) != 0 {
-			var view View
-			var parameterName string
-			for k, v := range e.InactiveViews {
-				if strings.HasPrefix(k, ":") {
-					parameterName = k
-					view = v
-					break
-				}
-			}
-			if parameterName != "" {
-				if len(parameterName) == 1 {
-					return errors.New("Bad view name parameter. Needs to be longer than 0 character.")
-				}
-				// Now that we have found a matching parameterized view, let's try to retrieve the actual
-				// view corresponding to the submitted value "name"
-				v, err := view.ApplyParameter(name)
-				if err != nil {
-					// This parameter does not seem to be accepted.
-					return err
-				}
-				view = *v
 
-				// Let's detach the former view items
-				oldview, ok := e.Get("ui", "activeview")
-				oldviewname, ok2 := oldview.(String)
-				viewIsParameterized := (string(oldviewname) != e.ActiveView)
-				cccl := make([]*Element, len(e.Children.List))
-				copy(cccl, e.Children.List)
-				if ok && ok2 && oldviewname != "" && e.Children != nil {
-					for _, child := range e.Children.List {
-						if !viewIsParameterized {
-							e.removeChild(BasicElement{child})
-							attach(e, child, false)
-						}
-					}
-					if !viewIsParameterized {
-						// the view is not parameterized
-						e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
-					}
-				}
-				e.ActiveView = parameterName
-				// Let's append the new view Elements
-				for _, newchild := range view.Elements().List {
-					e.appendChild(BasicElement{newchild})
-				}
-				e.SetUI("activeview", String(name), false)
-
-				return nil
-			}
+		p, ok := ViewElement{e}.hasParameterizedView()
+		if !ok {
+			return errors.New("View does not exist for " + name)
 		}
-		return errors.New("View does not exist.")
-	}
-
-	// first we detach the current active View and reattach it as an alternative View if non-parameterized
-	oldview, ok := e.Get("ui", "activeview")
-	oldviewname, ok2 := oldview.(String)
-	viewIsParameterized := (string(oldviewname) != e.ActiveView)
-	cccl := make([]*Element, len(e.Children.List))
-	copy(cccl, e.Children.List)
-	if ok && ok2 && e.Children != nil {
-		for _, child := range e.Children.List {
-			if !viewIsParameterized {
+		view := e.InactiveViews[":"+p]
+		oldviewname := e.ActiveView
+		if oldviewname != "" {
+			cccl := make([]*Element, len(e.Children.List))
+			copy(cccl, e.Children.List)
+			for _, child := range e.Children.List {
 				e.removeChild(BasicElement{child})
 				attach(e, child, false)
 			}
-		}
-		if !viewIsParameterized {
-			// the view is not parameterized, we put it back in the set of activable views
 			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
 		}
+		e.ActiveView = ":" + p
+		for _, newchild := range view.Elements().List {
+			e.appendChild(BasicElement{newchild})
+		}
+		e.SetDataSetUI("viewparameter", String(name))
+		e.SetUI("activeview", String(name))
+		return nil
 	}
+
+	// 1. replace the current view into e.InactiveViews
+	cccl := make([]*Element, len(e.Children.List))
+	copy(cccl, e.Children.List)
+	for _, child := range e.Children.List {
+		e.removeChild(BasicElement{child})
+		attach(e, child, false)
+	}
+	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), cccl...)
+
+	// 2. mount the target view
 	e.ActiveView = name
-	// we attach and activate the desired view
 	for _, child := range newview.Elements().List {
 		e.appendChild(BasicElement{child})
 	}
 	delete(e.InactiveViews, name)
-	e.SetUI("activeview", String(name), false)
-
+	e.SetUI("activeview", String(name))
 	return nil
 }
