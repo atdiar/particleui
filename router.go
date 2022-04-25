@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -20,8 +21,8 @@ var router *Router
 
 // GetRouter returns the application Router object if it has been created.
 // If it has not yet, it panics.
-func GetRouter() *Router{
-	if router == nil{
+func GetRouter() *Router {
+	if router == nil {
 		panic("FAILURE: trying to retrieve router before it has been created.")
 	}
 	return router
@@ -30,8 +31,8 @@ func GetRouter() *Router{
 // UseRouter is a convenience function that allows for a ViewElement to call a
 // router-using function when mounted.
 // Can be typically used in components that create link-based anchors (deep-linking).
-func UseRouter(user ViewElement, fn func(*Router)){
-	h:= NewMutationHandler(func(evt MutationEvent)bool{
+func UseRouter(user ViewElement, fn func(*Router)) {
+	h := NewMutationHandler(func(evt MutationEvent) bool {
 		fn(GetRouter())
 		return false
 	})
@@ -57,7 +58,7 @@ type Router struct {
 
 // NewRouter takes an Element object which should be the entry point of the router.
 func NewRouter(basepath string, rootview ViewElement) *Router {
-	if router != nil{
+	if router != nil {
 		panic("A router has already been created")
 	}
 	if !rootview.AsElement().Mountable() {
@@ -735,9 +736,9 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 
 		return false
 	})
-	e.Watch("event", "mounted", target.AsElement(), NewMutationHandler(func(evt MutationEvent)bool{
-		b:= evt.NewValue().(Bool)
-		if !b{
+	e.Watch("event", "mounted", target.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+		b := evt.NewValue().(Bool)
+		if !b {
 			return false
 		}
 		return nh.Handle(evt)
@@ -773,11 +774,22 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 // NavHistory holds the Navigation History. (aka NavStack)
 type NavHistory struct {
 	Stack  []string
+	State  []Observable
 	Cursor int
 }
 
+// Get is used to retrieve a Value from the history state.
+func(n *NavHistory) Get(category, propname string) (Value, bool) {
+	return n.State[n.Cursor].Get(category,propname)
+}
+
+// Set is used to insert a value in the history state.
+func (n *NavHistory) Set(category string,propname string, val Value){
+	n.State[n.Cursor].Set(category,propname,val)
+}
+
 func NewNavigationHistory() *NavHistory {
-	return &NavHistory{make([]string, 0, 1000), -1}
+	return &NavHistory{make([]string, 0, 1024), make([]Observable, 0, 1024), -1}
 }
 func (n *NavHistory) Value() Value {
 	o := NewObject()
@@ -788,6 +800,7 @@ func (n *NavHistory) Value() Value {
 func (n *NavHistory) Push(URI string) *NavHistory {
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
+	n.State = append(n.State[:n.Cursor], NewObservable("hstate"+strconv.Itoa(n.Cursor)))
 	if len(n.Stack) >= 1000 {
 		panic("navstack capacity overflow")
 	}
@@ -797,6 +810,7 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
+	n.State[n.Cursor] = NewObservable("hstate" + strconv.Itoa(n.Cursor))
 	return n
 }
 

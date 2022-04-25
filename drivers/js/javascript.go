@@ -431,9 +431,10 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 //
 */
 
-// AllowSessionStoragePersistence is a constructor option. When passed as argument in
-// the creation of a ui.Element constructor, it allows for ui.Element constructors to
-// different options for property persistence.
+// AllowSessionStoragePersistence is a constructor option.
+// A constructor option allows us to add custom optional behaviors to Element constructors.
+// If made available to a constructor function, the coder may decide to enable
+//  session storage of the properties of an Element  created with said constructor.
 var AllowSessionStoragePersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("sessionstorage"))
 	return e
@@ -451,6 +452,45 @@ func EnableSessionPersistence() string {
 func EnableLocalPersistence() string {
 	return "localstorage"
 }
+
+func isScrollable(property string) bool {
+	switch property {
+	case "auto":
+		return true
+	case "scroll":
+		return true
+	default:
+		return false
+	}
+}
+
+var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
+	e.OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		router := ui.GetRouter()
+
+		ejs := JSValue(e)
+		wjs := js.Global().Get("defaultView")
+
+		stylesjs := wjs.Call("getComputedStyle", ejs)
+		overflow:= stylesjs.Call("getPropertyValue","overflow").String()
+		overflowx:= stylesjs.Call("getPropertyValue","overflow-x").String()
+		overflowy:= stylesjs.Call("getPropertyValue","overflow-y").String()
+
+		scrollable:= isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
+
+		if scrollable{
+			e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event)bool{
+				scrolltop:= ui.Number(ejs.Get("scrollTop").Float())
+				scrollleft:= ui.Number(ejs.Get("scrollLeft").Float())
+				
+				return false
+			}),NativeEventBridge)
+		}
+
+		return false
+	}))
+	return e
+})
 
 type Document struct {
 	ui.BasicElement
