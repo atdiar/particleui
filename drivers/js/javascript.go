@@ -469,28 +469,77 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 		router := ui.GetRouter()
 
 		ejs := JSValue(e)
+		if e.ID ==e.Root().ID {
+			ejs = js.Global().Get("scrollingElement")
+		}
 		wjs := js.Global().Get("defaultView")
 
 		stylesjs := wjs.Call("getComputedStyle", ejs)
-		overflow:= stylesjs.Call("getPropertyValue","overflow").String()
-		overflowx:= stylesjs.Call("getPropertyValue","overflow-x").String()
-		overflowy:= stylesjs.Call("getPropertyValue","overflow-y").String()
+		overflow := stylesjs.Call("getPropertyValue", "overflow").String()
+		overflowx := stylesjs.Call("getPropertyValue", "overflow-x").String()
+		overflowy := stylesjs.Call("getPropertyValue", "overflow-y").String()
 
-		scrollable:= isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
+		scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
 
-		if scrollable{
-			e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event)bool{
-				scrolltop:= ui.Number(ejs.Get("scrollTop").Float())
-				scrollleft:= ui.Number(ejs.Get("scrollLeft").Float())
-				
+		if scrollable {
+			e.SetDataSetUI("scrollrestore", ui.Bool(true))
+			e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+				scrolltop := ui.Number(ejs.Get("scrollTop").Float())
+				scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
+				router.History.Set(e.ID, "scrollTop", scrolltop)
+				router.History.Set(e.ID, "scrollLeft", scrollleft)
 				return false
-			}),NativeEventBridge)
+			}), NativeEventBridge)
+
+			h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				b, ok := e.Get("event", "shouldscroll")
+				if !ok {
+					return false
+				}
+				if scroll := b.(ui.Bool); scroll {
+					t, ok := router.History.Get(e.ID, "scrollTop")
+					if !ok {
+						return false
+					}
+					l, ok := router.History.Get(e.ID, "scrollLeft")
+					if !ok {
+						return false
+					}
+					top := t.(ui.Number)
+					left := l.(ui.Number)
+					ejs.Set("scrollTop", float64(top))
+					ejs.Set("scrollLeft", float64(left))
+					if e.ID!=e.Root().ID{
+						e.Set("event", "shouldscroll", ui.Bool(false)) //always scroll root
+					}
+				}
+				return false
+			})
+			e.Watch("event", "navigationend", e.Root(), h)
+		} else {
+			e.SetDataSetUI("scrollrestore", ui.Bool(false))
 		}
 
 		return false
 	}))
+
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
+
+		sc, ok := e.Get("ui", "scrollrestore")
+		if !ok {
+			return false
+		}
+		if scrollrestore := sc.(ui.Bool); scrollrestore {
+			e.Set("event", "shouldscroll", ui.Bool(true))
+		}
+		return false
+	}))
 	return e
 })
+
+func EnableScrollRestoration() string {
+	return "scrollrestoration"
+}
 
 type Document struct {
 	ui.BasicElement
@@ -590,7 +639,7 @@ func NewDocument(id string, options ...string) Document {
 		}))
 
 		return e
-	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 	/*e,ok:= Elements.ByID[id]
 	if ok{
@@ -680,7 +729,7 @@ func NewDiv(name string, id string, options ...string) Div {
 		}))
 
 		return e
-	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 	/*e,ok:= Elements.ByID[id]
 	if ok{

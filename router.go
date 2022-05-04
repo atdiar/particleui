@@ -131,11 +131,15 @@ func (r *Router) GoTo(route string) {
 	}
 	route = strings.TrimPrefix(route, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
 
+	r.outlet.AsElement().Root().Set("event", "navigationstart", String(route))
+
 	ok := r.tryNavigate(route)
 	if !ok {
 		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
 		return
 	}
+
+	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
 
 	r.History.Push(route)
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
@@ -265,12 +269,14 @@ func (r *Router) handler() *MutationHandler {
 				return true
 			}
 		}
+		r.outlet.AsElement().Root().Set("event", "navigationstart", String(newroute))
 		err = a()
 		if err != nil {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			DEBUG("activation failure")
 			return true
 		}
+		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 
 		// Register route in browser history part 1
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
@@ -343,6 +349,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 				return true
 			}
 		}
+		r.outlet.AsElement().Root().Set("event", "navigationstart", String(newroute))
 		err = a()
 		if err != nil {
 			log.Print(err) // DEBUG
@@ -350,6 +357,8 @@ func (r *Router) redirecthandler() *MutationHandler {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			return false
 		}
+		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
+
 		r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 
@@ -779,13 +788,13 @@ type NavHistory struct {
 }
 
 // Get is used to retrieve a Value from the history state.
-func(n *NavHistory) Get(category, propname string) (Value, bool) {
-	return n.State[n.Cursor].Get(category,propname)
+func (n *NavHistory) Get(category, propname string) (Value, bool) {
+	return n.State[n.Cursor].Get(category, propname)
 }
 
 // Set is used to insert a value in the history state.
-func (n *NavHistory) Set(category string,propname string, val Value){
-	n.State[n.Cursor].Set(category,propname,val)
+func (n *NavHistory) Set(category string, propname string, val Value) {
+	n.State[n.Cursor].Set(category, propname, val)
 }
 
 func NewNavigationHistory() *NavHistory {
