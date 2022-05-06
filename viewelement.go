@@ -148,7 +148,7 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 	v.AsElement().Watch("ui", "viewparameter", v, h)
 }
 
-func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
+func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {
 	v.AsElement().Watch("ui", "activeview", v.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {

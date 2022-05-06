@@ -410,7 +410,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 			return true // means that event handling has to stop
 		}
 		// the target element route should be changed to the event NewRoute value.
-		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()), false)
+		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()))
 		return false
 	})
 

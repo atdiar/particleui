@@ -268,7 +268,7 @@ func newWindow(title string, options ...string) Window {
 		e.Set("event", "mountable", ui.Bool(true))
 		e.Set("event", "attached", ui.Bool(true))
 		e.Set("event", "firstmount", ui.Bool(true))
-		e.Set("event", "firstmounted", ui.Bool(true))
+		e.Set("event", "firsttimemounted", ui.Bool(true))
 		e.ElementStore = Elements
 		e.Parent = e
 		wd := js.Global().Get("document").Get("defaultView")
@@ -466,60 +466,62 @@ func isScrollable(property string) bool {
 
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
 	e.OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		router := ui.GetRouter()
+		e.Watch("navigation", "ready", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			router := ui.GetRouter()
 
-		ejs := JSValue(e)
-		if e.ID ==e.Root().ID {
-			ejs = js.Global().Get("scrollingElement")
-		}
-		wjs := js.Global().Get("defaultView")
+			ejs := JSValue(e)
+			wjs := js.Global().Get("document").Get("defaultView")
 
-		stylesjs := wjs.Call("getComputedStyle", ejs)
-		overflow := stylesjs.Call("getPropertyValue", "overflow").String()
-		overflowx := stylesjs.Call("getPropertyValue", "overflow-x").String()
-		overflowy := stylesjs.Call("getPropertyValue", "overflow-y").String()
+			stylesjs := wjs.Call("getComputedStyle", ejs)
+			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
+			overflowx := stylesjs.Call("getPropertyValue", "overflow-x").String()
+			overflowy := stylesjs.Call("getPropertyValue", "overflow-y").String()
 
-		scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
+			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
 
-		if scrollable {
-			e.SetDataSetUI("scrollrestore", ui.Bool(true))
-			e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
-				scrolltop := ui.Number(ejs.Get("scrollTop").Float())
-				scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-				router.History.Set(e.ID, "scrollTop", scrolltop)
-				router.History.Set(e.ID, "scrollLeft", scrollleft)
-				return false
-			}), NativeEventBridge)
-
-			h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				b, ok := e.Get("event", "shouldscroll")
-				if !ok {
+			if scrollable {
+				if js.Global().Get("history").Get("scrollRestoration").Truthy() {
+					js.Global().Get("history").Set("scrollRestoration", "manual")
+				}
+				e.SetDataSetUI("scrollrestore", ui.Bool(true))
+				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
+					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
+					router.History.Set(e.ID, "scrollTop", scrolltop)
+					router.History.Set(e.ID, "scrollLeft", scrollleft)
 					return false
-				}
-				if scroll := b.(ui.Bool); scroll {
-					t, ok := router.History.Get(e.ID, "scrollTop")
-					if !ok {
-						return false
-					}
-					l, ok := router.History.Get(e.ID, "scrollLeft")
-					if !ok {
-						return false
-					}
-					top := t.(ui.Number)
-					left := l.(ui.Number)
-					ejs.Set("scrollTop", float64(top))
-					ejs.Set("scrollLeft", float64(left))
-					if e.ID!=e.Root().ID{
-						e.Set("event", "shouldscroll", ui.Bool(false)) //always scroll root
-					}
-				}
-				return false
-			})
-			e.Watch("event", "navigationend", e.Root(), h)
-		} else {
-			e.SetDataSetUI("scrollrestore", ui.Bool(false))
-		}
+				}), NativeEventBridge)
 
+				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					b, ok := e.Get("event", "shouldscroll")
+					if !ok {
+						return false
+					}
+					if scroll := b.(ui.Bool); scroll {
+						t, ok := router.History.Get(e.ID, "scrollTop")
+						if !ok {
+							return false
+						}
+						l, ok := router.History.Get(e.ID, "scrollLeft")
+						if !ok {
+							return false
+						}
+						top := t.(ui.Number)
+						left := l.(ui.Number)
+						ejs.Set("scrollTop", float64(top))
+						ejs.Set("scrollLeft", float64(left))
+						if e.ID != e.Root().ID {
+							e.Set("event", "shouldscroll", ui.Bool(false)) //always scroll root
+						}
+					}
+					return false
+				})
+				e.Watch("event", "navigationend", e.Root(), h)
+			} else {
+				e.SetDataSetUI("scrollrestore", ui.Bool(false))
+			}
+			return false
+		}))
 		return false
 	}))
 
@@ -638,8 +640,60 @@ func NewDocument(id string, options ...string) Document {
 			return false
 		}))
 
+		if js.Global().Get("history").Get("scrollRestoration").Truthy() {
+			js.Global().Get("history").Set("scrollRestoration", "manual")
+		}
+
+		// Adding scrollrestoration support
+		e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			router := ui.GetRouter()
+
+			ejs := js.Global().Get("document").Get("scrollingElement")
+			//wjs := js.Global().Get("document").Get("defaultView")
+
+			/*stylesjs := wjs.Call("getComputedStyle", ejs)
+			DEBUG(stylesjs)
+			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
+			overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
+			overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
+			DEBUG(overflow, overflowx, overflowy)
+
+			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
+			DEBUG("scrollable", scrollable)
+			*/
+
+				e.SetDataSetUI("scrollrestore", ui.Bool(true))
+				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
+					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
+					router.History.Set(e.ID, "scrollTop", scrolltop)
+					router.History.Set(e.ID, "scrollLeft", scrollleft)
+					DEBUG("save scrollpos: ", scrolltop, scrollleft)
+					return false
+				}), NativeEventBridge)
+
+				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					t, ok := router.History.Get(e.ID, "scrollTop")
+					if !ok {
+						return false
+					}
+					l, ok := router.History.Get(e.ID, "scrollLeft")
+					if !ok {
+						return false
+					}
+					top := t.(ui.Number)
+					left := l.(ui.Number)
+					ejs.Set("scrollTop", float64(top))
+					ejs.Set("scrollLeft", float64(left))
+					return false
+				})
+				e.Watch("event", "navigationend", e, h)
+
+			return false
+		}))
+
 		return e
-	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 	/*e,ok:= Elements.ByID[id]
 	if ok{
