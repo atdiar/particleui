@@ -42,11 +42,10 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		bubbles := evt.Get("bubbles").Bool()
 		cancancel := evt.Get("cancelable").Bool()
 		var target ui.BasicElement
-		jstarget := evt.Get("target")
-
+		jstarget := evt.Get("currentTarget")
+		value := jstarget.Get("value").String()
 		targetid := jstarget.Get("id")
 
-		value := jstarget.Get("value").String()
 		if targetid.Truthy() {
 			element := Elements.GetByID(targetid.String())
 			if element != nil {

@@ -474,8 +474,8 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 
 			stylesjs := wjs.Call("getComputedStyle", ejs)
 			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
-			overflowx := stylesjs.Call("getPropertyValue", "overflow-x").String()
-			overflowy := stylesjs.Call("getPropertyValue", "overflow-y").String()
+			overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
+			overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
 
 			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
 
@@ -500,10 +500,14 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					if scroll := b.(ui.Bool); scroll {
 						t, ok := router.History.Get(e.ID, "scrollTop")
 						if !ok {
+							ejs.Set("scrollTop", 0)
+							ejs.Set("scrollLeft", 0)
 							return false
 						}
 						l, ok := router.History.Get(e.ID, "scrollLeft")
 						if !ok {
+							ejs.Set("scrollTop", 0)
+							ejs.Set("scrollLeft", 0)
 							return false
 						}
 						top := t.(ui.Number)
@@ -662,32 +666,42 @@ func NewDocument(id string, options ...string) Document {
 			DEBUG("scrollable", scrollable)
 			*/
 
-				e.SetDataSetUI("scrollrestore", ui.Bool(true))
-				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
-					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
-					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-					router.History.Set(e.ID, "scrollTop", scrolltop)
-					router.History.Set(e.ID, "scrollLeft", scrollleft)
-					DEBUG("save scrollpos: ", scrolltop, scrollleft)
-					return false
-				}), NativeEventBridge)
+			e.SetDataSetUI("scrollrestore", ui.Bool(true))
 
-				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-					t, ok := router.History.Get(e.ID, "scrollTop")
-					if !ok {
-						return false
-					}
-					l, ok := router.History.Get(e.ID, "scrollLeft")
-					if !ok {
-						return false
-					}
-					top := t.(ui.Number)
-					left := l.(ui.Number)
-					ejs.Set("scrollTop", float64(top))
-					ejs.Set("scrollLeft", float64(left))
+			GetWindow().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+				scrolltop := ui.Number(ejs.Get("scrollTop").Float())
+				scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
+				router.History.Set(e.ID, "scrollTop", scrolltop)
+				router.History.Set(e.ID, "scrollLeft", scrollleft)
+				return false
+			}), NativeEventBridge)
+
+			h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				t, ok := router.History.Get(e.ID, "scrollTop")
+				if !ok {
+					ejs.Set("scrollTop", 0)
+					ejs.Set("scrollLeft", 0)
 					return false
-				})
-				e.Watch("event", "navigationend", e, h)
+				}
+				l, ok := router.History.Get(e.ID, "scrollLeft")
+				if !ok {
+					ejs.Set("scrollTop", 0)
+					ejs.Set("scrollLeft", 0)
+					return false
+				}
+				top := t.(ui.Number)
+				left := l.(ui.Number)
+
+				/*to := ejs.Get("scrollTop").Float()
+				le := ejs.Get("scrollLeft").Float()
+				DEBUG("Init scroll coords  : ", to, le)
+				DEBUG("Target scroll coords: ", top, left)*/
+				ejs.Set("scrollTop", float64(top))
+				ejs.Set("scrollLeft", float64(left))
+
+				return false
+			})
+			e.Watch("event", "navigationend", e, h)
 
 			return false
 		}))

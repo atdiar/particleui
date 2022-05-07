@@ -133,20 +133,20 @@ func (r *Router) GoTo(route string) {
 
 	r.outlet.AsElement().Root().Set("event", "navigationstart", String(route))
 
+	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
 		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
+		// rollack route pushing
+		r.History.rollBack()
 		return
 	}
 
-	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
-
-	r.History.Push(route)
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
-
+	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
 
-	log.Println(*r.History) //DEBUG
+	//log.Println(*r.History) //DEBUG
 }
 
 func (r *Router) GoBack() {
@@ -276,7 +276,6 @@ func (r *Router) handler() *MutationHandler {
 			DEBUG("activation failure")
 			return true
 		}
-		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 
 		// Register route in browser history part 1
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
@@ -307,7 +306,7 @@ func (r *Router) handler() *MutationHandler {
 
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		}
-
+		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
 
 		return false
@@ -404,11 +403,11 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	}
 
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		if evt.Type() != eventname {
+		/*if evt.Type() != eventname {
 			log.Print("Event of wrong type. Expected: " + eventname)
 			root.AsElement().Root().Set("navigation", "appfailure", String("500: RouteChangeEvent of wrong type."))
 			return true // means that event handling has to stop
-		}
+		}*/
 		// the target element route should be changed to the event NewRoute value.
 		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()))
 		return false
@@ -814,6 +813,13 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 		panic("navstack capacity overflow")
 	}
 
+	return n
+}
+
+func (n *NavHistory) rollBack() *NavHistory {
+	// n.Stack[n.Cursor]=""
+	// n.State[n.Cursor]=Observable{}
+	n.Cursor--
 	return n
 }
 
