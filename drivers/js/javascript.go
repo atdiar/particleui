@@ -128,7 +128,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 		}
 
 		if !propertyExists || !indexed {
-			props := make([]interface{}, 0, 1)
+			props := make([]interface{}, 0, 4)
 			c, ok := element.Properties.Categories[category]
 			if !ok {
 				props = append(props, proptype+"/"+propname)
@@ -193,8 +193,8 @@ func loader(s string) func(e *ui.Element) error {
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
-		categories := make([]string, 0)
-		properties := make([]string, 0)
+		categories := make([]string, 0,20)
+		properties := make([]string, 0,50)
 		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
 		if err != nil {
 			return err
@@ -402,6 +402,19 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 	v.Value.Call("remove")
 	//n.Value.Call("removeChild", v.Value)
 
+}
+
+func (n NativeElement) SetChildren(children ...*ui.Element) {
+	fragment := js.Global().Get("document").Call("createDocumentFragment")
+	for _, child := range children {
+		v, ok := child.Native.(NativeElement)
+		if !ok {
+			panic("wrong format for native element underlying objects.Cannot append " + child.Name)
+			return
+		}
+		fragment.Call("append", v.Value)
+	}
+	n.Value.Call("append", fragment)
 }
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as

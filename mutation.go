@@ -10,7 +10,7 @@ type MutationCallbacks struct {
 }
 
 func NewMutationCallbacks() *MutationCallbacks {
-	return &MutationCallbacks{make(map[string]*mutationHandlers, 0)}
+	return &MutationCallbacks{make(map[string]*mutationHandlers, 10)}
 }
 
 func (m *MutationCallbacks) Add(key string, h *MutationHandler) *MutationCallbacks {
@@ -38,7 +38,7 @@ func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
 	if !ok {
 		return m
 	}
-	mhs.list = make([]*MutationHandler, 0)
+	mhs.list = make([]*MutationHandler, 0,10)
 	return m
 }
 
@@ -67,7 +67,7 @@ type mutationHandlers struct {
 }
 
 func newMutationHandlers() *mutationHandlers {
-	return &mutationHandlers{make([]*MutationHandler, 0)}
+	return &mutationHandlers{make([]*MutationHandler, 0,10)}
 }
 
 func (m *mutationHandlers) Add(h *MutationHandler) *mutationHandlers {

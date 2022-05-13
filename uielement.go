@@ -319,7 +319,9 @@ type Elements struct {
 }
 
 func NewElements(elements ...*Element) *Elements {
-	return &Elements{elements}
+	res := &Elements{make([]*Element, 0, 50)}
+	res.List = append(res.List, elements...)
+	return res
 }
 
 func (e *Elements) InsertLast(elements ...*Element) *Elements {
@@ -333,7 +335,7 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 }
 
 func (e *Elements) Insert(el *Element, index int) *Elements {
-	nel := make([]*Element, 0)
+	nel := make([]*Element, 0, len(e.List)+1)
 	nel = append(nel, e.List[:index]...)
 	nel = append(nel, el)
 	nel = append(nel, e.List[index:]...)
@@ -364,7 +366,8 @@ func (e *Elements) Remove(el *Element) *Elements {
 }
 
 func (e *Elements) RemoveAll() *Elements {
-	e.List = make([]*Element, 0)
+	cap:= cap(e.List)
+	e.List = make([]*Element, 0,cap)
 	return e
 }
 
@@ -459,7 +462,7 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
-	defer func() {
+	/*defer func() {
 		child.Set("event", "attach", Bool(true))
 		if child.Mountable() {
 			child.Set("event", "mountable", Bool(true))
@@ -474,7 +477,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 				child.Set("event", "mount", Bool(true))
 			}
 		}
-	}()
+	}()*/
 
 	if activeview {
 		child.Parent = parent
@@ -493,6 +496,21 @@ func attach(parent *Element, child *Element, activeview bool) {
 	for _, descendants := range child.InactiveViews {
 		for _, descendant := range descendants.Elements().List {
 			attach(child, descendant, false)
+		}
+	}
+
+	child.Set("event", "attach", Bool(true))
+	if child.Mountable() {
+		child.Set("event", "mountable", Bool(true))
+		// we can set mountable without checking if it was already set because we
+		// know that attach is only called for detached subtrees, i.e. they are also
+		// not mountable nor mounted.
+		if child.Mounted() {
+			_, ok := child.Get("event", "firstmount")
+			if !ok {
+				child.Set("event", "firstmount", Bool(true))
+			}
+			child.Set("event", "mount", Bool(true))
 		}
 	}
 }
@@ -569,14 +587,14 @@ func detach(e *Element) {
 	}
 }
 
-func(e *Element) hasParent(any AnyElement) bool{
-	anye:= any.AsElement()
-	if e.path == nil{
+func (e *Element) hasParent(any AnyElement) bool {
+	anye := any.AsElement()
+	if e.path == nil {
 		return false
 	}
-	parents:= e.path.List
-	for _,parent:= range parents{
-		if parent.ID == anye.ID{
+	parents := e.path.List
+	for _, parent := range parents {
+		if parent.ID == anye.ID {
 			return true
 		}
 	}
@@ -813,6 +831,56 @@ func (e *Element) hasChild(any *Element) (int, bool) {
 
 func (e *Element) SetChildren(any ...AnyElement) *Element {
 	e.RemoveChildren()
+	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
+		children := make([]*Element, 0, len(any))
+		for _, el := range any {
+			ele := el.AsElement()
+			if e.DocType != ele.DocType {
+				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, ele.DocType)
+				panic("SetChildren failed: wrong doctype")
+			}
+			if ele.Parent != nil {
+				ele.Parent.removeChild(BasicElement{ele})
+			}
+			attach(e, ele, true)
+			e.Children.InsertLast(ele)
+			children = append(children, ele)
+		}
+		n.SetChildren(children...)
+		for _, child := range children {
+			child.Set("event", "attached", Bool(true))
+			finalize(child, true)
+		}
+		return e
+	}
+	for _, el := range any {
+		e.AppendChild(el)
+		// el.ActiveView = e.ActiveView // TODO verify this is correct
+	}
+	return e
+}
+
+func (e *Element) SetChildrenElements(any ...*Element) *Element {
+	e.RemoveChildren()
+	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
+		for _, el := range any {
+			if e.DocType != el.DocType {
+				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, el.DocType)
+				panic("SetChildren failed: wrong doctype")
+			}
+			if el.Parent != nil {
+				el.Parent.removeChild(BasicElement{el})
+			}
+			attach(e, el, true)
+			e.Children.InsertLast(el)
+		}
+		n.SetChildren(any...)
+		for _, child := range any {
+			child.Set("event", "attached", Bool(true))
+			finalize(child, true)
+		}
+		return e
+	}
 	for _, el := range any {
 		e.AppendChild(el)
 		// el.ActiveView = e.ActiveView // TODO verify this is correct
@@ -1630,14 +1698,14 @@ type viewNodes struct {
 }
 
 func newViewNodes() *viewNodes {
-	return &viewNodes{make([]viewNode, 0)}
+	return &viewNodes{make([]viewNode, 0,30)}
 }
 
 func (v *viewNodes) Copy() *viewNodes {
 	if v == nil {
 		return nil
 	}
-	c := make([]viewNode, len(v.Nodes))
+	c := make([]viewNode, len(v.Nodes),cap(v.Nodes))
 	copy(c, v.Nodes)
 	return &viewNodes{c}
 }

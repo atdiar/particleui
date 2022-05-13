@@ -126,8 +126,9 @@ func (o Object) Get(key string) (interface{}, bool) {
 	return v, ok
 }
 
-func (o Object) Set(key string, value Value) {
+func (o Object) Set(key string, value Value) Object {
 	o[key] = value
+	return o
 }
 func (o Object) SetType(typ string) Object {
 	o["typ"] = typ
@@ -397,6 +398,15 @@ func (l ListofObjects) Get(index int) Object {
 		panic("this should be a list of objects. it should contain objects only")
 	}
 	return o
+}
+
+func Copy(v Value) Value{
+	o:= NewObject()
+	w:= v.RawValue()
+	for k,mv:= range w{
+		o[k]=mv
+	}
+	return o.Value()
 }
 
 func Equal(v Value, w Value) bool{

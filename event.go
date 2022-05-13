@@ -164,7 +164,7 @@ type eventHandlers struct {
 }
 
 func newEventHandlers() *eventHandlers {
-	return &eventHandlers{make([]*EventHandler, 0)}
+	return &eventHandlers{make([]*EventHandler, 0, 20)}
 }
 
 func (e *eventHandlers) Add(h *EventHandler) *eventHandlers {
