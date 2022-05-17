@@ -477,9 +477,7 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
-	DEBUG("attach")
 	if activeview {
-		DEBUG("active view attached")
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
