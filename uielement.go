@@ -330,16 +330,30 @@ func (e *Elements) InsertLast(elements ...*Element) *Elements {
 }
 
 func (e *Elements) InsertFirst(elements ...*Element) *Elements {
+	c := cap(e.List)
+	l := len(e.List)
+	le := len(elements)
+	if c > (l + le) {
+		e.List = e.List[:l+le]
+		copy(e.List[le:], e.List)
+		for i, element := range elements {
+			e.List[i] = element
+		}
+		return e
+	}
+	DEBUG("cap is ", c, " and len is ", l, " for ", le, " new elements.")
+	DEBUG(e)
 	e.List = append(elements, e.List...)
 	return e
 }
 
 func (e *Elements) Insert(el *Element, index int) *Elements {
-	nel := make([]*Element, 0, len(e.List)+1)
-	nel = append(nel, e.List[:index]...)
-	nel = append(nel, el)
-	nel = append(nel, e.List[index:]...)
-	e.List = nel
+	if index == len(e.List) {
+		e.List = append(e.List, el)
+		return e
+	}
+	e.List = append(e.List[:index+1], e.List[index:]...)
+	e.List[index] = el
 	return e
 }
 
@@ -366,8 +380,8 @@ func (e *Elements) Remove(el *Element) *Elements {
 }
 
 func (e *Elements) RemoveAll() *Elements {
-	cap:= cap(e.List)
-	e.List = make([]*Element, 0,cap)
+	cap := cap(e.List)
+	e.List = make([]*Element, 0, cap)
 	return e
 }
 
@@ -458,28 +472,14 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	return e
 }
 
+
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
-	/*defer func() {
-		child.Set("event", "attach", Bool(true))
-		if child.Mountable() {
-			child.Set("event", "mountable", Bool(true))
-			// we can set mountable without checking if it was already set because we
-			// know that attach is only called for detached subtrees, i.e. they are also
-			// not mountable nor mounted.
-			if child.Mounted() {
-				_, ok := child.Get("event", "firstmount")
-				if !ok {
-					child.Set("event", "firstmount", Bool(true))
-				}
-				child.Set("event", "mount", Bool(true))
-			}
-		}
-	}()*/
-
+	DEBUG("attach")
 	if activeview {
+		DEBUG("active view attached")
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
@@ -490,11 +490,13 @@ func attach(parent *Element, child *Element, activeview bool) {
 	//child.ViewAccessPath = computePath(child.ViewAccessPath,child.ViewAccessNode)
 
 	for _, descendant := range child.Children.List {
+		detach(descendant)
 		attach(child, descendant, true)
 	}
 
 	for _, descendants := range child.InactiveViews {
 		for _, descendant := range descendants.Elements().List {
+			detach(descendant)
 			attach(child, descendant, false)
 		}
 	}
@@ -577,11 +579,13 @@ func detach(e *Element) {
 
 	// got to update the subtree with the new subtree root and path
 	for _, descendant := range e.Children.List {
+		detach(descendant)
 		attach(e, descendant, true)
 	}
 
 	for _, descendants := range e.InactiveViews {
 		for _, descendant := range descendants.Elements().List {
+			detach(descendant)
 			attach(e, descendant, false)
 		}
 	}
@@ -1698,14 +1702,14 @@ type viewNodes struct {
 }
 
 func newViewNodes() *viewNodes {
-	return &viewNodes{make([]viewNode, 0,30)}
+	return &viewNodes{make([]viewNode, 0, 30)}
 }
 
 func (v *viewNodes) Copy() *viewNodes {
 	if v == nil {
 		return nil
 	}
-	c := make([]viewNode, len(v.Nodes),cap(v.Nodes))
+	c := make([]viewNode, len(v.Nodes), cap(v.Nodes))
 	copy(c, v.Nodes)
 	return &viewNodes{c}
 }
