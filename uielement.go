@@ -341,8 +341,6 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 		}
 		return e
 	}
-	DEBUG("cap is ", c, " and len is ", l, " for ", le, " new elements.")
-	DEBUG(e)
 	e.List = append(elements, e.List...)
 	return e
 }
@@ -471,7 +469,6 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	}
 	return e
 }
-
 
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
