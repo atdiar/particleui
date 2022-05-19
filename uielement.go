@@ -156,17 +156,15 @@ func (e *ElementStore) NewAppRoot(id string) BasicElement {
 func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, optionNames ...string) *Element {
 	options = append(options, allowPropertyInheritanceOnMount)
 	// First we register the options that are passed with the Constructor definition
-	if options != nil {
-		for _, option := range options {
-			n := option.Name
-			f := option.Configurator
-			optlist, ok := e.ConstructorsOptions[elementname]
-			if !ok {
-				optlist = make(map[string]func(*Element) *Element)
-				e.ConstructorsOptions[elementname] = optlist
-			}
-			optlist[n] = f
+	for _, option := range options {
+		n := option.Name
+		f := option.Configurator
+		optlist, ok := e.ConstructorsOptions[elementname]
+		if !ok {
+			optlist = make(map[string]func(*Element) *Element)
+			e.ConstructorsOptions[elementname] = optlist
 		}
+		optlist[n] = f
 	}
 
 	// Then we create the element constructor to return

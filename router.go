@@ -57,7 +57,7 @@ type Router struct {
 }
 
 // NewRouter takes an Element object which should be the entry point of the router.
-func NewRouter(basepath string, rootview ViewElement) *Router {
+func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*Router) *Router {
 	if router != nil {
 		panic("A router has already been created")
 	}
@@ -90,6 +90,9 @@ func NewRouter(basepath string, rootview ViewElement) *Router {
 		}
 		return false
 	}))
+	for _,option:= range options{
+		r = option(r)
+	}
 	router = r
 	return r
 }
@@ -145,6 +148,7 @@ func (r *Router) GoTo(route string) {
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
+	DEBUG("goto: ",*r.History)
 }
 
 func (r *Router) GoBack() {
@@ -183,7 +187,7 @@ func (r *Router) Hijack(route string, destination string) {
 	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
 		if string(navroute) == route {
-			r.History.Push(destination)
+			r.History.Push(route)
 			r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(destination))
 			return true
 		}
@@ -281,6 +285,7 @@ func (r *Router) handler() *MutationHandler {
 		// Register route in browser history part 1
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
+			DEBUG("no ui history")
 			r.History.Push(newroute)
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
@@ -309,6 +314,8 @@ func (r *Router) handler() *MutationHandler {
 		}
 		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
+
+		DEBUG("goto current: ",*r.History)
 
 		return false
 	})
@@ -355,12 +362,23 @@ func (r *Router) redirecthandler() *MutationHandler {
 			log.Print(err) // DEBUG
 			log.Print("unauthorized for: " + newroute)
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
-			return false
+			return true
 		}
+		// Check if browser history already holds the navigation state
+		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
+		if ok{
+
+		}
+
+		r.History.Replace(newroute)
+		r.outlet.AsElement().Root().SetData("history", r.History.Value())
+		
 		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 
 		r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
+
+		DEBUG("redirect ",*r.History)
 
 		return false
 	})
@@ -785,6 +803,7 @@ type NavHistory struct {
 	Stack  []string
 	State  []Observable
 	Cursor int
+	NewState func() Observable
 }
 
 // Get is used to retrieve a Value from the history state.
@@ -798,18 +817,36 @@ func (n *NavHistory) Set(category string, propname string, val Value) {
 }
 
 func NewNavigationHistory() *NavHistory {
-	return &NavHistory{make([]string, 0, 1024), make([]Observable, 0, 1024), -1}
+	n:= &NavHistory{make([]string, 0, 1024), make([]Observable, 0, 1024), -1,nil}
+	n.NewState = func() Observable{
+		return NewObservable("hstate"+strconv.Itoa(n.Cursor))
+	}
+	return n
 }
 func (n *NavHistory) Value() Value {
 	o := NewObject()
 	o.Set("cursor", Number(n.Cursor))
+
+	// Prepare Stack for serialization
+	stack:=make([]Value,len(n.Stack))
+	for i,entry:= range n.Stack{
+		stack[i]= String(entry)
+	}
+	o.Set("stack",List(stack))
+
+	// Prepare State for serialization
+	state:=make([]Value,len(n.State))
+	for i,entry:= range n.State{
+		state[i]= entry.AsElement().RawValue()
+	o.Set("state",List(state))
+
 	return o
 }
 
 func (n *NavHistory) Push(URI string) *NavHistory {
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
-	n.State = append(n.State[:n.Cursor], NewObservable("hstate"+strconv.Itoa(n.Cursor)))
+	n.State = append(n.State[:n.Cursor], n.NewState())
 	if len(n.Stack) >= 1024 {
 		panic("navstack capacity overflow")
 	}
@@ -826,7 +863,7 @@ func (n *NavHistory) rollBack() *NavHistory {
 
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
-	n.State[n.Cursor] = NewObservable("hstate" + strconv.Itoa(n.Cursor))
+	n.State[n.Cursor] = n.NewState())
 	return n
 }
 

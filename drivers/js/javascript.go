@@ -561,6 +561,25 @@ func EnableScrollRestoration() string {
 	return "scrollrestoration"
 }
 
+var RouterConfig = func(r *ui.Router) *ui.Router{
+	f:= r.History.NewState
+	ns:= func() ui.Observable{
+		newObs := Elements.NewConstructor("observable", func(name string, id string)*ui.Element){
+			e:= f().AsElement()
+			return e
+		},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+		
+		return ui.Observable(newObs("","",EnableSessionPersistence()))
+	}
+	rs:= func(o ui.Observable) ui.Observable{
+		e:= o.AsElement()
+		return ui.Observable(LoadElement(e))
+	}
+	r.History.NewState = ns
+	r.History.RecoverState = rs
+	return r
+}
+
 type Document struct {
 	ui.BasicElement
 }
@@ -636,10 +655,10 @@ func NewDocument(id string, options ...string) Document {
 				if ui.Equal(browserhistory, history) {
 					return false
 				}
-
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 				e.SetUI("history", history)
+				ui.DEBUG("history ", history, browserhistory)
 			}
 			return false
 		}))

@@ -1,5 +1,9 @@
 package ui
 
+import(
+	"strings"
+)
+
 type Watchable interface {
 	watchable()
 	AsElement() *Element
@@ -13,7 +17,10 @@ func (o Observable) AsElement() *Element {
 	return o.UIElement
 }
 
-func NewObservable(id string) Observable {
+func NewObservable(id string, options ...func(*Element)*Element) Observable {
+	if strings.Contains(id, "/") {
+		panic("An id may not use a slash: " + id + " is not valid.")
+	}
 	e := &Element{
 		nil,
 		nil,
@@ -34,6 +41,9 @@ func NewObservable(id string) Observable {
 		nil,
 		nil,
 		nil,
+	}
+	for _,option:=range options{
+		e=option(e)
 	}
 	return Observable{e}
 }
