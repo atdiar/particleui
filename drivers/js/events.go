@@ -1,4 +1,3 @@
-//go:build js && wasm
 // +build js,wasm
 
 // Package doc defines the default set of Element constructors, native interfaces,
@@ -9,6 +8,7 @@ import (
 	"syscall/js"
 	//"net/url"
 	"encoding/json"
+	"github.com/atdiar/particleui"
 	"log"
 )
 
