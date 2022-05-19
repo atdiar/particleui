@@ -1,4 +1,4 @@
-// +build js,wasm
+//go:build js && wasm
 
 // Package doc defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
@@ -13,8 +13,8 @@ import (
 	"strings"
 	"syscall/js"
 	"time"
-
 	"github.com/atdiar/particleui"
+
 	"golang.org/x/net/html"
 )
 
@@ -193,8 +193,8 @@ func loader(s string) func(e *ui.Element) error {
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
-		categories := make([]string, 0,20)
-		properties := make([]string, 0,50)
+		categories := make([]string, 0, 20)
+		properties := make([]string, 0, 50)
 		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
 		if err != nil {
 			return err
@@ -605,16 +605,9 @@ func NewDocument(id string, options ...string) Document {
 			if !ok {
 				panic("missing history entry")
 			} else {
-				_, ok := e.Get("ui", "history")
-				if !ok {
-					s := stringify(history.RawValue())
-					js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
-					e.SetUI("history", history)
-				} else {
-					s := stringify(history.RawValue())
-					js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-					e.SetUI("history", history)
-				}
+				s := stringify(history.RawValue())
+				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+				e.SetUI("history", history)
 			}
 
 			e.SyncUISetData("currentroute", v)

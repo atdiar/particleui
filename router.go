@@ -145,8 +145,6 @@ func (r *Router) GoTo(route string) {
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
-
-	//log.Println(*r.History) //DEBUG
 }
 
 func (r *Router) GoBack() {
@@ -161,6 +159,7 @@ func (r *Router) GoForward() {
 	}
 }
 
+/*
 // RedirectTo can be used after having used GoTo as a way to modify the
 // destination after a successful routing.
 func (r *Router) RedirectTo(route string) {
@@ -178,12 +177,14 @@ func (r *Router) RedirectTo(route string) {
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(route))
 }
+*/
 
 func (r *Router) Hijack(route string, destination string) {
 	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
 		if string(navroute) == route {
-			r.outlet.AsElement().Root().Set("navigation", "routechangerequest", String(destination))
+			r.History.Push(destination)
+			r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(destination))
 			return true
 		}
 		return false
@@ -809,7 +810,7 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.State = append(n.State[:n.Cursor], NewObservable("hstate"+strconv.Itoa(n.Cursor)))
-	if len(n.Stack) >= 1000 {
+	if len(n.Stack) >= 1024 {
 		panic("navstack capacity overflow")
 	}
 

@@ -1,3 +1,4 @@
+//go:build js && wasm
 // +build js,wasm
 
 // Package doc defines the default set of Element constructors, native interfaces,
@@ -9,8 +10,6 @@ import (
 	//"net/url"
 	"encoding/json"
 	"log"
-
-	"github.com/atdiar/particleui"
 )
 
 var DEBUG = log.Print // DEBUG
@@ -79,7 +78,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 				value = u.Path
 			}*/
 
-			// TGiven that events are not handled concurrently
+			// Given that events are not handled concurrently
 			// but triggered sequentially, we can Set the value of the history state
 			// on the target *ui.Element, knowing that it will be visible before
 			// the event dispatch.
