@@ -140,8 +140,6 @@ func (r *Router) GoTo(route string) {
 	ok := r.tryNavigate(route)
 	if !ok {
 		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
-		// rollack route pushing
-		r.History.rollBack()
 		return
 	}
 
@@ -163,32 +161,21 @@ func (r *Router) GoForward() {
 	}
 }
 
-/*
-// RedirectTo can be used after having used GoTo as a way to modify the
-// destination after a successful routing.
+// RedirectTo can be used during a routechangerequest event to reroute to an alternate location.
+// Typically useful when handling the three navigation failure modes (notfound, unauthorized, appfailure).
+// Use Hijack instead if you need to register a given rerouting behavior.
 func (r *Router) RedirectTo(route string) {
-	if !r.LeaveTrailingSlash {
-		route = strings.TrimSuffix(route, "/")
-	}
-	log.Print("redirect to: ", route) // DEBUG
-	ok := r.tryNavigate(route)
-	if !ok {
-		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
-		return
-	}
-	r.History.Replace(route)
-
-	r.outlet.AsElement().Root().SetData("history", r.History.Value())
-	r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(route))
+	r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(route))
 }
-*/
 
+// Hijack short-circuits the router to allow for rerouting of a specific route to an alternate 
+// destination.
 func (r *Router) Hijack(route string, destination string) {
 	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
 		if string(navroute) == route {
 			r.History.Push(route)
-			r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(destination))
+			r.RedirectTo(destination)
 			return true
 		}
 		return false
@@ -364,11 +351,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			return true
 		}
-		// Check if browser history already holds the navigation state
-		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
-		if ok{
-
-		}
 
 		r.History.Replace(newroute)
 		r.outlet.AsElement().Root().SetData("history", r.History.Value())
@@ -422,12 +404,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	}
 
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		/*if evt.Type() != eventname {
-			log.Print("Event of wrong type. Expected: " + eventname)
-			root.AsElement().Root().Set("navigation", "appfailure", String("500: RouteChangeEvent of wrong type."))
-			return true // means that event handling has to stop
-		}*/
-		// the target element route should be changed to the event NewRoute value.
+		// TODO: load History/State if available from browser history
 		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()))
 		return false
 	})
@@ -804,6 +781,8 @@ type NavHistory struct {
 	State  []Observable
 	Cursor int
 	NewState func() Observable
+	RecoverState func(Observable) Observable
+	Length int
 }
 
 // Get is used to retrieve a Value from the history state.
@@ -817,10 +796,15 @@ func (n *NavHistory) Set(category string, propname string, val Value) {
 }
 
 func NewNavigationHistory() *NavHistory {
-	n:= &NavHistory{make([]string, 0, 1024), make([]Observable, 0, 1024), -1,nil}
+	n:= &NavHistory{}
+	n.Stack = make([]string, 0, 1024)
+	n.State = make([]Observable, 0, 1024)
+	n.Cursor = -1
 	n.NewState = func() Observable{
 		return NewObservable("hstate"+strconv.Itoa(n.Cursor))
 	}
+	n.RecoverState = func(o Observable)Observable{return o}
+	n.Length = 1024
 	return n
 }
 func (n *NavHistory) Value() Value {
@@ -838,6 +822,7 @@ func (n *NavHistory) Value() Value {
 	state:=make([]Value,len(n.State))
 	for i,entry:= range n.State{
 		state[i]= entry.AsElement().RawValue()
+	}
 	o.Set("state",List(state))
 
 	return o
@@ -847,23 +832,16 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.State = append(n.State[:n.Cursor], n.NewState())
-	if len(n.Stack) >= 1024 {
+	if len(n.Stack) >= n.Length {
 		panic("navstack capacity overflow")
 	}
 
 	return n
 }
 
-func (n *NavHistory) rollBack() *NavHistory {
-	// n.Stack[n.Cursor]=""
-	// n.State[n.Cursor]=Observable{}
-	n.Cursor--
-	return n
-}
-
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
-	n.State[n.Cursor] = n.NewState())
+	n.State[n.Cursor] = n.NewState()
 	return n
 }
 

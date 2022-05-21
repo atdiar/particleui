@@ -577,6 +577,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	}
 	r.History.NewState = ns
 	r.History.RecoverState = rs
+	r.History.Length = 50
 	return r
 }
 
