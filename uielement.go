@@ -71,6 +71,7 @@ type ElementStore struct {
 type storageFunctions struct {
 	Load  func(*Element) error
 	Store func(e *Element, category string, propname string, value Value, flags ...bool)
+	Clear func(*Element)
 }
 
 // ConstructorOption defines a type for optional function that can be called on
@@ -127,13 +128,13 @@ func (e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore {
 // from the default in-memory.
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
-func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool)) *ElementStore {
-	e.PersistentStorer[name] = storageFunctions{loadFromStore, store}
+func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool), clear func(*Element)) *ElementStore {
+	e.PersistentStorer[name] = storageFunctions{loadFromStore, store,clear}
 	return e
 }
 
 // NewAppRoot returns the starting point of an app. It is a viewElement whose main
-// view neame is the root id.
+// view name is the root id string.
 func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	el := NewElement("root", id, e.DocType)
 	el.root = el
@@ -1482,12 +1483,12 @@ func (e *Element) SyncUI(propname string, value Value, flags ...bool) {
 // given state.
 // The proptype is a string that describes the property (default,inherited, local, or inheritable).
 // For properties of the 'ui' namespace, i.e. properties that are used for rendering,
-// we create and dispatch a mutation event since loading a property is change inducing at the
-// UI level.
+// we create and dispatch a mutation event since loading a property modifies the UI.
 func LoadProperty(e *Element, category string, propname string, proptype string, value Value) {
+	oldvalue,_:= e.Properties.Get(category,propname)
 	e.Properties.Load(category, propname, proptype, value)
 	if category == "ui" {
-		evt := e.NewMutationEvent(category, propname, value, nil)
+		evt := e.NewMutationEvent(category, propname, value, oldvalue)
 		e.PropMutationHandlers.DispatchEvent(evt)
 	}
 }

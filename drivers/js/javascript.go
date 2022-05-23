@@ -23,7 +23,7 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn)
+	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage)
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
@@ -57,6 +57,10 @@ func (s jsStore) Set(key string, value js.Value) {
 	s.store.Call("setItem", key, res)
 }
 
+func(s jsStore) Delete(key string){
+	s.store.Call("removeItem",key)
+}
+
 // Let's add sessionstorage and localstorage for Element properties.
 // For example, an Element which would have been created with the sessionstorage option
 // would have every set properties stored in sessionstorage, available for
@@ -71,7 +75,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 
 		// log.Print("CALL TO STORE: ", category, categoryExists, propname, propertyExists) // DEBUG
 
-		// Let's check whether the element exists ins store. In the negative case,
+		// Let's check whether the element exists in store. In the negative case,
 		// we can act as if no category has been registered.
 		// Every indices need to be generated and stored.
 		var indexed bool
@@ -162,16 +166,6 @@ func storer(s string) func(element *ui.Element, category string, propname string
 	}
 }
 
-/*func stringify(v interface{}) js.Value {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Print(v)
-			log.Print(r)
-		}
-	}()
-	res := js.ValueOf(v)
-	return res
-}*/
 func stringify(v interface{}) string {
 	res, err := json.Marshal(v)
 	if err != nil {
@@ -242,6 +236,53 @@ func loader(s string) func(e *ui.Element) error {
 
 var loadfromsession = loader("sessionStorage")
 var loadfromlocalstorage = loader("localStorage")
+
+func clearer(s string) func(element *ui.Element){
+	return func(element *ui.Element){
+		store := jsStore{js.Global().Get(s)}
+		id := e.ID
+
+		// Let's retrieve the category index for this element, if it exists in the sessionstore
+		jsoncategories, ok := store.Get(id)
+		if !ok {
+			return
+		}
+
+		categories := make([]string, 0, 20)
+		properties := make([]string, 0, 50)
+		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
+		if err != nil {
+			return 
+		}
+		
+		for _, category := range categories {
+			jsonproperties, ok := store.Get(id + "/" + category)
+			if !ok {
+				continue
+			}
+			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
+			if err != nil {
+				store.Delete(id)
+				panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
+			}
+
+			for _, property := range properties {
+				// let's retrieve the propname (it is suffixed by the proptype)
+				// then we can retrieve the value
+				// log.Print("debug...", category, property) // DEBUG
+				proptypename := strings.Split(property, "/")
+				proptype := proptypename[0]
+				propname := proptypename[1]
+				store.Delete(id + "/" + category + "/" + propname)
+			}
+			store.Delete(id + "/" + category)
+		}
+		store.Delete(id)
+	}
+}
+
+var clearfromsession = clearer("sessionStorage")
+var clearfromlocalstorage = clearer("localStorage")
 
 // Window is a ype that represents a browser window
 type Window struct {
@@ -844,6 +885,10 @@ func NewDiv(name string, id string, options ...string) Div {
 
 // LoadElement will load Element properties.
 func LoadElement(d *ui.Element) *ui.Element {
+	_,ok:=d.Get("event","loaded")
+	if ok{
+		return d
+	}
 	pmode := ui.PersistenceMode(d)
 	storage, ok := d.ElementStore.PersistentStorer[pmode]
 	if ok {
@@ -852,7 +897,18 @@ func LoadElement(d *ui.Element) *ui.Element {
 			log.Print(err)
 		}
 	}
+	d.Set("event","loaded",ui.Bool(true))
 	return d
+}
+
+// StorageClear will clear an Element properties from storage.
+func StorageClear(e *ui.Element) *ui.Element{
+	pmode:=ui.PersistenceMode(e)
+	storage,ok:= e.ElementStore.PersistentStorer[pmode]
+	if ok{
+		storage.Clear(e)
+	}
+	return e
 }
 
 // Tooltip defines the type implementing the interface of a tooltip ui.Element.
