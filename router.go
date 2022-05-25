@@ -269,7 +269,7 @@ func (r *Router) handler() *MutationHandler {
 			return true
 		}
 
-		// Register route in browser history part 1
+		// Determination of navigation history action 
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
 			DEBUG("no ui history")
@@ -293,6 +293,8 @@ func (r *Router) handler() *MutationHandler {
 				}
 			} else if r.History.Cursor < n {
 				for i := 0; i < n-r.History.Cursor; i++ {
+					// import State
+					r.History.ImportState(h)
 					r.History.Forward()
 				}
 			}
@@ -404,7 +406,6 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	}
 
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		// TODO: load History/State if available from browser history
 		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()))
 		return false
 	})
@@ -536,7 +537,7 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 		m = make(map[string]*rnode)
 		r.next[targetviewname] = m
 	}
-	r, ok = m[nr.ViewElement.AsElement().ID]
+	_, ok = m[nr.ViewElement.AsElement().ID]
 	if !ok {
 		m[nr.ViewElement.AsElement().ID] = nr
 	} // else it has already been attached
@@ -826,6 +827,35 @@ func (n *NavHistory) Value() Value {
 	o.Set("state",List(state))
 
 	return o
+}
+
+func(n *NavHistory) ImportState(v Value) *NavHistory{
+	h,ok:= v.(Object)
+	if !ok{
+		return n
+	
+	}
+	stk:= h["stack"]
+	stack:= stk.(List)
+	hlen:= len(stack)
+
+	stt:= h["state"]
+	state:= stt.(List)
+
+	if hlen>len(n.Stack){
+		for i:=n.Cursor+1; i<hlen;i++{
+			entry:= stack[i]
+			nexturl:= entry.(String)
+			n.Stack=append(n.Stack,string(nexturl))
+
+			stentry:= state[i]
+			stateObj:= stentry.(*Element)
+			n.State = append(n.State, n.RecoverState(Observable{stateObj}))
+		}
+	}
+	
+
+	return n
 }
 
 func (n *NavHistory) Push(URI string) *NavHistory {

@@ -240,7 +240,7 @@ var loadfromlocalstorage = loader("localStorage")
 func clearer(s string) func(element *ui.Element){
 	return func(element *ui.Element){
 		store := jsStore{js.Global().Get(s)}
-		id := e.ID
+		id := element.ID
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
 		jsoncategories, ok := store.Get(id)
@@ -271,7 +271,7 @@ func clearer(s string) func(element *ui.Element){
 				// then we can retrieve the value
 				// log.Print("debug...", category, property) // DEBUG
 				proptypename := strings.Split(property, "/")
-				proptype := proptypename[0]
+				//proptype := proptypename[0]
 				propname := proptypename[1]
 				store.Delete(id + "/" + category + "/" + propname)
 			}
@@ -354,15 +354,15 @@ func newWindow(title string, options ...string) Window {
 func GetWindow(options ...string) Window {
 	w := Elements.GetByID("window")
 	if w == nil {
-		return newWindow("Powered by ParticleUI", options...)
+		return newWindow("Created with ParticleUI", options...)
 	}
 	cname, ok := w.Get("internals", "constructor")
 	if !ok {
-		return newWindow("Powered by ParticleUI", options...)
+		return newWindow("Created with ParticleUI", options...)
 	}
 	nname, ok := cname.(ui.String)
 	if !ok {
-		return newWindow("Powered by ParticleUI", options...)
+		return newWindow("Created with ParticleUI", options...)
 	}
 	if string(nname) != "window" {
 		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
@@ -492,12 +492,12 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 //  session storage of the properties of an Element  created with said constructor.
 var AllowSessionStoragePersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("sessionstorage"))
-	return e
+	return StoreElement(e)
 })
 
 var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("localstorage"))
-	return e
+	return StoreElement(e)
 })
 
 func EnableSessionPersistence() string {
@@ -605,16 +605,17 @@ func EnableScrollRestoration() string {
 var RouterConfig = func(r *ui.Router) *ui.Router{
 	f:= r.History.NewState
 	ns:= func() ui.Observable{
-		newObs := Elements.NewConstructor("observable", func(name string, id string)*ui.Element){
+		newObs := Elements.NewConstructor("routestateobservable", func(name string, id string)*ui.Element{
 			e:= f().AsElement()
 			return e
 		},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+		o:= newObs("","",EnableSessionPersistence())
+		o = StoreElement(ClearElement(o))
 		
-		return ui.Observable(newObs("","",EnableSessionPersistence()))
+		return ui.Observable{o}
 	}
 	rs:= func(o ui.Observable) ui.Observable{
-		e:= o.AsElement()
-		return ui.Observable(LoadElement(e))
+		return ui.Observable{LoadElement(o.AsElement())}
 	}
 	r.History.NewState = ns
 	r.History.RecoverState = rs
@@ -697,6 +698,8 @@ func NewDocument(id string, options ...string) Document {
 				if ui.Equal(browserhistory, history) {
 					return false
 				}
+				// TODO check if cursors are the same: if they are, state should be updated (use replaceState)
+
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 				e.SetUI("history", history)
@@ -706,8 +709,13 @@ func NewDocument(id string, options ...string) Document {
 		}))
 
 		e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			/*router := ui.GetRouter()
+			e.WatchASAP("ui","history",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				router.History.FromValue(evt.NewValue())
+				return false
+			}))*/
+
 			route := js.Global().Get("location").Get("pathname").String()
-			log.Println("init", route) //DEBUG
 			e.Set("navigation", "routechangerequest", ui.String(route))
 			return false
 		}))
@@ -716,23 +724,12 @@ func NewDocument(id string, options ...string) Document {
 			js.Global().Get("history").Set("scrollRestoration", "manual")
 		}
 
+
 		// Adding scrollrestoration support
 		e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			router := ui.GetRouter()
 
 			ejs := js.Global().Get("document").Get("scrollingElement")
-			//wjs := js.Global().Get("document").Get("defaultView")
-
-			/*stylesjs := wjs.Call("getComputedStyle", ejs)
-			DEBUG(stylesjs)
-			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
-			overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
-			overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
-			DEBUG(overflow, overflowx, overflowy)
-
-			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
-			DEBUG("scrollable", scrollable)
-			*/
 
 			e.SetDataSetUI("scrollrestore", ui.Bool(true))
 
@@ -760,10 +757,6 @@ func NewDocument(id string, options ...string) Document {
 				top := t.(ui.Number)
 				left := l.(ui.Number)
 
-				/*to := ejs.Get("scrollTop").Float()
-				le := ejs.Get("scrollLeft").Float()
-				DEBUG("Init scroll coords  : ", to, le)
-				DEBUG("Target scroll coords: ", top, left)*/
 				ejs.Set("scrollTop", float64(top))
 				ejs.Set("scrollLeft", float64(left))
 
@@ -793,7 +786,7 @@ func NewDocument(id string, options ...string) Document {
 	return Document{ui.BasicElement{LoadElement(newDocument(id, id, options...))}}
 }
 
-// reset is used to delete all eventlisteners froman Element
+// reset is used to delete all eventlisteners from an Element
 func reset(element js.Value) js.Value {
 	clone := element.Call("cloneNode")
 	parent := element.Get("parentNode")
@@ -885,7 +878,7 @@ func NewDiv(name string, id string, options ...string) Div {
 
 // LoadElement will load Element properties.
 func LoadElement(d *ui.Element) *ui.Element {
-	_,ok:=d.Get("event","loaded")
+	_,ok:=d.Get("event","proploaded")
 	if ok{
 		return d
 	}
@@ -897,16 +890,40 @@ func LoadElement(d *ui.Element) *ui.Element {
 			log.Print(err)
 		}
 	}
-	d.Set("event","loaded",ui.Bool(true))
+	d.Set("event","proploaded",ui.Bool(true))
 	return d
 }
 
-// StorageClear will clear an Element properties from storage.
-func StorageClear(e *ui.Element) *ui.Element{
+// StoreElement stores an ele;ent properties in storqge (localstoage or seesiionstorage).
+func StoreElement(e *ui.Element) *ui.Element{
+	pmode := ui.PersistenceMode(e)
+	storage,ok:= e.ElementStore.PersistentStorer[pmode]
+	if !ok{
+		return e
+	}
+	for cat,props:= range e.Properties.Categories{
+		for prop,val:= range props.Local{
+			storage.Store(e,cat,prop,val)
+		}
+		for prop,val:=range props.Inheritable{
+			storage.Store(e,cat,prop,val,true)
+		}
+	}
+	return e
+}
+
+// ClearElement will clear an Element properties from storage.
+func ClearElement(e *ui.Element) *ui.Element{
 	pmode:=ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if ok{
 		storage.Clear(e)
+		// reset the categories index/list for the element
+		idx,ok:= e.Get("index","categories")
+		if ok{
+			index:=idx.(ui.List)[:0]
+			e.Set("index","categories",index)
+		}
 	}
 	return e
 }
