@@ -162,6 +162,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 		item := value.RawValue()
 		v := stringify(item)
 		store.Set(element.ID+"/"+category+"/"+propname, js.ValueOf(v))
+		element.Set("event","storesynced",ui.Bool(false))
 		return
 	}
 }
@@ -278,6 +279,7 @@ func clearer(s string) func(element *ui.Element){
 			store.Delete(id + "/" + category)
 		}
 		store.Delete(id)
+		element.Set("event","storesynced",ui.Bool(false))
 	}
 }
 
@@ -619,7 +621,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	}
 	r.History.NewState = ns
 	r.History.RecoverState = rs
-	r.History.Length = 50
+	//r.History.Length = 50
 	return r
 }
 
@@ -699,11 +701,19 @@ func NewDocument(id string, options ...string) Document {
 					return false
 				}
 				// TODO check if cursors are the same: if they are, state should be updated (use replaceState)
+				bhc:= browserhistory.(ui.Object)["cursor"].(ui.Number)
+				hc:= history.(ui.Object)["cursor"].(ui.Number)
+				DEBUG(bhc, hc, bhc==hc)
+				if bhc==hc {
+					s := stringify(history.RawValue())
+					js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+					e.SetUI("history", history)
+					return false
+				}
 
 				s := stringify(history.RawValue())
 				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 				e.SetUI("history", history)
-				ui.DEBUG("history ", history, browserhistory)
 			}
 			return false
 		}))
@@ -877,21 +887,24 @@ func NewDiv(name string, id string, options ...string) Div {
 }
 
 // LoadElement will load Element properties.
-func LoadElement(d *ui.Element) *ui.Element {
-	_,ok:=d.Get("event","proploaded")
+func LoadElement(e *ui.Element) *ui.Element {
+	lb,ok:=e.Get("event","storesynced")
 	if ok{
-		return d
+		if isSyned:=lb.(ui.Bool); isSyned{
+			return e
+		}
+		
 	}
-	pmode := ui.PersistenceMode(d)
-	storage, ok := d.ElementStore.PersistentStorer[pmode]
+	pmode := ui.PersistenceMode(e)
+	storage, ok := e.ElementStore.PersistentStorer[pmode]
 	if ok {
-		err := storage.Load(d)
+		err := storage.Load(e)
 		if err != nil {
 			log.Print(err)
 		}
 	}
-	d.Set("event","proploaded",ui.Bool(true))
-	return d
+	e.Set("event","storesynced",ui.Bool(true))
+	return e
 }
 
 // StoreElement stores an ele;ent properties in storqge (localstoage or seesiionstorage).

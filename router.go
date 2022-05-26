@@ -146,7 +146,7 @@ func (r *Router) GoTo(route string) {
 	r.outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.outlet.AsElement().Root().Set("event", "navigationend", String(route))
 	r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
-	DEBUG("goto: ",*r.History)
+	DEBUG("goto: ",route, r.History.Cursor)
 }
 
 func (r *Router) GoBack() {
@@ -168,7 +168,7 @@ func (r *Router) RedirectTo(route string) {
 	r.outlet.AsElement().Root().Set("navigation", "routeredirectrequest", String(route))
 }
 
-// Hijack short-circuits the router to allow for rerouting of a specific route to an alternate 
+// Hijack short-circuits navigation to allow for the redirection of a specific route to an alternate 
 // destination.
 func (r *Router) Hijack(route string, destination string) {
 	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
@@ -285,26 +285,30 @@ func (r *Router) handler() *MutationHandler {
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
+			cursor:= r.History.Cursor
 
 			if r.History.Cursor > n {
+				
 				// we are going back
-				for i := 0; i < r.History.Cursor-n; i++ {
+				DEBUG("back from: ",r.History.Cursor, " to ",n)
+				for i := 0; i < cursor-n; i++ {
 					r.History.Back()
 				}
 			} else if r.History.Cursor < n {
-				for i := 0; i < n-r.History.Cursor; i++ {
-					// import State
-					r.History.ImportState(h)
+				DEBUG("forward from: ",r.History.Cursor, " to ",n)
+				r.History.ImportState(h)
+				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
+			} else{
+				DEBUG("from: ",r.History.Cursor, " to ",n)
+				r.History.ImportState(h)
 			}
 
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		}
 		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 		r.outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
-
-		DEBUG("goto current: ",*r.History)
 
 		return false
 	})
