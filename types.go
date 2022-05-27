@@ -2,26 +2,8 @@
 package ui
 
 import (
-	"log"
-	"time"
-	//"strings"
+//"strings"
 )
-
-type MutationRecord Object
-
-func (m MutationRecord) discriminant() discriminant { return "particleui" }
-func (m MutationRecord) ValueType() string          { return "MutationRecord" }
-func (m MutationRecord) RawValue() Object           { return Object(m).RawValue() }
-
-func NewMutationRecord(category string, propname string, value Value) MutationRecord {
-	mr := NewObject().SetType("MutationRecord")
-	mr.Set("category", String(category))
-	mr.Set("property", String(propname))
-	mr.Set("value", value)
-	mr.Set("timestamp", String(time.Now().UTC().String()))
-
-	return MutationRecord(mr)
-}
 
 type discriminant string // just here to pin the definition of the Value interface to this package
 
@@ -44,12 +26,14 @@ func (e *Element) RawValue() Object {
 		o.Set("constructoroptions", constructoroptions)
 	}
 
-	constructorname, ok := e.Get("internals", "constructorname")
+	constructorname, ok := e.Get("internals", "constructor")
 	if !ok {
+		DEBUG("no constructorname")
 		return nil
 	}
 	cname, ok := constructorname.(String)
 	if !ok {
+		DEBUG("bad constructorname")
 		return nil
 	}
 	o["constructorname"] = cname
@@ -182,9 +166,8 @@ func (o Object) Value() Value {
 				v := Object(r).Value()
 				m = append(m, v)
 				continue
-			} else {
-				return nil
 			}
+			return nil
 		}
 		return m
 	case "Object":
@@ -206,11 +189,6 @@ func (o Object) Value() Value {
 				p.Set(k, v)
 				continue
 			}
-			/*m, ok := val.(map[string]interface{})
-			if ok {
-				obj := Object(m)
-				p.Set(k, obj.Value())
-			}*/
 			p.Set(k, u.Value())
 		}
 		return p
@@ -238,34 +216,39 @@ func (o Object) Value() Value {
 
 		id, ok := p.Get("id")
 		if !ok {
+			DEBUG("no id")
 			return nil
 		}
 		name, ok := p.Get("name")
 		if !ok {
+			DEBUG("no name")
 			return nil
 		}
 		elementstoreid, ok := p.Get("elementstoreid")
 		if !ok {
+			DEBUG("no elementstore id")
 			return nil
 		}
 		constructorname, ok := p.Get("constructorname")
 		if !ok {
+			DEBUG("no constructor name")
 			return nil
 		}
 		elstoreid, ok := elementstoreid.(String)
 		if !ok {
-			log.Print("Wrong type for ElementStore ID")
+			DEBUG("Wrong type for ElementStore ID")
 			return nil
 		}
 		// Let's get the elementstore
 		elstore, ok := Stores.Get(string(elstoreid))
 		if !ok {
+			DEBUG("no elementstore")
 			return nil
 		}
 		// Let's try to see if the element is in the ElementStore already
 		elid, ok := id.(String)
 		if !ok {
-			log.Print("Wrong type for Element ID stored in ui.Value")
+			DEBUG("Wrong type for Element ID stored in ui.Value")
 			return nil
 		}
 		element := elstore.GetByID(string(elid))
@@ -275,17 +258,17 @@ func (o Object) Value() Value {
 		// Otherwise we construct it. (TODO: make sure that element constructors try to get the data in store)
 		cname, ok := constructorname.(String)
 		if !ok {
-			log.Print("Wrong type for constructor name.")
+			DEBUG("Wrong type for constructor name.")
 			return nil
 		}
 		constructor, ok := elstore.Constructors[string(cname)]
 		if !ok {
-			log.Print("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
+			DEBUG("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
 			return nil
 		}
 		ename, ok := name.(String)
 		if !ok {
-			log.Print("Element name in Value of wrong type.")
+			DEBUG("Element name in Value of wrong type.")
 			return nil
 		}
 
@@ -300,6 +283,7 @@ func (o Object) Value() Value {
 					for _, opt := range optlist {
 						sopt, ok := opt.(String)
 						if !ok {
+							DEBUG("bad option")
 							return nil
 						}
 						coptions = append(coptions, string(sopt))
@@ -326,7 +310,7 @@ func (l List) discriminant() discriminant { return "particleui" }
 func (l List) RawValue() Object {
 	o := NewObject().SetType("List")
 
-	raw := make([]interface{}, 0)
+	raw := make([]interface{}, 0,len(l))
 	for _, v := range l {
 		raw = append(raw, v.RawValue())
 	}
@@ -400,23 +384,31 @@ func (l ListofObjects) Get(index int) Object {
 	return o
 }
 
-func Copy(v Value) Value{
-	o:= NewObject()
-	w:= v.RawValue()
-	for k,mv:= range w{
-		o[k]=mv
+func Copy(v Value) Value {
+	o := NewObject()
+	w := v.RawValue()
+	for k, mv := range w {
+		o[k] = mv
 	}
 	return o.Value()
 }
 
-func Equal(v Value, w Value) bool{
-	if v ==nil || w == nil{
+func Equal(v Value, w Value) bool {
+	if v == nil || w == nil {
 		return false
 	}
-	if v.ValueType() != w.ValueType(){
+	if v.ValueType() != w.ValueType() {
 		return false
 	}
-	switch v.ValueType(){
+	if vo,ok:= v.(Object);ok{
+		v= vo.Value()
+	}
+
+	if wo,ok:= w.(Object);ok{
+		w= wo.Value()
+	}
+
+	switch v.ValueType() {
 	case "Bool":
 		return v == w
 	case "String":
@@ -424,65 +416,54 @@ func Equal(v Value, w Value) bool{
 	case "Number":
 		return v == w
 	case "List":
-		vl:= v.(List)
-		wl:= w.(List)
-		if len(vl) != len(wl){
+		vl := v.(List)
+		wl := w.(List)
+		if len(vl) != len(wl) {
 			return false
 		}
-		for i,item:= range vl{
-			if !Equal(item,wl[i]){
+		for i, item := range vl {
+			if !Equal(item, wl[i]) {
 				return false
 			}
 		}
 		return true
 	case "Object":
-		vo:=v.(Object).Value().(Object)
-		wo:= w.(Object).Value().(Object)
-		if len(vo) != len(wo){
+		vo := v.(Object).Value().(Object)
+		wo := w.(Object).Value().(Object)
+		if len(vo) != len(wo) {
 			return false
 		}
-		for k,rval:= range vo{
-			if k == "typ"{
+		for k, rval := range vo {
+			if k == "typ" {
 				continue
 			}
-			val,ok:= rval.(Value)
-			if !ok{
+			val, ok := rval.(Value)
+			if !ok {
 				return false
 			}
-			rwal,ok:= wo[k]
-			if !ok{
+			rwal, ok := wo[k]
+			if !ok {
 				return false
 			}
-			wal,ok:= rwal.(Value)
-			if !ok{
+			wal, ok := rwal.(Value)
+			if !ok {
 				return false
 			}
-			if !Equal(val,wal){
+			if !Equal(val, wal) {
 				return false
 			}
 		}
 		return true
 	case "Element":
-		// First, we need to determine whether these Elements is in raw form (Object) or not
-		ve,ok:= v.(Object)
+		ve,ok:= v.(*Element)
 		if !ok{
-			ve = v.RawValue()
+			panic("Element was astonishingly not marshalled back")
 		}
-		we,ok:= w.(Object)
+		we,ok:= w.(*Element)
 		if !ok{
-			we = w.RawValue()
+			panic("Element was astonishingly not marshalled back")
 		}
-
-		veid,ok:= ve.Get("id")
-		if !ok{
-			return false
-		}
-		weid,ok:= we.Get("id")
-		if !ok{
-			return false
-		}
-
-		if veid != weid{
+		if ve.ID != we.ID{
 			return false
 		}
 	}

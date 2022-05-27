@@ -606,19 +606,22 @@ func EnableScrollRestoration() string {
 
 var RouterConfig = func(r *ui.Router) *ui.Router{
 	f:= r.History.NewState
+	newObs := Elements.NewConstructor("routestateobservable", func(name string, id string)*ui.Element{
+		e:= f().AsElement()
+		return e
+	},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
 	ns:= func() ui.Observable{
-		newObs := Elements.NewConstructor("routestateobservable", func(name string, id string)*ui.Element{
-			e:= f().AsElement()
-			return e
-		},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 		o:= newObs("","",EnableSessionPersistence())
 		o = StoreElement(ClearElement(o))
-		
 		return ui.Observable{o}
 	}
+
 	rs:= func(o ui.Observable) ui.Observable{
-		return ui.Observable{LoadElement(o.AsElement())}
+		e:= LoadElement(o.AsElement())
+		return ui.Observable{e}
 	}
+
 	r.History.NewState = ns
 	r.History.RecoverState = rs
 	//r.History.Length = 50
@@ -703,7 +706,7 @@ func NewDocument(id string, options ...string) Document {
 				// TODO check if cursors are the same: if they are, state should be updated (use replaceState)
 				bhc:= browserhistory.(ui.Object)["cursor"].(ui.Number)
 				hc:= history.(ui.Object)["cursor"].(ui.Number)
-				DEBUG(bhc, hc, bhc==hc)
+			
 				if bhc==hc {
 					s := stringify(history.RawValue())
 					js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
@@ -724,6 +727,14 @@ func NewDocument(id string, options ...string) Document {
 				router.History.FromValue(evt.NewValue())
 				return false
 			}))*/
+			hstate := js.Global().Get("history").Get("state")
+			if hstate.Truthy() {
+				hstateobj := ui.NewObject()
+				err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
+				if err == nil {
+					GetWindow().AsElement().SetUI("history", hstateobj.Value())
+				}
+			}
 
 			route := js.Global().Get("location").Get("pathname").String()
 			e.Set("navigation", "routechangerequest", ui.String(route))

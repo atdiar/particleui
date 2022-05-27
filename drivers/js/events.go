@@ -13,6 +13,14 @@ import (
 )
 
 var DEBUG = log.Print // DEBUG
+var DEBUGJS = func(v js.Value, isJsonString ...bool){
+	if isJsonString!=nil{
+		o:= js.Global().Get("JSON").Call("parse",v)
+		js.Global().Get("console").Call("log",o)
+		return
+	}
+	js.Global().Get("console").Call("log",v)
+}
 
 type cancelable struct {
 	js.Value
@@ -83,6 +91,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			// on the target *ui.Element, knowing that it will be visible before
 			// the event dispatch.
 			hstate := js.Global().Get("history").Get("state")
+			//DEBUGJS(hstate,true)
 
 			if hstate.Truthy() {
 				hstateobj := ui.NewObject()

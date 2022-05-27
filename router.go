@@ -272,7 +272,7 @@ func (r *Router) handler() *MutationHandler {
 		// Determination of navigation history action 
 		h, ok := r.outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
-			DEBUG("no ui history")
+			//DEBUG("no ui history")
 			r.History.Push(newroute)
 			r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
@@ -290,18 +290,18 @@ func (r *Router) handler() *MutationHandler {
 			if r.History.Cursor > n {
 				
 				// we are going back
-				DEBUG("back from: ",r.History.Cursor, " to ",n)
+				//DEBUG("back from: ",r.History.Cursor, " to ",n)
 				for i := 0; i < cursor-n; i++ {
 					r.History.Back()
 				}
 			} else if r.History.Cursor < n {
-				DEBUG("forward from: ",r.History.Cursor, " to ",n)
+				//DEBUG("forward from: ",r.History.Cursor, " to ",n)
 				r.History.ImportState(h)
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
 			} else{
-				DEBUG("from: ",r.History.Cursor, " to ",n)
+				//DEBUG("from: ",cursor, " to ",n)
 				r.History.ImportState(h)
 			}
 
@@ -363,7 +363,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 		
 		r.outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 
-		r.outlet.AsElement().Root().SetData("history", r.History.Value())
 		r.outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
 
 		DEBUG("redirect ",*r.History)
@@ -826,7 +825,7 @@ func (n *NavHistory) Value() Value {
 	// Prepare State for serialization
 	state:=make([]Value,len(n.State))
 	for i,entry:= range n.State{
-		state[i]= entry.AsElement().RawValue()
+		state[i]= entry.AsElement()
 	}
 	o.Set("state",List(state))
 
@@ -863,13 +862,14 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 }
 
 func (n *NavHistory) Push(URI string) *NavHistory {
-	n.Cursor++
-	n.Stack = append(n.Stack[:n.Cursor], URI)
-	n.State = append(n.State[:n.Cursor], n.NewState())
 	if len(n.Stack) >= n.Length {
 		panic("navstack capacity overflow")
 	}
 
+	n.Cursor++
+	n.Stack = append(n.Stack[:n.Cursor], URI)
+	n.State = append(n.State[:n.Cursor], n.NewState())
+	
 	return n
 }
 
