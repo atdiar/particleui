@@ -1,4 +1,4 @@
-// +build js,wasm
+// go:build js && wasm
 
 // Package doc defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
@@ -350,7 +350,7 @@ func newWindow(title string, options ...string) Window {
 		return e
 	})
 
-	return Window{ui.BasicElement{LoadElement(c("window", "window", options...))}}
+	return Window{ui.BasicElement{LoadFromStorage(c("window", "window", options...))}}
 }
 
 func GetWindow(options ...string) Window {
@@ -494,12 +494,12 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 //  session storage of the properties of an Element  created with said constructor.
 var AllowSessionStoragePersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("sessionstorage"))
-	return StoreElement(e)
+	return PutInStorage(e)
 })
 
 var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("localstorage"))
-	return StoreElement(e)
+	return PutInStorage(e)
 })
 
 func EnableSessionPersistence() string {
@@ -613,12 +613,12 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 
 	ns:= func() ui.Observable{
 		o:= newObs("","",EnableSessionPersistence())
-		o = StoreElement(ClearElement(o))
+		o = PutInStorage(ClearFromStorage(o))
 		return ui.Observable{o}
 	}
 
 	rs:= func(o ui.Observable) ui.Observable{
-		e:= LoadElement(o.AsElement())
+		e:= LoadFromStorage(o.AsElement())
 		return ui.Observable{e}
 	}
 
@@ -804,7 +804,7 @@ func NewDocument(id string, options ...string) Document {
 		}
 	}*/
 
-	return Document{ui.BasicElement{LoadElement(newDocument(id, id, options...))}}
+	return Document{ui.BasicElement{LoadFromStorage(newDocument(id, id, options...))}}
 }
 
 // reset is used to delete all eventlisteners from an Element
@@ -894,11 +894,11 @@ func NewDiv(name string, id string, options ...string) Div {
 		}
 	}*/
 
-	return Div{ui.BasicElement{LoadElement(newDiv(name, id, options...))}}
+	return Div{ui.BasicElement{LoadFromStorage(newDiv(name, id, options...))}}
 }
 
-// LoadElement will load Element properties.
-func LoadElement(e *ui.Element) *ui.Element {
+// LoadFromStorage will load Element properties.
+func LoadFromStorage(e *ui.Element) *ui.Element {
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
 		if isSyned:=lb.(ui.Bool); isSyned{
@@ -918,8 +918,8 @@ func LoadElement(e *ui.Element) *ui.Element {
 	return e
 }
 
-// StoreElement stores an ele;ent properties in storqge (localstoage or seesiionstorage).
-func StoreElement(e *ui.Element) *ui.Element{
+// PutInStorage stores an ele;ent properties in storqge (localstoage or seesiionstorage).
+func PutInStorage(e *ui.Element) *ui.Element{
 	pmode := ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if !ok{
@@ -936,8 +936,8 @@ func StoreElement(e *ui.Element) *ui.Element{
 	return e
 }
 
-// ClearElement will clear an Element properties from storage.
-func ClearElement(e *ui.Element) *ui.Element{
+// ClearFromStorage will clear an Element properties from storage.
+func ClearFromStorage(e *ui.Element) *ui.Element{
 	pmode:=ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if ok{
@@ -1048,7 +1048,7 @@ func EnableTooltip() string {
 }
 
 var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element) *ui.Element {
-	e := LoadElement(tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip"))
+	e := LoadFromStorage(tooltipConstructor(target.Name+"/tooltip", target.ID+"-tooltip"))
 	// Let's observe the target element which owns the tooltip too so that we can
 	// change the tooltip automatically from there.
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -1156,7 +1156,7 @@ func NewTextArea(name string, id string, rows int, cols int, options ...string) 
 		}
 	}*/
 
-	return TextArea{ui.BasicElement{LoadElement(t(name, id, options...))}}
+	return TextArea{ui.BasicElement{LoadFromStorage(t(name, id, options...))}}
 }
 
 // allowTextAreaDataBindingOnBlur is a constructor option for TextArea UI elements enabling
@@ -1262,7 +1262,7 @@ func NewHeader(name string, id string, options ...string) Header {
 		}
 	}*/
 
-	return Header{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Header{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Footer struct {
@@ -1307,7 +1307,7 @@ func NewFooter(name string, id string, options ...string) Footer {
 		}
 	}*/
 
-	return Footer{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Footer{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Section struct {
@@ -1349,7 +1349,7 @@ func NewSection(name string, id string, options ...string) Section {
 		}
 	}*/
 
-	return Section{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Section{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H1 struct {
@@ -1406,7 +1406,7 @@ func NewH1(name string, id string, options ...string) H1 {
 		}
 	}*/
 
-	return H1{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H1{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H2 struct {
@@ -1463,7 +1463,7 @@ func NewH2(name string, id string, options ...string) H2 {
 		}
 	}*/
 
-	return H2{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H2{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H3 struct {
@@ -1520,7 +1520,7 @@ func NewH3(name string, id string, options ...string) H3 {
 		}
 	}*/
 
-	return H3{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H3{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H4 struct {
@@ -1577,7 +1577,7 @@ func NewH4(name string, id string, options ...string) H4 {
 		}
 	}*/
 
-	return H4{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H4{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H5 struct {
@@ -1634,7 +1634,7 @@ func NewH5(name string, id string, options ...string) H5 {
 		}
 	}*/
 
-	return H5{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H5{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type H6 struct {
@@ -1691,7 +1691,7 @@ func NewH6(name string, id string, options ...string) H6 {
 		}
 	}*/
 
-	return H6{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return H6{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Span struct {
@@ -1748,7 +1748,7 @@ func NewSpan(name string, id string, options ...string) Span {
 		}
 	}*/
 
-	return Span{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Span{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Paragraph struct {
@@ -1804,7 +1804,7 @@ func NewParagraph(name string, id string, options ...string) Paragraph {
 		}
 	}*/
 
-	return Paragraph{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Paragraph{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 /*type Nav struct {
@@ -1842,7 +1842,7 @@ func NewNavMenu(name string, id string, options ...string) Nav {
 
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-	return Nav{LoadElement(c(name, id, options...))}
+	return Nav{LoadFromStorage(c(name, id, options...))}
 }
 */
 
@@ -1857,10 +1857,10 @@ func (a Anchor) SetHREF(target string) Anchor {
 
 func (a Anchor) FromLink(link ui.Link) Anchor {
 	// Check if link is already verified
-	_, ok := link.AsElement().Get("event", "verified")
+	/*_, ok := link.AsElement().Get("event", "verified")
 	if ok {
 		a.SetHREF(link.URI())
-	}
+	}*/
 	a.AsElement().WatchASAP("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI())
 		return false
@@ -1950,7 +1950,7 @@ func NewAnchor(name string, id string, options ...string) Anchor {
 		}
 	}*/
 
-	return Anchor{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Anchor{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Button struct {
@@ -2043,7 +2043,7 @@ func NewButton(name string, id string, typ string, options ...string) Button {
 		}
 	}*/
 
-	return Button{ui.BasicElement{LoadElement(f(name, id, options...))}}
+	return Button{ui.BasicElement{LoadFromStorage(f(name, id, options...))}}
 }
 
 type Label struct {
@@ -2100,7 +2100,7 @@ func NewLabel(name string, id string, options ...string) Label {
 		}
 	}*/
 
-	return Label{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Label{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Input struct {
@@ -2327,7 +2327,7 @@ func NewInput(typ string, name string, id string, options ...string) Input {
 		}
 	}*/
 
-	return Input{ui.BasicElement{LoadElement(f(name, id, options...))}}
+	return Input{ui.BasicElement{LoadFromStorage(f(name, id, options...))}}
 }
 
 type Img struct {
@@ -2395,7 +2395,7 @@ func NewImage(name, id string, options ...string) Img {
 		}
 	}*/
 
-	return Img{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Img{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 var NewAudio = Elements.NewConstructor("audio", func(name string, id string) *ui.Element {
@@ -2722,7 +2722,7 @@ func NewUl(name string, id string, options ...string) List {
 		}
 	}*/
 
-	return List{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return List{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type OrderedList struct {
@@ -2769,7 +2769,7 @@ func NewOl(name string, id string, typ string, numberingstart int, options ...st
 		}
 	}*/
 
-	return OrderedList{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return OrderedList{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type ListItem struct {
@@ -2848,7 +2848,7 @@ func NewListItem(name string, id string, options ...string) ListItem {
 		}
 	}*/
 
-	return ListItem{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return ListItem{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 type Table struct {
@@ -2913,7 +2913,7 @@ func NewThead(name string, id string, options ...string) Thead {
 		}
 	}*/
 
-	return Thead{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Thead{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 func (t Thead) AddRow(rows ...Tr) Thead {
@@ -2967,7 +2967,7 @@ func NewTr(name string, id string, options ...string) Tr {
 		}
 	}*/
 
-	return Tr{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Tr{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 func NewTd(name string, id string, options ...string) Td {
@@ -3004,7 +3004,7 @@ func NewTd(name string, id string, options ...string) Td {
 		}
 	}*/
 
-	return Td{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Td{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 func NewTh(name string, id string, options ...string) Th {
@@ -3041,7 +3041,7 @@ func NewTh(name string, id string, options ...string) Th {
 		}
 	}*/
 
-	return Th{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Th{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 func NewTable(name string, id string, options ...string) Table {
@@ -3078,7 +3078,7 @@ func NewTable(name string, id string, options ...string) Table {
 		}
 	}*/
 
-	return Table{ui.BasicElement{LoadElement(c(name, id, options...))}}
+	return Table{ui.BasicElement{LoadFromStorage(c(name, id, options...))}}
 }
 
 /*

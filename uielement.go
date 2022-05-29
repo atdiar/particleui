@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	//"runtime"
+	//"fmt"
 )
 
 var (
@@ -318,7 +320,7 @@ type Elements struct {
 }
 
 func NewElements(elements ...*Element) *Elements {
-	res := &Elements{make([]*Element, 0, 50)}
+	res := &Elements{make([]*Element, 0, 500)}
 	res.List = append(res.List, elements...)
 	return res
 }
@@ -335,9 +337,10 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 	if c > (l + le) {
 		e.List = e.List[:l+le]
 		copy(e.List[le:], e.List)
-		for i, element := range elements {
+		/*for i, element := range elements {
 			e.List[i] = element
-		}
+		}*/
+		copy(e.List,elements)
 		return e
 	}
 	e.List = append(elements, e.List...)
@@ -469,13 +472,33 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	return e
 }
 
+func growslice(p *Element, elements []*Element) bool{
+	return (cap(p.path.List)-len(p.path.List))<len(elements)
+}
+
+/*
+
+stmt:="not enough space in the slice"
+	buf := make([]byte, 4096)
+	runtime.Stack(buf, false)
+	stmt = stmt + "\n\n" + fmt.Sprint(string(buf)) + "\n"
+	DEBUG(stmt)
+*/
+
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element, activeview bool) {
 	if activeview {
 		child.Parent = parent
-		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
+		if growslice(child,[]*Element{parent}){
+			DEBUG("Add parent ancestor to path ", parent.ID, len(parent.path.List), cap(parent.path.List))
+		}
+		child.path.InsertFirst(parent)
+		if growslice(child, parent.path.List){
+			DEBUG(parent.ID," parent path len ",len(parent.path.List)," child path len ", len(child.path.List)," cap ", cap(child.path.List))
+		}
+		child.path.InsertFirst(parent.path.List...)
 	}
 	child.root = parent.root
 	child.subtreeRoot = parent.subtreeRoot
@@ -776,15 +799,15 @@ func (e *Element) DeleteChild(childEl AnyElement) *Element {
 	if child.isViewElement() {
 		for _, view := range child.InactiveViews {
 			for _, el := range view.Elements().List {
-				el.Set("internals", "deleted", Bool(true))
 				e.ElementStore.Delete(el.ID)
+				el.Set("internals", "deleted", Bool(true))
 			}
 		}
 	}
 
-	child.Set("internals", "deleted", Bool(true))
 	e.ElementStore.Delete(child.ID)
-
+	child.Set("internals", "deleted", Bool(true))
+	
 	return e
 }
 
@@ -795,6 +818,28 @@ func (e *Element) DeleteChildren() *Element {
 		e.DeleteChild(BasicElement{child})
 	}
 	return e
+}
+
+// Delete allows for the deletion of an eleemnt regardless of whether it has a parent element.
+func Delete(e *Element){
+	if e.Parent!=nil{
+		e.Parent.DeleteChild(e)
+		return
+	}
+	e.Set("event","deleting",Bool(true))
+	e.DeleteChildren()
+
+	if e.isViewElement() {
+		for _, view := range e.InactiveViews {
+			for _, el := range view.Elements().List {
+				e.ElementStore.Delete(el.ID)
+				el.Set("internals", "deleted", Bool(true))				
+			}
+		}
+	}
+
+	e.ElementStore.Delete(e.ID)
+	e.Set("internals", "deleted", Bool(true))
 }
 
 func (e *Element) ShareLifetimeOf(any AnyElement) *Element {
@@ -884,126 +929,6 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 		// el.ActiveView = e.ActiveView // TODO verify this is correct
 	}
 	return e
-}
-
-// SetMergeChildren will set an Element children list without removing
-// Elements that are already present.
-func (e *Element) SetMergeChildren(any ...AnyElement) *Element {
-	nc := make([]*Element, 0, len(any))
-	for _, el := range any {
-		nc = append(nc, el.AsElement())
-	}
-	transform(e, nc, false)
-	return e
-}
-
-// SetMergeChildren will set an Element children list without removing
-// Elements that are already present.
-// It deletes the elements that are absent from the children list.
-func (e *Element) SetMergeChildrenClean(any ...AnyElement) *Element {
-	nc := make([]*Element, 0, len(any))
-	for _, el := range any {
-		nc = append(nc, el.AsElement())
-	}
-	transform(e, nc, true)
-	return e
-}
-
-type childrenSet map[string]int
-
-func newChildrenSet(list ...*Element) childrenSet {
-	m := make(map[string]int, len(list))
-	for index, element := range list {
-		m[element.ID] = index
-	}
-	return m
-}
-
-func (s childrenSet) Contains(id string) bool {
-	_, ok := s[id]
-	return ok
-}
-func intersect(s childrenSet, c childrenSet) childrenSet {
-	m := make(map[string]int, len(s))
-	for id := range c {
-		if s.Contains(id) {
-			m[id] = 0
-		}
-	}
-	return m
-}
-
-func (s childrenSet) Ordered(l []*Element) (childrenSet, []*Element) {
-	res := make([]*Element, 0, len(s))
-	m := make(map[string]int, len(s))
-	n := 0
-	for _, e := range l {
-		if s.Contains(e.ID) {
-			res = append(res, e)
-			m[e.ID] = n
-			n++
-		}
-	}
-	return m, res
-}
-
-func transform(parent *Element, destination []*Element, delete bool) {
-	original := make([]*Element, len(parent.Children.List))
-	copy(original, parent.Children.List)
-
-	oriset := newChildrenSet(original...)
-	destset := newChildrenSet(destination...)
-	inter := intersect(oriset, destset)
-
-	oset, olist := inter.Ordered(original)
-	_, dlist := inter.Ordered(destination)
-
-	for i, e := range dlist {
-		oldindex := oset[e.ID]
-		oldpos := oriset[e.ID]
-
-		if oldindex != i {
-			oldelement := olist[i]
-			oldelementoldpos := oriset[oldelement.ID]
-
-			parent.InsertChild(e, oldelementoldpos)
-			parent.InsertChild(oldelement, oldpos)
-			oset[e.ID] = i
-			oset[oldelement.ID] = oldindex
-
-			oriset[e.ID] = oldelementoldpos
-			oriset[oldelement.ID] = oldpos
-			original[oldpos] = oldelement
-			original[oldelementoldpos] = e
-		}
-	}
-	// Now that the best LCS has been formed, we modify the original slice by
-	// deletion/insertion.
-	orig := original[:0]
-	for _, e := range original {
-		if !destset.Contains(e.ID) {
-			if delete {
-				parent.DeleteChild(e)
-				continue
-			}
-			parent.RemoveChild(e)
-			continue
-		}
-		orig = append(orig, e)
-	}
-	for i := len(orig); i < len(original); i++ { // cleanup for garbage collection
-		original[i] = nil
-	}
-
-	insertAt := 0
-	for _, e := range destination {
-		if !oriset.Contains(e.ID) {
-			parent.InsertChild(e, insertAt)
-			insertAt++
-			continue
-		}
-		insertAt++
-	}
 }
 
 // Watch observes the owner of a property registered under a given category for change.
