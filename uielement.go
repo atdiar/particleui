@@ -7,8 +7,6 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
-	//"runtime"
-	//"fmt"
 )
 
 var (
@@ -320,7 +318,7 @@ type Elements struct {
 }
 
 func NewElements(elements ...*Element) *Elements {
-	res := &Elements{make([]*Element, 0, 500)}
+	res := &Elements{make([]*Element, 0, 512)}
 	res.List = append(res.List, elements...)
 	return res
 }
@@ -472,18 +470,7 @@ func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Elemen
 	return e
 }
 
-func growslice(p *Element, elements []*Element) bool{
-	return (cap(p.path.List)-len(p.path.List))<len(elements)
-}
 
-/*
-
-stmt:="not enough space in the slice"
-	buf := make([]byte, 4096)
-	runtime.Stack(buf, false)
-	stmt = stmt + "\n\n" + fmt.Sprint(string(buf)) + "\n"
-	DEBUG(stmt)
-*/
 
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
@@ -491,14 +478,7 @@ stmt:="not enough space in the slice"
 func attach(parent *Element, child *Element, activeview bool) {
 	if activeview {
 		child.Parent = parent
-		if growslice(child,[]*Element{parent}){
-			DEBUG("Add parent ancestor to path ", parent.ID, len(parent.path.List), cap(parent.path.List))
-		}
-		child.path.InsertFirst(parent)
-		if growslice(child, parent.path.List){
-			DEBUG(parent.ID," parent path len ",len(parent.path.List)," child path len ", len(child.path.List)," cap ", cap(child.path.List))
-		}
-		child.path.InsertFirst(parent.path.List...)
+		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
 	child.root = parent.root
 	child.subtreeRoot = parent.subtreeRoot

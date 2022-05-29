@@ -901,7 +901,7 @@ func NewDiv(name string, id string, options ...string) Div {
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
-		if isSyned:=lb.(ui.Bool); isSyned{
+		if isSynced:=lb.(ui.Bool); isSynced{
 			return e
 		}
 		
@@ -926,12 +926,14 @@ func PutInStorage(e *ui.Element) *ui.Element{
 		return e
 	}
 	for cat,props:= range e.Properties.Categories{
-		for prop,val:= range props.Local{
-			storage.Store(e,cat,prop,val)
-		}
-		for prop,val:=range props.Inheritable{
-			storage.Store(e,cat,prop,val,true)
-		}
+		if cat != "event"{
+			for prop,val:= range props.Local{
+				storage.Store(e,cat,prop,val)
+			}
+			for prop,val:=range props.Inheritable{
+				storage.Store(e,cat,prop,val,true)
+			}
+		}		
 	}
 	return e
 }
