@@ -265,7 +265,7 @@ func (r *Router) handler() *MutationHandler {
 		err = a()
 		if err != nil {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
-			DEBUG("activation failure")
+			DEBUG("activation failure",err)
 			return true
 		}
 

@@ -179,13 +179,15 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 		for _, fn := range e.GlobalConstructorOptions {
 			element = fn(element)
 		}
-		// TODO optionalArgs  apply the corresponding options
+		// Let's apply the remaining options
 		for _, opt := range optionNames {
 			r, ok := e.ConstructorsOptions[elementname]
 			if ok {
 				config, ok := r[opt]
 				if ok {
 					element = config(element)
+				} else{
+					DEBUG(opt," is not an available option for ",elementname)
 				}
 			}
 		}

@@ -189,7 +189,7 @@ func loader(s string) func(e *ui.Element) error {
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
-		categories := make([]string, 0, 20)
+		categories := make([]string, 0, 50)
 		properties := make([]string, 0, 50)
 		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
 		if err != nil {
@@ -494,11 +494,17 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 //  session storage of the properties of an Element  created with said constructor.
 var AllowSessionStoragePersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("sessionstorage"))
+	if isPersisted(e){
+		return LoadFromStorage(e)
+	}
 	return PutInStorage(e)
 })
 
 var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("localstorage"))
+	if isPersisted(e){
+		return LoadFromStorage(e)
+	}
 	return PutInStorage(e)
 })
 
@@ -897,7 +903,7 @@ func NewDiv(name string, id string, options ...string) Div {
 	return Div{ui.BasicElement{LoadFromStorage(newDiv(name, id, options...))}}
 }
 
-// LoadFromStorage will load Element properties.
+// LoadFromStorage will load an element properties.
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
@@ -912,13 +918,14 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 		err := storage.Load(e)
 		if err != nil {
 			log.Print(err)
+			return e
 		}
+		e.Set("event","storesynced",ui.Bool(true))
 	}
-	e.Set("event","storesynced",ui.Bool(true))
 	return e
 }
 
-// PutInStorage stores an ele;ent properties in storqge (localstoage or seesiionstorage).
+// PutInStorage stores an element properties in storage (localstorage or sessionstorage).
 func PutInStorage(e *ui.Element) *ui.Element{
 	pmode := ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
@@ -935,10 +942,11 @@ func PutInStorage(e *ui.Element) *ui.Element{
 			}
 		}		
 	}
+	e.Set("event","storesynced",ui.Bool(true))
 	return e
 }
 
-// ClearFromStorage will clear an Element properties from storage.
+// ClearFromStorage will clear an element properties from storage.
 func ClearFromStorage(e *ui.Element) *ui.Element{
 	pmode:=ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
@@ -952,6 +960,25 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 		}
 	}
 	return e
+}
+
+// isPersisted checks whether an element exist in storage alrready
+func isPersisted(e *ui.Element) bool{
+	pmode:=ui.PersistenceMode(e)
+
+	var s string
+	switch pmode{
+	case"sessionstorage":
+		s = "sessionStorage"
+	case "localstorage":
+		s = "localStorage"
+	default:
+		return false
+	}
+
+	store := jsStore{js.Global().Get(s)}
+	_, ok := store.Get(e.ID)
+	return ok
 }
 
 // Tooltip defines the type implementing the interface of a tooltip ui.Element.
