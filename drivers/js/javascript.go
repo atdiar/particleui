@@ -23,7 +23,7 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage)
+	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).ApplyGlobalOption(cleanStorageOnDelete)
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 )
 
@@ -285,6 +285,18 @@ func clearer(s string) func(element *ui.Element){
 
 var clearfromsession = clearer("sessionStorage")
 var clearfromlocalstorage = clearer("localStorage")
+
+var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e *ui.Element)*ui.Element{
+	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		ClearFromStorage(evt.Origin())
+		j:= JSValue(e)
+		if j.Truthy(){
+			j.Call("remove")
+		}
+		return false
+	}))
+	return e
+})
 
 // Window is a ype that represents a browser window
 type Window struct {

@@ -21,6 +21,7 @@ var router *Router
 
 // GetRouter returns the application Router object if it has been created.
 // If it has not yet, it panics.
+// Henceforth, it is only safe to call this function 
 func GetRouter() *Router {
 	if router == nil {
 		panic("FAILURE: trying to retrieve router before it has been created.")
@@ -28,15 +29,17 @@ func GetRouter() *Router {
 	return router
 }
 
-// UseRouter is a convenience function that allows for a ViewElement to call a
+// UseRouter is a convenience function that allows for an Element to call a
 // router-using function when mounted.
-// Can be typically used in components that create link-based anchors (deep-linking).
-func UseRouter(user ViewElement, fn func(*Router)) {
+func UseRouter(user *Element, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		fn(GetRouter())
+		user.WatchASAP("event","initrouter",user.Root(),NewMutationHandler(func(evt MutationEvent)bool{
+			fn(GetRouter())
+			return false
+		}))
 		return false
 	})
-	user.AsElement().OnMounted(h)
+	user.OnFirstTimeMounted(h)
 }
 
 // Router stores shortcuts to given states of the application.
@@ -90,10 +93,13 @@ func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*R
 		}
 		return false
 	}))
+
 	for _,option:= range options{
 		r = option(r)
 	}
+
 	router = r
+	r.outlet.AsElement().Root().Set("event","initrouter",Bool(true))
 	return r
 }
 
@@ -712,6 +718,7 @@ func (l Link) AsElement() *Element {
 	return l.Raw
 }
 
+
 func (l Link) watchable() {}
 
 func (r *Router) NewLink(target ViewElement, viewname string) Link {
@@ -768,9 +775,14 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 		return false
 	}))
 	l = Link{e, target, viewname, r}
-	r.Links[target.AsElement().ID+"/"+viewname] = l
+	r.Links[l.URI()] = l
 
 	return l
+}
+
+func(r *Router) RetrieveLink(URI string) (Link,bool){
+	l, ok := r.Links[URI]
+	return l,ok	
 }
 
 /*

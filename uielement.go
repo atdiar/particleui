@@ -802,7 +802,7 @@ func (e *Element) DeleteChildren() *Element {
 	return e
 }
 
-// Delete allows for the deletion of an eleemnt regardless of whether it has a parent element.
+// Delete allows for the deletion of an element regardless of whether it has a parent.
 func Delete(e *Element){
 	if e.Parent!=nil{
 		e.Parent.DeleteChild(e)
