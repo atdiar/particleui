@@ -34,7 +34,7 @@ func InitRouter(options ...func(*Router)*Router) func(*Element)*Element{
 			if !ok{
 				panic("Router cannot be instantiated with non-ViewElement objects")
 			}
-			router := NewRouter("/",v ,options...)
+			NewRouter("/",v ,options...)
 			return false
 		}))
 		return e

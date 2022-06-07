@@ -654,7 +654,7 @@ func NewObservable(id string, options ...string) ui.Observable{
 
 	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 	return ui.Observable{c("observable",id,options...)}
-})
+}
 
 type Document struct {
 	ui.BasicElement
