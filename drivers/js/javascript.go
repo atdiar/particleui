@@ -491,6 +491,7 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 	return e
 }
 
+
 /*
 //
 //
@@ -645,6 +646,15 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	//r.History.Length = 50
 	return r
 }
+
+func NewObservable(id string, options ...string) ui.Observable{
+	c:= Elements.NewConstructor("observable",func(name string, id string) *ui.Element{
+		o:= ui.NewObservable(id)
+		return o.AsElement()
+
+	}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	return ui.Observable{c("observable",id,options...)}
+})
 
 type Document struct {
 	ui.BasicElement

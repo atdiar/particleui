@@ -170,6 +170,10 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 
 	// Then we create the element constructor to return
 	c := func(name string, id string, optionNames ...string) *Element {
+		_, alreadyexists:= e.ByID[id]
+		if alreadyexists{
+			DEBUG(id, " is already in use.")
+		}
 		element := constructor(name, id)
 		element.Set("internals", "constructor", String(elementname))
 		element.Global = e.Global
