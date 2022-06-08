@@ -172,7 +172,7 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 	c := func(name string, id string, optionNames ...string) *Element {
 		_, alreadyexists:= e.ByID[id]
 		if alreadyexists{
-			DEBUG(id, " is already in use.")
+			DEBUG("WARNING: potential id conflict, ",id, " is already in use.")
 		}
 		element := constructor(name, id)
 		element.Set("internals", "constructor", String(elementname))

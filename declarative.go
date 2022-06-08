@@ -9,7 +9,7 @@ func New(e AnyElement, modifiers ...func(*Element)*Element) *Element{
 	return re
 }
 
-// Children is an Element modifier which can be used to set an Elements children.
+// Children is an *Element modifier which can be used to set an Elements children.
 // It is used in the declarative specification of a UI tree.
 func Children(children ...*Element) func(*Element)*Element{
 	return func(e *Element) *Element{
@@ -17,15 +17,14 @@ func Children(children ...*Element) func(*Element)*Element{
 		return e
 	}
 }
-
-// Listen is an Element modifier that enables an element to listen to a specific event and handle to it.
+// Listen is an *Element modifier that enables an element to listen to a specific event and handle to it.
 func Listen(event string, h *EventHandler, nativebinding NativeEventBridge) func(*Element)*Element{
 	return func(e *Element) *Element{
 		return e.AddEventListener(event,h,nativebinding)
 	}
 }
 
-// InitRouter is a modifier that applies to an element that should also be a ViewElement.
+// InitRouter is an *Element modifier that applies to an element that should also be a ViewElement.
 // It defines a starting point for the navigation.
 func InitRouter(options ...func(*Router)*Router) func(*Element)*Element{
 	return func(e *Element) *Element{
@@ -41,12 +40,12 @@ func InitRouter(options ...func(*Router)*Router) func(*Element)*Element{
 	}
 }
 
-// Ref will assign an Element as value for a variable whose reference is passed as argument.
-// It allows to refer to elements created in the UI tree from outside the UI tree.
+// Ref is an *Element modifier that assigns the *Element value to the referenced variable (vref).
+// It allows to refer to UI tree elements.
 // Typically useful for property mutation observing between elements.
-func Ref(r **Element) func(*Element) *Element{
+func Ref(vref **Element) func(*Element) *Element{
 	return func(e *Element)*Element{
-		*r = e
+		*vref = e
 		return e
 	}
 }

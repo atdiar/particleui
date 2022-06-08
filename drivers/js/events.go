@@ -91,7 +91,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			// on the target *ui.Element, knowing that it will be visible before
 			// the event dispatch.
 			hstate := js.Global().Get("history").Get("state")
-			//DEBUGJS(hstate,true)
+			DEBUGJS(hstate,true)
 
 			if hstate.Truthy() {
 				hstateobj := ui.NewObject()

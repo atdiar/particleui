@@ -28,7 +28,7 @@ func (e *Element) RawValue() Object {
 
 	constructorname, ok := e.Get("internals", "constructor")
 	if !ok {
-		DEBUG("no constructorname")
+		DEBUG("no constructorname for ", e.ID)
 		return nil
 	}
 	cname, ok := constructorname.(String)
@@ -263,7 +263,7 @@ func (o Object) Value() Value {
 		}
 		constructor, ok := elstore.Constructors[string(cname)]
 		if !ok {
-			DEBUG("constructor not found at thhe recorded name from Element store. Cannot create Element " + elid + "from Value")
+			DEBUG("constructor not found at the recorded name from Element store. Cannot create Element " + elid + " from Value")
 			return nil
 		}
 		ename, ok := name.(String)

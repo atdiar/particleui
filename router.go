@@ -188,6 +188,15 @@ func (r *Router) Hijack(route string, destination string) {
 	}))
 }
 
+// Hijack is a router modifier function that allows the router to redirect navigation to a specific route
+// to a different  destination.
+func Hijack(route, destination string) func(*Router)*Router{
+	return func(r *Router) *Router{
+		r.Hijack(route,destination)
+		return r
+	}
+}
+
 // OnNotfound reacts to the navigation 'notfound' property being set. It can allow
 // to go to an alternate route for instance, which could display a "page not found"
 // error message for example. This behavior would be defined in the MutationHandler.
@@ -301,7 +310,6 @@ func (r *Router) handler() *MutationHandler {
 					r.History.Back()
 				}
 			} else if r.History.Cursor < n {
-				//DEBUG("forward from: ",r.History.Cursor, " to ",n)
 				r.History.ImportState(h)
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
@@ -796,7 +804,7 @@ type NavHistory struct {
 	Stack  []string
 	State  []Observable
 	Cursor int
-	NewState func() Observable
+	NewState func(id string) Observable
 	RecoverState func(Observable) Observable
 	Length int
 }
@@ -816,8 +824,8 @@ func NewNavigationHistory() *NavHistory {
 	n.Stack = make([]string, 0, 1024)
 	n.State = make([]Observable, 0, 1024)
 	n.Cursor = -1
-	n.NewState = func() Observable{
-		return NewObservable("hstate"+strconv.Itoa(n.Cursor))
+	n.NewState = func(id string) Observable{
+		return NewObservable(id)
 	}
 	n.RecoverState = func(o Observable)Observable{return o}
 	n.Length = 1024
@@ -880,14 +888,14 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
-	n.State = append(n.State[:n.Cursor], n.NewState())
+	n.State = append(n.State[:n.Cursor], n.NewState("hstate"+strconv.Itoa(n.Cursor)))
 	
 	return n
 }
 
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
-	n.State[n.Cursor] = n.NewState()
+	n.State[n.Cursor] = n.NewState("hstate"+strconv.Itoa(n.Cursor))
 	return n
 }
 
