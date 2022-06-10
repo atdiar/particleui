@@ -109,7 +109,12 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		}
 
 		if typ == "click"{
-			value = ui.Number(evt.Get("button").Float()) // TODO switch to ui.Object and add ctrlKey info
+			button:= ui.Number(evt.Get("button").Float()) // TODO add other click event properties
+			ctrlKey:= ui.Bool(evt.Get("ctrlKey").Bool())
+			v:= ui.NewObject()
+			v.Set("button",button)
+			v.Set("ctrlKey",ctrlKey)
+			value = v
 		}
 
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target.AsElement(), nativeEvent, value)

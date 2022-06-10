@@ -7,4 +7,4 @@ require (
 	github.com/atdiar/particleui/drivers/js v0.0.0-20220608232718-665d9f33b3c9
 )
 
-require golang.org/x/net v0.0.0-20220517181318-183a9ca12b87 // indirect
+require golang.org/x/net v0.0.0-20220607020251-c690dde0001d // indirect

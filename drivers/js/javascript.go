@@ -1729,6 +1729,13 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 	}))
 
 	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
+		v:=evt.Value().(ui.Object)
+		rb,ok:= v.Get("ctrlKey")
+		if ok{
+			if b:=rb.(ui.Bool);b{
+				return false
+			}
+		}
 		evt.PreventDefault()
 		link.Activate()
 		return false
