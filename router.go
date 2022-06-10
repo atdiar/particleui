@@ -423,7 +423,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	}
 
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		root.AsElement().Root().Set("navigation", "routechangerequest", String(evt.Value()))
+		root.AsElement().Root().Set("navigation", "routechangerequest", evt.Value())
 		return false
 	})
 

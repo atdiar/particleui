@@ -50,7 +50,9 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		cancancel := evt.Get("cancelable").Bool()
 		var target ui.BasicElement
 		jstarget := evt.Get("currentTarget")
-		value := jstarget.Get("value").String()
+		var value ui.Value
+		rawvalue := ui.String(jstarget.Get("value").String())
+		value = rawvalue
 		targetid := jstarget.Get("id")
 
 		if targetid.Truthy() {
@@ -76,9 +78,9 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		if cancancel {
 			nativeEvent = cancelable{evt}
 		}
-		if typ == "popstate" || typ == "load" {
+		if typ == "popstate" {
 			//value = js.Global().Get("document").Get("URL").String()
-			value = js.Global().Get("location").Get("pathname").String()
+			value = ui.String(js.Global().Get("location").Get("pathname").String())
 			/*u,err:= url.ParseRequestURI(value)
 			if err!= nil{
 				value = ""
@@ -103,8 +105,13 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		}
 
 		if typ == "keyup" || typ == "keydown" || typ == "keypress" {
-			value = evt.Get("key").String()
+			value = ui.String(evt.Get("key").String())
 		}
+
+		if typ == "click"{
+			value = ui.Number(evt.Get("button").Float()) // TODO switch to ui.Object and add ctrlKey info
+		}
+
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target.AsElement(), nativeEvent, value)
 		target.AsElement().DispatchEvent(goevt, nil)
 		return nil

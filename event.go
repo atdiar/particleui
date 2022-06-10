@@ -5,7 +5,7 @@ type Event interface {
 	Type() string
 	Target() *Element
 	CurrentTarget() *Element
-	Value() string // at worst, serizalized
+	Value() Value // TODO make this a Value type (DEBUG)
 
 	PreventDefault()
 	StopPropagation()          // the phase is stil 1,2,or 3 but Stopped returns true
@@ -34,7 +34,7 @@ type eventObject struct {
 	phase            int
 
 	nativeObject interface{}
-	value        string
+	value        Value
 }
 
 type defaultPreventer interface {
@@ -66,9 +66,9 @@ func (e *eventObject) DefaultPrevented() bool      { return e.defaultPrevented }
 func (e *eventObject) Stopped() bool               { return e.stopped }
 func (e *eventObject) Cancelable() bool            { return e.cancelable }
 func (e *eventObject) Native() interface{}         { return e.nativeObject }
-func (e *eventObject) Value() string               { return e.value }
+func (e *eventObject) Value() Value               { return e.value }
 
-func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}, value string) Event {
+func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}, value Value) Event {
 	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent, value}
 }
 
