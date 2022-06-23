@@ -69,7 +69,7 @@ func (v ViewElement) SetDefaultView(name string) ViewElement { // TODO DEBUG OnU
 	}
 	ve := v.AsElement()
 	ve.SetDataSetUI("defaultview", String(name))
-	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent) bool {
+	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent) bool { // TODO should this happen on Unmounted rather?
 		n, ok := ve.Get("ui", "defaultview")
 		if !ok {
 			return false
@@ -128,7 +128,7 @@ func (v ViewElement) hasStaticView(name string) bool { // name should not start 
 	return false
 }
 
-// ActivateView sets the active view of  a ViewElement.
+// ActivateView sets the active view of a ViewElement.
 // If no View exists for the name argument or is not authorized, an error is returned.
 func (v ViewElement) ActivateView(name string) error {
 	val, ok := v.AsElement().Get("authorized", name)
@@ -209,7 +209,8 @@ func (e *Element) activateView(name string) error {
 				return nil
 			}
 
-			e.SetDataSetUI("viewparameter", String(name))
+			e.SetDataSetUI("viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
+			e.SetUI("activeview", String(name))
 			return nil
 		}
 		// Support for parameterized views
@@ -227,7 +228,7 @@ func (e *Element) activateView(name string) error {
 				e.removeChild(BasicElement{child})
 				attach(e, child, false)
 			}
-			e.InactiveViews[string(oldviewname)] = NewView(string(oldviewname), cccl...)
+			e.InactiveViews[oldviewname] = NewView(oldviewname, cccl...)
 		}
 		e.ActiveView = ":" + p
 		for _, newchild := range view.Elements().List {

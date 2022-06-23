@@ -31,15 +31,15 @@ func GetRouter() *Router {
 
 // UseRouter is a convenience function that allows for an Element to call a
 // router-using function when mounted.
-func UseRouter(user *Element, fn func(*Router)) {
+func UseRouter(user AnyElement, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		user.WatchASAP("event","initrouter",user.Root(),NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().WatchASAP("event","initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
 			fn(GetRouter())
 			return false
 		}))
 		return false
 	})
-	user.OnFirstTimeMounted(h)
+	user.AsElement().OnFirstTimeMounted(h)
 }
 
 // Router stores shortcuts to given states of the application.
@@ -104,6 +104,12 @@ func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*R
 }
 
 func (r *Router) tryNavigate(newroute string) bool {
+	// 0. Retrieve hash if it exists
+	route,hash,found:= strings.Cut(newroute,"#")
+	if found{
+		newroute = route
+	}
+
 	// 1. Let's see if the URI matches any of the registered routes.
 	a, err := r.Routes.match(newroute)
 	if err != nil {
@@ -130,6 +136,9 @@ func (r *Router) tryNavigate(newroute string) bool {
 		r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 		return false
 	}
+	if found{
+		r.outlet.AsElement().Root().Set("navigation","hash",String(hash))
+	}
 	return true
 }
 
@@ -138,7 +147,7 @@ func (r *Router) GoTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
-	route = strings.TrimPrefix(route, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
+	route = strings.TrimPrefix(route, r.BasePath)
 
 	r.outlet.AsElement().Root().Set("event", "navigationstart", String(route))
 
@@ -233,6 +242,8 @@ func (r *Router) Match(route string) error {
 
 }
 
+/*
+// canonicalBase is mainly used to get rid of the trailing slash if present.
 func canonicalBase(s string) string {
 	t := strings.SplitAfter(s, "/")
 	var res string
@@ -241,6 +252,8 @@ func canonicalBase(s string) string {
 	}
 	return res
 }
+
+*/
 
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
@@ -255,7 +268,13 @@ func (r *Router) handler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
+		newroute = strings.TrimPrefix(newroute, r.BasePath)
+
+		// Retrieve hash if it exists
+		route,hash,found:= strings.Cut(newroute,"#")
+		if found{
+			newroute = route
+		}
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		a, err := r.Routes.match(newroute)
@@ -282,6 +301,10 @@ func (r *Router) handler() *MutationHandler {
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			DEBUG("activation failure",err)
 			return true
+		}
+
+		if found{
+			r.outlet.AsElement().Root().Set("navigation","hash",String(hash))
 		}
 
 		// Determination of navigation history action 
@@ -342,7 +365,13 @@ func (r *Router) redirecthandler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, strings.TrimSuffix(canonicalBase(r.BasePath), "/"))
+		newroute = strings.TrimPrefix(newroute, r.BasePath)
+
+		// Retrieve hash if it exists
+		route,hash,found:= strings.Cut(newroute,"#")
+		if found{
+			newroute = route
+		}
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		a, err := r.Routes.match(newroute)
@@ -370,6 +399,10 @@ func (r *Router) redirecthandler() *MutationHandler {
 			log.Print("unauthorized for: " + newroute)
 			r.outlet.AsElement().Root().Set("navigation", "unauthorized", String(newroute))
 			return true
+		}
+
+		if found{
+			r.outlet.AsElement().Root().Set("navigation","hash",String(hash))
 		}
 
 		r.History.Replace(newroute)
@@ -525,7 +558,7 @@ func (rn *rnode) insert(nrn *rnode) {
 		ancestor = viewpathnodes[0].Element
 	}
 	if ancestor.ID != rn.root.ViewElement.AsElement().ID {
-		log.Print("Houston we have an issue. Everything shall start from rnode toot ViewElement")
+		log.Print("Houston, we have a problem. Everything shall start from rnode toot ViewElement")
 		return
 	}
 	l := len(viewpathnodes)
@@ -691,23 +724,16 @@ func (r *rnode) match(route string) (activationFn func() error, err error) {
 // A link can be watched.
 type Link struct {
 	Raw *Element
-
-	Target   ViewElement
-	ViewName string
-
-	Router *Router
 }
 
 func (l Link) URI() string {
-	res := l.Target.AsElement().Route()
-	if res == "" {
-		return res + "/" + l.ViewName
-	}
-	return res + "/" + l.Target.AsElement().ID + "/" + l.ViewName
+	u,_:= l.Raw.GetData("uri")
+	uri:= string(u.(String))
+	return uri
 }
 
 func (l Link) Activate() {
-	l.Router.GoTo(l.URI())
+	l.Raw.Set("event","activate", Bool(true))
 }
 
 func (l Link) IsActive() bool {
@@ -726,31 +752,77 @@ func (l Link) AsElement() *Element {
 	return l.Raw
 }
 
-
 func (l Link) watchable() {}
 
-func (r *Router) NewLink(target ViewElement, viewname string) Link {
+// NewLink returns a Link object.
+//
+// The first argument is the name of the view to be activated for the main ViewElement. (starting
+// point of the router, aka router outlet)
+// It generates an URI similar to /viewname.
+//
+// It then accepts Link modifying functions that allow for example to further specify a path to 
+// into  a nested ViewElement. (See Path function)
+// The URI generated will see path fragments concatenated to it such as:
+// /viewname/nestdeviewElementA/nestedviewname2...
+//
+// Note that such a Link object does not offer any guarantees on its validity.
+// However, link creation is verified at app startups and invalid links should trigger a panic.
+func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	// If previously created, it has been memoized. let's retrieve it then. otherwise,
 	// let's create it.
 
-	l, ok := r.Links[target.AsElement().ID+"/"+viewname]
+	if isParameter(viewname){
+		panic(viewname + " is not a valid view name.")
+	}
+	
+	l,ok:= r.Links["/"+viewname]
+	if !ok{
+		e := NewElement(viewname, r.outlet.AsElement().ID+"-"+viewname, r.outlet.AsElement().DocType)
+		e.SetData("viewelements",NewList(r.outlet.AsElement()))
+		e.SetData("viewnames", NewList(String(viewname)))
+		e.SetData("uri", String("/"+viewname))
+		l= Link{e}
+	}
+	
+
+	for _,m:= range modifiers{
+		l = m(l)
+	}
+	
+
+	l, ok= r.Links[l.URI()]
 	if ok {
 		return l
 	}
+	e:= l.AsElement()
+	DEBUG(e)
 
-	e := NewElement(viewname, target.AsElement().ID+"-"+viewname, r.outlet.AsElement().DocType)
-	if target.AsElement().Mountable() {
-		e.Set("event", "verified", Bool(true))
+	// Let's retrieve the target viewElement and corresponding view name
+	v,ok:= e.GetData("viewelements")
+	if !ok{
+		panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
 	}
+	n,ok:= e.GetData("viewnames")
+	if !ok{
+		panic("Link creation seems to be incomplete. The list of viewnames for the path it denotes should be present.")
+	}
+	vl:= v.(List)
+	nl:= n.(List)
+	view:= ViewElement{vl[len(vl)-1].(*Element)}
+	viewname = string(nl[len(nl)-1].(String))
+
+
+
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		if target.hasStaticView(viewname) { // viewname corresponds to an existing view
+		e:= evt.Origin()
+		if view.hasStaticView(viewname) { // viewname corresponds to an existing view
 			_, ok := e.Get("event", "verified")
 			if !ok {
 				e.Set("event", "verified", Bool(true))
 			}
 		}
 
-		if _, ok := target.hasParameterizedView(); ok {
+		if _, ok := view.hasParameterizedView(); ok {
 			_, ok := e.Get("event", "verified")
 			if !ok {
 				e.Set("event", "verified", Bool(true))
@@ -759,7 +831,7 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 
 		return false
 	})
-	e.Watch("event", "mounted", target.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+	e.WatchASAP("event", "mountable", view.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
 		b := evt.NewValue().(Bool)
 		if !b {
 			return false
@@ -768,12 +840,9 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 	}))
 	e.Watch("data", "currentroute", r.outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
-		var link string
-		if target.AsElement().Route() == "" {
-			link = "/" + viewname
-		} else {
-			link = target.AsElement().Route() + "/" + target.AsElement().ID + "/" + viewname
-		}
+		lnk,_:= e.GetData("uri")
+		link:= string(lnk.(String))
+		
 		if string(route) == link {
 			e.SyncUISetData("active", Bool(true))
 		} else {
@@ -782,16 +851,67 @@ func (r *Router) NewLink(target ViewElement, viewname string) Link {
 
 		return false
 	}))
-	l = Link{e, target, viewname, r}
+
 	r.Links[l.URI()] = l
+
+	r.outlet.AsElement().Watch("event","activate",e,NewMutationHandler(func(evt MutationEvent)bool{
+		r.GoTo(l.URI())
+		return false
+	}))
+
 
 	return l
 }
+
+// Path is a link modifying function that allows to link to a more deeply nested app state,
+// specified by the nested ViewElement and the corresponding name for the view that the latter 
+// should display. This creates a path fragment.
+//
+// Note that if the link being modified does not target a direct parent of the Path fragment ViewELement,
+// the link will be invalid.
+// Hence, it is not possible to skip an intermediary path fragment or add them out-of-order.
+func Path(ve ViewElement, viewname string) func(Link)Link{
+	if isParameter(viewname){
+		panic(viewname + " is not a valid view name.")
+	}
+	return func(l Link)Link{
+		e:= l.AsElement()
+		ne:= NewElement(viewname, ve.AsElement().ID+"-"+viewname, e.DocType)
+
+		v,ok:=e.GetData("viewelements")
+		if !ok{
+			panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
+		}
+		n,ok:= e.GetData("viewnames")
+		if !ok{
+			panic("Link creation seems to be incomplete. The list of viewnames for the path it denotes should be present.")
+		}
+		vl:= v.(List)
+		nl:= n.(List)
+		vl = append(vl,ve.AsElement())
+		nl = append(nl,String(viewname))
+		ne.SetData("viewelements",vl)
+		ne.SetData("viewnames",nl)
+		uri:="/" + string(nl[0].(String))
+		for i,velem:= range vl{
+			if i==0{
+				continue
+			}
+			id:= velem.(*Element).ID
+			vname:= string(nl[i].(String))
+			uri = "/" + id + "/" + vname
+		}
+		ne.SetData("uri",String(uri))
+		return Link{ne}
+	}
+}
+
 
 func(r *Router) RetrieveLink(URI string) (Link,bool){
 	l, ok := r.Links[URI]
 	return l,ok	
 }
+
 
 /*
 

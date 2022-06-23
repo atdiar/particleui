@@ -14,10 +14,10 @@ var (
 	DEBUG         = log.Print // DEBUG
 )
 
-// NewIDgenerator returns a function used to create new IDs for Elements. It uses
-// a Pseudo-Random Number Generator (PRNG) as it is disirable to have as deterministic
+// NewIDgenerator returns a function used to create new IDs. It uses
+// a Pseudo-Random Number Generator (PRNG) as it is desirable to have as deterministic
 // IDs as possible. Notably for the mostly tstaic elements.
-// Evidently, as users navigate the app differently and mya create new Elements
+// Evidently, as users navigate the app differently and may create new Elements
 // in a different order (hence calling the ID generator is path-dependent), we
 // do not expect to have the same id structure for different runs of a same program.
 func NewIDgenerator(seed int64) func() string {
@@ -542,6 +542,7 @@ func finalize(child *Element, attached bool) {
 	for _, descendant := range child.Children.List {
 		finalize(descendant, attached)
 	}
+	child.computeRoute() // called for its side-effect i.e. computing the ViewAccessPath
 }
 
 // detach will unlink an Element from its parent. If the element was in a view,
@@ -1460,18 +1461,18 @@ func EnablePropertyAutoInheritance() string {
 	return "propertyinheritance"
 }
 
-// Route returns the path to an Element.
+// computeRoute returns the path to an Element.
 // If the path to an Element includes a parameterized view, the returned route is
 // parameterized as well.
 //
 // Important notice: views that are nested within a fixed element use that Element ID for routing.
 // In effect, the id acts as a namespace.
 // In order for links using the routes to these views to not be breaking between refresh/reruns of an app (hard requirement for online link-sharing), the ID of the parent element
-// should be generated so as to not change. Using a PRNG-based ID generator is very likely to not be a good-fit here.
+// should be generated so as to not change. Using a PRNG-based ID generator is very unlikely to be a good-fit here.
 //
 // For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use an ID generator but probably reuse the tweet ID gotten via http call for each Element.
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
-func (e *Element) Route() string {
+func (e *Element) computeRoute() string {
 	var uri string
 	e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
 	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes) == 0 {
@@ -1584,23 +1585,6 @@ func computePath(p *viewNodes, v *viewAccessNode) *viewNodes {
 	return p
 }
 
-/*
-unc(v *viewAccessNode) LinkView(any ViewElement,viewname string){
-	e:= any.AsElement()
-
-	insert:= newViewAccessNode(e,viewname)
-	insert.previous = e.ViewAccessNode.previous
-	v.previous = insert
-}
-
-func(v *viewAccessNode) Link(e *Element){
-	if !e.isViewElement(){
-		v.previous = e.ViewAccessNode.previous
-		return
-	}
-}
-
-*/
 
 type viewNodes struct {
 	Nodes []viewNode
