@@ -1713,11 +1713,6 @@ func (a Anchor) SetHREF(target string) Anchor {
 }
 
 func (a Anchor) FromLink(link ui.Link) Anchor {
-	// Check if link is already verified
-	/*_, ok := link.AsElement().Get("event", "verified")
-	if ok {
-		a.SetHREF(link.URI())
-	}*/
 	a.AsElement().WatchASAP("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI())
 		return false
