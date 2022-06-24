@@ -784,18 +784,16 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 		l= Link{e}
 	}
 	
-
 	for _,m:= range modifiers{
 		l = m(l)
 	}
 	
 
-	l, ok= r.Links[l.URI()]
+	ll, ok:= r.Links[l.URI()]
 	if ok {
-		return l
+		return ll
 	}
 	e:= l.AsElement()
-	DEBUG(e)
 
 	// Let's retrieve the target viewElement and corresponding view name
 	v,ok:= e.GetData("viewelements")
@@ -814,15 +812,17 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 
 
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		e:= evt.Origin()
-		if view.hasStaticView(viewname) { // viewname corresponds to an existing view
+		o:= ViewElement{evt.Origin()}
+		if o.hasStaticView(viewname) { // viewname corresponds to an existing view
 			_, ok := e.Get("event", "verified")
+			DEBUG(viewname, ok)
 			if !ok {
 				e.Set("event", "verified", Bool(true))
+				return false
 			}
 		}
 
-		if _, ok := view.hasParameterizedView(); ok {
+		if _, ok := o.hasParameterizedView(); ok {
 			_, ok := e.Get("event", "verified")
 			if !ok {
 				e.Set("event", "verified", Bool(true))
