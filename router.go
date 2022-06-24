@@ -766,7 +766,8 @@ func (l Link) watchable() {}
 // /viewname/nestdeviewElementA/nestedviewname2...
 //
 // Note that such a Link object does not offer any guarantees on its validity.
-// However, link creation is verified at app startups and invalid links should trigger a panic.
+// However, link creation is verified at app startup and invalid links should trigger a panic.
+// (for links created dynamically during runtime, there is no check)
 func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	// If previously created, it has been memoized. let's retrieve it then. otherwise,
 	// let's create it.
@@ -800,29 +801,19 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	if !ok{
 		panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
 	}
-	n,ok:= e.GetData("viewnames")
+	/*n,ok:= e.GetData("viewnames")
 	if !ok{
 		panic("Link creation seems to be incomplete. The list of viewnames for the path it denotes should be present.")
-	}
+	}*/
 	vl:= v.(List)
-	nl:= n.(List)
+	//nl:= n.(List)
 	view:= ViewElement{vl[len(vl)-1].(*Element)}
-	viewname = string(nl[len(nl)-1].(String))
+	//viewname = string(nl[len(nl)-1].(String))
 
 
 
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		o:= ViewElement{evt.Origin()}
-		if o.hasStaticView(viewname) { // viewname corresponds to an existing view
-			_, ok := e.Get("event", "verified")
-			DEBUG(viewname, ok)
-			if !ok {
-				e.Set("event", "verified", Bool(true))
-				return false
-			}
-		}
-
-		if _, ok := o.hasParameterizedView(); ok {
+		if isValidLink(Link{e}){
 			_, ok := e.Get("event", "verified")
 			if !ok {
 				e.Set("event", "verified", Bool(true))
@@ -912,6 +903,47 @@ func(r *Router) RetrieveLink(URI string) (Link,bool){
 	return l,ok	
 }
 
+
+func isValidLink(l Link) bool{
+	e:= l.AsElement()
+	v,ok:=e.GetData("viewelements")
+	if !ok{
+		return false
+	}
+	n,ok:= e.GetData("viewnames")
+	if !ok{
+		return false
+	}
+	vl:= v.(List)
+	nl:= n.(List)
+
+	targetview:= vl[len(vl)-1].(*Element)
+	viewname := string(nl[len(nl)-1].(String))
+
+	vap:= targetview.ViewAccessPath.Nodes
+	if len(vap) != len(vl)-1{
+		DEBUG("viewaccespath and link depth do not match. Some view might have been skipped")
+		return false
+	}
+	for i,n:= range vap{
+		vnode:= vl[i].(*Element)
+		if vnode.ID != n.Element.ID{
+			return false
+		}
+		vname:= string(nl[i].(String))
+		if !hasView(ViewElement{vnode},vname){
+			return false
+		}
+	}
+	return hasView(ViewElement{targetview},viewname)
+}
+
+func hasView(v ViewElement, vname string)bool{
+	if _,ok:=v.hasParameterizedView();ok{
+		return true
+	}
+	return  v.hasStaticView(vname)
+}
 
 /*
 
