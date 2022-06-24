@@ -10,7 +10,7 @@ These properties can be bound to each other (reactivity, mutation observing, it'
 Typically an element can watch its children constituents for property change.
 The children elements are encapsulated so that they expose an interface to the outer parent for communication via getter and setters.
 
-Behaviors can be specified via the adjunction of Event Handlers to an Element.
+Behaviors can be specified by attaching Event Handlers to an Element.
 These event handlers are modeled after the Basic DOM event.
 
 (tbc ...)
