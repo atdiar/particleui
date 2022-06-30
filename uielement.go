@@ -64,6 +64,7 @@ type ElementStore struct {
 	ByID                     map[string]*Element
 
 	PersistentStorer map[string]storageFunctions
+	RuntimePropTypes map[string]bool
 
 	Global *Element // the global Element stores the global state shared by all *Elements
 }
@@ -111,9 +112,17 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
 	global := NewElement("global", storeid, doctype)
-	es := &ElementStore{doctype, make(map[string]func(name string, id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), global}
+	es := &ElementStore{doctype, make(map[string]func(name string, id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
+	es.EventTypes["event"]=true
+	es.EventTypes["navigation"]=true
 	Stores.Set(es)
 	return es
+}
+
+// AddRuntimePropType allows for the definition of a specific type of *Element properties that can
+// not be stored in memory as they are purely a runtime concept such as "event".
+func(e *ElementStore) AddRuntimePropType(name string) *ElementStore{
+	e.RuntimePropTypes[name]=true
 }
 
 // ApplyGlobalOption registers a Constructor option that will be called for every
@@ -1197,6 +1206,11 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	e.PropMutationHandlers.Add(e.ID+"/"+"internals"+"/"+"deleted", h)
 }
 
+func isRuntimeCategory(e *ElementStore, category string) bool{
+	_,ok:= e.RuntimePropTypes[category]
+	return ok
+}
+
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
@@ -1237,7 +1251,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && category != "event" {
+		if ok && isRuntimeCategory(e.ElementStore,category) {
 			storage.Store(e, category, propname, value, flags...)
 		}
 	}

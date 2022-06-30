@@ -638,7 +638,40 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 
 	r.History.NewState = ns
 	r.History.RecoverState = rs
-	//r.History.Length = 50
+	
+	// Add default navigation error handlers
+	// notfound:
+	ui.AddView("notfound",NewDiv("notfound",r.Outlet.AsElement().ID+"-notfound").SetText("Page Not Found."))(r.Outlet.AsElement())
+	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
+		if !ok{
+			panic("targetview should have been set")
+		}
+		tv:= ui.ViewElement{v.(*ui.Element)}
+		if tv.HasStaticView("notfound"){
+			tv.ActivateView("notfound")
+			return false
+		}
+		r.Outlet.ActivateView("notfound")
+		return false
+	}))
+
+	// unauthorized
+	ui.AddView("unauthorized",NewDiv("unauthorized",r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
+	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
+		if !ok{
+			panic("targetview should have been set")
+		}
+		tv:= ui.ViewElement{v.(*ui.Element)}
+		if tv.HasStaticView("unauthorized"){
+			tv.ActivateView("unauthorized")
+			return false // DEBUG TODO return true?
+		}
+		r.Outlet.ActivateView("unauthorized")
+		return false
+	}))
+
 	return r
 }
 
@@ -1712,9 +1745,17 @@ func (a Anchor) SetHREF(target string) Anchor {
 	return a
 }
 
-func (a Anchor) FromLink(link ui.Link) Anchor {
+func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
+	var hash string
+	var id string
+	if len(targetid) ==1{
+		if targetid[0] != ""{
+			id = targetid[0]
+			hash = "#"+targetid[0]
+		}
+	}
 	a.AsElement().WatchASAP("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		a.SetHREF(link.URI())
+		a.SetHREF(link.URI()+hash)
 		return false
 	}))
 
@@ -1732,7 +1773,7 @@ func (a Anchor) FromLink(link ui.Link) Anchor {
 			}
 		}
 		evt.PreventDefault()
-		link.Activate()
+		link.Activate(id)
 		return false
 	}), NativeEventBridge)
 

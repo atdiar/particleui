@@ -69,7 +69,7 @@ func (v ViewElement) SetDefaultView(name string) ViewElement { // TODO DEBUG OnU
 	}
 	ve := v.AsElement()
 	ve.SetDataSetUI("defaultview", String(name))
-	ve.OnUnmount(NewMutationHandler(func(evt MutationEvent) bool { // TODO should this happen on Unmounted rather?
+	ve.OnMount(NewMutationHandler(func(evt MutationEvent) bool {
 		n, ok := ve.Get("ui", "defaultview")
 		if !ok {
 			return false
@@ -128,6 +128,10 @@ func (v ViewElement) hasStaticView(name string) bool { // name should not start 
 	return false
 }
 
+func(v ViewElement) HasStaticView(name string) bool{
+	return v.hasStaticView(name)
+}
+
 // ActivateView sets the active view of a ViewElement.
 // If no View exists for the name argument or is not authorized, an error is returned.
 func (v ViewElement) ActivateView(name string) error {
@@ -156,6 +160,13 @@ func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	}))
+}
+
+func(v ViewElement) IsParameterizedView(viewname string) bool{
+	if _,ok:= v.hasParameterizedView();!ok{
+		return false
+	}
+	return !v.hasStaticView(viewname)
 }
 
 func (e *Element) addView(v View) *Element {
@@ -256,4 +267,36 @@ func (e *Element) activateView(name string) error {
 	delete(e.InactiveViews, name)
 	e.SetUI("activeview", String(name))
 	return nil
+}
+
+// AddView is an *Element modifier that is used to add an activable named view to an element.
+func AddView(name string, elements ...AnyElement) func(*Element)*Element{
+	return func(e *Element)*Element{
+		v:= NewView(name,convertAny(elements...)...)
+		if e.isViewElement(){
+			ViewElement{e}.AddView(v)
+			return e
+		}
+		NewViewElement(e,v)
+		return e
+	}
+}
+
+
+// AddDefaultView is an *Element modifier that defines a View for an *Element.
+// It gets activated each time the *Element gets mounted.
+func AddDefaultView(name string, elements ...AnyElement) func(*Element)*Element{
+	return func(e *Element)*Element{
+		e = AddView(name, elements...)(e)
+		ViewElement{e}.SetDefaultView(name)
+		return e
+	}
+}
+
+func convertAny(elements ...AnyElement) []*Element{
+	res:= make([]*Element,0,len(elements))
+	for _,e:= range elements{
+		res = append(res,e.AsElement())
+	}
+	return res
 }
