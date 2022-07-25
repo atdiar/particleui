@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/url"
@@ -14,6 +15,13 @@ var (
 	ErrUnauthorized     = errors.New("Unauthorized")
 	ErrFrameworkFailure = errors.New("Framework Failure")
 )
+// NavContext holds the navigation context. It is cancelled before being reinitialized on 
+// Each new navigation start.
+var NavContext, CancelNav = newCancelableNavContext()
+
+func newCancelableNavContext()(context.Context, context.CancelFunc){
+	return  context.WithCancel(context.Background())
+}
 
 // router is a singleton as only one router can be created at a time.
 // It can be retrieved by a call to GetRouter
@@ -94,6 +102,12 @@ func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*R
 		return false
 	}))
 
+	r.Outlet.AsElement().Root().Watch("event","navigationstart",r.Outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
+		CancelNav()
+		NavContext,CancelNav = newCancelableNavContext()
+		return false
+	}))
+
 	for _,option:= range options{
 		r = option(r)
 	}
@@ -112,7 +126,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 
 	// 1. Let's see if the URI matches any of the registered routes.
 	v,a, err := r.Routes.match(newroute)
-	r.Outlet.AsElement().Root().Set("navigation", "targetview", v)
+	r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
 	if err != nil {
 		log.Print(err) // DEBUG
 		if err == ErrNotFound {
@@ -158,8 +172,7 @@ func (r *Router) GoTo(route string) {
 	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
-		log.Print("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
-		return
+		DEBUG("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
 	}
 
 	r.Outlet.AsElement().Root().SetData("history", r.History.Value())
@@ -208,9 +221,9 @@ func Hijack(route, destination string) func(*Router)*Router{
 	}
 }
 
-// OnNotfound reacts to the navigation 'notfound' property being set. It can allow
-// to go to an alternate route for instance, which could display a "page not found"
-// error message for example. This behavior would be defined in the MutationHandler.
+// OnNotfound reacts to the navigation 'notfound' property being set. It can enable the display of 
+// a "page not found" view.
+// It is not advised to navigate here. It is better to represent the app error state directly.
 func (r *Router) OnNotfound(h *MutationHandler) *Router {
 	r.Outlet.AsElement().Root().Watch("navigation", "notfound", r.Outlet.AsElement().Root(), h)
 	return r
@@ -218,6 +231,7 @@ func (r *Router) OnNotfound(h *MutationHandler) *Router {
 
 // OnUnauthorized reacts to the navigation state being set to unauthorized.
 // It may occur when there are insufficient rights to displaya given view for instance.
+// It is not advised to navigate here. It is better to represent the app error state directly.
 func (r *Router) OnUnauthorized(h *MutationHandler) *Router {
 	r.Outlet.AsElement().Root().Watch("navigation", "unauthorized", r.Outlet.AsElement().Root(), h)
 	return r
@@ -363,7 +377,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v, a, err := r.Routes.match(newroute)
-		r.Outlet.AsElement().Root().Set("navigation", "targetview", v)
+		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {

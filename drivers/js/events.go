@@ -41,6 +41,8 @@ func DefaultGoEventTranslator(evt ui.Event) js.Value {
 var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 	// Let's create the callback that will be called from the js side
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		ui.Lock.Lock()
+		defer ui.Lock.Unlock()
 		evt := args[0]
 		evt.Call("stopPropagation")
 

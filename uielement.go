@@ -28,6 +28,7 @@ func NewIDgenerator(seed int64) func() string {
 	}
 }
 
+
 // Stores holds a list of ElementStore. Every newly created ElementStore should be
 // listed here by defauklt.
 var Stores = newElementStores()
@@ -113,16 +114,18 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 func NewElementStore(storeid string, doctype string) *ElementStore {
 	global := NewElement("global", storeid, doctype)
 	es := &ElementStore{doctype, make(map[string]func(name string, id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
-	es.EventTypes["event"]=true
-	es.EventTypes["navigation"]=true
+	es.RuntimePropTypes["event"]=true
+	es.RuntimePropTypes["navigation"]=true
+	es.RuntimePropTypes["runtime"]=true
 	Stores.Set(es)
 	return es
 }
 
-// AddRuntimePropType allows for the definition of a specific type of *Element properties that can
+// AddRuntimePropType allows for the definition of a specific category of *Element properties that can
 // not be stored in memory as they are purely a runtime concept such as "event".
 func(e *ElementStore) AddRuntimePropType(name string) *ElementStore{
 	e.RuntimePropTypes[name]=true
+	return e
 }
 
 // ApplyGlobalOption registers a Constructor option that will be called for every
@@ -294,6 +297,28 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		nil,
 	}
+	e = WithFetchSupport(e)
+	return e
+}
+
+func WithFetchSupport(e *Element)*Element{
+	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
+		e.Set("event","fetch", Bool(true))
+		return false
+	}))
+
+	e.OnFetch(NewMutationHandler(func(evt MutationEvent)bool{
+		e.Delete("runtime","fetchlist")
+		return false
+	}))
+
+	e.Watch("runtime","fetchlist",e,NewMutationHandler(func(evt MutationEvent)bool{
+		if evt.NewValue() == Value(nil){
+			return true
+		}
+		evt.Origin().checkFetchCompletion()
+		return false
+	}))
 	return e
 }
 
@@ -962,6 +987,21 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	return e
 }
 
+
+// WatchOnce allows to have a mutation handler that runs only once for the occurence of a mutation.
+// Important note; it does not necessarily run for the first mutation. The property change tracking
+// might have been added late, after a few mutations had already occured.
+
+func(e *Element) WatchOnce(category string, propname string, owner Watchable, h *MutationHandler) *Element{
+	var g *MutationHandler
+	g= NewMutationHandler(func(evt MutationEvent)bool{
+		b:= h.Handle(evt)
+		evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
+		return b
+	})
+	return e.Watch(category,propname,owner,g)
+}
+
 // WatchASAP is similar to watch but triggers the callback as soon as possible,
 // if a value has been detected for the property, while Watch awaits for a
 // mutation event to occur.
@@ -1422,6 +1462,8 @@ func LoadProperty(e *Element, category string, propname string, proptype string,
 // Delete removes the property stored for the given category if it exists.
 // Inherited properties cannot be deleted.
 // Default properties cannot be deleted either for now.
+// Beware: most Mutation handlers do not handle the case of a deleted property.
+// It is advisable to only use this when one hasd control over the mutation handlers in use.
 func (e *Element) Delete(category string, propname string) {
 	oldvalue, _ := e.Get(category, propname)
 	e.Properties.Delete(category, propname)

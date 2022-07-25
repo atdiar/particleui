@@ -672,8 +672,16 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 		return false
 	}))
 
+	// appfailure
+	afd:= NewDiv("appfailure","ParticleUI-appfailure").SetText("App Failure")
+	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		r.Outlet.AsElement().Root().SetChildren(afd)
+		return false
+	}))
+
 	return r
 }
+
 
 var newObservable = Elements.NewConstructor("observable",func(name string, id string) *ui.Element{
 	o:= ui.NewObservable(id)
@@ -2554,7 +2562,7 @@ type OrderedList struct {
 	ui.BasicElement
 }
 
-func (l OrderedList) SetValue(lobjs ui.ListofObjects) OrderedList {
+func (l OrderedList) SetValue(lobjs ui.List) OrderedList {
 	l.AsElement().Set("data", "value", lobjs)
 	return l
 }
@@ -3047,7 +3055,8 @@ func RemoveAttribute(target *ui.Element, name string) {
 	native.Value.Call("removeAttribute", name)
 }
 
-// Buttonify turns an Element into a clickable link
+
+// Buttonify turns an Element into a clickable non-anchor link
 func Buttonify(any ui.AnyElement, link ui.Link) {
 	callback := ui.NewEventHandler(func(evt ui.Event) bool {
 		link.Activate()

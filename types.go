@@ -327,7 +327,7 @@ func NewList(val ...Value) List {
 	return List(l)
 }
 
-type ListofObjects List
+/* type ListofObjects List
 
 func (l ListofObjects) discriminant() discriminant { return "particleui" }
 func (l ListofObjects) RawValue() Object {
@@ -383,6 +383,8 @@ func (l ListofObjects) Get(index int) Object {
 	}
 	return o
 }
+
+*/
 
 func Copy(v Value) Value {
 	o := NewObject()
