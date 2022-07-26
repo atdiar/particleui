@@ -78,7 +78,7 @@ func(e *Element) FetchData(propname string, req *http.Request, responsehandler f
 func(e *Element) SetDataFromURL(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
 	req,err:= http.NewRequestWithContext(NavContext,"GET",url,nil)
 	if err!= nil{
-		
+		panic(url + " is malformed most likely. Unable to create new request")
 	}
 	e.FetchData(propname,req,responsehandler,noprefetch...)
 }

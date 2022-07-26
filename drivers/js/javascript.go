@@ -639,6 +639,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	r.History.NewState = ns
 	r.History.RecoverState = rs
 	
+	
 	// Add default navigation error handlers
 	// notfound:
 	ui.AddView("notfound",NewDiv("notfound",r.Outlet.AsElement().ID+"-notfound").SetText("Page Not Found."))(r.Outlet.AsElement())

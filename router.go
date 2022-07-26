@@ -652,7 +652,7 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 
 	if ls%2 != 1 {
 		DEBUG("Incorrect URI scheme")
-		return r.ViewElement,nil, ErrNotFound
+		return targetview,nil, ErrNotFound
 	}
 	if ls > 1 {
 		viewcount := (ls - ls%2) / 2

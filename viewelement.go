@@ -69,7 +69,7 @@ func (v ViewElement) SetDefaultView(name string) ViewElement { // TODO DEBUG OnU
 	}
 	ve := v.AsElement()
 	ve.SetDataSetUI("defaultview", String(name))
-	ve.OnMount(NewMutationHandler(func(evt MutationEvent) bool {
+	ve.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
 		n, ok := ve.Get("ui", "defaultview")
 		if !ok {
 			return false
