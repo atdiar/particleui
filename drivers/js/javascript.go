@@ -1773,6 +1773,7 @@ func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
 		return false
 	}))
 
+
 	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
 		v:=evt.Value().(ui.Object)
 		rb,ok:= v.Get("ctrlKey")
@@ -1793,6 +1794,17 @@ func (a Anchor) OnActive(h *ui.MutationHandler) Anchor {
 	a.AsElement().WatchASAP("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if !b {
+			return false
+		}
+		return h.Handle(evt)
+	}))
+	return a
+}
+
+func (a Anchor) OnInactive(h *ui.MutationHandler) Anchor {
+	a.AsElement().WatchASAP("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		b := evt.NewValue().(ui.Bool)
+		if b {
 			return false
 		}
 		return h.Handle(evt)

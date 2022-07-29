@@ -297,11 +297,11 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		nil,
 	}
-	e = WithFetchSupport(e)
+	e = withFetchSupport(e)
 	return e
 }
 
-func WithFetchSupport(e *Element)*Element{
+func withFetchSupport(e *Element)*Element{
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
 		e.Set("event","fetch", Bool(true))
 		return false
@@ -322,7 +322,7 @@ func WithFetchSupport(e *Element)*Element{
 	return e
 }
 
-// Root returns the top-most eklement in the *Element tree.
+// Root returns the top-most element in the *Element tree.
 // All navigation properties are registred on it.
 func (e *Element) Root() *Element {
 	return e.root
@@ -1291,7 +1291,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && isRuntimeCategory(e.ElementStore,category) {
+		if ok && !isRuntimeCategory(e.ElementStore,category) {
 			storage.Store(e, category, propname, value, flags...)
 		}
 	}

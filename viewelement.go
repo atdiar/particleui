@@ -60,6 +60,8 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 			e.Global.Set("internals", "views", list)
 		}
 	}
+	
+
 	return v
 }
 
