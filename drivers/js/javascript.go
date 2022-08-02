@@ -352,6 +352,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(name string, id
 			return true
 		}
 		jswindow.Get("document").Set("title", string(newtitle))
+
 		return false
 	})
 	e.Watch("ui", "title", e, h)
@@ -466,7 +467,6 @@ func (n NativeElement) SetChildren(children ...*ui.Element) {
 		v, ok := child.Native.(NativeElement)
 		if !ok {
 			panic("wrong format for native element underlying objects.Cannot append " + child.Name)
-			return
 		}
 		fragment.Call("append", v.Value)
 	}
@@ -780,6 +780,28 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 		return false
 	}))
 
+	// makes ViewElements focusable (focus management support)
+	e.Watch("internals", "views",e.Global,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		l:= evt.NewValue().(ui.List)
+		view:= l[len(l)-1].(*ui.Element)
+		SetAttribute(view,"tabindex","-1")
+		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			e.SetUI("focus",view)
+			return false
+		}))
+
+		return false
+	}))
+
+	ui.UseRouter(e,func(r *ui.Router){
+		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
+			r.History.Set("ui","focus",evt.Target())
+			return false
+		}),NativeEventBridge)
+	})
+
+	
+
 	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		/*router := ui.GetRouter()
 		e.WatchASAP("ui","history",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -822,24 +844,34 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 		}), NativeEventBridge)
 
 		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			t, ok := router.History.Get(e.ID, "scrollTop")
-			if !ok {
+			t, oktop := router.History.Get(e.ID, "scrollTop")
+			l, okleft := router.History.Get(e.ID, "scrollLeft")
+
+			if !oktop || !okleft {
 				ejs.Set("scrollTop", 0)
 				ejs.Set("scrollLeft", 0)
-				return false
-			}
-			l, ok := router.History.Get(e.ID, "scrollLeft")
-			if !ok {
-				ejs.Set("scrollTop", 0)
-				ejs.Set("scrollLeft", 0)
-				return false
-			}
-			top := t.(ui.Number)
-			left := l.(ui.Number)
+			} else{
+				top := t.(ui.Number)
+				left := l.(ui.Number)
 
-			ejs.Set("scrollTop", float64(top))
-			ejs.Set("scrollLeft", float64(left))
-
+				ejs.Set("scrollTop", float64(top))
+				ejs.Set("scrollLeft", float64(left))
+			}
+			
+			// focus restoration if applicable
+			v,ok:= router.History.Get("ui","focus")
+			if !ok{
+				v,ok= e.Get("ui","focus")
+				if !ok{
+					DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
+					return false
+				}
+			}
+			el:=v.(*ui.Element)
+			el = Elements.GetByID(el.ID)
+			if el != nil && el.Mounted(){
+				JSValue(el).Call("focus")
+			}
 			return false
 		})
 		e.Watch("event", "navigationend", e, h)
@@ -1014,6 +1046,30 @@ func isPersisted(e *ui.Element) bool{
 	store := jsStore{js.Global().Get(s)}
 	_, ok := store.Get(e.ID)
 	return ok
+}
+
+var AriaChangeAnnouncer =  defaultAnnouncer()
+
+func defaultAnnouncer() Div{
+	a:=NewDiv("announcer","announcer")
+	SetAttribute(a.AsElement(),"aria-live","polite")
+	SetAttribute(a.AsElement(),"aria-atomic","true")
+
+	a.AsElement().OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		w:= GetWindow().AsElement()
+		evt.Origin().Watch("ui","title",w,ui.NewMutationHandler(func(tevt ui.MutationEvent)bool{
+			title:= string(tevt.NewValue().(ui.String))
+			Div{ui.BasicElement{evt.Origin()}}.SetText(title)
+			return false
+		}))
+		return false
+	}))
+	return a
+}
+
+
+func AriaMakeAnnouncement(message string){
+	AriaChangeAnnouncer.SetText(message)
 }
 
 // Tooltip defines the type implementing the interface of a tooltip ui.Element.

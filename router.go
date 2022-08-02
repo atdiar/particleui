@@ -158,9 +158,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 }
 
 // GoTo changes the application state by updating the current route
-// A call to this method is generally expected to be successful.
-// However if one wants to be sure, it is advised to use the Match method beforehand.
-// It allows to ascertain that a route is accessible.
+// To make sure that the route provided as argument exists, use the match method.
 func (r *Router) GoTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
