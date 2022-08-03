@@ -450,20 +450,12 @@ func (e *Element) Handle(evt Event) bool {
 }
 
 // DispatchEvent is used typically to propagate UI events throughout the ui tree.
-// If a nativebinding (type NativeEventBridge) is provided, the event will be dispatched
-// on the native host only using the nativebinding function.
 //
-// It may require an event object to be created from the native event object implementation.
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
-func (e *Element) DispatchEvent(evt Event, nativebinding NativeDispatch) *Element {
+func (e *Element) DispatchEvent(evt Event) *Element {
 	if !e.Mounted() {
 		panic("FAILURE: element notmounted? " + e.ID)
-		return e
-	}
-	if nativebinding != nil {
-		nativebinding(evt)
-		return e
 	}
 
 	if e.path == nil {

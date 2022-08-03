@@ -30,13 +30,24 @@ func (c cancelable) PreventDefault() {
 	c.Value.Call("preventDefault")
 }
 
-func DefaultGoEventTranslator(evt ui.Event) js.Value {
+/*
+func defaultGoEventTranslator(evt ui.Event) js.Value {
 	var event = js.Global().Get("Event").New(evt.Type(), map[string]interface{}{
 		"bubbles":    evt.Bubbles(),
 		"cancelable": evt.Cancelable(),
 	})
 	return event
 }
+
+// NativeDispatch allows for the propagation of a JS event created in Go.
+func NativeDispatch(evt ui.Event, target *ui.Element){
+	e:= defaultGoEventTranslator(evt)
+	t:= JSValue(target)
+	if t.Truthy(){
+		t.Call("dispatchEvent",e)
+	}
+}
+*/
 
 var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 	// Let's create the callback that will be called from the js side
@@ -120,7 +131,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		}
 
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target.AsElement(), nativeEvent, value)
-		target.AsElement().DispatchEvent(goevt, nil)
+		target.AsElement().DispatchEvent(goevt)
 		return nil
 	})
 
