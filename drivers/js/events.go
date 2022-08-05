@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"github.com/atdiar/particleui"
 	"log"
+	"runtime"
+	"fmt"
 )
 
 var DEBUG = log.Print // DEBUG
@@ -20,6 +22,30 @@ var DEBUGJS = func(v js.Value, isJsonString ...bool){
 		return
 	}
 	js.Global().Get("console").Call("log",v)
+}
+
+func SDEBUG(){
+	pc := make([]uintptr, 30)
+	n := runtime.Callers(0, pc)
+	DEBUG(n)
+	if n == 0{
+		return
+	}
+	pc = pc[:n] // pass only valid pcs to runtime.CallersFrames
+	frames := runtime.CallersFrames(pc)
+
+	for {
+		frame, more := frames.Next()
+
+		fmt.Printf("%s\n", frame.Function)
+
+		// Check whether there are more frames to process after this one.
+		if !more {
+			break
+		}
+	}
+
+
 }
 
 type cancelable struct {
@@ -49,15 +75,21 @@ func NativeDispatch(evt ui.Event, target *ui.Element){
 }
 */
 
-var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
+func freelock(){
+	DEBUG("UNLOCKING ====================================================================\n")
+	ui.Lock.Unlock()
+	SDEBUG()
+	DEBUG("UNLOCkED ----------------------------------------------------------------------\n")
+}
+
+var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture bool) {
 	// Let's create the callback that will be called from the js side
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		ui.Lock.Lock()
-		defer ui.Lock.Unlock()
+		
 		evt := args[0]
 		evt.Call("stopPropagation")
 
-		// Time to create the corresponding GoEvent
+		// Let's create the corresponding GoEvent
 		typ := evt.Get("type").String()
 		bubbles := evt.Get("bubbles").Bool()
 		cancancel := evt.Get("cancelable").Bool()
@@ -68,6 +100,17 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 		value = rawvalue
 		targetid := jstarget.Get("id")
 
+		DEBUG(typ,targetid)
+
+		DEBUG("LOCKING ====================================================================\n")
+		ui.Lock.Lock()
+		DEBUG("LOCkED ----------------------------------------------------------------------\n")
+		SDEBUG()
+
+		
+		defer freelock()
+
+
 		if targetid.Truthy() {
 			element := Elements.GetByID(targetid.String())
 			if element != nil {
@@ -76,12 +119,12 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 				return nil
 			}
 		} else {
-			// this might be a stretch... but we assume that the only element without
+			// this might be a stretch... but we assume that the only valid element without
 			// a native side ID is the window in javascript.
 			if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
 				target = GetWindow().AsBasicElement()
 			} else {
-				// the element has probably been deleted on the Go wasm side
+				// the element has probably been deleted on the Go wasm sides
 				return nil
 			}
 		}
@@ -132,17 +175,20 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target.AsElement(), nativeEvent, value)
 		target.AsElement().DispatchEvent(goevt)
+		freelock()
 		return nil
 	})
 
+	/*
+
 	if target.ID != GetWindow().AsElement().ID {
-		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb)
+		js.Global().Get("document").Call("getElementById", target.ID).Call("addEventListener", NativeEventName, cb,capture)
 		if target.NativeEventUnlisteners.List == nil {
 			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
 		}
 		target.NativeEventUnlisteners.Add(NativeEventName, func() {
 			v := js.Global().Get("document").Call("getElementById", target.ID)
-			if !v.IsNull() {
+			if v.Truthy() {
 				v.Call("removeEventListener", NativeEventName, cb)
 			} else {
 				// DEBUG("Call for event listener removal on ", target.ID)
@@ -150,7 +196,7 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			cb.Release()
 		})
 	} else {
-		js.Global().Call("addEventListener", NativeEventName, cb)
+		js.Global().Call("addEventListener", NativeEventName, cb,capture)
 		if target.NativeEventUnlisteners.List == nil {
 			target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
 		}
@@ -159,5 +205,19 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element) {
 			cb.Release()
 		})
 	}
+
+	*/
+	tgt:= JSValue(target)
+	if !tgt.Truthy(){
+		panic("trying to add an event listener to non-existing HTML element on the JS side")
+	}
+	tgt.Call("addEventListener", NativeEventName, cb,capture)
+	if target.NativeEventUnlisteners.List == nil {
+		target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+	}
+	target.NativeEventUnlisteners.Add(NativeEventName, func() {
+		tgt.Call("removeEventListener", NativeEventName, cb)
+		cb.Release()
+	})
 
 }

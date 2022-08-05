@@ -189,7 +189,7 @@ func (e *eventHandlers) Remove(h *EventHandler) *eventHandlers {
 
 type EventHandler struct {
 	Fn      func(Event) bool
-	Capture bool // propagation mode: if false bubbles up, otherwise captured by the top most element and propagate down .
+	Capture bool // propagation mode: if false bubbles up, otherwise captured by the top most element and propagates down.
 
 	Once bool
 }

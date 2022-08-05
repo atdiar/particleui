@@ -794,10 +794,10 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 	}))
 
 	ui.UseRouter(e,func(r *ui.Router){
-		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
+		e.AddEventListener("focus",ui.NewEventHandler(func(evt ui.Event)bool{
 			r.History.Set("ui","focus",evt.Target())
 			return false
-		}),NativeEventBridge)
+		}).ForCapture(),NativeEventBridge)
 	})
 
 	

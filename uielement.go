@@ -1083,6 +1083,8 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 
 }
 */
+
+
 func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
 	e.EventHandlers.RemoveEventHandler(event, handler)
 	if native {
@@ -1093,11 +1095,18 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 	return e
 }
 
+// AddEventListener registers a function to be run each time a given event occurs on an element.
+// Once the Go-defined event handler runs, event propagation stops on the native side. It is picked up 
+// on the Go side however(the event propagates in the UI tree)
+//
+// As such, event delegation, which relies on event propagation by capture or bubbling, does not 
+// require to listen to a native side event.(NativeEventBridge can be nil in that case). At target, 
+// the native event will have been transformed into a pure Go Event.
 func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
 		e.EventHandlers.AddEventHandler(event, handler)
 		if nativebinding != nil {
-			nativebinding(event, e)
+			nativebinding(event, e, handler.Capture)
 		}
 		return false
 	})
