@@ -449,13 +449,21 @@ func (e *Element) Handle(evt Event) bool {
 	return e.EventHandlers.Handle(evt)
 }
 
-// DispatchEvent is used typically to propagate UI events throughout the ui tree.
+// DispatchEvent triggers an Event on a given target Element.
+// If the NativeDispatch variable is nil, the event propagation occurs on the Go side .
+// Otherwise, a native platform event is triggered.
 //
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
 func (e *Element) DispatchEvent(evt Event) *Element {
+	native:= NativeDispatch
 	if !e.Mounted() {
 		panic("FAILURE: element notmounted? " + e.ID)
+	}
+
+	if native != nil {
+		native(evt)
+		return e
 	}
 
 	if e.path == nil {
@@ -1102,11 +1110,12 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler, nativ
 // As such, event delegation, which relies on event propagation by capture or bubbling, does not 
 // require to listen to a native side event.(NativeEventBridge can be nil in that case). At target, 
 // the native event will have been transformed into a pure Go Event.
-func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
+func (e *Element) AddEventListener(event string, handler *EventHandler) *Element {
+	nativebinding:= NativeEventBridge
 	h := NewMutationHandler(func(evt MutationEvent) bool {
 		e.EventHandlers.AddEventHandler(event, handler)
 		if nativebinding != nil {
-			nativebinding(event, e, handler.Capture)
+			nativebinding(event, e, handler.Capture,handler.PropagatedEvents)
 		}
 		return false
 	})

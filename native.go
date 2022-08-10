@@ -1,6 +1,12 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
+
+var (
+	NativeEventBridge NativeEventBridger
+	NativeDispatch NativeDispatcher
+)
+
 type NativeElement interface {
 	AppendChild(child *Element)
 	PrependChild(child *Element)
@@ -9,7 +15,7 @@ type NativeElement interface {
 	RemoveChild(child *Element)
 }
 
-type NativeDispatch func(evt Event, target *Element)
+type NativeDispatcher func(evt Event)
 
 type NativeEventBridge func(event string, target *Element, capture bool) 
 

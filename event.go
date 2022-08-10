@@ -41,6 +41,14 @@ type defaultPreventer interface {
 	PreventDefault()
 }
 
+type propagationStopper interface{
+	StopPropagation()
+}
+
+type propagationImmediateStopper interface{
+	StopImmediatePropagation()
+}
+
 func (e *eventObject) Type() string            { return e.typ }
 func (e *eventObject) Target() *Element        { return e.target }
 func (e *eventObject) CurrentTarget() *Element { return e.currentTarget }
@@ -53,8 +61,16 @@ func (e *eventObject) PreventDefault() {
 	}
 	e.defaultPrevented = true
 }
-func (e *eventObject) StopPropagation() { e.stopped = true }
+func (e *eventObject) StopPropagation() {
+	if v, ok := e.nativeObject.(propagationStopper); ok {
+		v.StopPropagation()
+	} 
+	e.stopped = true 
+}
 func (e *eventObject) StopImmediatePropagation() {
+	if v, ok := e.nativeObject.(propagationImmediateStopper); ok {
+		v.StopImmediatePropagation()
+	} 
 	e.stopped = true
 	e.phase = 0
 }
@@ -68,8 +84,8 @@ func (e *eventObject) Cancelable() bool            { return e.cancelable }
 func (e *eventObject) Native() interface{}         { return e.nativeObject }
 func (e *eventObject) Value() Value               { return e.value }
 
-func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, nativeEvent interface{}, value Value) Event {
-	return &eventObject{typ, target, target, false, bubbles, false, cancelable, 0, nativeEvent, value}
+func NewEvent(typ string, bubbles bool, cancelable bool, target *Element, currentTarget *Element, nativeEvent interface{}, value Value) Event {
+	return &eventObject{typ, target, currentTarget, false, bubbles, false, cancelable, 0, nativeEvent, value}
 }
 
 type EventListeners struct {
@@ -190,7 +206,7 @@ func (e *eventHandlers) Remove(h *EventHandler) *eventHandlers {
 type EventHandler struct {
 	Fn      func(Event) bool
 	Capture bool // propagation mode: if false bubbles up, otherwise captured by the top most element and propagates down.
-
+	
 	Once bool
 }
 
@@ -210,3 +226,4 @@ func (e *EventHandler) TriggerOnce() *EventHandler {
 	e.Once = true
 	return e
 }
+

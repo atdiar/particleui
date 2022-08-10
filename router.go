@@ -432,7 +432,7 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 // Example of JS bridging : the nativeEventBridge should add a popstate event listener to window
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
-func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding NativeEventBridge) {
+func (r *Router) ListenAndServe(eventname string, target *Element) {
 	r.verifyLinkActivation()
 	root := r.Outlet
 
@@ -461,7 +461,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element, nativebinding
 	root.AsElement().Root().Watch("navigation", "routechangerequest", root.AsElement().Root(), r.handler())
 	root.AsElement().Root().Watch("navigation", "routeredirectrequest", root.AsElement().Root(), r.redirecthandler())
 	r.Outlet.AsElement().Root().Set("navigation", "ready", Bool(true))
-	target.AddEventListener(eventname, routeChangeHandler, nativebinding)
+	target.AddEventListener(eventname, routeChangeHandler)
 
 	c := make(chan struct{}, 0)
 	<-c
