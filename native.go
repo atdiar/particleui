@@ -17,7 +17,7 @@ type NativeElement interface {
 
 type NativeDispatcher func(evt Event)
 
-type NativeEventBridge func(event string, target *Element, capture bool) 
+type NativeEventBridger func(event string, target *Element, capture bool) 
 
 type NativeEventUnlisteners struct {
 	List map[string]func()

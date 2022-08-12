@@ -244,9 +244,12 @@ func (e *Element) activateView(name string) error {
 			e.InactiveViews[oldviewname] = NewView(oldviewname, cccl...)
 		}
 		e.ActiveView = ":" + p
-		for _, newchild := range view.Elements().List {
+		/*for _, newchild := range view.Elements().List {
 			e.appendChild(BasicElement{newchild})
 		}
+		*/ // todo Review this as it should work. elements don't seem removed
+		e.SetChildrenElements(view.elements.List...)
+
 		e.SetDataSetUI("viewparameter", String(name))
 		e.SetUI("activeview", String(name))
 		return nil
@@ -263,9 +266,12 @@ func (e *Element) activateView(name string) error {
 
 	// 2. mount the target view
 	e.ActiveView = name
-	for _, child := range newview.Elements().List {
+	/*for _, child := range newview.Elements().List {
 		e.appendChild(BasicElement{child})
-	}
+	}*/ // TODO check this as it does not seem previopus elements were deleted
+
+	e.SetChildrenElements(newview.elements.List...)
+
 	delete(e.InactiveViews, name)
 	e.SetUI("activeview", String(name))
 	return nil

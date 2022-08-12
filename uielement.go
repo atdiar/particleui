@@ -1115,7 +1115,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 	h := NewMutationHandler(func(evt MutationEvent) bool {
 		e.EventHandlers.AddEventHandler(event, handler)
 		if nativebinding != nil {
-			nativebinding(event, e, handler.Capture,handler.PropagatedEvents)
+			nativebinding(event, e, handler.Capture)
 		}
 		return false
 	})

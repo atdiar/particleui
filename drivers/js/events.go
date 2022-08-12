@@ -14,8 +14,7 @@ import (
 	"fmt"
 )
 
-ui.NativeEventBridge = NativeEventBridge
-ui.NativeDispatch = NativeDispatch
+
 
 var DEBUG = log.Print // DEBUG
 var DEBUGJS = func(v js.Value, isJsonString ...bool){
@@ -86,7 +85,7 @@ func NativeDispatch(evt ui.Event){
 }
 
 
-var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture bool) {
+var NativeEventBridge = func(NativeEventName string, listener *ui.Element, capture bool) {
 
 	// Let's create the callback that will be called from the js side
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
@@ -98,9 +97,10 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture
 		typ := evt.Get("type").String()
 		bubbles := evt.Get("bubbles").Bool()
 		cancancel := evt.Get("cancelable").Bool()
+		phase := int(evt.Get("eventPhase").Float())
 
 		var target *ui.Element
-		jstarget := evt.Get("Target")
+		jstarget := evt.Get("target")
 		targetid := jstarget.Get("id")
 
 		var currentTarget *ui.Element
@@ -119,20 +119,49 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture
 			}
 		}()
 
-
-		if currtargetid.Truthy() && targetid.Truthy() {
-			currentTarget = Elements.GetByID(currtargetid.String())
-			target= Elements.GetByID(targetid.String())
-			if target == nil || currentTarget==nil{
+		//DEBUGJS(currtargetid)
+		// DEBUG(phase)
+		if currtargetid.Truthy() {
+			currentTarget= Elements.GetByID(currtargetid.String())
+			if currentTarget == nil {
+				DEBUG("no currenttarget found for this element despite a valid id")
 				return nil
 			}
-
+			if targetid.Truthy() {
+				target = Elements.GetByID(targetid.String())	
+				if target == nil {
+					DEBUG("no target found for this element despite a valid id")
+					return nil
+				}
+			}else{
+				if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
+					target = GetWindow().AsElement()		
+				} else{
+					DEBUG("no target found for this element, no id and it's not the window")
+					return nil
+				}
+			}
+			
 		} else {
 			// this might be a stretch... but we assume that the only valid element without
 			// a native side ID is the window in javascript.
-			if targetid.Truthy() && jscurrtarget.Equal(js.Global().Get("document").Get("defaultView")) {
+			if jscurrtarget.Equal(js.Global().Get("document").Get("defaultView")) {
 				currentTarget = GetWindow().AsElement()
-				target= Elements.GetByID(targetid.String())
+				if targetid.Truthy() {
+					target = Elements.GetByID(targetid.String())	
+					if target == nil {
+						DEBUG("currenttarget is window but no target found for this element despite a valid id")
+						return nil
+					}
+				}else{
+					if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
+						target = GetWindow().AsElement()		
+					} else{
+						//DEBUG("target seems to be #document")
+						//DEBUGJS(jstarget)
+						
+					}
+				}	
 			} else {
 				// the element has probably been deleted on the Go wasm sides
 				DEBUG("no etarget element found for this event")
@@ -157,7 +186,8 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture
 			// the event dispatch.
 			hstate := js.Global().Get("history").Get("state")
 			//DEBUGJS(hstate,true)
-
+			DEBUG("popstate")
+			DEBUGJS(jscurrtarget)
 			if hstate.Truthy() {
 				hstateobj := ui.NewObject()
 				err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
@@ -181,21 +211,21 @@ var NativeEventBridge = func(NativeEventName string, target *ui.Element, capture
 		}
 
 		goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, value)
-		goevt.SetPhase(2)
-		target.AsElement().Handle(goevt)
+		goevt.SetPhase(phase)
+		currentTarget.Handle(goevt)
 		return nil
 	})
 
 
-	tgt:= JSValue(target)
+	tgt:= JSValue(listener)
 	if !tgt.Truthy(){
 		panic("trying to add an event listener to non-existing HTML element on the JS side")
 	}
 	tgt.Call("addEventListener", NativeEventName, cb,capture)
-	if target.NativeEventUnlisteners.List == nil {
-		target.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+	if listener.NativeEventUnlisteners.List == nil {
+		listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
 	}
-	target.NativeEventUnlisteners.Add(NativeEventName, func() {
+	listener.NativeEventUnlisteners.Add(NativeEventName, func() {
 		tgt.Call("removeEventListener", NativeEventName, cb)
 		cb.Release()
 	})

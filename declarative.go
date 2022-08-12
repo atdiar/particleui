@@ -20,7 +20,7 @@ func Children(children ...*Element) func(*Element)*Element{
 // Listen is an *Element modifier that enables an element to listen to a specific event and handle to it.
 func Listen(event string, h *EventHandler) func(*Element)*Element{
 	return func(e *Element) *Element{
-		return e.AddEventListener(event,h,NativeEventBridge)
+		return e.AddEventListener(event,h)
 	}
 }
 

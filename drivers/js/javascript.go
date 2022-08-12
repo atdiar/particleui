@@ -19,6 +19,11 @@ import (
 	"golang.org/x/net/html"
 )
 
+func init(){
+	ui.NativeEventBridge = NativeEventBridge
+	ui.NativeDispatch = NativeDispatch
+}
+
 var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
@@ -566,7 +571,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					router.History.Set(e.ID, "scrollTop", scrolltop)
 					router.History.Set(e.ID, "scrollLeft", scrollleft)
 					return false
-				}), NativeEventBridge)
+				}))
 
 				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 					b, ok := e.Get("event", "shouldscroll")
@@ -642,7 +647,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	
 	// Add default navigation error handlers
 	// notfound:
-	ui.AddView("notfound",NewDiv("notfound",r.Outlet.AsElement().ID+"-notfound").SetText("Page Not Found."))(r.Outlet.AsElement())
+	pnf:= NewDiv("notfound",r.Outlet.AsElement().Root().ID+"-notfound").SetText("Page Not Found.")
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
 		if !ok{
@@ -653,7 +658,11 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			tv.ActivateView("notfound")
 			return false
 		}
-		r.Outlet.ActivateView("notfound")
+		if r.Outlet.HasStaticView("notfound"){
+			r.Outlet.ActivateView("notfound")
+			return false
+		}
+		r.Outlet.AsElement().SetChildren(pnf)
 		return false
 	}))
 
@@ -794,13 +803,14 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 	}))
 
 	ui.UseRouter(e,func(r *ui.Router){
-		e.AddEventListener("focus",ui.NewEventHandler(func(evt ui.Event)bool{
+		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
 			r.History.Set("ui","focus",evt.Target())
+			DEBUG("focus set in history ",evt.Target().ID)
 			return false
-		}).ForCapture(),NativeEventBridge)
+		}))
+		
 	})
-
-	
+		
 
 	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		/*router := ui.GetRouter()
@@ -841,7 +851,7 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 			router.History.Set(e.ID, "scrollTop", scrolltop)
 			router.History.Set(e.ID, "scrollLeft", scrollleft)
 			return false
-		}), NativeEventBridge)
+		}))
 
 		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			t, oktop := router.History.Get(e.ID, "scrollTop")
@@ -861,8 +871,9 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 			// focus restoration if applicable
 			v,ok:= router.History.Get("ui","focus")
 			if !ok{
-				v,ok= e.Get("ui","focus")
-				if !ok{
+				f,ok2:= e.Get("ui","focus")
+				v=f
+				if !ok2{
 					DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
 					return false
 				}
@@ -870,7 +881,18 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 			el:=v.(*ui.Element)
 			el = Elements.GetByID(el.ID)
 			if el != nil && el.Mounted(){
-				JSValue(el).Call("focus")
+				options:= map[string]interface{}{"preventScroll": true}
+				n:= JSValue(e)
+				n.Call("focus",options)
+				// Todo: scroll into view if element is outside viewport
+				if !ok{
+					if !partiallyVisible(n){
+						DEBUG("not in view")
+						DEBUGJS(n)
+						n.Call("scrollIntoView")
+					}
+				}
+					
 			}
 			return false
 		})
@@ -881,6 +903,58 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+/*func FocusAndScrollOnlyIfNecessary(e ui.AnyElement){
+	n:= JSValue(e.AsElement())
+	options:= map[string]interface{}{"preventScroll": true}
+	n.Call("focus",options)
+	if !partiallyVisible(n){
+		n.Call("scrollIntoView")
+	}
+}
+*/
+
+func IsInViewPort(n js.Value) bool{
+	bounding:= n.Call("getBoundingClientRect")
+	top:= int(bounding.Get("top").Float())
+	bottom:= int(bounding.Get("bottom").Float())
+	left:= int(bounding.Get("left").Float())
+	right:= int(bounding.Get("right").Float())
+
+	w:= JSValue(GetWindow().AsElement())
+	var ih int
+	var iw int
+	innerHeight := w.Get("innerHeight")
+	if innerHeight.Truthy(){
+		ih = int(innerHeight.Float())
+		iw = int(w.Get("innerWidth").Float())
+	} else{
+		ih = int(js.Global().Get("document").Get("documentElement").Get("clientHeight").Float())
+		iw = int(js.Global().Get("document").Get("documentElement").Get("clientWidth").Float())
+	}
+	return (top >= 0) && (left >= 0) && (bottom <= ih) && (right <= iw)	
+}
+
+func partiallyVisible(n js.Value) bool{
+	bounding:= n.Call("getBoundingClientRect")
+	top:= int(bounding.Get("top").Float())
+	//bottom:= int(bounding.Get("bottom").Float())
+	left:= int(bounding.Get("left").Float())
+	//right:= int(bounding.Get("right").Float())
+
+	w:= JSValue(GetWindow().AsElement())
+	var ih int
+	var iw int
+	innerHeight := w.Get("innerHeight")
+	if innerHeight.Truthy(){
+		ih = int(innerHeight.Float())
+		iw = int(w.Get("innerWidth").Float())
+	} else{
+		ih = int(js.Global().Get("document").Get("documentElement").Get("clientHeight").Float())
+		iw = int(js.Global().Get("document").Get("documentElement").Get("clientWidth").Float())
+	}
+	return (top >= 0) && (left >= 0) && (top <= ih) && (left <= iw)	
+}
 
 
 // NewDocument returns the root of new js app. It is the top-most element
@@ -1054,6 +1128,7 @@ func defaultAnnouncer() Div{
 	a:=NewDiv("announcer","announcer")
 	SetAttribute(a.AsElement(),"aria-live","polite")
 	SetAttribute(a.AsElement(),"aria-atomic","true")
+	SetInlineCSS(a.AsElement(),"clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; overflow:hidden; position:absolute;white-space:nowrap;width:1px;")
 
 	a.AsElement().OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		w:= GetWindow().AsElement()
@@ -1303,17 +1378,17 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 		})
 
 		if datacapturemode == nil || len(datacapturemode) > 1 {
-			e.AddEventListener("blur", callback, NativeEventBridge)
+			e.AddEventListener("blur", callback)
 			return e
 		}
 		mode := datacapturemode[0]
 		if mode == onInput {
-			e.AddEventListener("input", callback, NativeEventBridge)
+			e.AddEventListener("input", callback)
 			return e
 		}
 
 		// capture textarea value on blur by default
-		e.AddEventListener("blur", callback, NativeEventBridge)
+		e.AddEventListener("blur", callback)
 		return e
 	}
 }
@@ -1841,7 +1916,7 @@ func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
 		evt.PreventDefault()
 		link.Activate(id)
 		return false
-	}), NativeEventBridge)
+	}))
 
 	return a
 }
@@ -3131,7 +3206,7 @@ func Buttonify(any ui.AnyElement, link ui.Link) {
 		link.Activate()
 		return false
 	})
-	any.AsElement().AddEventListener("click", callback, NativeEventBridge)
+	any.AsElement().AddEventListener("click", callback)
 }
 
 /*
