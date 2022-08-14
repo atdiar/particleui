@@ -662,7 +662,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		r.Outlet.AsElement().SetChildren(pnf)
+		r.Outlet.AsElement().Root().SetChildren(pnf)
 		return false
 	}))
 
@@ -854,6 +854,11 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 		}))
 
 		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			newentry,ok:=router.History.Get("internals","new")
+			if !ok{
+				panic("Framework error: state should have a label indicating whether it is newly accesesed or not")
+			}
+			newpageaccess:= newentry.(ui.Bool)
 			t, oktop := router.History.Get(e.ID, "scrollTop")
 			l, okleft := router.History.Get(e.ID, "scrollLeft")
 
@@ -885,7 +890,7 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 				n:= JSValue(e)
 				n.Call("focus",options)
 				// Todo: scroll into view if element is outside viewport
-				if !ok{
+				if newpageaccess{
 					if !partiallyVisible(n){
 						DEBUG("not in view")
 						DEBUGJS(n)
@@ -904,15 +909,31 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-/*func FocusAndScrollOnlyIfNecessary(e ui.AnyElement){
+func Focus(e ui.AnyElement, scrollintoview bool){
+	if !e.AsElement().Mounted(){
+		return
+	}
 	n:= JSValue(e.AsElement())
 	options:= map[string]interface{}{"preventScroll": true}
 	n.Call("focus",options)
-	if !partiallyVisible(n){
-		n.Call("scrollIntoView")
+	if scrollintoview{
+		if !partiallyVisible(n){
+			n.Call("scrollIntoView")
+		}
 	}
 }
-*/
+
+func Autofocus(e *ui.Element) *ui.Element{
+	e.OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().Watch("event","navigationend",evt.Origin().Root(),ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			Focus(e,false) // only applies if element is mounted
+			return false
+		}))
+		return false
+	}))
+	return e
+}
+
 
 func IsInViewPort(n js.Value) bool{
 	bounding:= n.Call("getBoundingClientRect")

@@ -186,8 +186,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			// the event dispatch.
 			hstate := js.Global().Get("history").Get("state")
 			//DEBUGJS(hstate,true)
-			DEBUG("popstate")
-			DEBUGJS(jscurrtarget)
 			if hstate.Truthy() {
 				hstateobj := ui.NewObject()
 				err := json.Unmarshal([]byte(hstate.String()), &hstateobj)

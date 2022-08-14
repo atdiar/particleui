@@ -1047,10 +1047,13 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 	if len(n.Stack) >= n.Length {
 		panic("navstack capacity overflow")
 	}
-
+	if n.Cursor>=0{
+		n.State[n.Cursor].Set("internals","new", Bool(false)) // used to discover whether the current navigation entry is accessed for the first time or not
+	}
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.State = append(n.State[:n.Cursor], n.NewState("hstate"+strconv.Itoa(n.Cursor)))
+	n.State[n.Cursor].Set("internals","new", Bool(true))
 	
 	return n
 }
@@ -1058,11 +1061,15 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
 	n.State[n.Cursor] = n.NewState("hstate"+strconv.Itoa(n.Cursor))
+	// TODO what to do here? perhaps nothing, perhpas the state should be labeled new or the reverse? 
 	return n
 }
 
 func (n *NavHistory) Back() string {
 	if n.BackAllowed() {
+		if n.Cursor == len(n.Stack)-1{
+			n.State[n.Cursor].Set("internals","new", Bool(false)) // TODO should we check the value or use memoization to avoid unnecessary ops on forward()?
+		}
 		n.Cursor--
 	}
 	return n.Stack[n.Cursor]
