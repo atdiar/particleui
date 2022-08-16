@@ -427,6 +427,11 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 // ListenAndServe registers a listener for route change.
 // It should only be called after the app structure has been fully built.
 // It listens on the element that receives routechangeevent (first argument)
+// 
+// For Implementers
+//
+// The event value should be of type Object. The event value should be registered on this object
+// for the "value" key. This value should be of type String.
 //
 //
 // Example of JS bridging : the nativeEventBridge should add a popstate event listener to window
@@ -454,7 +459,12 @@ func (r *Router) ListenAndServe(eventname string, target *Element) {
 	}
 
 	routeChangeHandler := NewEventHandler(func(evt Event) bool {
-		root.AsElement().Root().Set("navigation", "routechangerequest", evt.Value())
+		u,ok:= evt.Value().(Object).Get("value")
+		if !ok{
+			panic("framework error: event value format unexpected. Should have a value field")
+		}
+
+		root.AsElement().Root().Set("navigation", "routechangerequest", u.(String))
 		return false
 	})
 
