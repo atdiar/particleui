@@ -648,6 +648,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	// Add default navigation error handlers
 	// notfound:
 	pnf:= NewDiv("notfound",r.Outlet.AsElement().Root().ID+"-notfound").SetText("Page Not Found.")
+	SetInlineCSS(pnf.AsElement(),`all: initial;`)
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
 		if !ok{
@@ -662,7 +663,8 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		r.Outlet.AsElement().Root().SetChildren(pnf)
+		body:= Document{ui.BasicElement{r.Outlet.AsElement().Root()}}.Body().AsElement()
+		body.SetChildren(pnf)
 		return false
 	}))
 
@@ -707,6 +709,12 @@ type Document struct {
 	ui.BasicElement
 }
 
+func(d Document) Body() *ui.Element{
+	b,ok:= d.AsElement().Get("ui","body")
+	if !ok{ return nil}
+	return b.(*ui.Element)
+}
+
 func (d Document) Render(w io.Writer) error {
 	return html.Render(w, NewHTMLTree(d))
 }
@@ -715,7 +723,7 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 
 	e := Elements.NewAppRoot(id).AsElement()
 
-	root := js.Global().Get("document").Get("body")
+	root := js.Global().Get("document").Get("documentElement")
 	if !root.Truthy() {
 		log.Print("failed to instantiate root element for the document")
 		return e
@@ -905,7 +913,7 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 
 		return false
 	}))
-
+	e.AppendChild(NewBody("body"))
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -914,13 +922,16 @@ func Focus(e ui.AnyElement, scrollintoview bool){
 		return
 	}
 	n:= JSValue(e.AsElement())
-	options:= map[string]interface{}{"preventScroll": true}
-	n.Call("focus",options)
+	focus(n)
 	if scrollintoview{
 		if !partiallyVisible(n){
 			n.Call("scrollIntoView")
 		}
 	}
+}
+
+func focus(e js.Value){
+	e.Call("focus",map[string]interface{}{"preventScroll": true})
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
@@ -977,15 +988,113 @@ func partiallyVisible(n js.Value) bool{
 	return (top >= 0) && (left >= 0) && (top <= ih) && (left <= iw)	
 }
 
+func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is focusable? (edge-case)
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		m:= JSValue(evt.Origin())
+		focusableslist:= `button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])`
+		focusableElements:= m.Call("querySelectorAll",focusableslist)
+		count:= int(focusableElements.Get("length").Float())-1
+		firstfocusable:= focusableElements.Index(0)
+
+		lastfocusable:= focusableElements.Index(count)
+
+		h:= ui.NewEventHandler(func(evt ui.Event)bool{
+			a:= js.Global().Get("document").Get("activeElement")
+			v:=evt.Value().(ui.Object)
+			vkey,ok:= v.Get("key")
+			if !ok{
+				panic("event value is supposed to have a key field.")
+			}
+			key:= string(vkey.(ui.String))
+			if key != "Tab"{
+				return false
+			}
+
+			if _,ok:= v.Get("shiftKey");ok{
+				if a.Equal(firstfocusable){
+					focus(lastfocusable)
+					evt.PreventDefault()
+				}
+			} else{
+				if a.Equal(lastfocusable){
+					focus(firstfocusable)
+					evt.PreventDefault()
+				}
+			}
+			return false
+		})
+		evt.Origin().Root().AddEventListener("keydown",h)
+		// Watches unmounted once
+		evt.Origin().WatchOnce("event","mounted",evt.Origin(),ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			b, ok := evt.NewValue().(Bool)
+			if !ok {
+				panic("Weird error. unmounted mutation event where the value is of wrong type")
+			}
+			if bool(b) {
+				return false
+			}
+			evt.Origin().Root().RemoveEventListener("keydown",h)
+			return false
+		}))
+		
+		focus(firstfocusable)
+
+		return false
+	}))
+	return e
+}
+
 
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
-// It should be the element which is passed to a router to observe for route
-// change.
-// By default, it represents document.body. As such, it is different from the
-// DOM which holds the head element for instance.
 func NewDocument(id string, options ...string) Document {
 	return Document{ui.BasicElement{LoadFromStorage(newDocument(id, id, options...))}}
+}
+
+type Body struct{
+	ui.BasicElement
+}
+
+var newBody = Elements.NewConstructor("body",func(name string, id string) *ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "body"{
+			return e
+		}	
+	}
+	e = ui.NewElement(name, id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlBody:= js.Global().Get("document").Get("body")
+	exist:= htmlBody.Truthy()
+	if !exist{
+		htmlBody= js.Global().Get("document").Call("createElement","body")
+	}else{
+		htmlBody = reset(htmlBody)
+	}
+
+	n := NewNativeElementWrapper(htmlBody)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().Root().Set("ui","body",evt.Origin())
+		return false
+	}))
+
+	return e
+}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
+
+
+func NewBody(id string, options ...string) Body{
+	return Body{ui.BasicElement{LoadFromStorage(newBody(id,id,options...))}}
 }
 
 // reset is used to delete all eventlisteners from an Element

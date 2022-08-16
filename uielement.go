@@ -323,7 +323,7 @@ func withFetchSupport(e *Element)*Element{
 }
 
 // Root returns the top-most element in the *Element tree.
-// All navigation properties are registred on it.
+// All navigation properties are registered on it.
 func (e *Element) Root() *Element {
 	return e.root
 }
@@ -1093,9 +1093,9 @@ func (e *Element) AddEventListener(event string, handler *EventHandler, nativebi
 */
 
 
-func (e *Element) RemoveEventListener(event string, handler *EventHandler, native bool) *Element {
+func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element {
 	e.EventHandlers.RemoveEventHandler(event, handler)
-	if native {
+	if NativeEventBridge != nil{
 		if e.NativeEventUnlisteners.List != nil {
 			e.NativeEventUnlisteners.Apply(event)
 		}
@@ -1141,7 +1141,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 			native = true
 		}
 
-		e.RemoveEventListener(event, handler, native)
+		e.RemoveEventListener(event, handler)
 
 		return false
 	}))
@@ -1231,7 +1231,7 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
 		if !ok {
-			return true
+			panic("Weird error. unmounted mutation event where the value is of wrong type")
 		}
 		if bool(b) {
 			return false
@@ -1239,7 +1239,9 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 		return h.Handle(evt)
 	})
 	e.Watch("event", "mounted", e, nh)
-}
+} 
+
+// TODO: OnceUmounted() ?
 
 func (e *Element) OnDeleted(h *MutationHandler) {
 	eventcat, ok := e.Properties.Categories["internals"]
