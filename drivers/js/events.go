@@ -89,6 +89,24 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 	// Let's create the callback that will be called from the js side
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		defer func() {
+			if r := recover(); r != nil {
+				body:= Document{ui.BasicElement{listener.Root()}}.Body().AsElement()
+				msg:= NewDiv("appfailure","appfailure")
+				SetInlineCSS(msg.AsElement(),`all: initial;`)
+
+				switch txt:= r.(type){
+				case string:
+					msg.SetText(txt)
+				case ui.String:
+					msg.SetText(string(txt))
+				default:
+					msg.SetText("Critical app failure. See console")
+					DEBUG(r)
+				}
+				body.SetChildren(msg)
+			}
+		}()
 		
 		evt := args[0]
 		//evt.Call("stopPropagation")
@@ -108,8 +126,8 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		currtargetid := jscurrtarget.Get("id")
 
 		var value ui.Value
-		rawvalue := ui.String(jstarget.Get("value").String())
-		value = rawvalue
+		rv:= ui.NewObject().Set("value",ui.String(jstarget.Get("value").String()))
+		value = rv
 		
 
 		b:= ui.Lock.TryLock()
@@ -171,8 +189,10 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 		var nevt interface{}
 		nevt = nativeEvent{evt}
+
 		if typ == "popstate" {
-			value = ui.String(js.Global().Get("location").Get("pathname").String())
+			rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
+			value =  rv
 			/*u,err:= url.ParseRequestURI(value)
 			if err!= nil{
 				value = ""
@@ -196,7 +216,12 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		}
 
 		if typ == "keyup" || typ == "keydown" || typ == "keypress" {
-			value = ui.String(evt.Get("key").String())
+			v:= ui.NewObject()
+			v.Set("key",ui.String(evt.Get("key").String()))
+			if evt.Get("shiftKey").Truthy(){
+				v.Set("shiftKey",ui.Bool(true))
+			}
+			value = v
 		}
 
 		if typ == "click"{
@@ -205,6 +230,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			v:= ui.NewObject()
 			v.Set("button",button)
 			v.Set("ctrlKey",ctrlKey)
+
 			value = v
 		}
 
