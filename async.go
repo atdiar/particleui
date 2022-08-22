@@ -139,10 +139,10 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 	req = req.WithContext(ctx)
 
 
-	e.WatchOnce("event","cancelfetchrequests",e,NewMutationHandler(func(evt MutationEvent)bool{
+	e.Watch("event","cancelfetchrequests",e,NewMutationHandler(func(evt MutationEvent)bool{
 		cancelFn()
 		return false
-	}))
+	}).RunOnce())
 	
 	go func(){
 		res, err:= HttpClient.Do(req)

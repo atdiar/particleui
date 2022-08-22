@@ -41,10 +41,10 @@ func GetRouter() *Router {
 // router-using function when mounted.
 func UseRouter(user AnyElement, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().WatchASAP("event","initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().Watch("event","initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
 			fn(GetRouter())
 			return false
-		}))
+		}).RunASAP())
 		return false
 	})
 	user.AsElement().OnFirstTimeMounted(h)
@@ -874,13 +874,13 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 
 		return false
 	})
-	e.WatchASAP("event", "mountable", view.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+	e.Watch("event", "mountable", view.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
 		b := evt.NewValue().(Bool)
 		if !b {
 			return false
 		}
 		return nh.Handle(evt)
-	}))
+	}).RunASAP())
 	e.Watch("data", "currentroute", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
 		lnk,_:= e.GetData("uri")

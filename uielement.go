@@ -960,6 +960,10 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 // Watch observes the owner of a property registered under a given category for change.
 // When a change has occured, a callback registered as a *MutationHandler is applied.
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+	if h.Once{
+		return e.watchOnce(category,propname,owner,h)
+	}
+
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
 		p = newProperties()
@@ -989,23 +993,35 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		return false
 	}))
 
+	if h.ASAP{
+		val, ok := owner.AsElement().Get(category, propname)
+		if ok {
+			h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
+		}
+	}
+
 	return e
 }
 
 
-// WatchOnce allows to have a mutation handler that runs only once for the occurence of a mutation.
+// watchOnce allows to have a mutation handler that runs only once for the occurence of a mutation.
 // Important note; it does not necessarily run for the first mutation. The property change tracking
 // might have been added late, after a few mutations had already occured.
 
-func(e *Element) WatchOnce(category string, propname string, owner Watchable, h *MutationHandler) *Element{
+func(e *Element) watchOnce(category string, propname string, owner Watchable, h *MutationHandler) *Element{
 	var g *MutationHandler
 	g= NewMutationHandler(func(evt MutationEvent)bool{
 		b:= h.Handle(evt)
 		evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
 		return b
 	})
+	if h.ASAP{
+		g.RunASAP()
+	}
 	return e.Watch(category,propname,owner,g)
 }
+
+/*
 
 // WatchASAP is similar to watch but triggers the callback as soon as possible,
 // if a value has been detected for the property, while Watch awaits for a
@@ -1050,7 +1066,8 @@ func (e *Element) WatchASAP(category string, propname string, owner Watchable, h
 	}
 
 	return e
-}
+
+*/
 
 // removeHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of 
@@ -1220,7 +1237,7 @@ func (e *Element) OnFirstTimeMounted(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
-	e.WatchASAP("event", "firsttimemounted", e, nh)
+	e.Watch("event", "firsttimemounted", e, nh.RunASAP())
 }
 
 // OnUnmount can be used to make a change right before an element starts unmounting.
@@ -1239,23 +1256,6 @@ func (e *Element) OnUnmount(h *MutationHandler) {
 	e.Watch("event", "mount", e, nh)
 }
 
-// OnceUnmount registers an Unmouunt event handler that fires only once.
-// Useful for declaration when specifiying, during mount(-ing) what should also occur for the 
-// unmount.
-func (e *Element) OnceUnmount(h *MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok {
-			return true
-		}
-		if bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	e.WatchOnce("event", "mount", e, nh)
-}
-
 func (e *Element) OnUnmounted(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
@@ -1269,24 +1269,6 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 	})
 	e.Watch("event", "mounted", e, nh)
 }
-
-// OnceUnmounted will trigger a mutation handler only once, as soon as an element gets unmounted.
-// It can be used within a Mounted event handler to automatically clean up when unmounting..
-// Typicall example is an element adding a browser event handler when mounted whcih should be removed
-// once unmounted.
-func (e *Element) OnceUnmounted(h *MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok {
-			panic("Weird error. unmounted mutation event where the value is of wrong type")
-		}
-		if bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	e.WatchOnce("event", "mounted", e, nh)
-} 
 
 
 func (e *Element) OnDeleted(h *MutationHandler) {

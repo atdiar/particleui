@@ -732,10 +732,10 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 	e.Native = n
 	SetAttribute(e, "id", id)
 
-	e.WatchASAP("ui", "history", GetWindow().AsElement(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch("ui", "history", GetWindow().AsElement(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.SyncUI("history", evt.NewValue())
 		return false
-	}))
+	}).RunASAP())
 
 	e.Watch("ui", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		v := evt.NewValue()
@@ -821,11 +821,6 @@ var newDocument = Elements.NewConstructor("root", func(name string, id string) *
 		
 
 	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		/*router := ui.GetRouter()
-		e.WatchASAP("ui","history",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			router.History.FromValue(evt.NewValue())
-			return false
-		}))*/
 		hstate := js.Global().Get("history").Get("state")
 		if hstate.Truthy() {
 			hstateobj := ui.NewObject()
@@ -1025,10 +1020,10 @@ func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is f
 		})
 		evt.Origin().Root().AddEventListener("keydown",h)
 		// Watches unmounted once
-		evt.Origin().OnceUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			evt.Origin().Root().RemoveEventListener("keydown",h)
 			return false
-		}))
+		}).RunOnce())
 		
 		focus(firstfocusable)
 
@@ -2017,15 +2012,15 @@ func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
 			hash = "#"+targetid[0]
 		}
 	}
-	a.AsElement().WatchASAP("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI()+hash)
 		return false
-	}))
+	}).RunASAP())
 
-	a.AsElement().WatchASAP("data", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("data", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.AsElement().SetDataSetUI("active", evt.NewValue())
 		return false
-	}))
+	}).RunASAP())
 
 
 	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
@@ -2068,24 +2063,24 @@ func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
 }
 
 func (a Anchor) OnActive(h *ui.MutationHandler) Anchor {
-	a.AsElement().WatchASAP("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if !b {
 			return false
 		}
 		return h.Handle(evt)
-	}))
+	}).RunASAP())
 	return a
 }
 
 func (a Anchor) OnInactive(h *ui.MutationHandler) Anchor {
-	a.AsElement().WatchASAP("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if b {
 			return false
 		}
 		return h.Handle(evt)
-	}))
+	}).RunASAP())
 	return a
 }
 
