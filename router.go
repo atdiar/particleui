@@ -125,7 +125,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 	}
 
 	// 1. Let's see if the URI matches any of the registered routes.
-	v,a, err := r.Routes.match(newroute)
+	v,_,a, err := r.Routes.match(newroute)
 	r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
 	if err != nil {
 		log.Print(err) // DEBUG
@@ -249,10 +249,10 @@ func (r *Router) insert(v ViewElement) {
 }
 
 // Match returns whether a route is valid or not. It can be used in tests to
-// Make sure that an app links are not breaking.
-func (r *Router) Match(route string) error {
-	_,_, err := r.Routes.match(route)
-	return err
+// Make sure that app links are not breaking.
+func (r *Router) Match(route string) (prefetch func(),err error) {
+	_,p,_, err := r.Routes.match(route)
+	return p, err
 
 }
 
@@ -278,7 +278,7 @@ func (r *Router) handler() *MutationHandler {
 		}
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
-		v,a, err := r.Routes.match(newroute)
+		v,_,a, err := r.Routes.match(newroute)
 		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
 		if err != nil {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
@@ -374,7 +374,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 		}
 
 		// 1. Let's see if the URI matches any of the registered routes.
-		v, a, err := r.Routes.match(newroute)
+		v,_, a, err := r.Routes.match(newroute)
 		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
@@ -603,14 +603,15 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 }
 
 // match verifies that a route passed as arguments corresponds to a given view state.
-func (r *rnode) match(route string) (targetview ViewElement,activationFn func() error, err error) {
+func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), activationFn func() error, err error) {
 	activations := make([]func() error, 0, 10)
+	prefetchers := make([]func(),0,10)
 	route = strings.TrimPrefix(route, "/")
 	segments := strings.Split(route, "/")
 	ls := len(segments)
 	targetview = r.ViewElement // DEBUG TODO is it the true targetview? 
 	if ls == 0 {
-		return targetview,nil, nil
+		return targetview,nil, nil,nil
 	}
 
 	var param string
@@ -621,16 +622,16 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 		param, ok = r.ViewElement.hasParameterizedView()
 		if ok {
 			if !r.ViewElement.isViewAuthorized(param) {
-				return targetview,nil, ErrUnauthorized
+				return targetview,nil, nil, ErrUnauthorized
 			}
 			if ls != 1 { // we get the next rnodes mapped by viewname
 				m, ok = r.next[param]
 				if !ok {
-					return targetview,nil, ErrFrameworkFailure
+					return targetview,nil, nil, ErrFrameworkFailure
 				}
 			}
 		} else {
-			return targetview,nil, ErrNotFound
+			return targetview,nil,nil, ErrNotFound
 		}
 	}
 
@@ -643,8 +644,14 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 					return r.ViewElement.ActivateView(segments[0])
 				}
 				activations = append(activations, a)
+
+				p:= func(){
+					r.ViewElement.AsElement().Prefetch()
+				}
+				prefetchers = append(prefetchers,p)
+
 			} else {
-				return targetview,nil, ErrUnauthorized
+				return targetview,nil,nil, ErrUnauthorized
 			}
 		} else {
 			if r.ViewElement.isViewAuthorized(segments[0]) {
@@ -652,15 +659,21 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 					return r.ViewElement.ActivateView(segments[0])
 				}
 				activations = append(activations, a)
+
+				p:= func(){
+					r.ViewElement.AsElement().Prefetch()
+					r.ViewElement.prefetchView(segments[0])
+				}
+				prefetchers = append(prefetchers,p)
 			} else {
-				return targetview,nil, ErrUnauthorized
+				return targetview,nil, nil, ErrUnauthorized
 			}
 		}
 	}
 
 	if ls%2 != 1 {
 		DEBUG("Incorrect URI scheme")
-		return targetview,nil, ErrNotFound
+		return targetview,nil,nil, ErrNotFound
 	}
 	if ls > 1 {
 		viewcount := (ls - ls%2) / 2
@@ -672,12 +685,12 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 			nextroutesegment := segments[2*i] //viewnames
 			r, ok := m[routesegment]
 			if !ok {
-				return targetview,nil, ErrNotFound
+				return targetview,nil, nil, ErrNotFound
 			}
 
 			targetview = r.ViewElement
 			if r.value != routesegment {
-				return targetview,nil, ErrNotFound
+				return targetview,nil,nil, ErrNotFound
 			}
 
 			// Now that we have the rnode, we can try to see if the nextroutesegment holding the viewname
@@ -689,25 +702,38 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 				param, ok = r.ViewElement.hasParameterizedView()
 				if ok {
 					if !r.ViewElement.isViewAuthorized(param) {
-						return targetview,nil, ErrUnauthorized
+						return targetview,nil, nil, ErrUnauthorized
 					}
 
 					m, ok = r.next[param] // we get the next rnodes mapped by viewnames
 					if !ok {
-						return targetview,nil, ErrFrameworkFailure
+						return targetview,nil,nil, ErrFrameworkFailure
 					}
 
 				} else {
-					return targetview,nil, ErrNotFound
+					return targetview,nil,nil, ErrNotFound
 				}
 			}
 			if !r.ViewElement.isViewAuthorized(nextroutesegment) {
-				return targetview,nil, ErrUnauthorized
+				return targetview,nil, nil, ErrUnauthorized
 			}
 			a := func() error {
 				return r.ViewElement.ActivateView(nextroutesegment)
 			}
 			activations = append(activations, a)
+
+			if !ok{
+				p:= func(){
+					r.ViewElement.AsElement().Prefetch()
+				}
+				prefetchers = append(prefetchers,p)
+			} else{
+				p:= func(){
+					r.ViewElement.AsElement().Prefetch()
+					r.ViewElement.prefetchView(nextroutesegment)
+				}
+				prefetchers = append(prefetchers,p)
+			}
 		}
 	}
 
@@ -720,7 +746,13 @@ func (r *rnode) match(route string) (targetview ViewElement,activationFn func() 
 		}
 		return nil
 	}
-	return targetview,activationFn, nil
+
+	prefetchFn = func(){
+		for _, p:= range prefetchers{
+			p()
+		}
+	}
+	return targetview,prefetchFn, activationFn, nil
 }
 
 /*
@@ -762,6 +794,10 @@ func (l Link) IsActive() bool {
 		panic("wrong type for link validation IsActive predicate value")
 	}
 	return bool(st)
+}
+
+func(l Link) Prefetch(){
+	l.Raw.Set("event","prefetchlink",Bool(true))
 }
 
 func (l Link) AsElement() *Element {
@@ -867,6 +903,15 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 			hash = "#"+string(s)
 		}
 		r.GoTo(l.URI()+hash)
+		return false
+	}))
+
+	r.Outlet.AsElement().Watch("event","prefetchlink",e,NewMutationHandler(func(evt MutationEvent)bool{
+		p,err:= r.Match(l.URI())
+		if err!= nil{
+			return true
+		}
+		p()
 		return false
 	}))
 

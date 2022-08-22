@@ -1025,14 +1025,7 @@ func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is f
 		})
 		evt.Origin().Root().AddEventListener("keydown",h)
 		// Watches unmounted once
-		evt.Origin().WatchOnce("event","mounted",evt.Origin(),ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			b, ok := evt.NewValue().(Bool)
-			if !ok {
-				panic("Weird error. unmounted mutation event where the value is of wrong type")
-			}
-			if bool(b) {
-				return false
-			}
+		evt.Origin().OnceUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			evt.Origin().Root().RemoveEventListener("keydown",h)
 			return false
 		}))
@@ -2048,6 +2041,29 @@ func (a Anchor) FromLink(link ui.Link,  targetid ...string) Anchor {
 		return false
 	}))
 
+	a.AsElement().SetData("link",link.AsElement())
+
+	pm,ok:= a.AsElement().Get("internals","prefetchmode")
+	if ok && !prefetchDisabled(){
+		switch t:= string(pm.(ui.String));t{
+		case "intent":
+			a.AsElement().AddEventListener("mouseover",ui.NewEventHandler(func(evt ui.Event)bool{
+				link.Prefetch()
+				return false
+			}))
+		case "render":
+			a.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				link.Prefetch()
+				return false
+			}))
+		}
+	} else if !prefetchDisabled(){ // make prefetchable on intent by default
+		a.AsElement().AddEventListener("mouseover",ui.NewEventHandler(func(evt ui.Event)bool{
+			link.Prefetch()
+			return false
+		}))
+	}
+
 	return a
 }
 
@@ -2115,11 +2131,45 @@ var newAnchor= Elements.NewConstructor("a", func(name string, id string) *ui.Ele
 	}))
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowPrefetchOnIntent, AllowPrefetchOnRender)
 
 // NewAnchor creates an html anchor element.
 func NewAnchor(name string, id string, options ...string) Anchor {
 	return Anchor{ui.BasicElement{LoadFromStorage(newAnchor(name, id, options...))}}
+}
+
+var AllowPrefetchOnIntent = ui.NewConstructorOption("prefetchonintent", func(e *ui.Element)*ui.Element{
+	if !prefetchDisabled(){
+		e.Set("internals","prefetchmode",ui.String("intent"))
+	}
+	return e
+})
+
+var AllowPrefetchOnRender = ui.NewConstructorOption("prefetchonrender", func(e *ui.Element)*ui.Element{
+	if !prefetchDisabled(){
+		e.Set("internals","prefetchmode",ui.String("render"))
+	}
+	return e
+})
+
+func EnablePrefetchOnIntent() string{
+	return "prefetchonintent"
+}
+
+func EnablePrefetchOnRender() string{
+	return "prefetchonrender"
+}
+
+func SetPrefetchMaxAge(t time.Duration){
+	ui.PrefetchMaxAge = t
+}
+
+func DisablePrefetching(){
+	ui.PrefetchMaxAge = -1
+}
+
+func prefetchDisabled() bool{
+	return ui.PrefetchMaxAge < 0
 }
 
 type Button struct {
@@ -2702,7 +2752,7 @@ func NewTemplatedText(template string) TemplatedTextNode {
 			var res string
 
 			for k := range listparams {
-				if k != "typ" {
+				if k != "pui_object_typ" { // review TODO used to be "typ"
 					s, ok := evt.Origin().GetData(k)
 					if !ok {
 						continue

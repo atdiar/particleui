@@ -15,7 +15,7 @@ const(
 )
 
 var HttpClient = http.DefaultClient
-var  PrefetchTimeout = 5 * time.Second
+var  PrefetchMaxAge = 5 * time.Second
 
 // SetHttpClient allows for the use of a custom http client.
 // It changes the value of HttpClient whose default value is the default Go http Client.
@@ -48,12 +48,15 @@ func NewCriticalSection() func(func()){
 }
 
 
-// FetchData allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
+// WithFetchedData allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
 // It accepts a function as argument that is tasked with converting the *http.Response into 
 // a Value that can be stored as an element property.
 // Unless stated otherwise, the data is made prefetchable as well.
 // The data is set asynchronously.
-func(e *Element) FetchData(propname string, req *http.Request, responsehandler func(*http.Response)(Value,error), noprefetch ...bool) {
+//
+// The fetching occurs during the "fetch" event ("event","fetch") that is triggered each time an element
+// is mounted.
+func(e *Element) WithFetchedData(propname string, req *http.Request, responsehandler func(*http.Response)(Value,error), noprefetch ...bool) {
 	prefetchable:= true
 	if noprefetch != nil{
 		prefetchable = false
@@ -75,17 +78,18 @@ func(e *Element) FetchData(propname string, req *http.Request, responsehandler f
 
 }
 
-func(e *Element) SetDataFromURL(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
+func(e *Element) WithFetchedDataFromURL(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
 	req,err:= http.NewRequestWithContext(NavContext,"GET",url,nil)
 	if err!= nil{
 		panic(url + " is malformed most likely. Unable to create new request")
 	}
-	e.FetchData(propname,req,responsehandler,noprefetch...)
+	e.WithFetchedData(propname,req,responsehandler,noprefetch...)
 }
 
 // CancelFetch will abort ongoing fetch requests.
 func(e *Element) CancelFetch(){
 	e.Set("event","cancelfetchrequests", Bool(true))
+	e.Set("event","fetchcancelled",Bool(true))
 }
 
 
@@ -97,12 +101,20 @@ func CancelFetchOnError(e *Element) *Element{
 		o:= evt.OldValue().(Bool)
 		n:= evt.NewValue().(Bool)
 		if !n && o{
-			e.CancelFetch()
+			e.Set("event","cancelfetchrequests", Bool(true))
 		}
 		return false
 	}))
 
 	return e
+}
+
+// WasFetchCancelled answers the question of whether a fecth was cancelled or not.
+// It can be used when handling a "fetched" event (OnFetched) to differentiate fetching failure
+// from fetching cancellation.
+func(e *Element) WasFetchCancelled() bool{
+	_,ok:= e.Get("event","fetchcancelled")
+	return ok
 }
 
 
@@ -139,6 +151,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 				if prefetching{
 					e.prefetchCompleted(propname,false)
 				}else{
+					e.pushFetchError(propname,err)
 					e.fetchCompleted(propname,false)
 				}	
 			})
@@ -152,6 +165,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 				if prefetching{
 					e.prefetchCompleted(propname,false)
 				}else{
+					e.pushFetchError(propname,err)
 					e.fetchCompleted(propname,false)
 				}	
 			})
@@ -172,12 +186,46 @@ func(e *Element) Prefetch(){
 	e.Set("event","prefetch",Bool(true))
 }
 
+func(e *Element) Fetch(){
+	e.Delete("runtime","fetcherrors")
+	e.Delete("event","fetchcancelled")
+	e.Set("event","fetch",Bool(true))
+}
+
 func(e *Element) OnFetch(h *MutationHandler){
 	e.Watch("event","fetch",e,h)
 }
 
 func(e *Element) OnFetched(h *MutationHandler){
 	e.Watch("event","fetched",e,h)
+}
+
+
+// FetchErrors returns, if it exists, a map where each propname key whose fetch failed has a corresponding
+// error string.
+func FetchErrors(e *Element) (map[string]string,bool){
+	v,ok:= e.Get("runtime","fetcherrors")
+	if !ok{
+		return nil,ok
+	}
+	m:= make(map[string]string)
+	for k,val:= range v.(Object){
+		m[k]= string(val.(String))
+	}
+	return m,ok
+}
+
+
+
+func(e *Element) pushFetchError(propname string, err error){
+	var errlist Object
+	v,ok:= e.Get("runtime","fetcherrors")
+	if !ok{
+		errlist= NewObject().Set(propname, String(err.Error()))
+	} else{
+		errlist= v.(Object).Set(propname, String(err.Error()))
+	}
+	e.Set("runtime","fetcherrors",errlist)
 }
 
 func(e *Element) initFetch(propname string )bool{
@@ -298,7 +346,7 @@ func(e *Element) isPrefetchedDataValid(propname string) bool{
 	if err!= nil{
 		return false
 	}
-	if time.Now().UTC().After(temps.UTC().Add(PrefetchTimeout)){
+	if time.Now().UTC().After(temps.UTC().Add(PrefetchMaxAge)){
 		return false
 	}
 	return true

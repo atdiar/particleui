@@ -319,6 +319,11 @@ func withFetchSupport(e *Element)*Element{
 		evt.Origin().checkFetchCompletion()
 		return false
 	}))
+
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().CancelFetch()
+		return false
+	}))
 	return e
 }
 
@@ -1007,8 +1012,8 @@ func(e *Element) WatchOnce(category string, propname string, owner Watchable, h 
 // mutation event to occur.
 // Mostly useful when a callback should be triggered as soon as we detect that a
 // event property ("event", propname) has occured.
-// (Reminder: event properies are properties that are only mutated at runtime
-// and cannot be stored in any long-term storage. They define transient state).
+// (Reminder: event properies are properties that represent runtime transient state.
+// These runtime propeties are erased when the app closes.
 func (e *Element) WatchASAP(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	p, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
@@ -1044,6 +1049,17 @@ func (e *Element) WatchASAP(category string, propname string, owner Watchable, h
 		h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
 	}
 
+	return e
+}
+
+// removeHandler allows for the removal of a Mutation Handler.
+// Can be used to clean up, for instance in the case of 
+func (e *Element) removeHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+	_, ok := owner.AsElement().Properties.Categories[category]
+	if !ok {
+		return e
+	}
+	e.PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, h)
 	return e
 }
 
@@ -1136,13 +1152,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 	*/
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		var native bool
-		if nativebinding != nil {
-			native = true
-		}
-
 		e.RemoveEventListener(event, handler)
-
 		return false
 	}))
 
@@ -1213,6 +1223,8 @@ func (e *Element) OnFirstTimeMounted(h *MutationHandler) {
 	e.WatchASAP("event", "firsttimemounted", e, nh)
 }
 
+// OnUnmount can be used to make a change right before an element starts unmounting.
+// One potential use case is to deal with animations as an elemnt disappear from the page.
 func (e *Element) OnUnmount(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
@@ -1227,6 +1239,23 @@ func (e *Element) OnUnmount(h *MutationHandler) {
 	e.Watch("event", "mount", e, nh)
 }
 
+// OnceUnmount registers an Unmouunt event handler that fires only once.
+// Useful for declaration when specifiying, during mount(-ing) what should also occur for the 
+// unmount.
+func (e *Element) OnceUnmount(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok {
+			return true
+		}
+		if bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.WatchOnce("event", "mount", e, nh)
+}
+
 func (e *Element) OnUnmounted(h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		b, ok := evt.NewValue().(Bool)
@@ -1239,9 +1268,26 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 		return h.Handle(evt)
 	})
 	e.Watch("event", "mounted", e, nh)
+}
+
+// OnceUnmounted will trigger a mutation handler only once, as soon as an element gets unmounted.
+// It can be used within a Mounted event handler to automatically clean up when unmounting..
+// Typicall example is an element adding a browser event handler when mounted whcih should be removed
+// once unmounted.
+func (e *Element) OnceUnmounted(h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
+		b, ok := evt.NewValue().(Bool)
+		if !ok {
+			panic("Weird error. unmounted mutation event where the value is of wrong type")
+		}
+		if bool(b) {
+			return false
+		}
+		return h.Handle(evt)
+	})
+	e.WatchOnce("event", "mounted", e, nh)
 } 
 
-// TODO: OnceUmounted() ?
 
 func (e *Element) OnDeleted(h *MutationHandler) {
 	eventcat, ok := e.Properties.Categories["internals"]

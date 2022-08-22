@@ -171,6 +171,19 @@ func(v ViewElement) IsParameterizedView(viewname string) bool{
 	return !v.hasStaticView(viewname)
 }
 
+// prefetchView triggers data prefetching for a ViewElement.
+// It requires the name of the view that will be activated as argument so that it can start 
+// prefetching the elements that are part of the target view (if unactivated).
+// and then triggers prefetching on the view itself.
+func(v ViewElement) prefetchView(name string){
+	ve:= v.AsElement()
+	if v.hasStaticView(name) && v.isViewAuthorized(name) && ve.ActiveView != name{
+		for _,c:= range ve.Children.List{
+			c.Prefetch()
+		}
+	}
+}
+
 func (e *Element) addView(v View) *Element {
 	if e.InactiveViews == nil {
 		e.InactiveViews = make(map[string]View) // Important to put that on top... it creates

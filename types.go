@@ -47,8 +47,8 @@ type Bool bool
 func (b Bool) discriminant() discriminant { return "particleui" }
 func (b Bool) RawValue() Object {
 	o := NewObject()
-	o["typ"] = "Bool"
-	o["value"] = bool(b)
+	o["pui_object_typ"] = "Bool"
+	o["pui_object_value"] = bool(b)
 	return o.RawValue()
 }
 func (b Bool) ValueType() string { return "Bool" }
@@ -58,8 +58,8 @@ type String string
 func (s String) discriminant() discriminant { return "particleui" }
 func (s String) RawValue() Object {
 	o := NewObject()
-	o["typ"] = "String"
-	o["value"] = string(s)
+	o["pui_object_typ"] = "String"
+	o["pui_object_value"] = string(s)
 	return o.RawValue()
 }
 func (s String) ValueType() string { return "String" }
@@ -69,8 +69,8 @@ type Number float64
 func (n Number) discriminant() discriminant { return "particleui" }
 func (n Number) RawValue() Object {
 	o := NewObject()
-	o["typ"] = "Number"
-	o["value"] = float64(n)
+	o["pui_object_typ"] = "Number"
+	o["pui_object_value"] = float64(n)
 	return o.RawValue()
 }
 func (n Number) ValueType() string { return "Number" }
@@ -87,27 +87,99 @@ func (o Object) RawValue() Object {
 			p[k] = map[string]interface{}(v.RawValue())
 			continue
 		}
-		p[k] = val // typ should still be a plain string, calling RawValue twice in a row should be idempotent
+		p[k] = val 
+		// pui_object_typ should still be a plain string, calling RawValue twice in a row should be idempotent
+		// pui_object_value is also not tranformed allowing for idempotence of successive calls to RawValue.
 		continue
 	}
 	return p
 }
 
 func (o Object) ValueType() string {
-	t, ok := o.Get("typ")
+	t, ok := o.Get("pui_object_typ")
 	if !ok {
 		return "undefined"
 	}
-	s, ok := t.(string)
-	if !ok {
-		return "undefined object"
-	}
-	return string(s)
+	return string(t.(String))
 }
 
-func (o Object) Get(key string) (interface{}, bool) {
+func (o Object) Get(key string) (Value, bool) {
+	if key == "pui_object_typ"{
+		return String(o[key].(string)),true
+	}
+	if key == "pui_object_value"{
+		val,ok:= o[key]
+		if !ok{
+			return nil, ok
+		}
+		switch t:= val.(type){
+		case bool:
+			return Bool(t),ok
+		case string:
+			return String(t),ok
+		case float64:
+			return Number(t),ok
+		case []interface{}:
+			m := NewList()
+			for _, val := range t {
+				r, ok := val.(map[string]interface{})
+				if ok {
+					v := Object(r).Value()
+					m = append(m, v)
+					continue
+				}
+				panic("pui error: bad list rawencoding. Unable to decode.")
+			}
+			return m,ok
+		default:
+			panic("pui error: unknown raw value type")
+		}
+	}
 	v, ok := o[key]
-	return v, ok
+	if !ok{
+		return nil,ok
+	}
+	return v.(Value), ok
+}
+
+func(o Object) MustGetString(key string) String{
+	v,ok:= o.Get(key)
+	if !ok{
+		panic("Expected value to be present in object but it was not found")
+	}
+	return v.(String)
+}
+
+func(o Object) MustGetNumber(key string) Number{
+	v,ok:= o.Get(key)
+	if !ok{
+		panic("Expected value to be present in object but it was not found")
+	}
+	return v.(Number)
+}
+
+func(o Object) MustGetBool(key string) Bool{
+	v,ok:= o.Get(key)
+	if !ok{
+		panic("Expected value to be present in object but it was not found")
+	}
+	return v.(Bool)
+}
+
+func(o Object) MustGetList(key string) List{
+	v,ok:= o.Get(key)
+	if !ok{
+		panic("Expected value to be present in object but it was not found")
+	}
+	return v.(List)
+}
+
+func(o Object) MustGetObject(key string) Object{
+	v,ok:= o.Get(key)
+	if !ok{
+		panic("Expected value to be present in object but it was not found")
+	}
+	return v.(Object)
 }
 
 func (o Object) Set(key string, value Value) Object {
@@ -115,61 +187,35 @@ func (o Object) Set(key string, value Value) Object {
 	return o
 }
 func (o Object) SetType(typ string) Object {
-	o["typ"] = typ
+	o["pui_object_typ"] = typ
 	return o
 }
 func (o Object) Value() Value {
 	switch o.ValueType() {
 	case "Bool":
-		v, ok := o.Get("value")
+		v, ok := o.Get("pui_object_value")
 		if !ok {
-			return nil
+			panic("pui error: raw bool value can't be found.")
 		}
-		res, ok := v.(bool)
-		if !ok {
-			return nil
-		}
-		return Bool(res)
+		return v
 	case "String":
-		v, ok := o.Get("value")
+		v, ok := o.Get("pui_object_value")
 		if !ok {
-			return nil
+			panic("pui error: raw string value can't be found.")
 		}
-		res, ok := v.(string)
-		if !ok {
-			return nil
-		}
-		return String(res)
+		return v
 	case "Number":
-		v, ok := o.Get("value")
+		v, ok := o.Get("pui_object_value")
 		if !ok {
-			return nil
+			panic("pui error: raw number value can't be found.")
 		}
-		res, ok := v.(float64)
-		if !ok {
-			return nil
-		}
-		return Number(res)
+		return v
 	case "List":
-		v, ok := o.Get("value")
+		v, ok := o.Get("pui_object_value")
 		if !ok {
-			return nil
+			panic("pui error: raw List value can't be found.")
 		}
-		l, ok := v.([]interface{})
-		if !ok {
-			return nil
-		}
-		m := NewList()
-		for _, val := range l {
-			r, ok := val.(map[string]interface{})
-			if ok {
-				v := Object(r).Value()
-				m = append(m, v)
-				continue
-			}
-			return nil
-		}
-		return m
+		return v
 	case "Object":
 		p := NewObject()
 		for k, val := range o {
@@ -300,7 +346,7 @@ func (o Object) Value() Value {
 
 func NewObject() Object {
 	o := Object(make(map[string]interface{}))
-	o["typ"] = "Object"
+	o["pui_object_typ"] = "Object"
 	return o
 }
 
@@ -314,7 +360,7 @@ func (l List) RawValue() Object {
 	for _, v := range l {
 		raw = append(raw, v.RawValue())
 	}
-	o["value"] = raw
+	o["pui_object_value"] = raw
 	return o.RawValue()
 }
 func (l List) ValueType() string { return "List" }
@@ -337,7 +383,7 @@ func (l ListofObjects) RawValue() Object {
 	for _, v := range List(l) {
 		raw = append(raw, v.RawValue())
 	}
-	o["value"] = raw
+	o["pui_object_value"] = raw
 	return o.RawValue()
 }
 func (l ListofObjects) ValueType() string { return "List" }
@@ -436,7 +482,7 @@ func Equal(v Value, w Value) bool {
 			return false
 		}
 		for k, rval := range vo {
-			if k == "typ" {
+			if k == "pui_object_typ" {
 				continue
 			}
 			val, ok := rval.(Value)
