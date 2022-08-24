@@ -1153,13 +1153,18 @@ func (n *NavHistory) Back() string {
 }
 
 func (n *NavHistory) Forward() string {
-	if n.Cursor>=0{
-		n.State[n.Cursor].Set("internals","new", Bool(false))
-	}
 	if n.ForwardAllowed() {
+		if n.Cursor>=0{
+			n.State[n.Cursor].Set("internals","new", Bool(false))
+		}
 		n.Cursor++
 	}
-	n.State[n.Cursor].Set("internals","new", Bool(false))
+	v,ok := n.State[n.Cursor].Get("internals","new")
+	if !ok{
+		n.State[n.Cursor].Set("internals","new", Bool(true))
+	} else{
+		n.State[n.Cursor].Set("internals","new", v)
+	}
 	return n.Stack[n.Cursor]
 }
 
