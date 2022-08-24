@@ -176,7 +176,7 @@ func (r *Router) GoTo(route string) {
 	r.Outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.Outlet.AsElement().Root().Set("event", "navigationend", String(route))
 	r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
-	DEBUG("goto: ",route, r.History.Cursor)
+	
 }
 
 func (r *Router) GoBack() {
@@ -310,8 +310,8 @@ func (r *Router) handler() *MutationHandler {
 		// Determination of navigation history action 
 		h, ok := r.Outlet.AsElement().Root().Get("ui", "history")
 		if !ok {
-			//DEBUG("no ui history")
 			r.History.Push(newroute)
+			DEBUG("push ",newroute)
 			r.Outlet.AsElement().Root().SetData("history", r.History.Value())
 		} else {
 			ho, ok := h.(Object)
@@ -325,6 +325,7 @@ func (r *Router) handler() *MutationHandler {
 			n := int(v.(Number))
 			cursor:= r.History.Cursor
 
+
 			if r.History.Cursor > n {
 				
 				// we are going back
@@ -337,8 +338,9 @@ func (r *Router) handler() *MutationHandler {
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
+
 			} else{
-				//DEBUG("from: ",cursor, " to ",n)
+				DEBUG("from: ",cursor, " to ",n, "by importing state")
 				r.History.ImportState(h)
 			}
 
@@ -437,7 +439,7 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 // Example of JS bridging : the nativeEventBridge should add a popstate event listener to window
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
-func (r *Router) ListenAndServe(eventname string, target *Element) {
+func (r *Router) ListenAndServe(events string, target *Element) {
 	r.verifyLinkActivation()
 	root := r.Outlet
 
@@ -463,7 +465,7 @@ func (r *Router) ListenAndServe(eventname string, target *Element) {
 		if !ok{
 			panic("framework error: event value format unexpected. Should have a value field")
 		}
-
+		DEBUG(evt.Type(), " fired")
 		root.AsElement().Root().Set("navigation", "routechangerequest", u.(String))
 		return false
 	})
@@ -471,8 +473,12 @@ func (r *Router) ListenAndServe(eventname string, target *Element) {
 	root.AsElement().Root().Watch("navigation", "routechangerequest", root.AsElement().Root(), r.handler())
 	root.AsElement().Root().Watch("navigation", "routeredirectrequest", root.AsElement().Root(), r.redirecthandler())
 	r.Outlet.AsElement().Root().Set("navigation", "ready", Bool(true))
-	target.AddEventListener(eventname, routeChangeHandler)
-
+	
+	eventnames:= strings.Split(events," ")
+	for _,event:= range eventnames{
+		target.AddEventListener(event, routeChangeHandler)
+	}
+	
 	c := make(chan struct{}, 0)
 	<-c
 }
@@ -1094,7 +1100,6 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 		}
 	}
 	
-
 	return n
 }
 
@@ -1113,9 +1118,26 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 	return n
 }
 
+func(n *NavHistory) CurrentEntryIsNew() bool{
+	v,ok:= n.State[n.Cursor].Get("internals","new")
+	if !ok{
+		DEBUG("Unable to find (internals, new) cursor is : ",n.Cursor)
+		DEBUG(n.Stack,n.State)
+		return true
+	}
+	return bool(v.(Bool))
+}
+
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
+	v,ok:= n.State[n.Cursor].Get("internals","new")
 	n.State[n.Cursor] = n.NewState("hstate"+strconv.Itoa(n.Cursor))
+	if !ok{
+		n.State[n.Cursor].Set("internals","new", Bool(true))
+	} else{
+		n.State[n.Cursor].Set("internals","new",v)
+	}
+	
 	// TODO what to do here? perhaps nothing, perhpas the state should be labeled new or the reverse? 
 	return n
 }
@@ -1131,9 +1153,13 @@ func (n *NavHistory) Back() string {
 }
 
 func (n *NavHistory) Forward() string {
+	if n.Cursor>=0{
+		n.State[n.Cursor].Set("internals","new", Bool(false))
+	}
 	if n.ForwardAllowed() {
 		n.Cursor++
 	}
+	n.State[n.Cursor].Set("internals","new", Bool(false))
 	return n.Stack[n.Cursor]
 }
 
