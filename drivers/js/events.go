@@ -51,11 +51,6 @@ func SDEBUG(){
 }
 
 
-// ListenAndServe is used to start listening to state changes coming from the browser such as popstate.
-// It needs to be called at the end, after the UI tree has been built.
-func ListenAndServe(){
-	ui.GetRouter().ListenAndServe("popstate", GetWindow().AsElement())
-}
 
 type nativeEvent struct {
 	js.Value

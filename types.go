@@ -20,7 +20,6 @@ func (e *Element) RawValue() Object {
 	o := NewObject().SetType("Element")
 
 	o["id"] = String(e.ID)
-	o["name"] = String(e.Name)
 	constructoroptions, ok := e.Get("internals", "constructoroptions")
 	if ok {
 		o.Set("constructoroptions", constructoroptions)
@@ -265,11 +264,7 @@ func (o Object) Value() Value {
 			DEBUG("no id")
 			return nil
 		}
-		name, ok := p.Get("name")
-		if !ok {
-			DEBUG("no name")
-			return nil
-		}
+		
 		elementstoreid, ok := p.Get("elementstoreid")
 		if !ok {
 			DEBUG("no elementstore id")
@@ -312,11 +307,6 @@ func (o Object) Value() Value {
 			DEBUG("constructor not found at the recorded name from Element store. Cannot create Element " + elid + " from Value")
 			return nil
 		}
-		ename, ok := name.(String)
-		if !ok {
-			DEBUG("Element name in Value of wrong type.")
-			return nil
-		}
 
 		coptions := make([]string, 0)
 		constructoroptions, ok := p.Get("constructoroptions")
@@ -337,7 +327,7 @@ func (o Object) Value() Value {
 				}
 			}
 		}
-		return constructor(string(ename), string(elid), coptions...)
+		return constructor(string(elid), coptions...)
 
 	default:
 		return o

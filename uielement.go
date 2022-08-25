@@ -59,7 +59,7 @@ func (e elementStores) Set(store *ElementStore) {
 // ElementStore defines a namespace for a list of Element constructors.
 type ElementStore struct {
 	DocType                  string
-	Constructors             map[string]func(name, id string, optionNames ...string) *Element
+	Constructors             map[string]func(id string, optionNames ...string) *Element
 	GlobalConstructorOptions map[string]func(*Element) *Element
 	ConstructorsOptions      map[string]map[string]func(*Element) *Element
 	ByID                     map[string]*Element
@@ -112,8 +112,8 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
-	global := NewElement("global", storeid, doctype)
-	es := &ElementStore{doctype, make(map[string]func(name string, id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
+	global := NewElement(storeid, doctype)
+	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -148,7 +148,7 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 // NewAppRoot returns the starting point of an app. It is a viewElement whose main
 // view name is the root id string.
 func (e *ElementStore) NewAppRoot(id string) BasicElement {
-	el := NewElement("root", id, e.DocType)
+	el := NewElement(id, e.DocType)
 	el.root = el
 	el.Parent = el // initially nil DEBUG
 	el.subtreeRoot = el
@@ -166,28 +166,28 @@ func (e *ElementStore) NewAppRoot(id string) BasicElement {
 }
 
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementname string, constructor func(name string, id string) *Element, options ...ConstructorOption) func(elname string, elid string, optionNames ...string) *Element {
+func (e *ElementStore) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
 	options = append(options, allowPropertyInheritanceOnMount)
 	// First we register the options that are passed with the Constructor definition
 	for _, option := range options {
 		n := option.Name
 		f := option.Configurator
-		optlist, ok := e.ConstructorsOptions[elementname]
+		optlist, ok := e.ConstructorsOptions[elementtype]
 		if !ok {
 			optlist = make(map[string]func(*Element) *Element)
-			e.ConstructorsOptions[elementname] = optlist
+			e.ConstructorsOptions[elementtype] = optlist
 		}
 		optlist[n] = f
 	}
 
 	// Then we create the element constructor to return
-	c := func(name string, id string, optionNames ...string) *Element {
+	c := func(id string, optionNames ...string) *Element {
 		_, alreadyexists:= e.ByID[id]
 		if alreadyexists{
 			DEBUG("WARNING: potential id conflict, ",id, " is already in use.")
 		}
-		element := constructor(name, id)
-		element.Set("internals", "constructor", String(elementname))
+		element := constructor(id)
+		element.Set("internals", "constructor", String(elementtype))
 		element.Global = e.Global
 		element.ElementStore = e
 
@@ -197,13 +197,13 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 		}
 		// Let's apply the remaining options
 		for _, opt := range optionNames {
-			r, ok := e.ConstructorsOptions[elementname]
+			r, ok := e.ConstructorsOptions[elementtype]
 			if ok {
 				config, ok := r[opt]
 				if ok {
 					element = config(element)
 				} else{
-					DEBUG(opt," is not an available option for ",elementname)
+					DEBUG(opt," is not an available option for ",elementtype)
 				}
 			}
 		}
@@ -211,7 +211,7 @@ func (e *ElementStore) NewConstructor(elementname string, constructor func(name 
 		e.ByID[id] = element
 		return element
 	}
-	e.Constructors[elementname] = c
+	e.Constructors[elementtype] = c
 	return c
 }
 
@@ -240,7 +240,7 @@ type Element struct {
 
 	Parent *Element
 
-	Name    string
+	Alias    string
 	ID      string
 	DocType string
 
@@ -272,7 +272,7 @@ func (e *Element) watchable()          {}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
-func NewElement(name string, id string, doctype string) *Element {
+func NewElement(id string, doctype string) *Element {
 	if strings.Contains(id, "/") {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
@@ -283,7 +283,7 @@ func NewElement(name string, id string, doctype string) *Element {
 		nil,
 		NewElements(),
 		nil,
-		name,
+		"",
 		id,
 		doctype,
 		NewPropertyStore(),

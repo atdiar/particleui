@@ -465,7 +465,6 @@ func (r *Router) ListenAndServe(events string, target *Element) {
 		if !ok{
 			panic("framework error: event value format unexpected. Should have a value field")
 		}
-		DEBUG(evt.Type(), " fired")
 		root.AsElement().Root().Set("navigation", "routechangerequest", u.(String))
 		return false
 	})
@@ -836,7 +835,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	
 	l,ok:= r.Links["/"+viewname]
 	if !ok{
-		e := NewElement(viewname, r.Outlet.AsElement().ID+"-"+viewname, r.Outlet.AsElement().DocType)
+		e := NewElement(r.Outlet.AsElement().ID+"-"+viewname, r.Outlet.AsElement().DocType)
 		e.SetData("viewelements",NewList(r.Outlet.AsElement()))
 		e.SetData("viewnames", NewList(String(viewname)))
 		e.SetData("uri", String("/"+viewname))
@@ -938,7 +937,7 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 	}
 	return func(l Link)Link{
 		e:= l.AsElement()
-		ne:= NewElement(viewname, ve.AsElement().ID+"-"+viewname, e.DocType)
+		ne:= NewElement(ve.AsElement().ID+"-"+viewname, e.DocType)
 
 		v,ok:=e.GetData("viewelements")
 		if !ok{
@@ -1075,6 +1074,11 @@ func (n *NavHistory) Value() Value {
 	return o
 }
 
+// Note that router state may be synchronized/persisted only on page change at times.
+// In which case, on app reload, the latest nav history state may be lost if no persistence
+// was forced beforehand.
+// Hence, one should be careful before storing app state in the framework history object, 
+// depending on the implementation. (some state object could be persisted for each mutation)
 func(n *NavHistory) ImportState(v Value) *NavHistory{
 	h,ok:= v.(Object)
 	if !ok{

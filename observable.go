@@ -28,7 +28,7 @@ func NewObservable(id string, options ...func(*Element)*Element) Observable {
 		nil,
 		nil,
 		nil,
-		id,
+		"",
 		id,
 		"observable",
 		NewPropertyStore(),
