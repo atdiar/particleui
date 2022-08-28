@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -61,18 +63,37 @@ func(e *Element) WithFetchedData(propname string, req *http.Request, responsehan
 	if noprefetch != nil{
 		prefetchable = false
 	}
+	
 
 	if prefetchable{
 		if !e.isPrefetchable(propname){
 			e.makePrefetchable(propname)
 			e.Watch("event","prefetch",e,NewMutationHandler(func(evt MutationEvent)bool{
-				evt.Origin().fetchData(propname,req,responsehandler,true)
+				r:= cloneReq(req)
+				ctx,cancelFn:= context.WithCancel(r.Context())
+				r = r.WithContext(ctx)
+
+				e.Watch("event","cancelprefetchrequests",e,NewMutationHandler(func(evt MutationEvent)bool{
+					cancelFn()
+					return false
+				}).RunOnce())
+
+				evt.Origin().fetchData(propname,r,responsehandler,true)
 				return false
 			}))
 		}
 	}
 	e.OnFetch(NewMutationHandler(func(evt MutationEvent) bool{
-		e.fetchData(propname,req,responsehandler,false)
+		r:= cloneReq(req)
+		ctx,cancelFn:= context.WithCancel(r.Context())
+		r = r.WithContext(ctx)
+
+		e.Watch("event","cancelfetchrequests",e,NewMutationHandler(func(evt MutationEvent)bool{
+			cancelFn()
+			return false
+		}).RunOnce())
+
+		e.fetchData(propname,r,responsehandler,false)
 		return false
 	}))             
 
@@ -90,6 +111,10 @@ func(e *Element) WithFetchedDataFromURL(propname string, url string, responsehan
 func(e *Element) CancelFetch(){
 	e.Set("event","cancelfetchrequests", Bool(true))
 	e.Set("event","fetchcancelled",Bool(true))
+}
+
+func(e *Element) cancelPrefetch(){
+	e.Set("event","cancelprefetchrequests",Bool(true))
 }
 
 
@@ -126,23 +151,17 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			e.fetchCompleted(propname,true)
 		}
 		return
+	} else if !prefetching{
+		e.cancelPrefetch()
 	}
 
-	// Register new fetch in fetchlistunless fetch is already running
+	// Register new fetch in fetchlist unless fetch is already running
 	startfetch:= e.initFetch(propname)
 
 	if !startfetch{
 		return
 	}
 
-	ctx,cancelFn:= context.WithCancel(req.Context())
-	req = req.WithContext(ctx)
-
-
-	e.Watch("event","cancelfetchrequests",e,NewMutationHandler(func(evt MutationEvent)bool{
-		cancelFn()
-		return false
-	}).RunOnce())
 	
 	go func(){
 		res, err:= HttpClient.Do(req)
@@ -180,6 +199,20 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			}
 		})
 	}()
+}
+
+func cloneReq(req *http.Request) (*http.Request){
+	r:= req.Clone(req.Context())
+	if req.Body == io.ReadCloser(nil){
+		return r
+	}
+	body,err:= io.ReadAll(req.Body)
+	if err!= nil{
+		panic(err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return r
 }
 
 func(e *Element) Prefetch(){
