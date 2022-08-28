@@ -644,10 +644,11 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	r.History.NewState = ns
 	r.History.RecoverState = rs
 	
-	
+
 	// Add default navigation error handlers
 	// notfound:
 	pnf:= NewDiv(r.Outlet.AsElement().Root().ID+"-notfound").SetText("Page Not Found.")
+	SetAttribute(pnf.AsElement(),"role","alert")
 	SetInlineCSS(pnf.AsElement(),`all: initial;`)
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
@@ -727,6 +728,14 @@ func (d Document) Render(w io.Writer) error {
 // It needs to run at the end, after the UI tree has been built.
 func(d Document) ListenAndServe(){
 	ui.GetRouter().ListenAndServe("popstate", GetWindow().AsElement())
+}
+
+func GetDocumentContaining(e ui.AnyElement) (Document, bool){
+	el:= e.AsElement()
+	if !el.Mounted(){
+		return Document{},false
+	}
+	return Document{ui.BasicElement{el.Root()}},true
 }
 
 var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
