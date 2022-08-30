@@ -15,6 +15,7 @@ import (
 	"syscall/js"
 	"time"
 	"github.com/atdiar/particleui"
+	"net/url"
 
 	"golang.org/x/net/html"
 )
@@ -502,8 +503,10 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 //
 // Element Constructors
 //
-//
-//
+// NOTE: the element constructor functions are stored in unexported top-level variables so that 
+// when reconstructing an element from its serialized representation, we are sure that the constructor exists.
+// If the constructor was defined within a function, it would require for that function to have been called first.
+// This might not have happened and maybe navigation/path-dependent.
 */
 
 // AllowSessionStoragePersistence is a constructor option.
@@ -713,10 +716,21 @@ type Document struct {
 	ui.BasicElement
 }
 
+func(d Document) Head() *ui.Element{
+	b,ok:= d.AsElement().Get("ui","head")
+	if !ok{ return nil}
+	return b.(*ui.Element)
+}
+
 func(d Document) Body() *ui.Element{
 	b,ok:= d.AsElement().Get("ui","body")
 	if !ok{ return nil}
 	return b.(*ui.Element)
+}
+
+func(d Document) SetLang(lang string) Document{
+	d.AsElement().SetUI("lang", ui.String(lang))
+	return d
 }
 
 func (d Document) Render(w io.Writer) error {
@@ -753,6 +767,11 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 
 	e.Watch("ui", "history", GetWindow().AsElement(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.SyncUI("history", evt.NewValue())
+		return false
+	}).RunASAP())
+
+	e.Watch("ui","lang",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		SetAttribute(evt.Origin(),"lang",string(evt.NewValue().(ui.String)))
 		return false
 	}).RunASAP())
 
@@ -836,6 +855,18 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 		}))
 		
 	})
+
+	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		r:= ui.GetRouter()
+		baseURI:= JSValue(evt.Origin()).Get("baseURI").String() // this is absolute by default
+		u,err:= url.ParseRequestURI(baseURI)
+		if err!= nil{
+			DEBUG(err)
+			return false
+		}
+		r.BasePath = u.Path
+		return false
+	}))
 		
 	
 	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -931,6 +962,8 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 
 		return false
 	}))
+
+	e.AppendChild(NewHead("head"))
 	e.AppendChild(NewBody("body"))
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1120,6 +1153,274 @@ func reset(element js.Value) js.Value {
 		element.Call("replaceWith", clone)
 	}
 	return clone
+}
+
+// Head refers to the <head> HTML element of a HTML document, which contains metadata and links to 
+// resources such as title, scripts, stylesheets.
+type Head struct{
+	ui.BasicElement
+}
+
+var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "head"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlHead:= js.Global().Get("document").Get("head")
+	exist:= htmlHead.Truthy()
+	if !exist{
+		htmlHead= js.Global().Get("document").Call("createElement","head")
+	}else{
+		htmlHead = reset(htmlHead)
+	}
+
+	n := NewNativeElementWrapper(htmlHead)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().Root().Set("ui","head",evt.Origin())
+		return false
+	}))
+
+	return e
+})
+
+func NewHead(id string, options ...string) Head{
+	return Head{ui.BasicElement{LoadFromStorage(newHead(id,options...))}}
+}
+
+// Meta : for definition and examples, see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/meta
+type Meta struct{
+	ui.BasicElement
+}
+
+func(m Meta) SetAttribute(name,value string) Meta{
+	SetAttribute(m.AsElement(),name,value)
+	return m
+}
+
+var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "meta"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlMeta:=  js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlMeta.IsNull()
+
+	if !exist {
+		htmlMeta = js.Global().Get("document").Call("createElement", "meta")
+	} else {
+		htmlMeta = reset(htmlMeta)
+	}
+
+	n := NewNativeElementWrapper(htmlMeta)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	return e
+})
+
+func NewMeta(id string, options ...string) Meta{
+	return Meta{ui.BasicElement{LoadFromStorage(newMeta(id,options...))}}
+}
+
+// Script is an ELement that refers to the HTML ELement of the same name that embeds executable 
+// code or data.
+type Script struct{
+	ui.BasicElement
+}
+
+func(s Script) Src(source string) Script{
+	SetAttribute(s.AsElement(),"src",source)
+	return s
+}
+
+func(s Script) Type(typ string) Script{
+	SetAttribute(s.AsElement(),"type",typ)
+	return s
+}
+
+func(s Script) Async() Script{
+	SetAttribute(s.AsElement(),"async","")
+	return s
+}
+
+func(s Script) Defer() Script{
+	SetAttribute(s.AsElement(),"defer","")
+	return s
+}
+
+func(s Script) SetInnerHTML(content string) Script{
+	SetInnerHTML(s.AsElement(),content)
+	return s
+}
+
+var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "script"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlScript:=  js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlScript.IsNull()
+
+	if !exist {
+		htmlScript = js.Global().Get("document").Call("createElement", "script")
+	} else {
+		htmlScript = reset(htmlScript)
+	}
+
+	n := NewNativeElementWrapper(htmlScript)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	return e
+})
+
+func NewScript(id string, options ...string) Script{
+	return Script{ui.BasicElement{LoadFromStorage(newScript(id,options...))}}
+}
+
+// Base allows to define the baseurl or the basepath for the links within a page.
+// In our current use-case, it will mostly be used when generating HTML (SSR or SSG).
+// It is then mostly a build-time concern.
+type Base struct{
+	ui.BasicElement
+}
+
+func(b Base) SetHREF(url string) Base{
+	b.AsElement().SetUI("href",ui.String(url))
+	return b
+}
+
+var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "base"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlBase:=  js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlBase.IsNull()
+
+	if !exist {
+		htmlBase = js.Global().Get("document").Call("createElement", "base")
+	} else {
+		htmlBase = reset(htmlBase)
+	}
+
+	n := NewNativeElementWrapper(htmlBase)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	e.Watch("ui","href",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		SetAttribute(evt.Origin(),"href",string(evt.NewValue().(ui.String)))
+		return false
+	}))
+
+	return e
+})
+
+func NewBase(id string, options ...string) Base{
+	return Base{ui.BasicElement{LoadFromStorage(newBase(id,options...))}}
+}
+
+
+// NoScript refers to an element that defines a section of HTMNL to be inserted in a page if a script
+// type is unsupported on the page of scripting is turned off.
+// As such, this is mostly useful during SSR or SSG, for examplt to display a message if javascript
+// is disabled.
+// Indeed, if scripts are disbaled, wasm will not be able to insert this dynamically into the page.
+type NoScript struct{
+	ui.BasicElement
+}
+
+func(s NoScript) SetInnerHTML(content string) NoScript{
+	SetInnerHTML(s.AsElement(),content)
+	return s
+}
+
+var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a body constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "noscript"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlNoScript:=  js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlNoScript.IsNull()
+
+	if !exist {
+		htmlNoScript = js.Global().Get("document").Call("createElement", "noscript")
+	} else {
+		htmlNoScript = reset(htmlNoScript)
+	}
+
+	n := NewNativeElementWrapper(htmlNoScript)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	return e
+})
+
+func NewNoScript(id string, options ...string) Script{
+	return Script{ui.BasicElement{LoadFromStorage(newNoScript(id,options...))}}
 }
 
 // Div is a concrete type that holds the common interface to Div *ui.Element objects.
