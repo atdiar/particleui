@@ -8,7 +8,6 @@ package doc
 import (
 	"encoding/json"
 	//"errors"
-	"io"
 	"log"
 	"strconv"
 	"strings"
@@ -16,8 +15,6 @@ import (
 	"time"
 	"github.com/atdiar/particleui"
 	"net/url"
-
-	"golang.org/x/net/html"
 )
 
 func init(){
@@ -635,7 +632,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 
 	ns:= func(id string) ui.Observable{
 		o:= NewObservable(id,EnableSessionPersistence())
-		PutInStorage(ClearFromStorage(o.AsElement()))
+		//PutInStorage(o.AsElement()) DEBUG
 		return o
 	}
 
@@ -703,6 +700,10 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 
 
 var newObservable = Elements.NewConstructor("observable",func(id string) *ui.Element{
+	e:= Elements.GetByID(id)
+	if e != nil{
+		ui.Delete(e)
+	}
 	o:= ui.NewObservable(id)
 	return o.AsElement()
 
@@ -731,10 +732,6 @@ func(d Document) Body() *ui.Element{
 func(d Document) SetLang(lang string) Document{
 	d.AsElement().SetUI("lang", ui.String(lang))
 	return d
-}
-
-func (d Document) Render(w io.Writer) error {
-	return html.Render(w, NewHTMLTree(d))
 }
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
@@ -1164,7 +1161,7 @@ type Head struct{
 var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
+		// Let's check that this element's constructory is a head constructor
 		c,ok:= e.Get("internals","constructor")
 		if !ok{
 			panic("a UI element without the constructor property, should not be happening")
@@ -1215,7 +1212,7 @@ func(m Meta) SetAttribute(name,value string) Meta{
 var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
+		// Let's check that this element's constructory is a meta constructor
 		c,ok:= e.Get("internals","constructor")
 		if !ok{
 			panic("a UI element without the constructor property, should not be happening")
@@ -1283,7 +1280,7 @@ func(s Script) SetInnerHTML(content string) Script{
 var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
+		// Let's check that this element's constructory is a script constructor
 		c,ok:= e.Get("internals","constructor")
 		if !ok{
 			panic("a UI element without the constructor property, should not be happening")
@@ -1332,7 +1329,7 @@ func(b Base) SetHREF(url string) Base{
 var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
+		// Let's check that this element's constructory is a base constructor
 		c,ok:= e.Get("internals","constructor")
 		if !ok{
 			panic("a UI element without the constructor property, should not be happening")
@@ -1389,7 +1386,7 @@ func(s NoScript) SetInnerHTML(content string) NoScript{
 var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
+		// Let's check that this element's constructory is a noscript constructor
 		c,ok:= e.Get("internals","constructor")
 		if !ok{
 			panic("a UI element without the constructor property, should not be happening")
@@ -1423,6 +1420,57 @@ func NewNoScript(id string, options ...string) Script{
 	return Script{ui.BasicElement{LoadFromStorage(newNoScript(id,options...))}}
 }
 
+// Link refers to the <link> HTML Element which allow to specify the location of external resources
+// such as stylesheets or a favicon.
+type Link struct{
+	ui.BasicElement
+}
+
+func(l Link) SetAttribute(name,value string) Link{
+	SetAttribute(l.AsElement(),name,value)
+	return l
+}
+
+var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a link constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "link"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlLink:=  js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlLink.IsNull()
+
+	if !exist {
+		htmlLink = js.Global().Get("document").Call("createElement", "link")
+	} else {
+		htmlLink = reset(htmlLink)
+	}
+
+	n := NewNativeElementWrapper(htmlLink)
+	e.Native = n
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+
+	return e
+})
+
+func NewLink(id string, options ...string) Link{
+	return Link{ui.BasicElement{LoadFromStorage(newLink(id,options...))}}
+}
+
+
+// Content Sectioning and other HTML Elements
+
 // Div is a concrete type that holds the common interface to Div *ui.Element objects.
 // i.e. ui.Element whose constructor name is "div" and represents html div elements.
 type Div struct {
@@ -1440,7 +1488,18 @@ func (d Div) SetText(str string) Div {
 }
 
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a div constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "div"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlDiv := js.Global().Get("document").Call("getElementById", id)
@@ -1470,15 +1529,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlDiv.Set("textContent", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
@@ -1568,127 +1619,6 @@ func isPersisted(e *ui.Element) bool{
 	return ok
 }
 
-var AriaChangeAnnouncer =  defaultAnnouncer()
-
-func defaultAnnouncer() Div{
-	a:=NewDiv("announcer")
-	SetAttribute(a.AsElement(),"aria-live","polite")
-	SetAttribute(a.AsElement(),"aria-atomic","true")
-	SetInlineCSS(a.AsElement(),"clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; overflow:hidden; position:absolute;white-space:nowrap;width:1px;")
-
-	a.AsElement().OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		w:= GetWindow().AsElement()
-		evt.Origin().Watch("ui","title",w,ui.NewMutationHandler(func(tevt ui.MutationEvent)bool{
-			title:= string(tevt.NewValue().(ui.String))
-			Div{ui.BasicElement{evt.Origin()}}.SetText(title)
-			return false
-		}))
-		return false
-	}))
-	return a
-}
-
-
-func AriaMakeAnnouncement(message string){
-	AriaChangeAnnouncer.SetText(message)
-}
-
-// Tooltip defines the type implementing the interface of a tooltip ui.Element.
-// The default ui.Element interface is reachable via a call to the   AsBasicElement() method.
-type Tooltip struct {
-	ui.BasicElement
-}
-
-// SetContent sets the content of the tooltip.
-func (t Tooltip) SetContent(content ui.BasicElement) Tooltip {
-	t.AsElement().SetData("content", content.AsElement())
-	return t
-}
-
-// SetContent sets the content of the tooltip.
-func (t Tooltip) SetText(content string) Tooltip {
-	t.AsElement().SetData("content", ui.String(content))
-	return t
-}
-
-var tooltipConstructor = Elements.NewConstructor("tooltip", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
-	e.Set("internals", "tag", ui.String("div"))
-	e = enableClasses(e)
-
-	htmlTooltip := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTooltip.IsNull()
-
-	if !exist {
-		htmlTooltip = js.Global().Get("document").Call("createElement", "div")
-	} else {
-		htmlTooltip = reset(htmlTooltip)
-	}
-
-	n := NewNativeElementWrapper(htmlTooltip)
-	e.Native = n
-	SetAttribute(e, "id", id)
-	AddClass(e, "tooltip")
-
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		content, ok := evt.NewValue().(*ui.Element)
-		if ok {
-			tooltip := evt.Origin()
-
-			tooltip.AsElement().SetChildren(ui.BasicElement{content})
-
-			return false
-		}
-		strcontent, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-
-		tooltip := evt.Origin()
-		tooltip.RemoveChildren()
-
-		htmlTooltip.Set("textContent", strcontent)
-
-		return false
-	})
-	e.Watch("data", "content", e, h)
-
-	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-
-func HasTooltip(target *ui.Element) (Tooltip, bool) {
-	v := target.ElementStore.GetByID(target.ID + "-tooltip")
-	if v == nil {
-		return Tooltip{ui.BasicElement{v}}, false
-	}
-	return Tooltip{ui.BasicElement{v}}, true
-}
-
-// EnableTooltip, when passed to a constructor which has the AllowTooltip option,
-// creates a tootltip html div element (for a given target ui.Element)
-// The content of the tooltip can be directly set by  specifying a value for
-// the ("data","content") (category,propertyname) Element datastore entry.
-// The content value can be a string or another ui.Element.
-// The content of the tooltip can also be set by modifying the ("tooltip","content")
-// property
-func EnableTooltip() string {
-	return "AllowTooltip"
-}
-
-var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Element) *ui.Element {
-	e := LoadFromStorage(tooltipConstructor(target.ID+"-tooltip"))
-	// Let's observe the target element which owns the tooltip too so that we can
-	// change the tooltip automatically from there.
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.Set("data", "content", evt.NewValue(), false)
-		return false
-	})
-	target.Watch("tooltip", "content", target, h)
-
-	target.AppendChild(ui.BasicElement{e})
-
-	return target
-})
 
 type TextArea struct {
 	ui.BasicElement
@@ -1721,8 +1651,29 @@ func (t TextArea) SetRows(i int) TextArea {
 	return t
 }
 
+// SetWrap allows to define how text should wrap. "soft" by default, it can be "hard" or "off".
+func(t TextArea) SetWrap(mod string) TextArea{
+	v:= "sofft"
+	if mod == "hard" || mod == "off"{
+		v = mod
+	}
+	t.AsElement().SetUI("wrap",ui.String(v))
+	return t
+}
+
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a textarea constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "textarea"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlTextArea := js.Global().Get("document").Call("getElementById", id)
@@ -1736,7 +1687,7 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if s, ok := evt.NewValue().(ui.String); ok {
-			old := htmlTextArea.Get("value").String()
+			old := JSValue(evt.Origin()).Get("value").String()
 			if string(s) != old {
 				SetAttribute(evt.Origin(), "value", string(s))
 			}
@@ -1745,11 +1696,13 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 	}))
 
 	e.Watch("ui", "rows", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if n, ok := evt.NewValue().(ui.Number); ok {
-			SetAttribute(e, "rows", strconv.Itoa(int(n)))
-			return false
-		}
-		return true
+		SetAttribute(evt.Origin(), "rows", strconv.Itoa(int( evt.NewValue().(ui.Number))))
+		return false
+	}))
+
+	e.Watch("ui", "wrap", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		SetAttribute(evt.Origin(), "wrap", string(evt.NewValue().(ui.String)))
+		return false
 	}))
 
 	e.Watch("ui", "cols", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -1769,10 +1722,8 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 
 // NewTextArea is a constructor for a textarea html element.
-func NewTextArea(id string, rows int, cols int, options ...string) TextArea {
+func NewTextArea(id string, options ...string) TextArea {
 	e:= newTextArea(id, options...)
-	e.SetDataSetUI("rows", ui.String(strconv.Itoa(rows)))
-	e.SetDataSetUI("cols", ui.String(strconv.Itoa(cols)))
 	return TextArea{ui.BasicElement{LoadFromStorage(e)}}
 }
 
@@ -1844,7 +1795,18 @@ type Header struct {
 }
 
 var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a header constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "header"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlHeader := js.Global().Get("document").Call("getElementById", id)
@@ -1874,7 +1836,18 @@ type Footer struct {
 }
 
 var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a footer constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "footer"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlFooter := js.Global().Get("document").Call("getElementById", id)
@@ -1906,7 +1879,18 @@ type Section struct {
 }
 
 var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a section constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "section"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlSection := js.Global().Get("document").Call("getElementById", id)
@@ -1940,7 +1924,18 @@ func (h H1) SetText(s string) H1 {
 }
 
 var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h1 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h1"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH1 := js.Global().Get("document").Call("getElementById", id)
@@ -1957,15 +1952,7 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH1.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -1984,7 +1971,18 @@ func (h H2) SetText(s string) H2 {
 }
 
 var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h2 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h2"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH2 := js.Global().Get("document").Call("getElementById", id)
@@ -2001,15 +1999,7 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH2.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e,textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2028,7 +2018,18 @@ func (h H3) SetText(s string) H3 {
 }
 
 var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h3 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h3"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH3 := js.Global().Get("document").Call("getElementById", id)
@@ -2045,15 +2046,7 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH3.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e,textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2072,7 +2065,18 @@ func (h H4) SetText(s string) H4 {
 }
 
 var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h4 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h4"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH4 := js.Global().Get("document").Call("getElementById", id)
@@ -2089,15 +2093,7 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH4.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2116,7 +2112,18 @@ func (h H5) SetText(s string) H5 {
 }
 
 var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h5 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h5"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH5 := js.Global().Get("document").Call("getElementById", id)
@@ -2133,15 +2140,7 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH5.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2160,7 +2159,18 @@ func (h H6) SetText(s string) H6 {
 }
 
 var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a h6 constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "h6"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlH6 := js.Global().Get("document").Call("getElementById", id)
@@ -2177,15 +2187,7 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		str, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlH6.Set("innerHTML", string(str))
-
-		return false
-	}))
+	e.Watch("ui", "text", e,textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2205,7 +2207,18 @@ func (s Span) SetText(str string) Span {
 }
 
 var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a span constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "span"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlSpan := js.Global().Get("document").Call("getElementById", id)
@@ -2219,14 +2232,7 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	n := NewNativeElementWrapper(htmlSpan)
 	e.Native = n
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		rawstr, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlSpan.Set("textContent", string(rawstr))
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 
 	if !exist {
 		SetAttribute(e, "id", id)
@@ -2239,6 +2245,47 @@ func NewSpan(id string, options ...string) Span {
 	return Span{ui.BasicElement{LoadFromStorage(newSpan(id, options...))}}
 }
 
+type Article struct {
+	ui.BasicElement
+}
+
+
+var newArticle= Elements.NewConstructor("code", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a <article> constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "article"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlArticle := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlArticle.IsNull()
+	if !exist {
+		htmlArticle = js.Global().Get("document").Call("createElement", "article")
+	} else {
+		htmlArticle = reset(htmlArticle)
+	}
+
+	n := NewNativeElementWrapper(htmlArticle)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func NewArticle(id string, options ...string) Article {
+	return Article{ui.BasicElement{LoadFromStorage(newArticle(id, options...))}}
+}
+
 type Paragraph struct {
 	ui.BasicElement
 }
@@ -2249,7 +2296,18 @@ func (p Paragraph) SetText(s string) Paragraph {
 }
 
 var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a p constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "p"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlParagraph := js.Global().Get("document").Call("getElementById", id)
@@ -2271,7 +2329,7 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		htmlParagraph.Set("innerText", string(rawstr))
+		JSValue(evt.Origin()).Set("innerText", string(rawstr))
 		return false
 	}))
 	return e
@@ -2282,31 +2340,32 @@ func NewParagraph(id string, options ...string) Paragraph {
 	return Paragraph{ui.BasicElement{LoadFromStorage(newParagraph(id, options...))}}
 }
 
-/*type Nav struct {
-	UIElement *ui.Element
-}
-
-func (n Nav) Element() *ui.Element {
-	return n.UIElement
-}
-
-func (n Nav) AppendAnchorLink(l Anchor) Nav {
-	// TODO append link element
-	n.Element().AppendChild(l.Element())
-	return n
+type Nav struct {
+	ui.BasicElement
 }
 
 var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
-		e := ui.NewElement(name, id, Elements.DocType)
+		e:= Elements.GetByID(id)
+		if e!= nil{
+			// Let's check that this element's constructory is a body constructor
+			c,ok:= e.Get("internals","constructor")
+			if !ok{
+				panic("a UI element without the constructor property, should not be happening")
+			}
+			if s:= string(c.(ui.String)); s == "nav"{
+				return e
+			}	
+		}
+		e = ui.NewElement(id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlNavMenu := js.Global().Get("document").Call("getElementById", id)
-		exist := !htmlNavMenu.IsNull()
+		htmlNav := js.Global().Get("document").Call("getElementById", id)
+		exist := !htmlNav.IsNull()
 		if !exist {
-			htmlNavMenu = js.Global().Get("document").Call("createElement", "nav")
+			htmlNav = js.Global().Get("document").Call("createElement", "nav")
 		}
 
-		n := NewNativeElementWrapper(htmlNavMenu)
+		n := NewNativeElementWrapper(htmlNav)
 		e.Native = n
 
 		if !exist {
@@ -2316,11 +2375,11 @@ var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 		return e
 	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// NewNavMenu is a constructor for a html nav element.
-func NewNavMenu(id string, options ...string) Nav {
-	return Nav{LoadFromStoragenewNavc(name, id, options...))}
+// NewNav is a constructor for a html nav element.
+func NewNav(id string, options ...string) Nav {
+	return Nav{ui.BasicElement{LoadFromStorage(newNav(id, options...))}}
 }
-*/
+
 
 type Anchor struct {
 	ui.BasicElement
@@ -2418,7 +2477,18 @@ func (a Anchor) SetText(text string) Anchor {
 }
 
 var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a anchor constructor 'a'
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "a"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlAnchor := js.Global().Get("document").Call("getElementById", id)
@@ -2445,11 +2515,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	}))
 
 	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		s, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		SetInnerHTML(e, string(s))
+		JSValue(evt.Origin()).Set("text", string(evt.NewValue().(ui.String)))
 		return false
 	}))
 
@@ -2499,6 +2565,8 @@ type Button struct {
 	ui.BasicElement
 }
 
+// Autofocus is mainly useful for SSR/SSG. Since SPA pages are rarely reloaded, the Autofocus modifer
+// should be used instead.
 func (b Button) Autofocus(t bool) Button {
 	b.AsElement().SetDataSetUI("autofocus", ui.Bool(t))
 	return b
@@ -2510,12 +2578,23 @@ func (b Button) Disabled(t bool) Button {
 }
 
 func (b Button) SetText(str string) Button {
-	b.AsElement().SetDataSetUI("content", ui.String(str))
+	b.AsElement().SetDataSetUI("text", ui.String(str))
 	return b
 }
 
 var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a button constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "button"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlButton := js.Global().Get("document").Call("getElementById", id)
@@ -2554,14 +2633,7 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 		return false
 	}))
 
-	e.Watch("ui", "content", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		s, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlButton.Set("innerHTML", string(s))
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 
 	//SetAttribute(e, "name", elementname)
 	SetAttribute(e, "id", id)
@@ -2581,7 +2653,7 @@ type Label struct {
 }
 
 func (l Label) SetText(s string) Label {
-	l.AsElement().SetUI("content", ui.String(s))
+	l.AsElement().SetUI("text", ui.String(s))
 	return l
 }
 
@@ -2591,7 +2663,18 @@ func (l Label) For(e *ui.Element) Label {
 }
 
 var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a label constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "label"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlLabel := js.Global().Get("document").Call("getElementById", id)
@@ -2605,14 +2688,7 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	e.Native = n
 
 	SetAttribute(e, "id", id)
-	e.Watch("ui", "content", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		c, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-		htmlLabel.Set("innerHTML", string(c))
-		return false
-	}))
+	e.Watch("ui", "text", e, textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2661,7 +2737,18 @@ func (i Input) Clear() {
 }
 
 var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is an input constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "input"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlInput := js.Global().Get("document").Call("getElementById", id)
@@ -2823,12 +2910,16 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		return false
 	}))
 
-	//SetAttribute(e, "name", elementname)
+	e.Watch("ui","type",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		SetAttribute(evt.Origin(),"type",string(evt.NewValue().(ui.String)))
+		return false
+	}).RunASAP())
+
 	SetAttribute(e, "id", id)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewInput(typ string, id string, options ...string) Input {
+func NewInput(typ string, id string, options ...string) Input { // TODO use constructor option for type
 	e:= newInput(id, options...)
 	SetAttribute(e, "type", typ)
 	return Input{ui.BasicElement{LoadFromStorage(e)}}
@@ -2849,7 +2940,18 @@ func (i Img) Alt(s string) Img {
 }
 
 var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is an img constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "img"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlImg := js.Global().Get("document").Call("getElementById", id)
@@ -2889,7 +2991,18 @@ func NewImage(id string, options ...string) Img {
 }
 
 var NewAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is an audio constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "audio"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlAudio := js.Global().Get("document").Call("getElmentByID", id)
@@ -2908,7 +3021,18 @@ var NewAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var NewVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a video constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "video"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlVideo := js.Global().Get("document").Call("getElementById", id)
@@ -2919,7 +3043,6 @@ var NewVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 		htmlVideo = reset(htmlVideo)
 	}
 
-	//SetAttribute(e, "name", name)
 	SetAttribute(e, "id", id)
 
 	n := NewNativeElementWrapper(htmlVideo)
@@ -2927,220 +3050,67 @@ var NewVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-/*
-var NewMediaSource = func(src string, typ string, options ...string) *ui.Element { // TODO review arguments, create custom type interface
-	return Elements.NewConstructor("source", func(id string) *ui.Element {
-		e := ui.NewElement(id, Elements.DocType)
-		e = enableClasses(e)
 
-		htmlSource := js.Global().Get("document").Call("getElmentByID", id)
-		exist := !htmlSource.IsNull()
-		if !exist {
-			htmlSource = js.Global().Get("document").Call("createElement", "source")
-		} else {
-			htmlSource = reset(htmlSource)
+type Source struct{
+	ui.BasicElement
+}
+
+func(s Source) SetSrc(src string) Source{
+	s.AsElement().SetUI("src",ui.String(src))
+}
+
+func(s Source) SetType(typ string) Source{
+	s.AsElement().SetUI("type",ui.String(typ))
+}
+
+
+var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a source constructor.
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
 		}
-
-		n := NewNativeElementWrapper(htmlSource)
-		e.Native = n
-		// SetAttribute(e, "type", name)
-		SetAttribute(e, "src", id)
-		return e
-	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)(typ, src, options...)
-}
-
-*/
-
-/* Convenience function
-
-func WithSources(sources ...*ui.Element) func(*ui.Element) *ui.Element { // TODO
-	return func(mediaplayer *ui.Element) *ui.Element {
-		for _, source := range sources {
-			if source.Name != "source" {
-				log.Print("cannot append non media source element to mediaplayer")
-				continue
-			}
-			mediaplayer.AppendChild(source)
-		}
-		return mediaplayer
+		if s:= string(c.(ui.String)); s == "source"{
+			return e
+		}	
 	}
-}
-*/
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
 
-type TextNode struct {
-	UIElement *ui.Element
-}
-
-func (t TextNode) Element() *ui.Element {
-	return t.UIElement
-}
-func (t TextNode) SetValue(s ui.String) TextNode {
-	t.Element().SetDataSetUI("text", s)
-	return t
-}
-
-func (t TextNode) Value() ui.String {
-	v, ok := t.Element().Get("data", "text")
-	if !ok {
-		return ""
+	htmlSource := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlSource.IsNull()
+	if !exist {
+		htmlSource = js.Global().Get("document").Call("createElement", "source")
+	} else {
+		htmlSource = reset(htmlSource)
 	}
-	s, ok := v.(ui.String)
-	if !ok {
-		return ""
-	}
-	return s
-}
 
-
-var newTextNode = Elements.NewConstructor("text", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
-	htmlTextNode := js.Global().Get("document").Call("createTextNode", "")
-	n := NewNativeElementWrapper(htmlTextNode)
+	n := NewNativeElementWrapper(htmlSource)
 	e.Native = n
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if s, ok := evt.NewValue().(ui.String); ok { // if data.text is deleted, nothing happens, so no check for nil of  evt.NewValue() TODO handkle all the Value types
-			htmlTextNode.Set("nodeValue", string(s))
-		}
+	SetAttribute(e, "id", id)
 
+	e.Watch("ui", "src", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		SetAttribute(evt.Origin(),"src",string(evt.NewValue().(ui.String)))
 		return false
 	}))
 
+	e.Watch("ui", "type", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		SetAttribute(evt.Origin(),"type",string(evt.NewValue().(ui.String)))
+		return false
+	}))
+
+
 	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
-
-// NewTextNode creates a text node.
-//
-func NewTextNode() TextNode {
-	return TextNode{newTextNode("textnode", NewID())}
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+/*
+func NewMediaSource = func(src string, typ string, options ...string) *ui.Element { // TODO review arguments, create custom type interface
+	return (typ, src, options...)
 }
 
-type TemplatedTextNode struct {
-	*ui.Element
-}
-
-func (t TemplatedTextNode) AsElement() *ui.Element {
-	return t.Element
-}
-
-func (t TemplatedTextNode) SetParam(paramName string, value ui.String) TemplatedTextNode {
-	params, ok := t.AsElement().GetData("listparams")
-	if !ok {
-		return t
-	}
-	paramslist, ok := params.(ui.List)
-	if !ok {
-		return t
-	}
-	for _, pname := range paramslist {
-		p, ok := pname.(ui.String)
-		if !ok {
-			continue
-		}
-		if paramName == string(p) {
-			t.Element.SetData(paramName, value)
-		}
-	}
-	return t
-}
-
-func (t TemplatedTextNode) Value() ui.String {
-	v, ok := t.Element.Get("data", "text")
-	if !ok {
-		return ""
-	}
-	s, ok := v.(ui.String)
-	if !ok {
-		return ""
-	}
-	return s
-}
-
-// NewTemplatedText returns a templated textnode.
-// Using SetParam allows to specify a value for the string parameters.
-// Checking that all the parameters have been set before appending the textnode
-//  is left at the discretion of the user.
-func NewTemplatedText(template string) TemplatedTextNode {
-	nt := NewTextNode()
-	// nt.Element().Set("internals","template", ui.String(template))
-
-	strmuthandlerFn := func(name string) *ui.MutationHandler {
-		m := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			o, ok := evt.Origin().GetData("listparams")
-			if !ok {
-				return true
-			}
-			listparams, ok := o.(ui.Object)
-			if !ok {
-				return true
-			}
-			var res string
-
-			for k := range listparams {
-				if k != "pui_object_typ" { // review TODO used to be "typ"
-					s, ok := evt.Origin().GetData(k)
-					if !ok {
-						continue
-					}
-					str, ok := s.(ui.String)
-					if !ok {
-						continue
-					}
-					param := "$(" + k + "}"
-					res = strings.ReplaceAll(template, param, string(str))
-				}
-			}
-			evt.Origin().SetDataSetUI("text", ui.String(res))
-			return false
-		})
-		return m
-	}
-
-	paramnames := parse(template, "${", "}")
-	nt.Element().SetData("listparams", paramnames)
-
-	for paramname := range paramnames {
-		nt.Element().Watch("data", paramname, nt.Element(), strmuthandlerFn(paramname))
-	}
-
-	return TemplatedTextNode{nt.Element()}
-}
-
-func parse(input string, tokenstart string, tokenend string) ui.Object {
-	result := ui.NewObject()
-	ns := input
-
-	startcursor := strings.Index(ns, tokenstart)
-	if startcursor == -1 {
-		return result
-	}
-	ns = ns[startcursor:]
-	ns = strings.TrimPrefix(ns, tokenstart)
-
-	endcursor := strings.Index(ns, tokenend)
-	if endcursor < 1 {
-		return result
-	}
-	tail := ns[endcursor:]
-	p := strings.TrimSuffix(ns, tail)
-	_, ok := result.Get(p)
-	if !ok {
-		result.Set(p, nil)
-	}
-
-	subresult := parse(strings.TrimPrefix(tail, tokenend), tokenstart, tokenend)
-	for k, v := range subresult {
-		_, ok := result.Get(k)
-		if !ok {
-			str, ok := v.(ui.String)
-			if !ok {
-				continue
-			}
-			result.Set(k, str)
-		}
-	}
-	return result
-}
+*/
 
 type List struct {
 	ui.BasicElement
@@ -3164,7 +3134,18 @@ func (l List) Values() ui.List {
 }
 
 var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a ul constructor.
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "ul"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlList := js.Global().Get("document").Call("getElementById", id)
@@ -3217,7 +3198,18 @@ func (l OrderedList) SetValue(lobjs ui.List) OrderedList {
 }
 
 var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a ol constructor.
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "ol"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlList := js.Global().Get("document").Call("getElementById", id)
@@ -3253,7 +3245,18 @@ func (li ListItem) SetValue(v ui.Value) ListItem {
 }
 
 var newListItem= Elements.NewConstructor("li", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a li constructor.
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "li"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlListItem := js.Global().Get("document").Call("getElementById", id)
@@ -3309,6 +3312,8 @@ func NewListItem(id string, options ...string) ListItem {
 	return ListItem{ui.BasicElement{LoadFromStorage(newListItem(id, options...))}}
 }
 
+// Table Elements
+
 type Table struct {
 	ui.BasicElement
 }
@@ -3333,12 +3338,27 @@ type Th struct {
 	ui.BasicElement
 }
 
-type TableCell struct {
+type col struct {
+	ui.BasicElement
+}
+
+type Tfoot struct {
 	ui.BasicElement
 }
 
 var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a thead constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "thead"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlThead := js.Global().Get("document").Call("getElementById", id)
@@ -3361,25 +3381,20 @@ func NewThead(id string, options ...string) Thead {
 	return Thead{ui.BasicElement{LoadFromStorage(newThead(id, options...))}}
 }
 
-func (t Thead) AddRow(rows ...Tr) Thead {
-	for _, row := range rows {
-		t.AsElement().AppendChild(row)
-	}
-	return t
-}
-
-func (row Tr) AppendThChild(th Th) Tr {
-	row.AsElement().AppendChild(th)
-	return row
-}
-
-func (row Tr) AppendTdChild(td Td) Tr {
-	row.AsElement().AppendChild(td)
-	return row
-}
 
 var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a tr constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "tr"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlTr := js.Global().Get("document").Call("getElementById", id)
@@ -3403,7 +3418,18 @@ func NewTr(id string, options ...string) Tr {
 }
 
 var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a td constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "td"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlTableData := js.Global().Get("document").Call("getElementById", id)
@@ -3427,7 +3453,18 @@ func NewTd(id string, options ...string) Td {
 }
 
 var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a th constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "th"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlTableDataHeader := js.Global().Get("document").Call("getElementById", id)
@@ -3451,7 +3488,18 @@ func NewTh(id string, options ...string) Th {
 }
 
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a table constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "table"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlTable := js.Global().Get("document").Call("getElementById", id)
@@ -3474,89 +3522,56 @@ func NewTable(id string, options ...string) Table {
 	return Table{ui.BasicElement{LoadFromStorage(newTable(id, options...))}}
 }
 
-/*
-func (t Table) AddRow(values ...ui.Value) error { // TODO
-	var rowcount int
-	c, ok := t.Element().GetData("rowcount")
-	if ok {
-		count, ok := c.(ui.Number)
-		if ok {
-			rowcount = int(count)
-		}
-	}
 
-}
-*/
-func (t Table) SetColumns(cols ...ColumnDesc) Table {
-	c := make([]ui.Value, 0)
-	for _, col := range cols {
-		c = append(c, ui.Value(col.RawObject()))
-	}
-	l := ui.NewList(c...)
-	t.AsElement().Set("data", "columndesc", l)
-	return t
-}
 
-type ColumnDesc ui.Object
-
-func (c ColumnDesc) RawObject() ui.Object { return ui.Object(c) }
-func (c ColumnDesc) Name() string {
-	n, ok := c.RawObject().Get("name")
-	if !ok {
-		return ""
-	}
-	name, ok := n.(ui.String)
-	if !ok {
-		panic("columndesc expects a string for name")
-	}
-	return string(name)
-}
-func (c ColumnDesc) DataType() string {
-	n, ok := c.RawObject().Get("datatype")
-	if !ok {
-		return ""
-	}
-	dt, ok := n.(ui.String)
-	if !ok {
-		panic("columndesc expects a string for datatype")
-	}
-	return string(dt)
-}
-func (c ColumnDesc) Sortable() bool {
-	n, ok := c.RawObject().Get("sortable")
-	if !ok {
-		return false
-	}
-	sort, ok := n.(ui.Bool)
-	if !ok {
-		panic("columndesc expects a boolean for sortable")
-	}
-	return bool(sort)
-}
-func (c ColumnDesc) Editablel() bool {
-	n, ok := c.RawObject().Get("editable")
-	if !ok {
-		return false
-	}
-	edit, ok := n.(ui.Bool)
-	if !ok {
-		panic("columndesc expects a boolean for editable")
-	}
-	return bool(edit)
-}
-func NewColumnDesc(name string, datatype string, sortable bool, editable bool) ColumnDesc {
-	c := ui.NewObject()
-	c.Set("name", ui.String(name))
-	c.Set("datatype", ui.String(datatype))
-	c.Set("sortable", ui.Bool(sortable))
-	c.Set("editable", ui.Bool(editable))
-	return ColumnDesc(c)
-}
-
-// Code tag TODO
-
+// Code is typically used to indicate that the text it contains is computer code and may therefore be 
+// formatted differently.
+// To represent multiple lines of code, wrap the <code> element within a <pre> element. 
+// The <code> element by itself only represents a single phrase of code or line of code.
 type Code struct {
 	ui.BasicElement
+}
+
+func (c Code) SetText(str string) Code {
+	c.AsElement().SetDataSetUI("text", ui.String(str))
+	return c
+}
+
+var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a <code> constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "code"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlCode := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlCode.IsNull()
+	if !exist {
+		htmlCode = js.Global().Get("document").Call("createElement", "code")
+	} else {
+		htmlCode = reset(htmlCode)
+	}
+
+	n := NewNativeElementWrapper(htmlCode)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	e.Watch("ui", "text", e, textContentHandler)
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func NewCode(id string, options ...string) Code {
+	return Code{ui.BasicElement{LoadFromStorage(newCode(id, options...))}}
 }
 
 func AddClass(target *ui.Element, classname string) {
@@ -3705,72 +3720,26 @@ func RemoveAttribute(target *ui.Element, name string) {
 }
 
 
-// Buttonify turns an Element into a clickable non-anchor link
-func Buttonify(any ui.AnyElement, link ui.Link) {
+// Buttonifyier returns en element modifier that can turn an element into a clickable non-anchor 
+// naviagtion element.
+func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 	callback := ui.NewEventHandler(func(evt ui.Event) bool {
 		link.Activate()
 		return false
 	})
-	any.AsElement().AddEventListener("click", callback)
+	return func(e *ui.Element)*ui.Element{
+		e.AddEventListener("click",callback)
+		return e
+	}
 }
 
-/*
- HTML rendering
 
-*/
-
-func NewHTMLNode(e *ui.Element) *html.Node {
-	if e.DocType != Elements.DocType {
-		panic("Bad Element doctype")
-	}
-	v, ok := e.Get("internals", "constructor")
+var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	str, ok := evt.NewValue().(ui.String)
 	if !ok {
-		return nil
+		return true
 	}
-	tag, ok := v.(ui.String)
-	if !ok {
-		panic("constructor name should be a string")
-	}
-	data := string(tag)
-	nodetype := html.RawNode
-	if string(tag) == "root" {
-		data = "body"
-	}
-	n := &html.Node{}
-	n.Type = nodetype
-	n.Data = data
+	JSValue(evt.Origin()).Set("textContent", string(str))
 
-	attrs, ok := e.GetData("attrs")
-	if !ok {
-		return n
-	}
-	tattrs, ok := attrs.(ui.Object)
-	if !ok {
-		panic("attributes is supossed to be a ui.Object type")
-	}
-	for k, v := range tattrs {
-		val, ok := v.(ui.String)
-		if !ok {
-			continue // should panic probably instead
-		}
-		a := html.Attribute{"", k, string(val)}
-		n.Attr = append(n.Attr, a)
-	}
-	return n
-}
-
-func NewHTMLTree(document Document) *html.Node {
-	doc := document.AsBasicElement()
-	return newHTMLTree(doc.AsElement())
-}
-
-func newHTMLTree(e *ui.Element) *html.Node {
-	d := NewHTMLNode(e)
-	if e.Children != nil && e.Children.List != nil {
-		for _, child := range e.Children.List {
-			c := newHTMLTree(child)
-			d.AppendChild(c)
-		}
-	}
-	return d
-}
+	return false
+})
