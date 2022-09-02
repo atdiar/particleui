@@ -1619,7 +1619,7 @@ func isPersisted(e *ui.Element) bool{
 	return ok
 }
 
-
+// TODO implement spellcheck and autocomplete methods
 type TextArea struct {
 	ui.BasicElement
 }
@@ -1641,13 +1641,38 @@ func (t TextArea) SetText(text string) TextArea {
 	return t
 }
 
-func (t TextArea) SetColumns(i int) TextArea {
+func (t TextArea) SetCols(i int) TextArea {
 	t.AsElement().SetDataSetUI("cols", ui.Number(i))
 	return t
 }
 
 func (t TextArea) SetRows(i int) TextArea {
 	t.AsElement().SetDataSetUI("rows", ui.Number(i))
+	return t
+}
+
+func (t TextArea) SetMinLength(m int) TextArea{
+	SetAttribute(t.AsElement(),"minlength",strconv.Itoa(m))
+	return t
+}
+
+func (t TextArea) SetMaxLength(m int) TextArea{
+	SetAttribute(t.AsElement(),"maxlength",strconv.Itoa(m))
+	return t
+}
+
+func (t TextArea) SetForm(formid string) TextArea{
+	SetAttribute(t.AsElement(),"form",formid)
+	return t
+}
+
+func (t TextArea) SetName(name string) TextArea{
+	SetAttribute(t.AsElement(),"name",name)
+	return t
+}
+
+func (t TextArea) SetPlaceholder(text string) TextArea{
+	SetAttribute(t.AsElement(),"placeholder",text)
 	return t
 }
 
@@ -1658,6 +1683,21 @@ func(t TextArea) SetWrap(mod string) TextArea{
 		v = mod
 	}
 	t.AsElement().SetUI("wrap",ui.String(v))
+	return t
+}
+
+func(t TextArea) Required() TextArea{
+	SetAttribute(t.AsElement(),"required","")
+	return t
+}
+
+func(t TextArea) ReadOnly() TextArea{
+	SetAttribute(t.AsElement(),"readonly","")
+	return t
+}
+
+func(t TextArea) Disabled(b bool) TextArea{
+	t.AsElement().SetDataSetUI("disabled",ui.Bool(b))
 	return t
 }
 
@@ -1707,10 +1747,15 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 	e.Watch("ui", "cols", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if n, ok := evt.NewValue().(ui.Number); ok {
-			SetAttribute(e, "rows", strconv.Itoa(int(n)))
+			SetAttribute(evt.Origin(), "rows", strconv.Itoa(int(n)))
 			return false
 		}
 		return true
+	}))
+
+	e.Watch("ui","disabled",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		SetAttribute(evt.Origin(),"disabled",strconv.FormatBool(bool(evt.NewValue().(ui.Bool))))
+		return false
 	}))
 
 	n := NewNativeElementWrapper(htmlTextArea)
@@ -2250,7 +2295,7 @@ type Article struct {
 }
 
 
-var newArticle= Elements.NewConstructor("code", func(id string) *ui.Element {
+var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
 		// Let's check that this element's constructory is a <article> constructor
@@ -2285,6 +2330,88 @@ var newArticle= Elements.NewConstructor("code", func(id string) *ui.Element {
 func NewArticle(id string, options ...string) Article {
 	return Article{ui.BasicElement{LoadFromStorage(newArticle(id, options...))}}
 }
+
+
+type Aside struct {
+	ui.BasicElement
+}
+
+var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a <aside> constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "aside"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlAside := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlAside.IsNull()
+	if !exist {
+		htmlAside = js.Global().Get("document").Call("createElement", "aside")
+	} else {
+		htmlAside = reset(htmlAside)
+	}
+
+	n := NewNativeElementWrapper(htmlAside)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func NewAside(id string, options ...string) Aside {
+	return Aside{ui.BasicElement{LoadFromStorage(newAside(id, options...))}}
+}
+
+type Main struct {
+	ui.BasicElement
+}
+
+var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		// Let's check that this element's constructory is a <main> constructor
+		c,ok:= e.Get("internals","constructor")
+		if !ok{
+			panic("a UI element without the constructor property, should not be happening")
+		}
+		if s:= string(c.(ui.String)); s == "main"{
+			return e
+		}	
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlMain := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlMain.IsNull()
+	if !exist {
+		htmlMain = js.Global().Get("document").Call("createElement", "main")
+	} else {
+		htmlMain = reset(htmlMain)
+	}
+
+	n := NewNativeElementWrapper(htmlMain)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func NewMain(id string, options ...string) Main {
+	return Main{ui.BasicElement{LoadFromStorage(newMain(id, options...))}}
+}
+
 
 type Paragraph struct {
 	ui.BasicElement
@@ -2696,11 +2823,11 @@ func NewLabel(id string, options ...string) Label {
 	return Label{ui.BasicElement{LoadFromStorage(newLabel(id, options...))}}
 }
 
-type Input struct {
+type InputElement struct {
 	ui.BasicElement
 }
 
-func (i Input) Value() ui.String {
+func (i InputElement) Value() ui.String {
 	v, ok := i.AsElement().GetData("value")
 	if !ok {
 		return ui.String("")
@@ -2712,7 +2839,7 @@ func (i Input) Value() ui.String {
 	return val
 }
 
-func (i Input) Blur() {
+func (i InputElement) Blur() {
 	native, ok := i.AsElement().Native.(NativeElement)
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
@@ -2720,7 +2847,7 @@ func (i Input) Blur() {
 	native.Value.Call("blur")
 }
 
-func (i Input) Focus() {
+func (i InputElement) Focus() {
 	native, ok := i.AsElement().Native.(NativeElement)
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
@@ -2728,7 +2855,7 @@ func (i Input) Focus() {
 	native.Value.Call("focus")
 }
 
-func (i Input) Clear() {
+func (i InputElement) Clear() {
 	native, ok := i.AsElement().Native.(NativeElement)
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
@@ -2736,7 +2863,7 @@ func (i Input) Clear() {
 	native.Value.Set("value", "")
 }
 
-var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
+var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
 		// Let's check that this element's constructory is an input constructor
@@ -2768,7 +2895,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		//SetAttribute(e, "value", string(s))
-		htmlInput.Set("value", string(s))
+		JSValue(evt.Origin()).Set("value", string(s))
 		return false
 	}))
 
@@ -2777,7 +2904,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		SetAttribute(e, "accept", string(s))
+		SetAttribute(evt.Origin(), "accept", string(s))
 		return false
 	}))
 
@@ -2787,10 +2914,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if bool(b) {
-			SetAttribute(e, "autocomplete", "")
+			SetAttribute(evt.Origin(), "autocomplete", "")
 			return false
 		}
-		RemoveAttribute(e, "autocomplete")
+		RemoveAttribute(evt.Origin(), "autocomplete")
 		return false
 	}))
 
@@ -2799,7 +2926,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		SetAttribute(e, "capture", string(s))
+		SetAttribute(evt.Origin(), "capture", string(s))
 		return false
 	}))
 
@@ -2810,11 +2937,11 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		}
 		if b {
 			//SetAttribute(e, "checked", "")
-			htmlInput.Set("checked", true)
+			JSValue(evt.Origin()).Set("checked", true)
 			return false
 		}
 		//RemoveAttribute(e, "checked")
-		htmlInput.Set("checked", false)
+		JSValue(evt.Origin()).Set("checked", false)
 		return false
 	}))
 
@@ -2824,10 +2951,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if bool(b) {
-			SetAttribute(e, "disabled", "")
+			SetAttribute(evt.Origin(), "disabled", "")
 			return false
 		}
-		RemoveAttribute(e, "disabled")
+		RemoveAttribute(evt.Origin(), "disabled")
 		return false
 	}))
 
@@ -2836,7 +2963,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		SetAttribute(e, "inputmode", string(s))
+		SetAttribute(evt.Origin(), "inputmode", string(s))
 		return false
 	}))
 
@@ -2846,10 +2973,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if int(i) > 0 {
-			SetAttribute(e, "maxlength", strconv.Itoa(int(i)))
+			SetAttribute(evt.Origin(), "maxlength", strconv.Itoa(int(i)))
 			return false
 		}
-		RemoveAttribute(e, "maxlength")
+		RemoveAttribute(evt.Origin(), "maxlength")
 		return false
 	}))
 
@@ -2859,10 +2986,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if int(i) > 0 {
-			SetAttribute(e, "minlength", strconv.Itoa(int(i)))
+			SetAttribute(evt.Origin(), "minlength", strconv.Itoa(int(i)))
 			return false
 		}
-		RemoveAttribute(e, "minlength")
+		RemoveAttribute(evt.Origin(), "minlength")
 		return false
 	}))
 
@@ -2872,10 +2999,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if int(i) > 0 {
-			SetAttribute(e, "step", strconv.Itoa(int(i)))
+			SetAttribute(evt.Origin(), "step", strconv.Itoa(int(i)))
 			return false
 		}
-		RemoveAttribute(e, "step")
+		RemoveAttribute(evt.Origin(), "step")
 		return false
 	}))
 
@@ -2884,7 +3011,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		SetAttribute(e, "min", strconv.Itoa(int(i)))
+		SetAttribute(evt.Origin(), "min", strconv.Itoa(int(i)))
 		return false
 	}))
 
@@ -2893,7 +3020,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 		if !ok {
 			return true
 		}
-		SetAttribute(e, "max", strconv.Itoa(int(i)))
+		SetAttribute(evt.Origin(), "max", strconv.Itoa(int(i)))
 		return false
 	}))
 
@@ -2903,10 +3030,10 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 			return true
 		}
 		if bool(b) {
-			SetAttribute(e, "multiple", "")
+			SetAttribute(evt.Origin(), "multiple", "")
 			return false
 		}
-		RemoveAttribute(e, "multiple")
+		RemoveAttribute(evt.Origin(), "multiple")
 		return false
 	}))
 
@@ -2917,12 +3044,32 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 
 	SetAttribute(e, "id", id)
 	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, inputOption("radio"), 
+	inputOption("button"), inputOption("checkbox"), inputOption("color"), inputOption("date"), 
+	inputOption("datetime-local"), inputOption("email"), inputOption("file"), inputOption("hidden"), 
+	inputOption("image"), inputOption("month"), inputOption("number"), inputOption("password"),
+	inputOption("range"), inputOption("reset"), inputOption("search"), inputOption("submit"), 
+	inputOption("tel"), inputOption("text"), inputOption("time"), inputOption("url"), inputOption("week"))
 
-func NewInput(typ string, id string, options ...string) Input { // TODO use constructor option for type
-	e:= newInput(id, options...)
-	SetAttribute(e, "type", typ)
-	return Input{ui.BasicElement{LoadFromStorage(e)}}
+func inputOption(name string) ui.ConstructorOption{
+	return ui.NewConstructorOption(name,func(e *ui.Element)*ui.Element{
+		e.SetUI("type",ui.String(name))
+		return e
+	})
+}
+
+
+func input(id string, options ...string) InputElement { // TODO use constructor option for type
+	e:= newInputElement(id, options...)
+	return InputElement{ui.BasicElement{LoadFromStorage(e)}}
+}
+
+type RadioInputElement struct{
+	InputElement
+}
+
+func Radio(id string, options ...string) RadioInputElement{
+	return RadioInputElement{input(id,"radio")}
 }
 
 type Img struct {
@@ -3057,10 +3204,20 @@ type Source struct{
 
 func(s Source) SetSrc(src string) Source{
 	s.AsElement().SetUI("src",ui.String(src))
+	return s
+}
+
+// SetAttribute can be used for some of the other attributes that depends on the type of media source
+// such as picture sources (srcset, height, width, media ...)
+// Might implement these as in the future (TODO)
+func(s Source) SetAttribute(name,value string) Source{
+	SetAttribute(s.AsElement(),name,value)
+	return s
 }
 
 func(s Source) SetType(typ string) Source{
 	s.AsElement().SetUI("type",ui.String(typ))
+	return s
 }
 
 
