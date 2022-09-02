@@ -30,6 +30,15 @@ func SetHttpClient(c *http.Client){
 // of the ordering of mutations.
 var Lock = &sync.Mutex{}
 
+// WorkQueue is a queue of UI mutating function that can be built from multiple goroutines.
+// Only the UI thread read from this to do work on the UI tree.
+var WorkQueue = make(chan func())
+
+// Do sends a function to the main goroutine that is in charge of the UI to be run.
+// Goroutines launched from the main thread that need access to the main UI tree should use it.
+func Do(fn func()){
+	WorkQueue <- fn
+}
 
 // NewCriticalSection returns a special function used to run another function.
 // It is special because it ensures that the function being run has sole access to the UI tree.
@@ -166,7 +175,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 	go func(){
 		res, err:= HttpClient.Do(req)
 		if err!= nil{
-			NewCriticalSection()(func() {
+			Do(func() {
 				if prefetching{
 					e.prefetchCompleted(propname,false)
 				}else{
@@ -180,7 +189,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 
 		v,err:= responsehandler(res)
 		if err!= nil{
-			NewCriticalSection()(func() {
+			Do(func() {
 				if prefetching{
 					e.prefetchCompleted(propname,false)
 				}else{
@@ -190,7 +199,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			})
 			return
 		}
-		NewCriticalSection()(func() {
+		Do(func() {
 			e.SetData(propname,v)
 			if prefetching{
 				e.prefetchCompleted(propname,true)

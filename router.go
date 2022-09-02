@@ -478,8 +478,12 @@ func (r *Router) ListenAndServe(events string, target *Element) {
 		target.AddEventListener(event, routeChangeHandler)
 	}
 	
-	c := make(chan struct{}, 0)
-	<-c
+	for {
+		select{
+		case f:= <-WorkQueue:
+			f()
+		}
+	}
 }
 
 func (r *Router) verifyLinkActivation() {
