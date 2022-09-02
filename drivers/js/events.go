@@ -94,7 +94,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		defer func() {
 			if r := recover(); r != nil {
 				body:= Document{ui.BasicElement{listener.Root()}}.Body().AsElement()
-				msg:= NewDiv("appfailure","appfailure")
+				msg:= Div("appfailure","appfailure")
 				SetInlineCSS(msg.AsElement(),`all: initial;`)
 
 				switch txt:= r.(type){
