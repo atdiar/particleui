@@ -1320,11 +1320,8 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	if ok {
 		if category == "ui" {
-			_, ok := e.Get("internals", "memoize")
-			if ok {
-				if Equal(value, oldvalue) { // idempotence
-					return
-				}
+			if Equal(value, oldvalue) { // idempotence
+				return
 			}
 		}
 	}
@@ -1358,10 +1355,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	//e.PropMutationHandlers.DispatchEvent(evt)
 }
 
-func (e *Element) Memoize() *Element {
-	e.Set("internals", "memoize", Bool(true))
-	return e
-}
+
 
 func (e *Element) GetData(propname string) (Value, bool) {
 	return e.Get("data", propname)
