@@ -113,17 +113,21 @@ func NewMutationHandler(f func(evt MutationEvent) bool) *MutationHandler {
 
 // RunOnce indicates that the handler will run only for the next occurence of a mutation event. 
 // It will unregister right after.
+// The returned mutation handler is a copy that holds a reference to the same handling function.
 func(m *MutationHandler) RunOnce() *MutationHandler{
-	m.Once = true
-	return m
+	n:= NewMutationHandler(m.Fn)
+	n.Once = true
+	return n
 }
 
 // RunASAP will run the event handler immediately if a mutation has already occured even if before
 // the mutation ws registered. It is useful when a handler must be run as long as an event occured.
 // E.g. if something must bew run the first time an Element is mounted (firsttimemounted event side-effect)
+// The returned mutation handler is a copy that holds a reference to the same handling function.
 func(m *MutationHandler) RunASAP() *MutationHandler{
-	m.ASAP = true
-	return m
+	n:= NewMutationHandler(m.Fn)
+	n.ASAP = true
+	return n
 }
 
 func (m *MutationHandler) Handle(evt MutationEvent) bool {
