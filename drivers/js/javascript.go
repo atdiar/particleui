@@ -3159,16 +3159,16 @@ func Source(id string, options ...string) SourceElement{
 	return SourceElement{ui.BasicElement{LoadFromStorage(newSource(id,options...))}}
 }
 
-type List struct {
+type UlElement struct {
 	ui.BasicElement
 }
 
-func (l List) FromValues(values ...ui.Value) List {
+func (l UlElement) FromValues(values ...ui.Value) UlElement {
 	l.AsElement().SetDataSetUI("list", ui.NewList(values...))
 	return l
 }
 
-func (l List) Values() ui.List {
+func (l UlElement) Values() ui.List {
 	v, ok := l.AsElement().GetData("list")
 	if !ok {
 		return ui.NewList()
@@ -3217,9 +3217,9 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 		for i, v := range list {
 			item := Elements.GetByID(id + "-item-" + strconv.Itoa(i))
 			if item != nil {
-				ListItem{ui.BasicElement{item}}.SetValue(v)
+				LiElement{ui.BasicElement{item}}.SetValue(v)
 			} else {
-				item = NewListItem(id+"-item-"+strconv.Itoa(i)).SetValue(v).AsBasicElement().AsElement()
+				item = Li(id+"-item-"+strconv.Itoa(i)).SetValue(v).AsBasicElement().AsElement()
 			}
 
 			evt.Origin().AppendChild(ui.BasicElement{item})
@@ -3231,15 +3231,15 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewUl(id string, options ...string) List {
-	return List{ui.BasicElement{LoadFromStorage(newUl(id, options...))}}
+func Ul(id string, options ...string) UlElement {
+	return UlElement{ui.BasicElement{LoadFromStorage(newUl(id, options...))}}
 }
 
-type OrderedList struct {
+type OlElement struct {
 	ui.BasicElement
 }
 
-func (l OrderedList) SetValue(lobjs ui.List) OrderedList {
+func (l OlElement) SetValue(lobjs ui.List) OlElement {
 	l.AsElement().Set("data", "value", lobjs)
 	return l
 }
@@ -3275,18 +3275,18 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewOl(id string, typ string, numberingstart int, options ...string) OrderedList {
+func Ol(id string, typ string, numberingstart int, options ...string) OlElement {
 	e:= newOl(id, options...)
 	SetAttribute(e, "type", typ)
 	SetAttribute(e, "start", strconv.Itoa(numberingstart))
-	return OrderedList{ui.BasicElement{LoadFromStorage(e)}}
+	return OlElement{ui.BasicElement{LoadFromStorage(e)}}
 }
 
-type ListItem struct {
+type LiElement struct {
 	ui.BasicElement
 }
 
-func (li ListItem) SetValue(v ui.Value) ListItem {
+func (li LiElement) SetValue(v ui.Value) LiElement {
 	li.AsElement().SetDataSetUI("value", v)
 	return li
 }
@@ -3355,41 +3355,41 @@ var newListItem= Elements.NewConstructor("li", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewListItem(id string, options ...string) ListItem {
-	return ListItem{ui.BasicElement{LoadFromStorage(newListItem(id, options...))}}
+func Li(id string, options ...string) LiElement {
+	return LiElement{ui.BasicElement{LoadFromStorage(newListItem(id, options...))}}
 }
 
 // Table Elements
 
-type Table struct {
+type TableElement struct {
 	ui.BasicElement
 }
 
-type Thead struct {
+type TheadElement struct {
 	ui.BasicElement
 }
 
-type Tbody struct {
+type TbodyElement struct {
 	ui.BasicElement
 }
 
-type Tr struct {
+type TrElement struct {
 	ui.BasicElement
 }
 
-type Td struct {
+type TdElement struct {
 	ui.BasicElement
 }
 
-type Th struct {
+type ThElement struct {
 	ui.BasicElement
 }
 
-type col struct {
+type ColElement struct {
 	ui.BasicElement
 }
 
-type Tfoot struct {
+type TfootElement struct {
 	ui.BasicElement
 }
 
@@ -3424,8 +3424,8 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewThead(id string, options ...string) Thead {
-	return Thead{ui.BasicElement{LoadFromStorage(newThead(id, options...))}}
+func Thead(id string, options ...string) TheadElement {
+	return TheadElement{ui.BasicElement{LoadFromStorage(newThead(id, options...))}}
 }
 
 
@@ -3460,8 +3460,8 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewTr(id string, options ...string) Tr {
-	return Tr{ui.BasicElement{LoadFromStorage(newTr(id, options...))}}
+func Tr(id string, options ...string) TrElement {
+	return TrElement{ui.BasicElement{LoadFromStorage(newTr(id, options...))}}
 }
 
 var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
@@ -3495,8 +3495,8 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewTd(id string, options ...string) Td {
-	return Td{ui.BasicElement{LoadFromStorage(newTd(id, options...))}}
+func Td(id string, options ...string) TdElement {
+	return TdElement{ui.BasicElement{LoadFromStorage(newTd(id, options...))}}
 }
 
 var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
@@ -3530,8 +3530,8 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewTh(id string, options ...string) Th {
-	return Th{ui.BasicElement{LoadFromStorage(newTh(id, options...))}}
+func Th(id string, options ...string) ThElement {
+	return ThElement{ui.BasicElement{LoadFromStorage(newTh(id, options...))}}
 }
 
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
@@ -3565,21 +3565,21 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewTable(id string, options ...string) Table {
-	return Table{ui.BasicElement{LoadFromStorage(newTable(id, options...))}}
+func Table(id string, options ...string) TableElement {
+	return TableElement{ui.BasicElement{LoadFromStorage(newTable(id, options...))}}
 }
 
 
 
-// Code is typically used to indicate that the text it contains is computer code and may therefore be 
+// CodeElement is typically used to indicate that the text it contains is computer code and may therefore be 
 // formatted differently.
 // To represent multiple lines of code, wrap the <code> element within a <pre> element. 
 // The <code> element by itself only represents a single phrase of code or line of code.
-type Code struct {
+type CodeElement struct {
 	ui.BasicElement
 }
 
-func (c Code) SetText(str string) Code {
+func (c CodeElement) SetText(str string) CodeElement {
 	c.AsElement().SetDataSetUI("text", ui.String(str))
 	return c
 }
@@ -3617,8 +3617,8 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-func NewCode(id string, options ...string) Code {
-	return Code{ui.BasicElement{LoadFromStorage(newCode(id, options...))}}
+func Code(id string, options ...string) CodeElement {
+	return CodeElement{ui.BasicElement{LoadFromStorage(newCode(id, options...))}}
 }
 
 func AddClass(target *ui.Element, classname string) {
