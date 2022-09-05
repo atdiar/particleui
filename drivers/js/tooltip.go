@@ -37,8 +37,6 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(id string) *ui.
 
 	if !exist {
 		htmlTooltip = js.Global().Get("document").Call("createElement", "div")
-	} else {
-		htmlTooltip = reset(htmlTooltip)
 	}
 
 	n := NewNativeElementWrapper(htmlTooltip)

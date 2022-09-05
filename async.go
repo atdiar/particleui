@@ -37,7 +37,10 @@ var WorkQueue = make(chan func())
 // Do sends a function to the main goroutine that is in charge of the UI to be run.
 // Goroutines launched from the main thread that need access to the main UI tree should use it.
 func Do(fn func()){
-	WorkQueue <- fn
+	go func(){
+		WorkQueue <- fn
+	}()
+	
 }
 
 // NewCriticalSection returns a special function used to run another function.

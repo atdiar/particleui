@@ -108,6 +108,11 @@ func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*R
 		return false
 	}))
 
+	r.Outlet.AsElement().ElementStore.NewConstructor("pui_link", func(id string)*Element{
+		e:= NewElement(id,r.Outlet.AsElement().ElementStore.DocType)
+		return e
+	})
+
 	for _,option:= range options{
 		r = option(r)
 	}
@@ -839,7 +844,12 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	
 	l,ok:= r.Links["/"+viewname]
 	if !ok{
-		e := NewElement(r.Outlet.AsElement().ID+"-"+viewname, r.Outlet.AsElement().DocType)
+		// Let's retrieve the link constructor
+		c,ok:= r.Outlet.AsElement().ElementStore.Constructors["pui_link"]
+		if !ok{
+			panic("pui_ERROR: somehow the link constructor has not been regristered.")
+		}
+		e := c(r.Outlet.AsElement().ID+"-"+viewname)
 		e.SetData("viewelements",NewList(r.Outlet.AsElement()))
 		e.SetData("viewnames", NewList(String(viewname)))
 		e.SetData("uri", String("/"+viewname))

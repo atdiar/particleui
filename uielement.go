@@ -838,11 +838,14 @@ func (e *Element) DeleteChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) DeleteChildren() *Element {
-	l := make([]*Element, len(e.Children.List))
-	copy(l, e.Children.List)
-	for _, child := range l {
-		e.DeleteChild(BasicElement{child})
+	if e.Children != nil{
+		l := make([]*Element, len(e.Children.List))
+		copy(l, e.Children.List)
+		for _, child := range l {
+			e.DeleteChild(BasicElement{child})
+		}
 	}
+	
 	return e
 }
 
@@ -1840,32 +1843,33 @@ func (p Properties) IsWatching(propname string, e *Element) bool {
 	return list.Includes(e)
 }
 
+// Get returns a copy of the value stored for a given property.
 func (p Properties) Get(propName string) (Value, bool) {
 	v, ok := p.Inheritable[propName]
 	if ok {
-		return v, ok
+		return Copy(v), ok
 	}
 	v, ok = p.Local[propName]
 	if ok {
-		return v, ok
+		return Copy(v), ok
 	}
 	v, ok = p.Inherited[propName]
 	if ok {
-		return v, ok
+		return Copy(v), ok
 	}
 	v, ok = p.Default[propName]
 	if ok {
-		return v, ok
+		return Copy(v), ok
 	}
 	return nil, false
 }
 
 func (p Properties) Set(propName string, value Value, inheritable bool) {
 	if inheritable {
-		p.Inheritable[propName] = value
+		p.Inheritable[propName] = Copy(value)
 		return
 	}
-	p.Local[propName] = value
+	p.Local[propName] = Copy(value)
 }
 
 func (p Properties) Delete(propname string) {

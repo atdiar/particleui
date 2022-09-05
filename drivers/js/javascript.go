@@ -292,10 +292,13 @@ var clearfromlocalstorage = clearer("localStorage")
 var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e *ui.Element)*ui.Element{
 	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		ClearFromStorage(evt.Origin())
-		j:= JSValue(e)
-		if j.Truthy(){
-			j.Call("remove")
+		if e.Native != nil{
+			j:= JSValue(e)
+			if j.Truthy(){
+				j.Call("remove")
+			}
 		}
+		
 		return false
 	}))
 	return e
@@ -478,9 +481,11 @@ func (n NativeElement) SetChildren(children ...*ui.Element) {
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as
 // argument.
-func JSValue(e *ui.Element) js.Value {
+func JSValue(el ui.AnyElement) js.Value {
+	e:= el.AsElement()
 	n, ok := e.Native.(NativeElement)
 	if !ok {
+		DEBUG(e.ID)
 		panic("js.Value not wrapped in NativeElement type")
 	}
 	return n.Value
@@ -700,16 +705,16 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 
 
 var newObservable = Elements.NewConstructor("observable",func(id string) *ui.Element{
-	e:= Elements.GetByID(id)
-	if e != nil{
-		ui.Delete(e)
-	}
 	o:= ui.NewObservable(id)
 	return o.AsElement()
 
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 func NewObservable(id string, options ...string) ui.Observable{
+	e:= Elements.GetByID(id)
+	if e != nil{
+		ui.Delete(e)
+	}
 	return ui.Observable{newObservable(id,options...)}
 }
 
@@ -1103,14 +1108,7 @@ type BodyElement struct{
 var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a body constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "body"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1119,8 +1117,6 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	exist:= htmlBody.Truthy()
 	if !exist{
 		htmlBody= js.Global().Get("document").Call("createElement","body")
-	}else{
-		htmlBody = reset(htmlBody)
 	}
 
 	n := NewNativeElementWrapper(htmlBody)
@@ -1143,7 +1139,7 @@ func Body(id string, options ...string) BodyElement{
 }
 
 // reset is used to delete all eventlisteners from an Element
-func reset(element js.Value) js.Value {
+func resete(element js.Value) js.Value {
 	clone := element.Call("cloneNode")
 	parent := element.Get("parentNode")
 	if !parent.IsNull() {
@@ -1161,24 +1157,16 @@ type Head struct{
 var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a head constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "head"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	htmlHead:= js.Global().Get("document").Get("head")
+
 	exist:= htmlHead.Truthy()
 	if !exist{
 		htmlHead= js.Global().Get("document").Call("createElement","head")
-	}else{
-		htmlHead = reset(htmlHead)
 	}
 
 	n := NewNativeElementWrapper(htmlHead)
@@ -1212,14 +1200,7 @@ func(m Meta) SetAttribute(name,value string) Meta{
 var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a meta constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "meta"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1229,8 +1210,6 @@ var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 
 	if !exist {
 		htmlMeta = js.Global().Get("document").Call("createElement", "meta")
-	} else {
-		htmlMeta = reset(htmlMeta)
 	}
 
 	n := NewNativeElementWrapper(htmlMeta)
@@ -1280,14 +1259,7 @@ func(s Script) SetInnerHTML(content string) Script{
 var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a script constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "script"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1297,8 +1269,6 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 
 	if !exist {
 		htmlScript = js.Global().Get("document").Call("createElement", "script")
-	} else {
-		htmlScript = reset(htmlScript)
 	}
 
 	n := NewNativeElementWrapper(htmlScript)
@@ -1329,14 +1299,7 @@ func(b Base) SetHREF(url string) Base{
 var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a base constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "base"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1346,9 +1309,7 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 
 	if !exist {
 		htmlBase = js.Global().Get("document").Call("createElement", "base")
-	} else {
-		htmlBase = reset(htmlBase)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlBase)
 	e.Native = n
@@ -1386,14 +1347,7 @@ func(s NoScript) SetInnerHTML(content string) NoScript{
 var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a noscript constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "noscript"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1403,9 +1357,7 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 
 	if !exist {
 		htmlNoScript = js.Global().Get("document").Call("createElement", "noscript")
-	} else {
-		htmlNoScript = reset(htmlNoScript)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlNoScript)
 	e.Native = n
@@ -1434,14 +1386,7 @@ func(l Link) SetAttribute(name,value string) Link{
 var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a link constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "link"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1451,9 +1396,7 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 
 	if !exist {
 		htmlLink = js.Global().Get("document").Call("createElement", "link")
-	} else {
-		htmlLink = reset(htmlLink)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlLink)
 	e.Native = n
@@ -1490,14 +1433,7 @@ func (d DivElement) SetText(str string) DivElement {
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a div constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "div"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1509,9 +1445,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	// Let's defer this to the persistence option so that the loading function of the right persistent storage is used.
 	if !exist {
 		htmlDiv = js.Global().Get("document").Call("createElement", "div")
-	} else {
-		htmlDiv = reset(htmlDiv)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlDiv)
 	e.Native = n
@@ -1704,14 +1638,7 @@ func(t TextAreaElement) Disabled(b bool) TextAreaElement{
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a textarea constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "textarea"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1721,8 +1648,6 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 	if !exist {
 		htmlTextArea = js.Global().Get("document").Call("createElement", "textarea")
-	} else {
-		htmlTextArea = reset(htmlTextArea)
 	}
 
 	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -1842,14 +1767,7 @@ type HeaderElement struct {
 var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a header constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "header"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1859,8 +1777,6 @@ var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 
 	if !exist {
 		htmlHeader = js.Global().Get("document").Call("createElement", "header")
-	} else {
-		htmlHeader = reset(htmlHeader)
 	}
 
 	n := NewNativeElementWrapper(htmlHeader)
@@ -1883,14 +1799,7 @@ type FooterElement struct {
 var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a footer constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "footer"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1900,8 +1809,6 @@ var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 
 	if !exist {
 		htmlFooter = js.Global().Get("document").Call("createElement", "footer")
-	} else {
-		htmlFooter = reset(htmlFooter)
 	}
 
 	n := NewNativeElementWrapper(htmlFooter)
@@ -1926,14 +1833,7 @@ type SectionElement struct {
 var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a section constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "section"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1942,8 +1842,6 @@ var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 	exist := !htmlSection.IsNull()
 	if !exist {
 		htmlSection = js.Global().Get("document").Call("createElement", "section")
-	} else {
-		htmlSection = reset(htmlSection)
 	}
 
 	n := NewNativeElementWrapper(htmlSection)
@@ -1971,14 +1869,7 @@ func (h H1Element) SetText(s string) H1Element {
 var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a h1 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h1"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -1987,8 +1878,6 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	exist := !htmlH1.IsNull()
 	if !exist {
 		htmlH1 = js.Global().Get("document").Call("createElement", "h1")
-	} else {
-		htmlH1 = reset(htmlH1)
 	}
 
 	n := NewNativeElementWrapper(htmlH1)
@@ -2018,14 +1907,7 @@ func (h H2Element) SetText(s string) H2Element {
 var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a h2 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h2"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2034,8 +1916,6 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	exist := !htmlH2.IsNull()
 	if !exist {
 		htmlH2 = js.Global().Get("document").Call("createElement", "h2")
-	} else {
-		htmlH2 = reset(htmlH2)
 	}
 
 	n := NewNativeElementWrapper(htmlH2)
@@ -2065,14 +1945,7 @@ func (h H3Element) SetText(s string) H3Element {
 var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a h3 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h3"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2081,9 +1954,7 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	exist := !htmlH3.IsNull()
 	if !exist {
 		htmlH3 = js.Global().Get("document").Call("createElement", "h3")
-	} else {
-		htmlH3 = reset(htmlH3)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlH3)
 	e.Native = n
@@ -2113,13 +1984,7 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
 		// Let's check that this element's constructory is a h4 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h4"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2128,9 +1993,7 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 	exist := !htmlH4.IsNull()
 	if !exist {
 		htmlH4 = js.Global().Get("document").Call("createElement", "h4")
-	} else {
-		htmlH4 = reset(htmlH4)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlH4)
 	e.Native = n
@@ -2159,14 +2022,7 @@ func (h H5Element) SetText(s string) H5Element {
 var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a h5 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h5"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2175,9 +2031,7 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	exist := !htmlH5.IsNull()
 	if !exist {
 		htmlH5 = js.Global().Get("document").Call("createElement", "h5")
-	} else {
-		htmlH5 = reset(htmlH5)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlH5)
 	e.Native = n
@@ -2206,14 +2060,7 @@ func (h H6Element) SetText(s string) H6Element {
 var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a h6 constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "h6"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2222,9 +2069,7 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	exist := !htmlH6.IsNull()
 	if !exist {
 		htmlH6 = js.Global().Get("document").Call("createElement", "h6")
-	} else {
-		htmlH6 = reset(htmlH6)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlH6)
 	e.Native = n
@@ -2254,14 +2099,7 @@ func (s SpanElement) SetText(str string) SpanElement {
 var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a span constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "span"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2270,9 +2108,7 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	exist := !htmlSpan.IsNull()
 	if !exist {
 		htmlSpan = js.Global().Get("document").Call("createElement", "span")
-	} else {
-		htmlSpan = reset(htmlSpan)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlSpan)
 	e.Native = n
@@ -2298,14 +2134,7 @@ type ArticleElement struct {
 var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a <article> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "article"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2314,9 +2143,7 @@ var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	exist := !htmlArticle.IsNull()
 	if !exist {
 		htmlArticle = js.Global().Get("document").Call("createElement", "article")
-	} else {
-		htmlArticle = reset(htmlArticle)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlArticle)
 	e.Native = n
@@ -2339,14 +2166,7 @@ type AsideElement struct {
 var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a <aside> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "aside"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2355,9 +2175,7 @@ var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	exist := !htmlAside.IsNull()
 	if !exist {
 		htmlAside = js.Global().Get("document").Call("createElement", "aside")
-	} else {
-		htmlAside = reset(htmlAside)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlAside)
 	e.Native = n
@@ -2379,14 +2197,7 @@ type MainElement struct {
 var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a <main> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "main"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2395,9 +2206,7 @@ var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	exist := !htmlMain.IsNull()
 	if !exist {
 		htmlMain = js.Global().Get("document").Call("createElement", "main")
-	} else {
-		htmlMain = reset(htmlMain)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlMain)
 	e.Native = n
@@ -2425,14 +2234,7 @@ func (p ParagraphElement) SetText(s string) ParagraphElement {
 var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a p constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "p"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2441,9 +2243,7 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 	exist := !htmlParagraph.IsNull()
 	if !exist {
 		htmlParagraph = js.Global().Get("document").Call("createElement", "p")
-	} else {
-		htmlParagraph = reset(htmlParagraph)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlParagraph)
 	e.Native = n
@@ -2470,14 +2270,7 @@ type NavElement struct {
 var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 		e:= Elements.GetByID(id)
 		if e!= nil{
-			// Let's check that this element's constructory is a body constructor
-			c,ok:= e.Get("internals","constructor")
-			if !ok{
-				panic("a UI element without the constructor property, should not be happening")
-			}
-			if s:= string(c.(ui.String)); s == "nav"{
-				return e
-			}	
+			panic(id + " : this id is already in use")
 		}
 		e = ui.NewElement(id, Elements.DocType)
 		e = enableClasses(e)
@@ -2602,14 +2395,7 @@ func (a AnchorElement) SetText(text string) AnchorElement {
 var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a anchor constructor 'a'
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "a"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2618,9 +2404,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	exist := !htmlAnchor.IsNull()
 	if !exist {
 		htmlAnchor = js.Global().Get("document").Call("createElement", "a")
-	} else {
-		htmlAnchor = reset(htmlAnchor)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlAnchor)
 	e.Native = n
@@ -2706,14 +2490,7 @@ func (b ButtonElement) SetText(str string) ButtonElement {
 var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a button constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "button"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2722,9 +2499,7 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	exist := !htmlButton.IsNull()
 	if !exist {
 		htmlButton = js.Global().Get("document").Call("createElement", "button")
-	} else {
-		htmlButton = reset(htmlButton)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlButton)
 	e.Native = n
@@ -2761,21 +2536,24 @@ func (l LabelElement) SetText(s string) LabelElement {
 }
 
 func (l LabelElement) For(elementid string) LabelElement {
-	l.AsElement().SetUI("for", ui.String(elementid))
+	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		d,b:= GetDocumentContaining(evt.Origin())
+		if !b{
+			panic("Element mounted but does not have access to top document... weird")
+		} 
+		evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			l.AsElement().SetUI("for", ui.String(elementid))
+			return false
+		}).RunOnce())
+		return false
+	}))
 	return l
 }
 
 var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a label constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "label"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2783,8 +2561,6 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	htmlLabel := js.Global().Get("document").Call("getElementById", id)
 	if htmlLabel.IsNull() {
 		htmlLabel = js.Global().Get("document").Call("createElement", "label")
-	} else {
-		htmlLabel = reset(htmlLabel)
 	}
 
 	n := NewNativeElementWrapper(htmlLabel)
@@ -2851,14 +2627,7 @@ func(i InputElement) Attr(name, value string) InputElement{
 var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is an input constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "input"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -2867,9 +2636,7 @@ var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Elemen
 	exist := !htmlInput.IsNull()
 	if !exist {
 		htmlInput = js.Global().Get("document").Call("createElement", "input")
-	} else {
-		htmlInput = reset(htmlInput)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlInput)
 	e.Native = n
@@ -2948,7 +2715,7 @@ var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Elemen
 
 	SetAttribute(e, "id", id)
 	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, inputOption("radio"), 
+}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, inputOption("radio"),
 	inputOption("button"), inputOption("checkbox"), inputOption("color"), inputOption("date"), 
 	inputOption("datetime-local"), inputOption("email"), inputOption("file"), inputOption("hidden"), 
 	inputOption("image"), inputOption("month"), inputOption("number"), inputOption("password"),
@@ -2964,7 +2731,9 @@ func inputOption(name string) ui.ConstructorOption{
 
 
 func Input(typ string,id string, options ...string) InputElement { // TODO use constructor option for type
-	options = append(options, typ)
+	if typ != ""{
+		options = append(options, typ)
+	}
 	e:= newInputElement(id, options...)
 	return InputElement{ui.BasicElement{LoadFromStorage(e)}}
 }
@@ -2986,14 +2755,7 @@ func (i ImgElement) Alt(s string) ImgElement {
 var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is an img constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "img"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3002,8 +2764,6 @@ var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
 	exist := !htmlImg.IsNull()
 	if !exist {
 		htmlImg = js.Global().Get("document").Call("createElement", "img")
-	} else {
-		htmlImg = reset(htmlImg)
 	}
 
 	n := NewNativeElementWrapper(htmlImg)
@@ -3023,14 +2783,7 @@ func Img(id string, options ...string) ImgElement {
 var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is an <audio> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "audio"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3051,8 +2804,6 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	exist := !htmlAudio.IsNull()
 	if !exist {
 		htmlAudio = js.Global().Get("document").Call("createElement", "audio")
-	} else {
-		htmlAudio = reset(htmlAudio)
 	}
 
 	n := NewNativeElementWrapper(htmlAudio)
@@ -3065,14 +2816,7 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a <video> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "video"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3093,9 +2837,7 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	exist := !htmlVideo.IsNull()
 	if !exist {
 		htmlVideo = js.Global().Get("document").Call("createElement", "video")
-	} else {
-		htmlVideo = reset(htmlVideo)
-	}
+	} 
 
 	SetAttribute(e, "id", id)
 
@@ -3124,14 +2866,7 @@ func(s SourceElement) SetType(typ string) SourceElement{
 var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a source constructor.
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "source"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3140,9 +2875,7 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	exist := !htmlSource.IsNull()
 	if !exist {
 		htmlSource = js.Global().Get("document").Call("createElement", "source")
-	} else {
-		htmlSource = reset(htmlSource)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlSource)
 	e.Native = n
@@ -3183,14 +2916,7 @@ func (l UlElement) Values() ui.List {
 var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a ul constructor.
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "ul"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3199,9 +2925,7 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	exist := !htmlList.IsNull()
 	if !exist {
 		htmlList = js.Global().Get("document").Call("createElement", "ul")
-	} else {
-		htmlList = reset(htmlList)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlList)
 	e.Native = n
@@ -3247,14 +2971,7 @@ func (l OlElement) SetValue(lobjs ui.List) OlElement {
 var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a ol constructor.
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "ol"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3263,9 +2980,7 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	exist := !htmlList.IsNull()
 	if !exist {
 		htmlList = js.Global().Get("document").Call("createElement", "ol")
-	} else {
-		htmlList = reset(htmlList)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlList)
 	e.Native = n
@@ -3294,14 +3009,7 @@ func (li LiElement) SetValue(v ui.Value) LiElement {
 var newListItem= Elements.NewConstructor("li", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a li constructor.
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "li"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3310,8 +3018,6 @@ var newListItem= Elements.NewConstructor("li", func(id string) *ui.Element {
 	exist := !htmlListItem.IsNull()
 	if !exist {
 		htmlListItem = js.Global().Get("document").Call("createElement", "li")
-	} else {
-		htmlListItem = reset(htmlListItem)
 	}
 
 	n := NewNativeElementWrapper(htmlListItem)
@@ -3396,14 +3102,7 @@ type TfootElement struct {
 var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a thead constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "thead"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3412,9 +3111,7 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	exist := !htmlThead.IsNull()
 	if !exist {
 		htmlThead = js.Global().Get("document").Call("createElement", "thead")
-	} else {
-		htmlThead = reset(htmlThead)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlThead)
 	e.Native = n
@@ -3432,14 +3129,7 @@ func Thead(id string, options ...string) TheadElement {
 var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a tr constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "tr"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3448,8 +3138,6 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	exist := !htmlTr.IsNull()
 	if !exist {
 		htmlTr = js.Global().Get("document").Call("createElement", "tr")
-	} else {
-		htmlTr = reset(htmlTr)
 	}
 
 	n := NewNativeElementWrapper(htmlTr)
@@ -3467,14 +3155,7 @@ func Tr(id string, options ...string) TrElement {
 var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a td constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "td"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3483,9 +3164,7 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	exist := !htmlTableData.IsNull()
 	if !exist {
 		htmlTableData = js.Global().Get("document").Call("createElement", "td")
-	} else {
-		htmlTableData = reset(htmlTableData)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlTableData)
 	e.Native = n
@@ -3502,14 +3181,7 @@ func Td(id string, options ...string) TdElement {
 var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a th constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "th"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3518,8 +3190,6 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	exist := !htmlTableDataHeader.IsNull()
 	if !exist {
 		htmlTableDataHeader = js.Global().Get("document").Call("createElement", "th")
-	} else {
-		htmlTableDataHeader = reset(htmlTableDataHeader)
 	}
 
 	n := NewNativeElementWrapper(htmlTableDataHeader)
@@ -3537,14 +3207,7 @@ func Th(id string, options ...string) ThElement {
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a table constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "table"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3553,9 +3216,7 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	exist := !htmlTable.IsNull()
 	if !exist {
 		htmlTable = js.Global().Get("document").Call("createElement", "table")
-	} else {
-		htmlTable = reset(htmlTable)
-	}
+	} 
 
 	n := NewNativeElementWrapper(htmlTable)
 	e.Native = n
@@ -3587,14 +3248,7 @@ func (c CodeElement) SetText(str string) CodeElement {
 var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
-		// Let's check that this element's constructory is a <code> constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "code"{
-			return e
-		}	
+		panic(id + " : this id is already in use")
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
@@ -3603,8 +3257,6 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	exist := !htmlCode.IsNull()
 	if !exist {
 		htmlCode = js.Global().Get("document").Call("createElement", "code")
-	} else {
-		htmlCode = reset(htmlCode)
 	}
 
 	n := NewNativeElementWrapper(htmlCode)

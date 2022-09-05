@@ -27,7 +27,7 @@ func (e *Element) RawValue() Object {
 
 	constructorname, ok := e.Get("internals", "constructor")
 	if !ok {
-		DEBUG("no constructorname for ", e.ID)
+		DEBUG("no constructorname for ", e.ID, e)
 		return nil
 	}
 	cname, ok := constructorname.(String)
@@ -120,13 +120,25 @@ func (o Object) Get(key string) (Value, bool) {
 			return Number(t),ok
 		case []interface{}:
 			m := NewList()
-			for _, val := range t {
+			for i, val := range t {
+				/*if lv,ok:= val.(Value);ok{
+					m = append(m,lv)
+					continue
+				}*/
+
+				or, ok := val.(Object)
+				if ok {
+					m = append(m, or.Value())
+					continue
+				}
+				
 				r, ok := val.(map[string]interface{})
 				if ok {
 					v := Object(r).Value()
 					m = append(m, v)
 					continue
 				}
+				DEBUG(i,val)
 				panic("pui error: bad list rawencoding. Unable to decode.")
 			}
 			return m,ok
@@ -212,6 +224,7 @@ func (o Object) Value() Value {
 	case "List":
 		v, ok := o.Get("pui_object_value")
 		if !ok {
+			DEBUG(o)
 			panic("pui error: raw List value can't be found.")
 		}
 		return v
@@ -428,7 +441,11 @@ func Copy(v Value) Value {
 	for k, mv := range w {
 		o[k] = mv
 	}
-	return o.Value()
+	p:= o.Value()
+	/*if !Equal(p,v){
+		panic("unequal copies")
+	}*/ // TODO leave it for debug mode or test the function and remove it
+	return p
 }
 
 func Equal(v Value, w Value) bool {
