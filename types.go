@@ -7,7 +7,7 @@ import (
 
 type discriminant string // just here to pin the definition of the Value interface to this package
 
-// Value is the type for Element property values.
+// Value is the type for Element property values. (TODO add IsNil method)
 type Value interface {
 	discriminant() discriminant
 	RawValue() Object
@@ -368,6 +368,18 @@ func (l List) RawValue() Object {
 }
 func (l List) ValueType() string { return "List" }
 
+func(l List) Filter(validator func(Value)bool) List{
+	var insertIndex int
+	for _, e := range l {
+		if validator(e) {
+			l[insertIndex] = e
+			insertIndex++
+		}
+	}
+	l = l[:insertIndex]
+	return l
+}
+
 func NewList(val ...Value) List {
 	if val != nil {
 		return List(val)
@@ -435,7 +447,16 @@ func (l ListofObjects) Get(index int) Object {
 
 */
 
+// Copy creates a deep-copy of a value. (TODO optimize it by type switching the Value iface)
 func Copy(v Value) Value {
+	switch t:= v.(type){
+	case Bool:
+		return t
+	case String:
+		return t
+	case Number:
+		return t
+	}
 	o := NewObject()
 	w := v.RawValue()
 	for k, mv := range w {

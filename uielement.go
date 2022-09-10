@@ -673,7 +673,7 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 		e.Native.AppendChild(child)
 	}
 
-	child.Set("event", "attached", Bool(true))
+	//child.Set("event", "attached", Bool(true))
 
 	finalize(child, true)
 
@@ -702,7 +702,7 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 		e.Native.PrependChild(child)
 	}
 
-	child.Set("event", "attached", Bool(true))
+	//child.Set("event", "attached", Bool(true))
 
 	finalize(child, true)
 
@@ -730,7 +730,7 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 		e.Native.InsertChild(child, index)
 	}
 
-	child.Set("event", "attached", Bool(true))
+	//child.Set("event", "attached", Bool(true))
 
 	finalize(child, true)
 
@@ -770,8 +770,8 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		e.Native.ReplaceChild(old.AsElement(), new.AsElement())
 	}
 
-	old.Set("event", "attached", Bool(false))
-	new.Set("event", "attached", Bool(true))
+	//old.Set("event", "attached", Bool(false))
+	//new.Set("event", "attached", Bool(true))
 
 	finalize(old, false)
 	finalize(new, true)
@@ -797,7 +797,7 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 		e.Native.RemoveChild(child)
 	}
 
-	child.Set("event", "attached", Bool(false))
+	//child.Set("event", "attached", Bool(false))
 	finalize(child, false)
 
 	return e
@@ -933,6 +933,7 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
+	
 	e.RemoveChildren()
 	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
 		for _, el := range any {
@@ -943,14 +944,17 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 			if el.Parent != nil {
 				el.Parent.removeChild(BasicElement{el})
 			}
+
 			attach(e, el, true)
 			e.Children.InsertLast(el)
 		}
-		n.SetChildren(any...)
+		
 		for _, child := range any {
-			child.Set("event", "attached", Bool(true))
+			//child.Set("event", "attached", Bool(true))
 			finalize(child, true)
 		}
+		
+		n.SetChildren(any...)
 		return e
 	}
 	for _, el := range any {
@@ -1013,14 +1017,20 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 
 func(e *Element) watchOnce(category string, propname string, owner Watchable, h *MutationHandler) *Element{
 	var g *MutationHandler
-	g= NewMutationHandler(func(evt MutationEvent)bool{
-		b:= h.Handle(evt)
-		evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
-		return b
-	})
 	if h.ASAP{
-		g.RunASAP()
+		g= NewMutationHandler(func(evt MutationEvent)bool{
+			b:= h.Handle(evt)
+			evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
+			return b
+		}).RunASAP()
+	} else{
+		g= NewMutationHandler(func(evt MutationEvent)bool{
+			b:= h.Handle(evt)
+			evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
+			return b
+		})
 	}
+	
 	return e.Watch(category,propname,owner,g)
 }
 
@@ -1154,7 +1164,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 			nativebinding(event, e, handler.Capture)
 		}
 		return false
-	})
+	}).RunASAP().RunOnce()
 	e.OnFirstTimeMounted(h)
 
 	/*g := NewMutationHandler(func(evt MutationEvent) bool {
@@ -1218,6 +1228,14 @@ func (e *Element) OnMount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
+
+	if h.Once{
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP{
+		nh = nh.RunASAP()
+	}
 	e.Watch("event", "mount", e, nh)
 }
 
@@ -1229,6 +1247,15 @@ func (e *Element) OnMounted(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
+
+	if h.Once{
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP{
+		nh = nh.RunASAP()
+	}
+
 	e.Watch("event", "mounted", e, nh)
 }
 
@@ -1240,8 +1267,16 @@ func (e *Element) OnFirstTimeMounted(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
+	if h.Once{
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP{
+		nh = nh.RunASAP()
+	}
 	e.Watch("event", "firsttimemounted", e, nh.RunASAP())
 }
+
 
 // OnUnmount can be used to make a change right before an element starts unmounting.
 // One potential use case is to deal with animations as an elemnt disappear from the page.
@@ -1256,6 +1291,15 @@ func (e *Element) OnUnmount(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
+
+	if h.Once{
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP{
+		nh = nh.RunASAP()
+	}
+
 	e.Watch("event", "mount", e, nh)
 }
 
@@ -1270,10 +1314,20 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 		}
 		return h.Handle(evt)
 	})
+
+	if h.Once{
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP{
+		nh = nh.RunASAP()
+	}
+	
 	e.Watch("event", "mounted", e, nh)
 }
 
 
+// TODO make behaviour similar to running AsAP and Once.
 func (e *Element) OnDeleted(h *MutationHandler) {
 	eventcat, ok := e.Properties.Categories["internals"]
 	if !ok {
@@ -1323,7 +1377,7 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 
 	if ok {
 		if category == "ui" {
-			if Equal(value, oldvalue) { // idempotence
+			if Equal(value, oldvalue) { // idempotence			
 				return
 			}
 		}
@@ -1482,18 +1536,58 @@ func (e *Element) SyncUI(propname string, value Value, flags ...bool) {
 	e.Properties.Set("ui", propname, value, inheritable)
 }
 
-// LoadProperty is a function typically used to return a UI Element to a
-// given state.
+// LoadProperty is a function typically used to restore a UI Element properties.
+// It does not trigger mutation events. 
 // The proptype is a string that describes the property (default,inherited, local, or inheritable).
 // For properties of the 'ui' namespace, i.e. properties that are used for rendering,
 // we create and dispatch a mutation event since loading a property modifies the UI.
 func LoadProperty(e *Element, category string, propname string, proptype string, value Value) {
-	oldvalue,_:= e.Properties.Get(category,propname)
 	e.Properties.Load(category, propname, proptype, value)
-	if category == "ui" {
-		evt := e.NewMutationEvent(category, propname, value, oldvalue)
+}
+
+// Rerender basically refires mutation events of the "ui" property namespace, effectively triggering
+// a re-render of the User Interface.
+// It works because the UI drawn on screen is built from idempotent functions: the "ui" mutation 
+// handlers.
+// ATTENTION: in fact the UI should be a "pure" function of the "ui" properties. Which means that 
+// rendering of an element should not have side-effects, notably should not mutate another element's UI.
+func Rerender(e *Element) *Element{
+	category:= "ui"
+	p,ok:= e.Properties.Categories["ui"]
+	if !ok{
+		return e
+	}
+	propset := make(map[string]struct{},256)
+	for prop,value:= range p.Inheritable{
+		propset[prop]=struct{}{}
+		evt := e.NewMutationEvent(category, prop, value, nil)
 		e.PropMutationHandlers.DispatchEvent(evt)
 	}
+	for prop,value:= range p.Local{
+		if _,exist:= propset[prop];!exist{
+			propset[prop]=struct{}{}
+			evt := e.NewMutationEvent(category, prop, value, nil)
+			e.PropMutationHandlers.DispatchEvent(evt)
+		}	
+	}
+
+	for prop,value:= range p.Inherited{
+		if _,exist:= propset[prop];!exist{
+			propset[prop]=struct{}{}
+			evt := e.NewMutationEvent(category, prop, value, nil)
+			e.PropMutationHandlers.DispatchEvent(evt)
+		}	
+	}
+
+	for prop,value:= range p.Default{
+		if _,exist:= propset[prop];!exist{
+			propset[prop]=struct{}{}
+			evt := e.NewMutationEvent(category, prop, value, nil)
+			e.PropMutationHandlers.DispatchEvent(evt)
+		}	
+	}
+	
+	return e
 }
 
 // Delete removes the property stored for the given category if it exists.
@@ -1722,7 +1816,7 @@ type PropertyStore struct {
 }
 
 func NewPropertyStore() PropertyStore {
-	return PropertyStore{make(map[string]Properties)}
+	return PropertyStore{make(map[string]Properties,16)}
 }
 
 func (p PropertyStore) Load(category string, propname string, proptype string, value Value) {

@@ -46,7 +46,7 @@ func UseRouter(user AnyElement, fn func(*Router)) {
 			return false
 		}).RunASAP())
 		return false
-	})
+	}).RunASAP().RunOnce()
 	user.AsElement().OnFirstTimeMounted(h)
 }
 
@@ -903,7 +903,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	e.Watch("data", "currentroute", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
 		lnk,_:= e.GetData("uri")
-		link:= string(lnk.(String))
+		link:= strings.TrimPrefix(string(lnk.(String)),"/")
 		
 		if string(route) == link {
 			e.SyncUISetData("active", Bool(true))

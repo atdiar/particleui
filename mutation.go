@@ -115,7 +115,11 @@ func NewMutationHandler(f func(evt MutationEvent) bool) *MutationHandler {
 // It will unregister right after.
 // The returned mutation handler is a copy that holds a reference to the same handling function.
 func(m *MutationHandler) RunOnce() *MutationHandler{
+	if m.Once{
+		return m
+	}
 	n:= NewMutationHandler(m.Fn)
+	n.ASAP = m.ASAP
 	n.Once = true
 	return n
 }
@@ -125,7 +129,11 @@ func(m *MutationHandler) RunOnce() *MutationHandler{
 // E.g. if something must bew run the first time an Element is mounted (firsttimemounted event side-effect)
 // The returned mutation handler is a copy that holds a reference to the same handling function.
 func(m *MutationHandler) RunASAP() *MutationHandler{
+	if m.ASAP{
+		return m
+	}
 	n:= NewMutationHandler(m.Fn)
+	n.Once = m.Once
 	n.ASAP = true
 	return n
 }

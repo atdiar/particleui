@@ -28,14 +28,14 @@ func Listen(event string, h *EventHandler) func(*Element)*Element{
 // It defines a starting point for the navigation.
 func InitRouter(options ...func(*Router)*Router) func(*Element)*Element{
 	return func(e *Element) *Element{
-		e.OnFirstTimeMounted(NewMutationHandler(func(evt MutationEvent)bool{
+		e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
 			v,ok:= evt.Origin().AsViewElement()
 			if !ok{
 				panic("Router cannot be instantiated with non-ViewElement objects")
 			}
 			NewRouter("/",v ,options...)
 			return false
-		}))
+		}).RunASAP().RunOnce())
 		return e
 	}
 }

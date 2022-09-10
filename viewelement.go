@@ -60,7 +60,6 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 			e.Global.Set("internals", "views", list)
 		}
 	}
-	
 
 	return v
 }
@@ -130,7 +129,7 @@ func (v ViewElement) hasStaticView(name string) bool { // name should not start 
 	return false
 }
 
-func(v ViewElement) HasStaticView(name string) bool{
+func (v ViewElement) HasStaticView(name string) bool {
 	return v.hasStaticView(name)
 }
 
@@ -154,31 +153,39 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 	v.AsElement().Watch("ui", "viewparameter", v, h)
 }
 
-func (v ViewElement) OnActivation(viewname string, h *MutationHandler) {
-	v.AsElement().Watch("ui", "activeview", v.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
+	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {
 			return false
 		}
 		return h.Handle(evt)
-	}))
+	})
+	if h.Once {
+		nh = nh.RunOnce()
+	}
+
+	if h.ASAP {
+		nh = nh.RunASAP()
+	}
+	v.AsElement().Watch("event", "viewactivated", v.AsElement(), nh)
 }
 
-func(v ViewElement) IsParameterizedView(viewname string) bool{
-	if _,ok:= v.hasParameterizedView();!ok{
+func (v ViewElement) IsParameterizedView(viewname string) bool {
+	if _, ok := v.hasParameterizedView(); !ok {
 		return false
 	}
 	return !v.hasStaticView(viewname)
 }
 
 // prefetchView triggers data prefetching for a ViewElement.
-// It requires the name of the view that will be activated as argument so that it can start 
+// It requires the name of the view that will be activated as argument so that it can start
 // prefetching the elements that are part of the target view (if unactivated).
 // and then triggers prefetching on the view itself.
-func(v ViewElement) prefetchView(name string){
-	ve:= v.AsElement()
-	if v.hasStaticView(name) && v.isViewAuthorized(name) && ve.ActiveView != name{
-		for _,c:= range ve.Children.List{
+func (v ViewElement) prefetchView(name string) {
+	ve := v.AsElement()
+	if v.hasStaticView(name) && v.isViewAuthorized(name) && ve.ActiveView != name {
+		for _, c := range ve.Children.List {
 			c.Prefetch()
 		}
 	}
@@ -235,8 +242,9 @@ func (e *Element) activateView(name string) error {
 				return nil
 			}
 
-			e.SetDataSetUI("viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
-			e.SetUI("activeview", String(name))
+			e.Set("ui", "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
+			e.Set("ui", "activeview", String(name))
+			e.Set("event", "viewactivated", String(name))
 			return nil
 		}
 		// Support for parameterized views
@@ -263,8 +271,9 @@ func (e *Element) activateView(name string) error {
 		*/ // todo Review this as it should work. elements don't seem removed
 		e.SetChildrenElements(view.elements.List...)
 
-		e.SetDataSetUI("viewparameter", String(name))
-		e.SetUI("activeview", String(name))
+		e.Set("ui", "viewparameter", String(name))
+		e.Set("ui", "activeview", String(name))
+		e.Set("event", "viewactivated", String(name))
 		return nil
 	}
 
@@ -286,38 +295,38 @@ func (e *Element) activateView(name string) error {
 	e.SetChildrenElements(newview.elements.List...)
 
 	delete(e.InactiveViews, name)
-	e.SetUI("activeview", String(name))
+	e.Set("ui", "activeview", String(name))
+	e.Set("event", "viewactivated", String(name))
 	return nil
 }
 
 // AddView is an *Element modifier that is used to add an activable named view to an element.
-func AddView(name string, elements ...AnyElement) func(*Element)*Element{
-	return func(e *Element)*Element{
-		v:= NewView(name,convertAny(elements...)...)
-		if e.isViewElement(){
+func AddView(name string, elements ...AnyElement) func(*Element) *Element {
+	return func(e *Element) *Element {
+		v := NewView(name, convertAny(elements...)...)
+		if e.isViewElement() {
 			ViewElement{e}.AddView(v)
 			return e
 		}
-		NewViewElement(e,v)
+		NewViewElement(e, v)
 		return e
 	}
 }
 
-
 // AddDefaultView is an *Element modifier that defines a View for an *Element.
 // It gets activated each time the *Element gets mounted.
-func AddDefaultView(name string, elements ...AnyElement) func(*Element)*Element{
-	return func(e *Element)*Element{
+func AddDefaultView(name string, elements ...AnyElement) func(*Element) *Element {
+	return func(e *Element) *Element {
 		e = AddView(name, elements...)(e)
 		ViewElement{e}.SetDefaultView(name)
 		return e
 	}
 }
 
-func convertAny(elements ...AnyElement) []*Element{
-	res:= make([]*Element,0,len(elements))
-	for _,e:= range elements{
-		res = append(res,e.AsElement())
+func convertAny(elements ...AnyElement) []*Element {
+	res := make([]*Element, 0, len(elements))
+	for _, e := range elements {
+		res = append(res, e.AsElement())
 	}
 	return res
 }

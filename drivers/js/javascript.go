@@ -28,6 +28,7 @@ var (
 	// Elements stores wasm-generated HTML ui.Element constructors.
 	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).ApplyGlobalOption(cleanStorageOnDelete)
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
+	mainDocument *Document
 )
 
 var NewID = ui.NewIDgenerator(time.Now().UnixNano())
@@ -218,22 +219,31 @@ func loader(s string) func(e *ui.Element) error {
 				proptype := proptypename[0]
 				propname := proptypename[1]
 				jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
-				if ok {
+				if ok {					
 					var rawvaluemapstring string
 					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
 					if err != nil {
 						return err
 					}
+					
 					rawvalue := ui.NewObject()
 					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
 					if err != nil {
 						return err
 					}
+					
 					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
 					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
 		}
+		/*e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			ui.Rerender(e)
+			return false
+		}).RunOnce())*/
+		
+		ui.Rerender(e)
+		
 		return nil
 	}
 }
@@ -739,19 +749,22 @@ func(d Document) SetLang(lang string) Document{
 	return d
 }
 
+func (d Document) OnNavigationEnd(h *ui.MutationHandler){
+	d.AsElement().Watch("event","navigationend", d, h)
+}
+
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
 func(d Document) ListenAndServe(){
+	if mainDocument ==nil{
+		panic("document is missing")
+	}
 	ui.GetRouter().ListenAndServe("popstate", GetWindow().AsElement())
 }
 
-func GetDocumentContaining(e ui.AnyElement) (Document, bool){
-	el:= e.AsElement()
-	if !el.Mounted(){
-		return Document{},false
-	}
-	return Document{ui.BasicElement{el.Root()}},true
+func GetDocument() Document{
+	return *mainDocument
 }
 
 var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
@@ -1098,7 +1111,8 @@ func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is f
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
 func NewDocument(id string, options ...string) Document {
-	return Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
+	mainDocument = &Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
+	return GetDocument()
 }
 
 type BodyElement struct{
@@ -2537,10 +2551,8 @@ func (l LabelElement) SetText(s string) LabelElement {
 
 func (l LabelElement) For(elementid string) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		d,b:= GetDocumentContaining(evt.Origin())
-		if !b{
-			panic("Element mounted but does not have access to top document... weird")
-		} 
+		d:= GetDocument()
+		
 		evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			l.AsElement().SetUI("for", ui.String(elementid))
 			return false
