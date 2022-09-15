@@ -47,7 +47,7 @@ func UseRouter(user AnyElement, fn func(*Router)) {
 		}).RunASAP())
 		return false
 	}).RunASAP().RunOnce()
-	user.AsElement().OnFirstTimeMounted(h)
+	user.AsElement().OnMounted(h)
 }
 
 // Router stores shortcuts to given states of the application.

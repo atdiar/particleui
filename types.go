@@ -456,6 +456,23 @@ func Copy(v Value) Value {
 		return t
 	case Number:
 		return t
+	case List:
+		r:= List(make([]Value,len(t)))
+		for i,v:= range t{
+			r[i] = Copy(v)
+		}
+		return r
+	case Object:
+		o:= NewObject()
+		for k,v:= range t{
+			vv,ok:= v.(Value)
+			if !ok{
+				o[k]=v
+				continue
+			}
+			o[k]=Copy(vv)
+		}
+		return o
 	}
 	o := NewObject()
 	w := v.RawValue()

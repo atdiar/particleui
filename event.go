@@ -190,16 +190,18 @@ func (e *eventHandlers) Add(h *EventHandler) *eventHandlers {
 
 func (e *eventHandlers) Remove(h *EventHandler) *eventHandlers {
 	var index int
-	for k, v := range e.List {
+	list:= e.List[:0]
+	for _, v := range e.List {
 		if v != h {
-			continue
+			list = append(list,v)
+			index++
 		}
-		index = k
-		break
 	}
-	if index >= 0 {
-		e.List = append(e.List[:index], e.List[index+1:]...)
+
+	for i:= index; i<len(e.List); i++{ // cleanup to avoid dangling pointer
+		e.List[i] = nil
 	}
+	e.List = list[:index]
 	return e
 }
 
@@ -208,22 +210,75 @@ type EventHandler struct {
 	Capture bool // propagation mode: if false bubbles up, otherwise captured by the top most element and propagates down.
 	
 	Once bool
+	Bubble bool
 }
 
 func (e EventHandler) Handle(evt Event) bool {
+	if !e.Bubble{
+		if evt.Target() == nil || evt.CurrentTarget().ID != evt.Target().ID{
+			return false
+		}
+	}
 	return e.Fn(evt)
 }
 
 func NewEventHandler(fn func(Event) bool) *EventHandler {
-	return &EventHandler{fn, false, false}
+	return &EventHandler{fn, false, false, true}
 }
 func (e *EventHandler) ForCapture() *EventHandler {
-	e.Capture = true
-	return e
+	if e.Capture {
+		return e
+	}
+	n:= NewEventHandler(e.Fn)
+	n.Capture = true
+
+	if e.Once{
+		n.Once = true
+	}
+
+	if !e.Bubble{
+		n.Bubble = false
+	}
+
+	return n
 }
 
 func (e *EventHandler) TriggerOnce() *EventHandler {
-	e.Once = true
-	return e
+	if e.Once{
+		return e
+	}
+	n:= NewEventHandler(e.Fn)
+	n.Capture = true
+
+	if e.Capture{
+		n.Capture = true
+	}
+
+	if !e.Bubble{
+		n.Bubble = false
+	}
+
+	return n
+}
+
+// NoBubble disallows the handling of bubbling events. Essentially, if the event target is not the current target
+// the event handler on the current target does not run. (the event probably got triggered on a child element)
+func(e *EventHandler) NoBubble() *EventHandler{
+	if !e.Bubble{
+		return e
+	}
+	n:= NewEventHandler(e.Fn)
+	n.Capture = true
+
+	if e.Capture{
+		n.Capture = true
+	}
+
+	if e.Once{
+		n.Once = true
+	}
+
+	n.Bubble = false
+	return n
 }
 

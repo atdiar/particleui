@@ -32,7 +32,7 @@ var Lock = &sync.Mutex{}
 
 // WorkQueue is a queue of UI mutating function that can be built from multiple goroutines.
 // Only the UI thread read from this to do work on the UI tree.
-var WorkQueue = make(chan func(),1)
+var WorkQueue = make(chan func())
 
 // Do sends a function to the main goroutine that is in charge of the UI to be run.
 // Goroutines launched from the main thread that need access to the main UI tree should use it.
@@ -231,8 +231,8 @@ func(e *Element) Prefetch(){
 }
 
 func(e *Element) Fetch(){
-	e.Delete("runtime","fetcherrors")
-	e.Delete("event","fetchcancelled")
+	e.Properties.Delete("runtime","fetcherrors")
+	e.Properties.Delete("event","fetchcancelled")
 	e.Set("event","fetch",Bool(true))
 }
 

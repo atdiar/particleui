@@ -38,7 +38,11 @@ func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
 	if !ok {
 		return m
 	}
-	mhs.list = make([]*MutationHandler, 0,10)
+	//mhs.list = mhs.list[:0]
+	for i:= range mhs.list{
+		mhs.list[i] = nil
+	}
+	mhs.list= mhs.list[:0]
 	return m
 }
 
@@ -76,27 +80,54 @@ func (m *mutationHandlers) Add(h *MutationHandler) *mutationHandlers {
 }
 
 func (m *mutationHandlers) Remove(h *MutationHandler) *mutationHandlers {
-	index := -1
-	for k, v := range m.list {
-		if v != h {
+	for i, v := range m.list {
+		if v == nil{
 			continue
 		}
-		index = k
-		break
-	}
-	if index >= 0 {
-		m.list = append(m.list[:index], m.list[index+1:]...)
+		if v == h {
+			m.list[i]= nil
+		}
 	}
 	return m
 }
 
 func (m *mutationHandlers) Handle(evt MutationEvent) {
-	for _, h := range m.list {
-		b := h.Handle(evt)
-		if b {
-			return
+	var needcleanup bool
+	var index int
+	list:= m.list[:0]
+	var handle = true
+	for i, h := range m.list {
+		if h == nil{
+			if !needcleanup{
+				list =m.list[:i]
+				index = i+1
+				needcleanup = true
+			}
+			continue
 		}
+		if handle{
+			b := h.Handle(evt)
+			if b {
+				handle = false
+				if !needcleanup{
+					return
+				}
+			}
+		}
+		if needcleanup{
+			list = append(list,h)
+			index++
+		}
+		
 	}
+
+	if needcleanup{
+		for i:= index;i<len(m.list);i++{
+			m.list[i]= nil
+		}
+		m.list = list[:index]
+	}
+	
 }
 
 // MutationHandler is a wrapper type around a callback function run after a mutation

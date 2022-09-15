@@ -337,9 +337,9 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 	e := ui.NewElement("window", DOCTYPE)
 	e.Set("event", "mounted", ui.Bool(true))
 	e.Set("event", "mountable", ui.Bool(true))
-	e.Set("event", "attached", ui.Bool(true))
-	e.Set("event", "firstmount", ui.Bool(true))
-	e.Set("event", "firsttimemounted", ui.Bool(true))
+	//e.Set("event", "attached", ui.Bool(true))
+	//e.Set("event", "firstmount", ui.Bool(true))
+	//e.Set("event", "firsttimemounted", ui.Bool(true)) TODO DEBUG
 	e.ElementStore = Elements
 	e.Parent = e
 	wd := js.Global().Get("document").Get("defaultView")
@@ -561,7 +561,7 @@ func isScrollable(property string) bool {
 }
 
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	e.OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.Watch("navigation", "ready", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			router := ui.GetRouter()
 
@@ -623,7 +623,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 			return false
 		}))
 		return false
-	}))
+	}).RunASAP().RunOnce())
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
 
@@ -1001,7 +1001,7 @@ func focus(e js.Value){
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
-	e.OnFirstTimeMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().Watch("event","navigationend",evt.Origin().Root(),ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			r:= ui.GetRouter()
 			if !r.History.CurrentEntryIsNew(){
@@ -1011,7 +1011,7 @@ func Autofocus(e *ui.Element) *ui.Element{
 			return false
 		}))
 		return false
-	}))
+	}).RunASAP().RunOnce())
 	return e
 }
 

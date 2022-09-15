@@ -230,6 +230,8 @@ func (e *Element) activateView(name string) error {
 		return nil
 	}
 
+	wasmounted:= e.Mounted()
+
 	newview, ok := e.InactiveViews[name]
 	if !ok {
 		if isParameter(e.ActiveView) {
@@ -256,13 +258,18 @@ func (e *Element) activateView(name string) error {
 		view := e.InactiveViews[":"+p]
 		oldviewname := e.ActiveView
 		if oldviewname != "" {
-			cccl := make([]*Element, len(e.Children.List))
-			copy(cccl, e.Children.List)
+			e.InactiveViews[oldviewname] = NewView(oldviewname, e.Children.List...)
 			for _, child := range e.Children.List {
-				e.removeChild(BasicElement{child})
+				detach(child)
+
+				if e.Native != nil {
+					e.Native.RemoveChild(child)
+				}
+
 				attach(e, child, false)
+				finalize(child,true,wasmounted)
 			}
-			e.InactiveViews[oldviewname] = NewView(oldviewname, cccl...)
+			e.Children.RemoveAll()
 		}
 		e.ActiveView = ":" + p
 		/*for _, newchild := range view.Elements().List {
@@ -278,13 +285,23 @@ func (e *Element) activateView(name string) error {
 	}
 
 	// 1. replace the current view into e.InactiveViews
-	cccl := make([]*Element, len(e.Children.List))
-	copy(cccl, e.Children.List)
+	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), e.Children.List...)
 	for _, child := range e.Children.List {
-		e.removeChild(BasicElement{child})
+		/*e.removeChild(BasicElement{child})
 		attach(e, child, false)
+		finalize(child,true,false)*/
+	
+		detach(child)
+
+		if e.Native != nil {
+			e.Native.RemoveChild(child)
+		}
+
+		attach(e, child, false)
+		finalize(child,true,wasmounted)
+
 	}
-	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), cccl...)
+	e.Children.RemoveAll()
 
 	// 2. mount the target view
 	e.ActiveView = name
