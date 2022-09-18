@@ -5,9 +5,6 @@
 package doc
 
 import (
-	"bytes"
-	"io"
-	"net/http"
 	"syscall/js"
 
 	//"net/url"
@@ -15,7 +12,6 @@ import (
 	"fmt"
 	"log"
 	"runtime"
-	"runtime/pprof"
 
 	"github.com/atdiar/particleui"
 )
@@ -196,12 +192,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			var nevt interface{}
 			nevt = nativeEvent{evt}
 	
-			b:= new(bytes.Buffer)
 			if typ == "popstate" {
-				runtime.GC()
-				if err := pprof.StartCPUProfile(b); err != nil {
-					log.Fatal("could not start CPU profile: ", err)
-				}
 				rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
 				value =  rv
 				/*u,err:= url.ParseRequestURI(value)
@@ -249,33 +240,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			goevt.SetPhase(phase)
 			currentTarget.Handle(goevt)
 
-			//
-			if typ == "popstate"{
-				pprof.StopCPUProfile()
-				DEBUG(typ," ==================================")
-				p:= new(bytes.Buffer)
-				err:=pprof.Lookup("heap").WriteTo(p,0)
-				if err!= nil{
-					log.Fatal(err)
-				}
-
-
-				// Sending profile to localhost dev server gor consumption by go tool pprof
-				req,err:= http.NewRequest("POST","http://localhost:8080/pprof",p)
-				if err != nil{
-					log.Fatal(err)
-				}
-				res,err:= http.DefaultClient.Do(req)
-				if err != nil{
-					log.Fatal(err)
-				}
-				body,err:= io.ReadAll(res.Body)
-				if err!= nil{
-					log.Fatal(err)
-				}
-				res.Body.Close()
-				DEBUG(string(body))
-			}
 		})
 		
 		return nil
