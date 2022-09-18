@@ -370,14 +370,15 @@ func (l List) ValueType() string { return "List" }
 
 func(l List) Filter(validator func(Value)bool) List{
 	var insertIndex int
-	for _, e := range l {
+	nl:= Copy(l).(List)
+	for _, e := range nl {
 		if validator(e) {
-			l[insertIndex] = e
+			nl[insertIndex] = e
 			insertIndex++
 		}
 	}
-	l = l[:insertIndex]
-	return l
+	nl = nl[:insertIndex]
+	return nl
 }
 
 func NewList(val ...Value) List {
@@ -457,7 +458,7 @@ func Copy(v Value) Value {
 	case Number:
 		return t
 	case List:
-		r:= List(make([]Value,len(t)))
+		r:= List(make([]Value,len(t),cap(t)))
 		for i,v:= range t{
 			r[i] = Copy(v)
 		}
