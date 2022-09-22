@@ -118,6 +118,10 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
 	Stores.Set(es)
+	es.NewConstructor("observable",func(id string)*Element{
+		o:= newObservable(id)
+		return o.AsElement()
+	})
 	return es
 }
 
@@ -165,19 +169,32 @@ func (e *ElementStore) NewAppRoot(id string) BasicElement {
 	return BasicElement{el}
 }
 
+func(e *ElementStore) AddConstructorOptions(elementtype string, options ...ConstructorOption) *ElementStore{
+	optlist, ok := e.ConstructorsOptions[elementtype]
+	if !ok {
+		optlist = make(map[string]func(*Element) *Element)
+		e.ConstructorsOptions[elementtype] = optlist
+	}
+
+	for _, option := range options {		
+		optlist[option.Name] = option.Configurator
+	}
+
+	return e
+}
+
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
 	options = append(options, allowPropertyInheritanceOnMount)
+
+	optlist, ok := e.ConstructorsOptions[elementtype]
+	if !ok {
+		optlist = make(map[string]func(*Element) *Element)
+		e.ConstructorsOptions[elementtype] = optlist
+	}
 	// First we register the options that are passed with the Constructor definition
-	for _, option := range options {
-		n := option.Name
-		f := option.Configurator
-		optlist, ok := e.ConstructorsOptions[elementtype]
-		if !ok {
-			optlist = make(map[string]func(*Element) *Element)
-			e.ConstructorsOptions[elementtype] = optlist
-		}
-		optlist[n] = f
+	for _, option := range options {		
+		optlist[option.Name] = option.Configurator
 	}
 
 	// Then we create the element constructor to return
@@ -213,6 +230,12 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 	}
 	e.Constructors[elementtype] = c
 	return c
+}
+
+func(e *ElementStore) NewObservable(id string, options ...string) Observable{
+	c:= e.Constructors["observable"]
+	o:= c(id, options...)
+	return Observable{o}
 }
 
 func (e *ElementStore) GetByID(id string) *Element {
@@ -1077,54 +1100,6 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 	return e.Watch(category,propname,owner,g)
 }
 
-/*
-
-// WatchASAP is similar to watch but triggers the callback as soon as possible,
-// if a value has been detected for the property, while Watch awaits for a
-// mutation event to occur.
-// Mostly useful when a callback should be triggered as soon as we detect that a
-// event property ("event", propname) has occured.
-// (Reminder: event properies are properties that represent runtime transient state.
-// These runtime propeties are erased when the app closes.
-func (e *Element) WatchASAP(category string, propname string, owner Watchable, h *MutationHandler) *Element {
-	p, ok := owner.AsElement().Properties.Categories[category]
-	if !ok {
-		p = newProperties()
-		owner.AsElement().Properties.Categories[category] = p
-	}
-	alreadywatching := p.IsWatching(propname, e)
-
-	if !alreadywatching {
-		p.NewWatcher(propname, e)
-	}
-
-	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
-
-	eventcat, ok := owner.AsElement().Properties.Categories["internals"]
-	if !ok {
-		eventcat = newProperties()
-		owner.AsElement().Properties.Categories["internals"] = eventcat
-	}
-	alreadywatching = eventcat.IsWatching("deleted", e)
-
-	if !alreadywatching {
-		eventcat.NewWatcher("deleted", e)
-	}
-
-	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
-		e.Unwatch(category, propname, owner)
-		return false
-	}))
-
-	val, ok := owner.AsElement().Get(category, propname)
-	if ok {
-		h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
-	}
-
-	return e
-
-*/
-
 // removeHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of 
 func (e *Element) removeHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
@@ -1170,17 +1145,6 @@ func (e *Element) UnwatchGroup(category string, owner *Element) *Element {
 	return e
 }
 
-/*
-func (e *Element) AddEventListener(event string, handler *EventHandler, nativebinding NativeEventBridge) *Element {
-	e.EventHandlers.AddEventHandler(event, handler)
-	if nativebinding != nil {
-		nativebinding(event, e)
-	}
-	return e
-
-}
-*/
-
 
 func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Element {
 	e.EventHandlers.RemoveEventHandler(event, handler)
@@ -1208,22 +1172,8 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 		}
 		return false
 	})
-	//e.Watch("event","mounted",e,h.RunASAP().RunOnce())
 	e.OnMounted(h.RunASAP().RunOnce())
 
-	/*g := NewMutationHandler(func(evt MutationEvent) bool {
-		var native bool
-		if nativebinding != nil {
-			native = true
-		}
-		e.RemoveEventListener(event, handler, native)
-
-		return false
-	})
-
-	e.OnDisMount(g)
-
-	*/
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
 		e.RemoveEventListener(event, handler)
@@ -1265,109 +1215,21 @@ func (e *Element) Mounted() bool {
 }
 
 func (e *Element) OnMount(h *MutationHandler) {
-	/*nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok || !bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-
-	if h.Once{
-		nh = nh.RunOnce()
-	}
-
-	if h.ASAP{
-		nh = nh.RunASAP()
-	}*/
 	e.Watch("event", "mount", e, h)
 }
 
 func (e *Element) OnMounted(h *MutationHandler) {
-	/*nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok || !bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-
-	if h.Once{
-		nh = nh.RunOnce()
-	}
-
-	if h.ASAP{
-		nh = nh.RunASAP()
-	}*/
-
 	e.Watch("event", "mounted", e, h)
 }
-
-/*func (e *Element) OnFirstTimeMounted(h *MutationHandler) {
-	/*nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok || !bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	if h.Once{
-		nh = nh.RunOnce()
-	}
-
-	if h.ASAP{
-		nh = nh.RunASAP()
-	}
-	e.Watch("event", "firsttimemounted", e, nh.RunASAP().RunOnce())
-	e.Watch("event", "mounted", e, h.RunASAP().RunOnce())
-}*/
 
 
 // OnUnmount can be used to make a change right before an element starts unmounting.
 // One potential use case is to deal with animations as an elemnt disappear from the page.
 func (e *Element) OnUnmount(h *MutationHandler) {
-	/*nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok {
-			return true
-		}
-		if bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-
-	if h.Once{
-		nh = nh.RunOnce()
-	}
-
-	if h.ASAP{
-		nh = nh.RunASAP()
-	}*/
-
 	e.Watch("event", "unmount", e, h)
 }
 
 func (e *Element) OnUnmounted(h *MutationHandler) {
-	/*nh := NewMutationHandler(func(evt MutationEvent) bool {
-		b, ok := evt.NewValue().(Bool)
-		if !ok {
-			panic("Weird error. unmounted mutation event where the value is of wrong type")
-		}
-		if bool(b) {
-			return false
-		}
-		return h.Handle(evt)
-	})
-
-	if h.Once{
-		nh = nh.RunOnce()
-	}
-
-	if h.ASAP{
-		nh = nh.RunASAP()
-	}*/
-	
 	e.Watch("event", "unmounted", e, h)
 }
 
@@ -1493,6 +1355,113 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 }
 
 
+/*
+func (e *Element) updateBinding(category string, propname string, value Value, source AnyElement,flags ...bool){
+	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
+		panic("category string and/or propname seems to contain a slash. This is not accepted. (" + category + "," + propname + ")")
+	}
+	var inheritable bool
+	if len(flags) > 0 {
+		inheritable = flags[0]
+	}
+
+	src:= source.AsElement()
+	// Persist property if persistence mode has been set at Element creation
+	pmode := PersistenceMode(e)
+
+	oldvalue, ok := e.Get(category, propname)
+
+	if ok {
+		if category == "ui" {
+			if Equal(value, oldvalue) { // idempotence			
+				return
+			}
+		}
+	}
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok && !isRuntimeCategory(e.ElementStore,category) {
+			storage.Store(e, category, propname, value, flags...)
+		}
+	}
+
+	e.Properties.Set(category, propname, value, inheritable)
+
+	// Mutation event propagation
+	evt := e.NewMutationEvent(category, propname, value, oldvalue)
+
+	props, ok := e.Properties.Categories[category]
+	if !ok {
+		panic("category should exist since property should have been stored")
+	}
+	watchers, ok := props.Watchers[propname]
+	if !ok {
+		return
+	}
+	if watchers == nil {
+		return
+	}
+
+	var needcleanup bool
+	var index int
+	wl:= watchers.List[:0]
+	for i, w := range watchers.List {
+		if w == nil{
+			if !needcleanup{
+				wl = watchers.List[:i]
+				index = i+1
+				needcleanup = true
+			}
+			continue
+		}
+		if w.ID != src.ID{
+			w.PropMutationHandlers.DispatchEvent(evt)
+		}
+		
+		if needcleanup{
+			wl = append(wl,w)
+			index++
+		}
+	}
+	if needcleanup{
+		for i:= index; i<len(watchers.List);i++{
+			watchers.List[i] = nil
+		}
+		watchers.List = wl[:index]
+	}
+
+}
+
+
+// BindData allows to tie two "data" properties together so that they update in lock-step aka two-way databinding.
+// It is advised to only use it within constructor functions.
+func (e *Element) BindData(e2 *Element,propname string){
+	o:= e.ElementStore.NewObservable(e.ID+"."+category+"."+propname+"_"+e2.ID+"."+category2+"."+propname2)
+	h:=NewMutationHandler(func(evt MutationEvent)bool{
+		e2.updateBinding("data",propname,evt.NewValue(),o)
+		return false
+	})
+	o.Watch("data",propname,e,h)
+
+	e2.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
+		o.UIElement.removeHandler("data",propname,e,h)
+		return false
+	}))
+
+	g:= NewMutationHandler(func(evt MutationEvent)bool{
+		e.updateBinding("data",propname,evt.NewValue(),o)
+		return false
+	})
+	o.Watch("data",propname,e2,g)
+
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
+		o.UIElement.removeHandler("data",propname,e2,g)
+		return false
+	}))
+}
+
+*/
 
 func (e *Element) GetData(propname string) (Value, bool) {
 	return e.Get("data", propname)
