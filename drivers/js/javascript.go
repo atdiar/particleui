@@ -26,7 +26,12 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE).AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).ApplyGlobalOption(cleanStorageOnDelete)
+	Elements                      = ui.NewElementStore("default", DOCTYPE).
+		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
+		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
+		ApplyGlobalOption(cleanStorageOnDelete).
+		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
+	
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 	mainDocument *Document
 )
@@ -714,11 +719,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 }
 
 
-var newObservable = Elements.NewConstructor("observable",func(id string) *ui.Element{
-	o:= ui.NewObservable(id)
-	return o.AsElement()
-
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+var newObservable = Elements.Constructors["observable"]
 
 func NewObservable(id string, options ...string) ui.Observable{
 	e:= Elements.GetByID(id)
@@ -1572,6 +1573,9 @@ type TextAreaElement struct {
 	ui.BasicElement
 }
 
+type textAreaModifer struct{}
+var TextAreaModifer textAreaModifer
+
 func (t TextAreaElement) Text() string {
 	v, ok := t.AsElement().GetData("text")
 	if !ok {
@@ -1589,64 +1593,106 @@ func (t TextAreaElement) SetText(text string) TextAreaElement {
 	return t
 }
 
-func (t TextAreaElement) SetCols(i int) TextAreaElement {
-	t.AsElement().SetDataSetUI("cols", ui.Number(i))
-	return t
-}
-
-func (t TextAreaElement) SetRows(i int) TextAreaElement {
-	t.AsElement().SetDataSetUI("rows", ui.Number(i))
-	return t
-}
-
-func (t TextAreaElement) SetMinLength(m int) TextAreaElement{
-	SetAttribute(t.AsElement(),"minlength",strconv.Itoa(m))
-	return t
-}
-
-func (t TextAreaElement) SetMaxLength(m int) TextAreaElement{
-	SetAttribute(t.AsElement(),"maxlength",strconv.Itoa(m))
-	return t
-}
-
-func (t TextAreaElement) SetForm(formid string) TextAreaElement{
-	SetAttribute(t.AsElement(),"form",formid)
-	return t
-}
-
-func (t TextAreaElement) SetName(name string) TextAreaElement{
-	SetAttribute(t.AsElement(),"name",name)
-	return t
-}
-
-func (t TextAreaElement) SetPlaceholder(text string) TextAreaElement{
-	SetAttribute(t.AsElement(),"placeholder",text)
-	return t
-}
-
-// SetWrap allows to define how text should wrap. "soft" by default, it can be "hard" or "off".
-func(t TextAreaElement) SetWrap(mod string) TextAreaElement{
-	v:= "sofft"
-	if mod == "hard" || mod == "off"{
-		v = mod
+func(t textAreaModifer) Cols(i int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("cols",ui.Number(i))
+		return e
 	}
-	t.AsElement().SetUI("wrap",ui.String(v))
-	return t
 }
 
-func(t TextAreaElement) Required() TextAreaElement{
-	SetAttribute(t.AsElement(),"required","")
-	return t
+func(t textAreaModifer) Rows(i int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("rows",ui.Number(i))
+		return e
+	}
 }
 
-func(t TextAreaElement) ReadOnly() TextAreaElement{
-	SetAttribute(t.AsElement(),"readonly","")
-	return t
+func(t textAreaModifer) MinLength(i int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("minlength",ui.Number(i))
+		return e
+	}
 }
 
-func(t TextAreaElement) Disabled(b bool) TextAreaElement{
-	t.AsElement().SetDataSetUI("disabled",ui.Bool(b))
-	return t
+func(t textAreaModifer) MaxLength(i int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("maxlength",ui.Number(i))
+		return e
+	}
+}
+func(t textAreaModifer) Required(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("required",ui.Bool(b))
+		return e
+	}
+}
+
+func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d:= GetDocument()
+			
+			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				if form.Mounted(){
+					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
+				}
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+		return e
+	}
+}
+
+func(t textAreaModifer) Name(name string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("name",ui.String(name))
+		return e
+	}
+}
+
+func(t textAreaModifer) Placeholder(p string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("placeholder",ui.String(p))
+		return e
+	}
+}
+
+
+// Wrap allows to define how text should wrap. "soft" by default, it can be "hard" or "off".
+func(t textAreaModifer) Wrap(mode string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		v:= "soft"
+		if mode == "hard" || mode == "off"{
+			v = mode
+		}
+		e.SetDataSetUI("wrap",ui.String(v))
+		return e
+	}
+}
+
+func(t textAreaModifer) Autocomplete(on bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		var val string
+		if on{
+			val = "on"
+		}else{
+			val = "off"
+		}
+		e.SetDataSetUI("autocomplete",ui.String(val))
+		return e
+	}
+}
+
+func(t textAreaModifer) Spellcheck(mode string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		v:= "default"
+		if mode == "true" || mode == "false"{
+			v = mode
+		}
+		e.SetDataSetUI("spellcheck",ui.String(v))
+		return e
+	}
 }
 
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
@@ -1674,28 +1720,17 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 		return false
 	}))
 
-	e.Watch("ui", "rows", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		SetAttribute(evt.Origin(), "rows", strconv.Itoa(int( evt.NewValue().(ui.Number))))
-		return false
-	}))
+	withNumberAttributeWatcher(e,"rows")
+	withNumberAttributeWatcher(e,"cols")
 
-	e.Watch("ui", "wrap", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		SetAttribute(evt.Origin(), "wrap", string(evt.NewValue().(ui.String)))
-		return false
-	}))
+	withStringAttributeWatcher(e,"wrap")
 
-	e.Watch("ui", "cols", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if n, ok := evt.NewValue().(ui.Number); ok {
-			SetAttribute(evt.Origin(), "rows", strconv.Itoa(int(n)))
-			return false
-		}
-		return true
-	}))
-
-	e.Watch("ui","disabled",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		SetAttribute(evt.Origin(),"disabled",strconv.FormatBool(bool(evt.NewValue().(ui.Bool))))
-		return false
-	}))
+	withBoolAttributeWatcher(e,"disabled")
+	withBoolAttributeWatcher(e,"required")
+	withStringAttributeWatcher(e,"name")
+	withBoolAttributeWatcher(e,"readonly")
+	withStringAttributeWatcher(e,"autocomplete")
+	withStringAttributeWatcher(e,"spellcheck")
 
 	n := NewNativeElementWrapper(htmlTextArea)
 	e.Native = n
@@ -2426,7 +2461,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 		SetAttribute(e, "id", id)
 	}
 
-	withSimpleAttributeWatcher(e,"href")
+	withStringAttributeWatcher(e,"href")
 
 	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		JSValue(evt.Origin()).Set("text", string(evt.NewValue().(ui.String)))
@@ -2479,20 +2514,36 @@ type ButtonElement struct {
 	ui.BasicElement
 }
 
-// Autofocus is mainly useful for SSR/SSG. Since SPA pages are rarely reloaded, the Autofocus modifer
-// should be used instead.
-func (b ButtonElement) Autofocus(t bool) ButtonElement {
-	b.AsElement().SetDataSetUI("autofocus", ui.Bool(t))
-	return b
+type buttonModifer struct{}
+var ButtonModifier buttonModifer
+
+func(m buttonModifer) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("disabled",ui.Bool(b))
+		return e
+	}
 }
 
-func (b ButtonElement) Disabled(t bool) ButtonElement {
+func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d:= GetDocument()
+			
+			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				if form.Mounted(){
+					e.SetDataSetUI("form", ui.String(form.ID))
+				}
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+		return e
+	}
+}
+
+
+func (b ButtonElement) SetDisabled(t bool) ButtonElement {
 	b.AsElement().SetDataSetUI("disabled", ui.Bool(t))
-	return b
-}
-
-func(b ButtonElement) SetForm(formid string) ButtonElement{
-	SetAttribute(b.AsElement(),"form",formid)
 	return b
 }
 
@@ -2522,9 +2573,9 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	withBoolAttributeWatcher(e,"disabled")
 	withBoolAttributeWatcher(e,"autofocus")
 
-	withSimpleAttributeWatcher(e,"form")
-	withSimpleAttributeWatcher(e,"type")
-	withSimpleAttributeWatcher(e,"name")
+	withStringAttributeWatcher(e,"form")
+	withStringAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"name")
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -2549,16 +2600,18 @@ func (l LabelElement) SetText(s string) LabelElement {
 	return l
 }
 
-func (l LabelElement) For(elementid string) LabelElement {
+func (l LabelElement) For(e *ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		d:= GetDocument()
 		
 		evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			l.AsElement().SetUI("for", ui.String(elementid))
+			if e.Mounted(){
+				l.AsElement().SetDataSetUI("for", ui.String(e.ID))
+			}
 			return false
 		}).RunOnce())
 		return false
-	}))
+	}).RunOnce())
 	return l
 }
 
@@ -2579,7 +2632,7 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	e.Native = n
 
 	SetAttribute(e, "id", id)
-	withSimpleAttributeWatcher(e,"for")
+	withStringAttributeWatcher(e,"for")
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2592,6 +2645,121 @@ type InputElement struct {
 	ui.BasicElement
 }
 
+type inputModifier struct{}
+var InputModifier inputModifier
+
+func(i inputModifier) Step(step int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("step",ui.Number(step))
+		return e
+	}
+}
+
+func(i inputModifier) MaxLength(m int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("maxlength",ui.Number(m))
+		return e
+	}
+}
+
+func(i inputModifier) MinLength(m int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("minlength",ui.Number(m))
+		return e
+	}
+}
+
+func(i inputModifier) Autocomplete(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("autocomplete",ui.Bool(b))
+		return e
+	}
+}
+
+func(i inputModifier) InputMode(mode string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("inputmode",ui.String(mode))
+		return e
+	}
+}
+
+func(i inputModifier) Size(s int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("size",ui.Number(s))
+		return e
+	}
+}
+
+func(i inputModifier) Placeholder(p string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("placeholder",ui.String(p))
+		return e
+	}
+}
+
+func(i inputModifier)Pattern(p string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("pattern",ui.String(p))
+		return e
+	}
+}
+
+func(i inputModifier) Multiple() func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("multiple",ui.Bool(true))
+		return e
+	}
+}
+
+func(i inputModifier) Required(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("required",ui.Bool(b))
+		return e
+	}
+}
+
+func(i inputModifier) Accept(accept string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("accept",ui.String(accept))
+		return e
+	}
+}
+
+func(i inputModifier) Src(src string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("src",ui.String(src))
+		return e
+	}
+}
+
+func(i inputModifier)Alt(alt string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("alt",ui.String(alt))
+		return e
+	}
+}
+
+func(i inputModifier) Name(name string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("name",ui.String(name))
+		return e
+	}
+}
+
+func(i inputModifier) Height(h int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("height",ui.Number(h))
+		return e
+	}
+}
+
+func(i inputModifier) Width(w int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("width",ui.Number(w))
+		return e
+	}
+}
+
 func (i InputElement) Value() ui.String {
 	v, ok := i.AsElement().GetData("value")
 	if !ok {
@@ -2602,6 +2770,11 @@ func (i InputElement) Value() ui.String {
 		return ui.String("")
 	}
 	return val
+}
+
+func (i InputElement) SetDisabled(b bool)InputElement{
+	i.AsElement().SetDataSetUI("disabled",ui.Bool(b))
+	return i
 }
 
 func (i InputElement) Blur() {
@@ -2628,13 +2801,6 @@ func (i InputElement) Clear() {
 	native.Value.Set("value", "")
 }
 
-// Attr allows to set attributes on the HTML element.
-// The value is not conserved in state so it is not dynamically changeable by setting a value on the 
-// ui.Element.
-func(i InputElement) Attr(name, value string) InputElement{
-	SetAttribute(i.AsElement(),name,value)
-	return i
-}
 
 var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
@@ -2658,72 +2824,12 @@ var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Elemen
 		return false
 	}))
 
-	withSimpleAttributeWatcher(e,"accept")
-
-	withBoolAttributeWatcher(e,"autocomplete")
-
-	withSimpleAttributeWatcher(e,"capture")
-
-	e.Watch("ui", "checked", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if evt.NewValue().(ui.Bool) {
-			JSValue(evt.Origin()).Set("checked", true)
-			return false
-		}
-		JSValue(evt.Origin()).Set("checked", false)
-		return false
-	}))
-
+	
+	withStringAttributeWatcher(e,"name")
 	withBoolAttributeWatcher(e,"disabled")
-
-	withSimpleAttributeWatcher(e,"inputmode")
-
-	e.Watch("ui", "maxlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if i:= evt.NewValue().(ui.Number); int(i) > 0 {
-			SetAttribute(evt.Origin(), "maxlength", strconv.Itoa(int(i)))
-			return false
-		}
-		RemoveAttribute(evt.Origin(), "maxlength")
-		return false
-	}))
-
-	e.Watch("ui", "minlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if i:= evt.NewValue().(ui.Number); int(i) > 0 {
-			SetAttribute(evt.Origin(), "minlength", strconv.Itoa(int(i)))
-			return false
-		}
-		RemoveAttribute(evt.Origin(), "minlength")
-		return false
-	}))
-
-	e.Watch("ui", "step", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if i:= evt.NewValue().(ui.Number); int(i) > 0 {
-			SetAttribute(evt.Origin(), "step", strconv.Itoa(int(i)))
-			return false
-		}
-		RemoveAttribute(evt.Origin(), "step")
-		return false
-	}))
-
-	e.Watch("ui", "min", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		SetAttribute(evt.Origin(), "min", strconv.Itoa(int(evt.NewValue().(ui.Number))))
-		return false
-	}))
-
-	e.Watch("ui", "max", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		SetAttribute(evt.Origin(), "max", strconv.Itoa(int(evt.NewValue().(ui.Number))))
-		return false
-	}))
-
-	e.Watch("ui", "multiple", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if evt.NewValue().(ui.Bool){
-			SetAttribute(evt.Origin(), "multiple", "")
-			return false
-		}
-		RemoveAttribute(evt.Origin(), "multiple")
-		return false
-	}))
-
-	withSimpleAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"form")
+	withStringAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"inputmode")
 
 	SetAttribute(e, "id", id)
 	return e
@@ -2736,7 +2842,96 @@ var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Elemen
 
 func inputOption(name string) ui.ConstructorOption{
 	return ui.NewConstructorOption(name,func(e *ui.Element)*ui.Element{
-		e.SetUI("type",ui.String(name))
+
+		if name == "file"{
+			withStringAttributeWatcher(e,"accept")
+			withStringAttributeWatcher(e,"capture")
+		}
+
+		if newset("file","email").Contains(name){
+			withBoolAttributeWatcher(e,"multiple")
+		}
+
+		if newset("checkbox","radio").Contains(name){
+			withBoolAttributeWatcher(e,"checked")
+		}
+		if name == "search" || name == "text"{
+			withStringAttributeWatcher(e,"dirname")
+		}
+
+		if newset("text","search","url","tel","email","password").Contains(name) {
+			withStringAttributeWatcher(e,"pattern")
+			withNumberAttributeWatcher(e,"size")
+			e.Watch("ui", "maxlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				if i:= evt.NewValue().(ui.Number); int(i) > 0 {
+					SetAttribute(evt.Origin(), "maxlength", strconv.Itoa(int(i)))
+					return false
+				}
+				RemoveAttribute(evt.Origin(), "maxlength")
+				return false
+			}))
+		
+			e.Watch("ui", "minlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				if i:= evt.NewValue().(ui.Number); int(i) > 0 {
+					SetAttribute(evt.Origin(), "minlength", strconv.Itoa(int(i)))
+					return false
+				}
+				RemoveAttribute(evt.Origin(), "minlength")
+				return false
+			}))
+
+		}
+
+		if newset("text","search","url","tel","email","password","number").Contains(name) {
+			withStringAttributeWatcher(e,"placeholder")
+		}
+
+		if !newset("hidden","range","color","checkbox","radio","button").Contains(name){
+			withBoolAttributeWatcher(e,"readonly")
+		}
+
+		if !newset("hidden","range","color","button").Contains(name){
+			withBoolAttributeWatcher(e,"required")
+		}
+
+		if name == "image"{
+			withStringAttributeWatcher(e,"src")
+			withStringAttributeWatcher(e,"alt")
+			withNumberAttributeWatcher(e,"height")
+			withNumberAttributeWatcher(e,"width")
+		}
+
+		if newset("date","month","week","time","datetime-local","range").Contains(name){
+			e.Watch("ui", "step", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				if i:= evt.NewValue().(ui.Number); int(i) > 0 {
+					SetAttribute(evt.Origin(), "step", strconv.Itoa(int(i)))
+					return false
+				}
+				RemoveAttribute(evt.Origin(), "step")
+				return false
+			}))
+			withNumberAttributeWatcher(e, "min")
+			withNumberAttributeWatcher(e,"max")
+		}
+
+		if !newset("radio","checkbox","button").Contains(name){
+			withBoolAttributeWatcher(e,"autocomplete")
+		}
+
+		if !newset("hidden","password","radio","checkbox","button").Contains(name){
+			withStringAttributeWatcher(e,"list")
+		}
+
+		if newset("image","submit").Contains(name){
+			withStringAttributeWatcher(e,"formaction")
+			withStringAttributeWatcher(e,"formenctype")
+			withStringAttributeWatcher(e,"formmethod")
+			withBoolAttributeWatcher(e,"formnovalidate")
+			withStringAttributeWatcher(e,"formtarget")
+		}
+
+		e.SetDataSetUI("type",ui.String(name))		
+
 		return e
 	})
 }
@@ -2754,14 +2949,22 @@ type ImgElement struct {
 	ui.BasicElement
 }
 
-func (i ImgElement) Src(s string) ImgElement {
-	i.AsElement().SetDataSetUI("src", ui.String(s))
-	return i
+type imgModifier struct{}
+var ImgModifier imgModifier
+
+func(i imgModifier) Src(src string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("src",ui.String(src))
+		return e
+	}
 }
 
-func (i ImgElement) Alt(s string) ImgElement {
-	i.AsElement().SetDataSetUI("alt", ui.String(s))
-	return i
+
+func (i imgModifier) Alt(s string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("alt",ui.String(s))
+		return e
+	}
 }
 
 var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
@@ -2782,8 +2985,8 @@ var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
 	e.Native = n
 	SetAttribute(e, "id", id)
 
-	withSimpleAttributeWatcher(e,"src")
-	withSimpleAttributeWatcher(e,"alt")
+	withStringAttributeWatcher(e,"src")
+	withStringAttributeWatcher(e,"alt")
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2863,15 +3066,22 @@ type SourceElement struct{
 	ui.BasicElement
 }
 
-func(s SourceElement) SetSrc(src string) SourceElement{
-	s.AsElement().SetUI("src",ui.String(src))
-	return s
+type sourceModifier struct{}
+var SourceModifier sourceModifier
+
+func(s sourceModifier) Src(src string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("src",ui.String(src))
+		return e
+	}
 }
 
 
-func(s SourceElement) SetType(typ string) SourceElement{
-	s.AsElement().SetUI("type",ui.String(typ))
-	return s
+func(s sourceModifier) Type(typ string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("type",ui.String(typ))
+		return e
+	}
 }
 
 
@@ -2894,8 +3104,8 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 
 	SetAttribute(e, "id", id)
 
-	withSimpleAttributeWatcher(e,"src")
-	withSimpleAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"src")
+	withStringAttributeWatcher(e,"type")
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3079,34 +3289,59 @@ func Li(id string, options ...string) LiElement {
 
 // Table Elements
 
+// TableElement
 type TableElement struct {
 	ui.BasicElement
 }
 
+// TheadELement
 type TheadElement struct {
 	ui.BasicElement
 }
 
+// TbodyElement
 type TbodyElement struct {
 	ui.BasicElement
 }
 
+// TrElement
 type TrElement struct {
 	ui.BasicElement
 }
 
+
+// TdELement
 type TdElement struct {
 	ui.BasicElement
 }
 
+
+// ThElement
 type ThElement struct {
 	ui.BasicElement
 }
 
+// ColElement
 type ColElement struct {
 	ui.BasicElement
 }
 
+func(c ColElement) SetSpan(n int) ColElement{
+	c.AsElement().SetDataSetUI("span",ui.Number(n))
+	return c
+}
+
+// ColGroupElement
+type ColGroupElement struct {
+	ui.BasicElement
+}
+
+func(c ColGroupElement) SetSpan(n int) ColGroupElement{
+	c.AsElement().SetDataSetUI("span",ui.Number(n))
+	return c
+}
+
+// TfootElement
 type TfootElement struct {
 	ui.BasicElement
 }
@@ -3172,13 +3407,13 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlTableData := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTableData.IsNull()
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
 	if !exist {
-		htmlTableData = js.Global().Get("document").Call("createElement", "td")
+		htmlElement = js.Global().Get("document").Call("createElement", "td")
 	} 
 
-	n := NewNativeElementWrapper(htmlTableData)
+	n := NewNativeElementWrapper(htmlElement)
 	e.Native = n
 
 	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
@@ -3198,13 +3433,13 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlTableDataHeader := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTableDataHeader.IsNull()
+	htmlElement:= js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
 	if !exist {
-		htmlTableDataHeader = js.Global().Get("document").Call("createElement", "th")
+		htmlElement = js.Global().Get("document").Call("createElement", "th")
 	}
 
-	n := NewNativeElementWrapper(htmlTableDataHeader)
+	n := NewNativeElementWrapper(htmlElement)
 	e.Native = n
 
 	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
@@ -3214,6 +3449,112 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 
 func Th(id string, options ...string) ThElement {
 	return ThElement{ui.BasicElement{LoadFromStorage(newTh(id, options...))}}
+}
+
+var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "tbody")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Tbody(id string, options ...string) TbodyElement {
+	return TbodyElement{ui.BasicElement{LoadFromStorage(newTbody(id, options...))}}
+}
+
+var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "tfoot")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Tfoot(id string, options ...string) TfootElement {
+	return TfootElement{ui.BasicElement{LoadFromStorage(newTfoot(id, options...))}}
+}
+
+var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "col")
+	}
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"span")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Col(id string, options ...string) ColElement {
+	return ColElement{ui.BasicElement{LoadFromStorage(newCol(id, options...))}}
+}
+
+var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "colgroup")
+	}
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"span")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func ColGroup(id string, options ...string) ColGroupElement {
+	return ColGroupElement{ui.BasicElement{LoadFromStorage(newColGroup(id, options...))}}
 }
 
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
@@ -3243,6 +3584,283 @@ func Table(id string, options ...string) TableElement {
 }
 
 
+type CanvasElement struct{
+	ui.BasicElement
+}
+
+type canvasModifier struct{}
+var CanvasModifier = canvasModifier{}
+
+func(c canvasModifier) Height(h int)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("height",ui.Number(h))
+		return e
+	}
+}
+
+
+func(c canvasModifier) Width(w int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("width",ui.Number(w))
+		return e
+	}
+}
+
+var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlCanvas := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlCanvas.IsNull()
+	if !exist {
+		htmlCanvas = js.Global().Get("document").Call("createElement", "canvas")
+	} 
+
+	n := NewNativeElementWrapper(htmlCanvas)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"height")
+	withNumberAttributeWatcher(e,"width")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Canvas(id string, options ...string) CanvasElement {
+	return CanvasElement{ui.BasicElement{LoadFromStorage(newCanvas(id, options...))}}
+}
+
+type SvgElement struct{
+	ui.BasicElement
+}
+
+type svgModifier struct{}
+var SvgModifer svgModifier
+
+func(s svgModifier) Height(h int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("height",ui.Number(h))
+		return e
+	}
+}
+
+func(s svgModifier) Width(w int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("width",ui.Number(w))
+		return e
+	}
+}
+
+func(s svgModifier) Viewbox(attr string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("viewbox",ui.String(attr))
+		return e
+	}
+}
+
+
+func(s svgModifier) X(x string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("x",ui.String(x))
+		return e
+	}
+}
+
+
+func(s svgModifier) Y(y string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("y",ui.String(y))
+		return e
+	}
+}
+
+var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlSvg := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlSvg.IsNull()
+	if !exist {
+		htmlSvg = js.Global().Get("document").Call("createElement", "svg")
+	} 
+
+	n := NewNativeElementWrapper(htmlSvg)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"height")
+	withNumberAttributeWatcher(e,"width")
+	withStringAttributeWatcher(e,"viewbox")
+	withStringAttributeWatcher(e,"x")
+	withStringAttributeWatcher(e,"y")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Svg(id string, options ...string) SvgElement {
+	return SvgElement{ui.BasicElement{LoadFromStorage(newSvg(id, options...))}}
+}
+
+type SummaryElement struct{
+	ui.BasicElement
+}
+
+func (s SummaryElement) SetText(str string) SummaryElement {
+	s.AsElement().SetDataSetUI("text", ui.String(str))
+	return s
+}
+
+var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlSummary := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlSummary.IsNull()
+	if !exist {
+		htmlSummary = js.Global().Get("document").Call("createElement", "summary")
+	}
+
+	n := NewNativeElementWrapper(htmlSummary)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	e.Watch("ui", "text", e, textContentHandler)
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Summary(id string, options ...string) SummaryElement {
+	return SummaryElement{ui.BasicElement{LoadFromStorage(newSummary(id, options...))}}
+}
+
+type DetailsElement struct{
+	ui.BasicElement
+}
+
+func (d DetailsElement) SetText(str string) DetailsElement {
+	d.AsElement().SetDataSetUI("text", ui.String(str))
+	return d
+}
+
+func(d DetailsElement) Open() DetailsElement{
+	d.AsElement().SetDataSetUI("open",ui.Bool(true))
+	return d
+}
+
+func(d DetailsElement) Close() DetailsElement{
+	d.AsElement().SetDataSetUI("open",nil)
+	return d
+}
+
+func(d DetailsElement) IsOpened() bool{
+	o,ok:= d.AsElement().GetData("open")
+	if !ok{
+		return false
+	}
+	_,ok= o.(ui.Bool)
+	if !ok{
+		return false
+	}
+	return true
+}
+
+var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlDetails := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlDetails.IsNull()
+	if !exist {
+		htmlDetails = js.Global().Get("document").Call("createElement", "details")
+	}
+
+	n := NewNativeElementWrapper(htmlDetails)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	e.Watch("ui", "text", e, textContentHandler)
+	withBoolAttributeWatcher(e,"open")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Details(id string, options ...string) DetailsElement {
+	return DetailsElement{ui.BasicElement{LoadFromStorage(newDetails(id, options...))}}
+}
+
+// Dialog
+type DialogElement struct{
+	ui.BasicElement
+}
+
+
+func(d DialogElement) Open() DialogElement{
+	d.AsElement().SetDataSetUI("open",ui.Bool(true))
+	return d
+}
+
+func(d DialogElement) Close() DialogElement{
+	d.AsElement().SetDataSetUI("open",nil)
+	return d
+}
+
+func(d DialogElement) IsOpened() bool{
+	o,ok:= d.AsElement().GetData("open")
+	if !ok{
+		return false
+	}
+	_,ok= o.(ui.Bool)
+	if !ok{
+		return false
+	}
+	return true
+}
+
+var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlDialog := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlDialog.IsNull()
+	if !exist {
+		htmlDialog = js.Global().Get("document").Call("createElement", "dialog")
+	}
+
+	n := NewNativeElementWrapper(htmlDialog)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	withBoolAttributeWatcher(e,"open")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Dialog(id string, options ...string) DialogElement {
+	return DialogElement{ui.BasicElement{LoadFromStorage(newDialog(id, options...))}}
+}
 
 // CodeElement is typically used to indicate that the text it contains is computer code and may therefore be 
 // formatted differently.
@@ -3284,6 +3902,507 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 func Code(id string, options ...string) CodeElement {
 	return CodeElement{ui.BasicElement{LoadFromStorage(newCode(id, options...))}}
 }
+
+// Embed
+type EmbedElement struct{
+	ui.BasicElement
+}
+
+func(e EmbedElement) SetHeight(h int) EmbedElement{
+	e.AsElement().SetDataSetUI("height",ui.Number(h))
+	return e
+}
+
+func(e EmbedElement) SetWidth(w int) EmbedElement{
+	e.AsElement().SetDataSetUI("width",ui.Number(w))
+	return e
+}
+
+func(e EmbedElement) SetType(typ string) EmbedElement{
+	e.AsElement().SetDataSetUI("type", ui.String(typ))
+	return e
+}
+
+func(e EmbedElement) SetSrc(src string) EmbedElement{
+	e.AsElement().SetDataSetUI("src", ui.String(src))
+	return e
+}
+
+
+var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlEmbed := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlEmbed.IsNull()
+	if !exist {
+		htmlEmbed = js.Global().Get("document").Call("createElement", "embed")
+	} 
+
+	n := NewNativeElementWrapper(htmlEmbed)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"height")
+	withNumberAttributeWatcher(e,"width")
+	withStringAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"src")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Embed(id string, options ...string) EmbedElement {
+	return EmbedElement{ui.BasicElement{LoadFromStorage(newEmbed(id, options...))}}
+}
+
+// Object
+type ObjectElement struct{
+	ui.BasicElement
+}
+
+type objectModifier struct{}
+var ObjectModifier = objectModifier{}
+
+func(o objectModifier) Height(h int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("height",ui.Number(h))
+		return e
+	}
+}
+
+func(o objectModifier) Width(w int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("width",ui.Number(w))
+		return e
+	}
+}
+
+
+func(o objectModifier) Type(typ string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("type", ui.String(typ))
+		return e
+	}
+}
+
+// Data sets the path to the resource.
+func(o objectModifier) Data(u url.URL)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("data", ui.String(u.String()))
+		return e
+	}
+}
+func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d:= GetDocument()
+			
+			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				if form.Mounted(){
+					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
+				}
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+		return e
+	}
+}
+
+
+var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "object")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withNumberAttributeWatcher(e,"height")
+	withNumberAttributeWatcher(e,"width")
+	withStringAttributeWatcher(e,"type")
+	withStringAttributeWatcher(e,"data")
+	withStringAttributeWatcher(e,"form")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Object(id string, options ...string) ObjectElement {
+	return ObjectElement{ui.BasicElement{LoadFromStorage(newObject(id, options...))}}
+}
+
+// Datalist
+type DatalistElement struct{
+	ui.BasicElement
+}
+
+var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "datalist")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Datalist(id string, options ...string) DatalistElement{
+	return DatalistElement{ui.BasicElement{LoadFromStorage(newDatalist(id, options...))}}
+}
+
+// OptionElement
+type OptionElement struct{
+	ui.BasicElement
+}
+
+type optionModifier struct{}
+var OptionModifer optionModifier
+
+func(o optionModifier) Label(l string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("label",ui.String(l))
+		return e
+	}
+}
+
+func(o optionModifier) Value(value string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("value",ui.String(value))
+		return e
+	}
+}
+
+func(o optionModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("disabled",ui.Bool(b))
+		return e
+	}
+}
+
+func(i inputModifier) Selected() func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("selected",ui.Bool(true))
+		return e
+	}
+}
+
+func(o OptionElement) SetValue(opt string) OptionElement{
+	o.AsElement().SetDataSetUI("value", ui.String(opt))
+	return o
+}
+
+var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "option")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withStringAttributeWatcher(e,"value")
+	withStringAttributeWatcher(e,"label")
+	withBoolAttributeWatcher(e,"disabled")
+	withBoolAttributeWatcher(e,"selected")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Option(id string, options ...string) OptionElement{
+	return OptionElement{ui.BasicElement{LoadFromStorage(newOption(id, options...))}}
+}
+
+// OptgroupElement
+type OptgroupElement struct{
+	ui.BasicElement
+}
+
+type optgroupModifier struct{}
+var OptgroupModifer optionModifier
+
+func(o optgroupModifier) Label(l string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("label",ui.String(l))
+		return e
+	}
+}
+
+
+func(o optgroupModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("disabled",ui.Bool(b))
+		return e
+	}
+}
+
+
+func(o OptgroupElement) SetLabel(opt string) OptgroupElement{
+	o.AsElement().SetDataSetUI("label", ui.String(opt))
+	return o
+}
+
+func(o OptgroupElement) SetDisabled(b bool) OptgroupElement{
+	o.AsElement().SetDataSetUI("disabled",ui.Bool(b))
+	return o
+}
+
+var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "optgroup")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withStringAttributeWatcher(e,"label")
+	withBoolAttributeWatcher(e,"disabled")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Optgroup(id string, options ...string) OptgroupElement{
+	return OptgroupElement{ui.BasicElement{LoadFromStorage(newOptgroup(id, options...))}}
+}
+
+// FieldsetElement
+type FieldsetElement struct{
+	ui.BasicElement
+}
+
+type fieldsetModifier struct{}
+var FieldsetModifer fieldsetModifier
+
+func(m fieldsetModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d:= GetDocument()
+			
+			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				if form.Mounted(){
+					e.SetDataSetUI("form", ui.String(form.ID))
+				}
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+		return e
+	}
+}
+
+func(m fieldsetModifier) Name(name string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("name",ui.String(name))
+		return e
+	}
+}
+
+func(m fieldsetModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("disabled",ui.Bool(b))
+		return e
+	}
+}
+
+
+
+
+
+var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "fieldset")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withStringAttributeWatcher(e,"form")
+	withStringAttributeWatcher(e,"name")
+	withBoolAttributeWatcher(e,"disabled")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Fieldset(id string, options ...string) FieldsetElement{
+	return FieldsetElement{ui.BasicElement{LoadFromStorage(newFieldset(id, options...))}}
+}
+
+// FormElement
+type FormElement struct{
+	ui.BasicElement
+}
+
+type formModifier struct{}
+var FormModifer = formModifier{}
+
+func(f formModifier) Name(name string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("name",ui.String(name))
+		return e
+	}
+}
+
+func(f formModifier) Method(methodname string) func(*ui.Element) *ui.Element{
+	m:=  "GET"
+	if  strings.EqualFold(methodname,"POST"){
+		m = "POST"
+	}
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("method",ui.String(m))
+		return e
+	}
+}
+
+func(f formModifier) Target(target string) func(*ui.Element) *ui.Element{
+	m:=  "_self"
+	if strings.EqualFold(target,"_blank"){
+		m = "_blank"
+	}
+	if strings.EqualFold(target,"_parent"){
+		m = "_parent"
+	}
+	if strings.EqualFold(target,"_top"){
+		m = "_top"
+	}
+
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("target",ui.String(m))
+		return e
+	}
+}
+
+func(f formModifier) Action(u url.URL) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("action",ui.String(u.String()))
+		return e
+	}
+}
+
+func(f formModifier) Autocomplete() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("autocomplete",ui.Bool(true))
+		return e
+	}
+}
+
+func(f formModifier) NoValidate() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("novalidate",ui.Bool(true))
+		return e
+	}
+}
+
+func(f formModifier) EncType(enctype string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("enctype",ui.String(enctype))
+		return e
+	}
+}
+
+func(f formModifier) Charset(charset string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("accept-charset",ui.String(charset))
+		return e
+	}
+}
+
+var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	htmlElement := js.Global().Get("document").Call("getElementById", id)
+	exist := !htmlElement.IsNull()
+	if !exist {
+		htmlElement = js.Global().Get("document").Call("createElement", "form")
+	} 
+
+	n := NewNativeElementWrapper(htmlElement)
+	e.Native = n
+
+	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		_,ok:= e.Get("ui","action")
+		if !ok{
+			evt.Origin().SetDataSetUI("action",ui.String(evt.Origin().Route()))
+		}
+		return false
+	}))
+
+	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+	withStringAttributeWatcher(e,"accept-charset")
+	withBoolAttributeWatcher(e,"autocomplete")
+	withStringAttributeWatcher(e,"name")
+	withStringAttributeWatcher(e,"action")
+	withStringAttributeWatcher(e,"enctype")
+	withStringAttributeWatcher(e,"method")
+	withBoolAttributeWatcher(e,"novalidate")
+	withStringAttributeWatcher(e,"target")
+
+	return e
+}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Form(id string, options ...string) FormElement {
+	return FormElement{ui.BasicElement{LoadFromStorage(newForm(id, options...))}}
+}
+
+
 
 func AddClass(target *ui.Element, classname string) {
 	category := "css"
@@ -3455,13 +4574,24 @@ var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	return false
 })
 
-func withSimpleAttributeWatcher(e *ui.Element,attr string){
+// watches ("ui",attr) for a ui.String value.
+func withStringAttributeWatcher(e *ui.Element,attr string){
 	e.Watch("ui",attr,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		SetAttribute(evt.Origin(),attr,string(evt.NewValue().(ui.String)))
 		return false
 	}))
 }
 
+
+// watches ("ui",attr) for a ui.Number value.
+func withNumberAttributeWatcher(e *ui.Element,attr string){
+	e.Watch("ui",attr,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		SetAttribute(evt.Origin(),attr,strconv.Itoa(int(evt.NewValue().(ui.Number))))
+		return false
+	}))
+}
+
+// watches ("ui",attr) for a ui.Bool value.
 func withBoolAttributeWatcher(e *ui.Element, attr string){
 	e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if evt.NewValue().(ui.Bool) {
@@ -3480,4 +4610,27 @@ func Attr(name,value string) func(*ui.Element)*ui.Element{
 		e.SetUI(name,ui.String(value))
 		return e
 	}
+}
+
+type set map[string]struct{}
+
+func newset(val ...string) set{
+	if val != nil{
+		s:=  set(make(map[string]struct{},len(val)))
+		for _,v:= range val{
+			s[v]= struct{}{}
+		}
+		return s
+	}
+	return set(make(map[string]struct{}, 32))
+}
+
+func(s set) Contains(str string) bool{
+	_,ok:= s[str]
+	return ok
+}
+
+func(s set) Add(str string) set{
+	s[str]= struct{}{}
+	return s
 }

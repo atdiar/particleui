@@ -1355,114 +1355,6 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 }
 
 
-/*
-func (e *Element) updateBinding(category string, propname string, value Value, source AnyElement,flags ...bool){
-	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
-		panic("category string and/or propname seems to contain a slash. This is not accepted. (" + category + "," + propname + ")")
-	}
-	var inheritable bool
-	if len(flags) > 0 {
-		inheritable = flags[0]
-	}
-
-	src:= source.AsElement()
-	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
-
-	oldvalue, ok := e.Get(category, propname)
-
-	if ok {
-		if category == "ui" {
-			if Equal(value, oldvalue) { // idempotence			
-				return
-			}
-		}
-	}
-
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && !isRuntimeCategory(e.ElementStore,category) {
-			storage.Store(e, category, propname, value, flags...)
-		}
-	}
-
-	e.Properties.Set(category, propname, value, inheritable)
-
-	// Mutation event propagation
-	evt := e.NewMutationEvent(category, propname, value, oldvalue)
-
-	props, ok := e.Properties.Categories[category]
-	if !ok {
-		panic("category should exist since property should have been stored")
-	}
-	watchers, ok := props.Watchers[propname]
-	if !ok {
-		return
-	}
-	if watchers == nil {
-		return
-	}
-
-	var needcleanup bool
-	var index int
-	wl:= watchers.List[:0]
-	for i, w := range watchers.List {
-		if w == nil{
-			if !needcleanup{
-				wl = watchers.List[:i]
-				index = i+1
-				needcleanup = true
-			}
-			continue
-		}
-		if w.ID != src.ID{
-			w.PropMutationHandlers.DispatchEvent(evt)
-		}
-		
-		if needcleanup{
-			wl = append(wl,w)
-			index++
-		}
-	}
-	if needcleanup{
-		for i:= index; i<len(watchers.List);i++{
-			watchers.List[i] = nil
-		}
-		watchers.List = wl[:index]
-	}
-
-}
-
-
-// BindData allows to tie two "data" properties together so that they update in lock-step aka two-way databinding.
-// It is advised to only use it within constructor functions.
-func (e *Element) BindData(e2 *Element,propname string){
-	o:= e.ElementStore.NewObservable(e.ID+"."+category+"."+propname+"_"+e2.ID+"."+category2+"."+propname2)
-	h:=NewMutationHandler(func(evt MutationEvent)bool{
-		e2.updateBinding("data",propname,evt.NewValue(),o)
-		return false
-	})
-	o.Watch("data",propname,e,h)
-
-	e2.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		o.UIElement.removeHandler("data",propname,e,h)
-		return false
-	}))
-
-	g:= NewMutationHandler(func(evt MutationEvent)bool{
-		e.updateBinding("data",propname,evt.NewValue(),o)
-		return false
-	})
-	o.Watch("data",propname,e2,g)
-
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		o.UIElement.removeHandler("data",propname,e2,g)
-		return false
-	}))
-}
-
-*/
-
 func (e *Element) GetData(propname string) (Value, bool) {
 	return e.Get("data", propname)
 }
@@ -1478,12 +1370,9 @@ func (e *Element) SetData(propname string, value Value, flags ...bool) {
 // SetUI stores data used for Graphical rendering in the "ui" namespace (stands for
 // user interface). This namespace should remain private to an Element and used
 // to trigger User Interface updates.
-// Hence, the UI State is constituted of the values used for the representation of
+// Hence, the UI State is made of of the values used for the representation of
 // data to the end-user.
-// Synchronization between the Data and the UI is therfore manual.
-// UI props shall not be interdependent.
-// Other Element may want to "watch" the corresponding data namespace instead if
-// there exist interconnections.
+// Synchronization between the Data and the UI is therefore manual.
 func (e *Element) SetUI(propname string, value Value, flags ...bool) {
 	e.Set("ui", propname, value, flags...)
 }
@@ -1688,8 +1577,8 @@ func EnablePropertyAutoInheritance() string {
 }
 
 // computeRoute returns the path to an Element.
-// If the path to an Element includes a parameterized view, the returned route is
-// parameterized as well.
+//
+// This path may be parameterized if the element is ocntained by an unmounted parametered view.
 //
 // Important notice: views that are nested within a fixed element use that Element ID for routing.
 // In effect, the id acts as a namespace.
@@ -1706,10 +1595,47 @@ func (e *Element) computeRoute() string {
 	}
 
 	for k, n := range e.ViewAccessPath.Nodes {
-		path := "/" + n.Element.ID + "/" + n.Name
+		view := n.Name
+		if n.Element.Mounted(){
+			v,ok:= n.Element.Get("ui","activeview")
+			if!ok{
+				panic("couldn't find current view name")
+			}
+			view = string(v.(String))
+		}
+		path := "/" + n.Element.ID + "/" + view
 		if k == 0 {
 			if e.Mountable() {
-				path = "/" + n.Name
+				path = "/" + view
+			}
+		}
+		uri = uri + path
+	}
+	return uri
+}
+
+// Route returns the string that reporesents the URL path that allows for the elemnt to be displayed.
+// This string may be parameteriwed if the element is contained in an unmounted parametered view.
+// if the element is not mountable, an empty string is returned.
+func(e *Element) Route() string{
+	var uri string
+	if e.ViewAccessPath == nil || len(e.ViewAccessPath.Nodes) == 0 {
+		return uri
+	}
+
+	for k, n := range e.ViewAccessPath.Nodes {
+		view := n.Name
+		if n.Element.Mounted(){
+			v,ok:= n.Element.Get("ui","activeview")
+			if!ok{
+				panic("couldn't find current view name while generating route string")
+			}
+			view = string(v.(String))
+		}
+		path := "/" + n.Element.ID + "/" + view
+		if k == 0 {
+			if e.Mountable() {
+				path = "/" + view
 			}
 		}
 		uri = uri + path

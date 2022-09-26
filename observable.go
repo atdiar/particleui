@@ -17,7 +17,7 @@ func (o Observable) AsElement() *Element {
 	return o.UIElement
 }
 
-func NewObservable(id string, options ...func(*Element)*Element) Observable {
+func newObservable(id string, options ...func(*Element)*Element) Observable {
 	if strings.Contains(id, "/") {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
@@ -42,6 +42,7 @@ func NewObservable(id string, options ...func(*Element)*Element) Observable {
 		nil,
 		nil,
 	}
+	e.Set("internals","constructor",String("observable"))
 	for _,option:=range options{
 		e=option(e)
 	}

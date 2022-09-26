@@ -1061,7 +1061,7 @@ func NewNavigationHistory() *NavHistory {
 	n.State = make([]Observable, 0, 1024)
 	n.Cursor = -1
 	n.NewState = func(id string) Observable{
-		return NewObservable(id)
+		return newObservable(id)
 	}
 	n.RecoverState = func(o Observable)Observable{return o}
 	n.Length = 1024

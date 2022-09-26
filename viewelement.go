@@ -224,7 +224,7 @@ func isParameter(name string) bool {
 
 func (e *Element) activateView(name string) error {
 	if isParameter(name) {
-		panic("this is likely to be a programmer error. VIew name inputs can not lead with a colon.")
+		panic("this is likely to be a programmer error. View name inputs can not lead with a colon.")
 	}
 	if e.ActiveView == name {
 		return nil
