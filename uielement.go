@@ -1367,16 +1367,6 @@ func (e *Element) SetData(propname string, value Value, flags ...bool) {
 	e.Set("data", propname, value, flags...)
 }
 
-// SetUI stores data used for Graphical rendering in the "ui" namespace (stands for
-// user interface). This namespace should remain private to an Element and used
-// to trigger User Interface updates.
-// Hence, the UI State is made of of the values used for the representation of
-// data to the end-user.
-// Synchronization between the Data and the UI is therefore manual.
-func (e *Element) SetUI(propname string, value Value, flags ...bool) {
-	e.Set("ui", propname, value, flags...)
-}
-
 // SetDataSetUI will set a "data" property and update the same-name property value
 // located in the "ui namespace/category and used to update the the User Interface, for instance, for rendering..
 // Typically NOT used when the data is being updated from the UI.
@@ -1445,33 +1435,6 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	e.Properties.Set("ui", propname, value, inheritable)
 
 	e.Set("data", propname, value, flags...)
-}
-
-// SyncUI can be used to synchronize the UI state. It does not trigger
-// mutation handlers which are typically used to propagate UI state changes to
-// the User Interface.
-// This method can be used when data state and ui state are decoupled. (rare)
-// An example of such decoupling is browser history and the framework handling
-// of the navigation history.
-// In fact, this decoupling is somewhat artificial: navigation history just cannot be
-// recovered entirely from ("ui","history") because it also requires ("ui","currentroute").
-func (e *Element) SyncUI(propname string, value Value, flags ...bool) {
-	var inheritable bool
-	if len(flags) > 0 {
-		inheritable = flags[0]
-	}
-
-	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
-
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok {
-			storage.Store(e, "ui", propname, value, flags...)
-		}
-	}
-
-	e.Properties.Set("ui", propname, value, inheritable)
 }
 
 // LoadProperty is a function typically used to restore a UI Element properties.

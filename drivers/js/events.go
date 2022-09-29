@@ -212,7 +212,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					hstateobj := ui.NewObject()
 					err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 					if err == nil {
-						currentTarget.AsElement().SetUI("history", hstateobj.Value())
+						GetDocument().AsElement().SyncUISetData("history", hstateobj.Value())
 					}
 				}
 			}

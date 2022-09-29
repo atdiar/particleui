@@ -170,17 +170,20 @@ func (r *Router) GoTo(route string) {
 	}
 	route = strings.TrimPrefix(route, r.BasePath)
 
+	r.History.Push(route)
+	r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
+	r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+
+	
 	r.Outlet.AsElement().Root().Set("event", "navigationstart", String(route))
 
-	r.History.Push(route)
 	ok := r.tryNavigate(route)
 	if !ok {
 		DEBUG("NAVIGATION FAILED FOR SOME REASON.") // DEBUG
 	}
 
-	r.Outlet.AsElement().Root().SetData("history", r.History.Value())
 	r.Outlet.AsElement().Root().Set("event", "navigationend", String(route))
-	r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
+	
 	
 }
 
@@ -207,8 +210,8 @@ func (r *Router) Hijack(route string, destination string) {
 	r.OnRoutechangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
 		if string(navroute) == route {
-			r.History.Push(route)
-			r.RedirectTo(destination)
+			//r.History.Push(route)
+			r.Outlet.AsElement().Root().Set("navigation", "routechangerequest", String(destination))
 			return true
 		}
 		return false
@@ -282,6 +285,46 @@ func (r *Router) handler() *MutationHandler {
 			newroute = route
 		}
 
+		// Determination of navigation history action 
+		h, ok := r.Outlet.AsElement().Root().Get("data", "history")
+		if !ok {
+			r.History.Push(newroute)
+		} else {
+			ho, ok := h.(Object)
+			if !ok {
+				panic("history object of wrong type")
+			}
+			v, ok := ho.Get("cursor")
+			if !ok {
+				panic("unable to retrieve history object cursor value")
+			}
+			n := int(v.(Number))
+			cursor:= r.History.Cursor
+
+
+			if r.History.Cursor > n {
+				
+				// we are going back
+				//DEBUG("back from: ",r.History.Cursor, " to ",n)
+				for i := 0; i < cursor-n; i++ {
+					r.History.Back()
+				}
+			} else if r.History.Cursor < n {
+				r.History.ImportState(h)
+				for i := 0; i < n-cursor; i++ {
+					r.History.Forward()
+				}
+
+			} else{
+				//DEBUG("from: ",cursor, " to ",n, "by importing state")
+				r.History.ImportState(h)
+			}
+
+			
+		}
+		r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
+		r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		v,_,a, err := r.Routes.match(newroute)
 		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
@@ -312,47 +355,10 @@ func (r *Router) handler() *MutationHandler {
 		}
 		
 
-		// Determination of navigation history action 
-		h, ok := r.Outlet.AsElement().Root().Get("ui", "history")
-		if !ok {
-			r.History.Push(newroute)
-			DEBUG("push ",newroute)
-			r.Outlet.AsElement().Root().SetData("history", r.History.Value())
-		} else {
-			ho, ok := h.(Object)
-			if !ok {
-				panic("history object of wrong type")
-			}
-			v, ok := ho.Get("cursor")
-			if !ok {
-				panic("unable to retrieve history object cursor value")
-			}
-			n := int(v.(Number))
-			cursor:= r.History.Cursor
+		
 
-
-			if r.History.Cursor > n {
-				
-				// we are going back
-				//DEBUG("back from: ",r.History.Cursor, " to ",n)
-				for i := 0; i < cursor-n; i++ {
-					r.History.Back()
-				}
-			} else if r.History.Cursor < n {
-				r.History.ImportState(h)
-				for i := 0; i < n-cursor; i++ {
-					r.History.Forward()
-				}
-
-			} else{
-				DEBUG("from: ",cursor, " to ",n, "by importing state")
-				r.History.ImportState(h)
-			}
-
-			r.Outlet.AsElement().Root().SetData("history", r.History.Value())
-		}
 		r.Outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
-		r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
+		
 
 		return false
 	})
@@ -379,6 +385,10 @@ func (r *Router) redirecthandler() *MutationHandler {
 		if found{
 			newroute = route
 		}
+
+		r.History.Replace(newroute)
+		r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
+		r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v,_, a, err := r.Routes.match(newroute)
@@ -410,14 +420,14 @@ func (r *Router) redirecthandler() *MutationHandler {
 			}
 		}
 
-		r.History.Replace(newroute)
-		r.Outlet.AsElement().Root().SetData("history", r.History.Value())
+		
 		
 		r.Outlet.AsElement().Root().Set("event", "navigationend", String(newroute))
 
-		r.Outlet.AsElement().Root().SetDataSetUI("redirectroute", String(newroute))
+		
+		
 
-		DEBUG("redirect ",*r.History)
+		//DEBUG("redirect ",*r.History)
 
 		return false
 	})

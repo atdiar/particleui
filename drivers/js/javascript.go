@@ -746,7 +746,7 @@ func(d Document) Body() *ui.Element{
 }
 
 func(d Document) SetLang(lang string) Document{
-	d.AsElement().SetUI("lang", ui.String(lang))
+	d.AsElement().SetDataSetUI("lang", ui.String(lang))
 	return d
 }
 
@@ -781,75 +781,40 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 	e.Native = n
 	SetAttribute(e, "id", id)
 
-	e.Watch("ui", "history", GetWindow().AsElement(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.SyncUI("history", evt.NewValue())
-		return false
-	}).RunASAP())
-
 	e.Watch("ui","lang",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		SetAttribute(evt.Origin(),"lang",string(evt.NewValue().(ui.String)))
 		return false
 	}).RunASAP())
 
-	e.Watch("ui", "redirectroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		v := evt.NewValue()
-		nroute, ok := v.(ui.String)
-		if !ok {
-			panic(nroute)
-		}
-		route := string(nroute)
+  
 
-		history, ok := e.Get("data", "history")
-		if !ok {
-			panic("missing history entry")
-		} else {
-			s := stringify(history.RawValue())
-			js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-			e.SetUI("history", history)
-		}
+    e.Watch("ui","history",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+        var route string
+        r,ok:= evt.Origin().Get("ui","currentroute")
+        if !ok{
+            panic("current route is unknown")
+        }
+        route = string(r.(ui.String))
 
-		e.SyncUISetData("currentroute", v)
-		return false
-	}))
-
-	e.Watch("ui", "currentroute", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		v := evt.NewValue()
-		nroute, ok := v.(ui.String)
-		if !ok {
-			panic(nroute)
-		}
-		route := string(nroute)
-		history, ok := e.Get("data", "history")
-		if !ok {
-			panic("missing history entry")
-		} else {
-			browserhistory, ok := e.Get("ui", "history")
-			if !ok {
+        history:= evt.NewValue().(ui.Object)
+        browserhistory,ok:= evt.OldValue().(ui.Object)
+        if ok{
+            bhc:= browserhistory["cursor"].(ui.Number)
+            hc:= history["cursor"].(ui.Number)
+            if bhc==hc {
+                s := stringify(history.RawValue())
+                js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+            } else{
 				s := stringify(history.RawValue())
-				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
-				e.SetUI("history", history)
-				return false
+        		js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
 			}
-			if ui.Equal(browserhistory, history) {
-				return false
-			}
-			// TODO check if cursors are the same: if they are, state should be updated (use replaceState)
-			bhc:= browserhistory.(ui.Object)["cursor"].(ui.Number)
-			hc:= history.(ui.Object)["cursor"].(ui.Number)
-		
-			if bhc==hc {
-				s := stringify(history.RawValue())
-				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-				e.SetUI("history", history)
-				return false
-			}
+			return false
+        }
 
-			s := stringify(history.RawValue())
-			js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
-			e.SetUI("history", history)
-		}
-		return false
-	}))
+        s := stringify(history.RawValue())
+        js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+        return false
+    }))
 
 	// makes ViewElements focusable (focus management support)
 	e.Watch("internals", "views",e.Global,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -857,10 +822,9 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 		view:= l[len(l)-1].(*ui.Element)
 		SetAttribute(view,"tabindex","-1")
 		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			e.SetUI("focus",view)
+			e.SetDataSetUI("focus",view)
 			return false
 		}))
-
 		return false
 	}))
 
@@ -892,7 +856,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 			hstateobj := ui.NewObject()
 			err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 			if err == nil {
-				GetWindow().AsElement().SetUI("history", hstateobj.Value())
+				evt.Origin().SyncUISetData("history", hstateobj.Value())
 			}
 		}
 
@@ -1307,7 +1271,7 @@ type Base struct{
 }
 
 func(b Base) SetHREF(url string) Base{
-	b.AsElement().SetUI("href",ui.String(url))
+	b.AsElement().SetDataSetUI("href",ui.String(url))
 	return b
 }
 
@@ -2384,7 +2348,9 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 			}
 		}
 		evt.PreventDefault()
-		link.Activate(id)
+		if !link.IsActive(){
+			link.Activate(id)
+		}
 		return false
 	}))
 
@@ -2596,7 +2562,7 @@ type LabelElement struct {
 }
 
 func (l LabelElement) SetText(s string) LabelElement {
-	l.AsElement().SetUI("text", ui.String(s))
+	l.AsElement().SetDataSetUI("text", ui.String(s))
 	return l
 }
 
@@ -4881,7 +4847,7 @@ func withBoolAttributeWatcher(e *ui.Element, attr string){
 // Idf the element is not watching the ui property named after the attribute name, it does nothing.
 func Attr(name,value string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI(name,ui.String(value))
+		e.SetDataSetUI(name,ui.String(value))
 		return e
 	}
 }
