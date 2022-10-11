@@ -7,7 +7,7 @@ import (
 
 type discriminant string // just here to pin the definition of the Value interface to this package
 
-// Value is the type for Element property values. (TODO add IsNil method)
+// Value is the type for Element property values.
 type Value interface {
 	discriminant() discriminant
 	RawValue() Object
@@ -15,6 +15,7 @@ type Value interface {
 }
 
 func (e *Element) discriminant() discriminant { return "particleui" }
+func(e *Element) notNil(){}
 func (e *Element) ValueType() string          { return "Element" }
 func (e *Element) RawValue() Object {
 	o := NewObject().SetType("Element")
@@ -44,6 +45,7 @@ func (e *Element) RawValue() Object {
 type Bool bool
 
 func (b Bool) discriminant() discriminant { return "particleui" }
+func(b Bool) notNil(){}
 func (b Bool) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "Bool"
@@ -55,6 +57,7 @@ func (b Bool) ValueType() string { return "Bool" }
 type String string
 
 func (s String) discriminant() discriminant { return "particleui" }
+func(s String)notNil(){}
 func (s String) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "String"
@@ -66,6 +69,7 @@ func (s String) ValueType() string { return "String" }
 type Number float64
 
 func (n Number) discriminant() discriminant { return "particleui" }
+func(n Number)notNil(){}
 func (n Number) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "Number"
@@ -77,6 +81,7 @@ func (n Number) ValueType() string { return "Number" }
 type Object map[string]interface{}
 
 func (o Object) discriminant() discriminant { return "particleui" }
+func(o Object)notNil(){}
 
 func (o Object) RawValue() Object {
 	p := NewObject()
@@ -356,6 +361,7 @@ func NewObject() Object {
 type List []Value
 
 func (l List) discriminant() discriminant { return "particleui" }
+func(l List) notNil(){}
 func (l List) RawValue() Object {
 	o := NewObject().SetType("List")
 
@@ -488,9 +494,18 @@ func Copy(v Value) Value {
 }
 
 func Equal(v Value, w Value) bool {
-	if v == nil || w == nil {
+	// first, let's deal with nil
+	_,nvok:= v.(interface{notNil()})
+	_,nwok:= w.(interface{notNil()})
+
+	if !nvok || !nwok{
+		if !nvok && !nwok{
+			return true
+		}
 		return false
 	}
+
+	// proper values
 	if v.ValueType() != w.ValueType() {
 		return false
 	}
@@ -562,4 +577,9 @@ func Equal(v Value, w Value) bool {
 		}
 	}
 	return true
+}
+
+
+func IsNilValue(v Value)bool{
+	return Equal(v, Value(nil))
 }
