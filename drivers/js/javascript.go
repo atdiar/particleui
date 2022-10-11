@@ -2490,6 +2490,13 @@ func(m buttonModifer) Disabled(b bool) func(*ui.Element)*ui.Element{
 	}
 }
 
+func(m buttonModifer) Text(str string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("text", ui.String(str))
+		return e
+	}
+}
+
 func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -2559,6 +2566,35 @@ func Button(typ string, id string, options ...string) ButtonElement {
 
 type LabelElement struct {
 	ui.BasicElement
+}
+
+type labelModifier struct{}
+var LabelModifier labelModifier
+
+func(m labelModifier) Text(str string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("text", ui.String(str))
+		return e
+	}
+}
+
+func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d:= GetDocument()
+			
+			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				if e.Mounted(){
+					e.SetDataSetUI("for", ui.String(e.ID))
+				} else{
+					DEBUG("label for attributes couldb't be set") // panic instead?
+				}
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+		return e
+	}
 }
 
 func (l LabelElement) SetText(s string) LabelElement {
@@ -2725,6 +2761,7 @@ func(i inputModifier) Height(h int) func(*ui.Element)*ui.Element{
 		return e
 	}
 }
+
 
 func(i inputModifier) Width(w int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
@@ -3056,6 +3093,218 @@ func Img(id string, options ...string) ImgElement {
 	return ImgElement{ui.BasicElement{LoadFromStorage(newImage(id, options...))}}
 }
 
+type jsTimeRanges ui.Object
+
+func(j jsTimeRanges) Start(index int) time.Duration{
+	ti,ok:= ui.Object(j).Get("start")
+	if !ok{
+		panic("Bad timeRange encoding. No start found")
+	}
+	ranges := ti.(ui.List)
+	if index >= len(ranges){
+		panic("no time ramge at index, index out of bounds")
+	}
+	return time.Duration(ranges[index].(ui.Number)) *time.Second
+}
+
+func(j jsTimeRanges) End(index int) time.Duration{
+	ti,ok:= ui.Object(j).Get("end")
+	if !ok{
+		panic("Bad timeRange encoding. No start found")
+	}
+	ranges := ti.(ui.List)
+	if index >= len(ranges){
+		panic("no time ramge at index, index out of bounds")
+	}
+	return time.Duration(ranges[index].(ui.Number)) *time.Second
+}
+
+func(j jsTimeRanges) Length() int{
+	l,ok:= ui.Object(j).Get("length")
+	if !ok{
+		panic("bad timerange encoding")
+	}
+	return int(l.(ui.Number))
+}
+
+func newTimeRanges(v js.Value) jsTimeRanges{
+	var j = ui.NewObject()
+
+	var length int
+	l:= v.Get("length")
+	
+	if l.Truthy(){
+		length = int(l.Float())
+	}
+	j.Set("length",ui.Number(length))
+
+	starts:= ui.NewList()
+	ends := ui.NewList()
+	for i:= 0; i<length;i++{
+		st:= ui.Number(v.Call("start",i).Float())
+		en:= ui.Number(v.Call("end",i).Float())
+		starts[i]=st
+		ends[i]=en
+	}
+	j.Set("start",starts)
+	j.Set("end",ends)
+	return jsTimeRanges(j)
+}
+
+// AudioElement
+type AudioElement struct{
+	ui.BasicElement
+}
+
+func(a AudioElement) Buffered() jsTimeRanges{
+	b:= JSValue(a.AsElement()).Get("buiffered")
+	return newTimeRanges(b)
+}
+
+func(a AudioElement)CurrentTime() time.Duration{
+	return time.Duration(JSValue(a.AsElement()).Get("currentTime").Float())* time.Second
+}
+
+func(a AudioElement)Duration() time.Duration{
+	return  time.Duration(JSValue(a.AsElement()).Get("duration").Float())*time.Second
+}
+
+func(a AudioElement)PlayBackRate() float64{
+	return JSValue(a.AsElement()).Get("playbackRate").Float()
+}
+
+func(a AudioElement)Ended() bool{
+	return JSValue(a.AsElement()).Get("ended").Bool()
+}
+
+func(a AudioElement)ReadyState() float64{
+	return JSValue(a.AsElement()).Get("readyState").Float()
+}
+
+func(a AudioElement)Seekable()  jsTimeRanges{
+	b:= JSValue(a.AsElement()).Get("seekable")
+	return newTimeRanges(b)
+}
+
+func(a AudioElement) Volume() float64{
+	return  JSValue(a.AsElement()).Get("volume").Float()
+}
+
+
+func(a AudioElement) Muted() bool{
+	return JSValue(a.AsElement()).Get("muted").Bool()
+}
+
+func(a AudioElement) Paused() bool{
+	return JSValue(a.AsElement()).Get("paused").Bool()
+}
+
+func(a AudioElement) Loop() bool{
+	return JSValue(a.AsElement()).Get("loop").Bool()
+}
+
+
+type audioModifier struct{}
+var AudioModifier audioModifier
+
+func(m audioModifier) Autoplay(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("autoplay", ui.Bool(b))
+		return e
+	}
+}
+
+func(m audioModifier) Controls(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("controls", ui.Bool(b))
+		return e
+	}
+}
+
+func(m audioModifier) CrossOrigin(option string)func(*ui.Element)*ui.Element{
+	mod:= ui.String("anonymous")
+	if option == "use-credentials"{
+		mod = ui.String(option)
+	}
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("crossorigin", mod)
+		return e
+	}
+}
+
+func(m audioModifier) Loop(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("loop", ui.Bool(b))
+		return e
+	}
+}
+
+func(m audioModifier) Muted(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("muted", ui.Bool(b))
+		return e
+	}
+}
+
+func(m audioModifier) Preload(option string)func(*ui.Element)*ui.Element{
+	mod:= ui.String("metadata")
+	switch option{
+	case "none":
+		mod = ui.String(option)
+	case "auto":
+		mod = ui.String(option)
+	case "":
+		mod = ui.String("auto")
+	}
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("preload", mod)
+		return e
+	}
+}
+
+func(m audioModifier) Src(src string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("src", ui.String(src))
+		return e
+	}
+}
+
+func(m audioModifier) CurrentTime(t float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("currentTime", ui.Number(t))
+		return e
+	}
+}
+
+
+func(m audioModifier) PlayBackRate(r float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("playbackRate", ui.Number(r))
+		return e
+	}
+}
+
+func(m audioModifier) Volume(v float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("volume", ui.Number(v))
+		return e
+	}
+}
+
+func(m audioModifier) PreservesPitch(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("preservesPitch", ui.Bool(b))
+		return e
+	}
+}
+
+func(m audioModifier) DisableRemotePlayback(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("disableRemotePlayback", ui.Bool(b))
+		return e
+	}
+}
+
 var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
 	if e!= nil{
@@ -3076,7 +3325,7 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlAudio := js.Global().Get("document").Call("getElmentByID", id)
+	htmlAudio := js.Global().Get("document").Call("getElementByID", id)
 	exist := !htmlAudio.IsNull()
 	if !exist {
 		htmlAudio = js.Global().Get("document").Call("createElement", "audio")
@@ -3085,9 +3334,198 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	n := NewNativeElementWrapper(htmlAudio)
 	e.Native = n
 
+	withStringAttributeWatcher(e,"src")
+	withStringAttributeWatcher(e,"preload")
+	withBoolAttributeWatcher(e,"muted")
+	withBoolAttributeWatcher(e,"loop")
+	withStringAttributeWatcher(e,"crossorigin")
+	withBoolAttributeWatcher(e,"controls")
+	withBoolAttributeWatcher(e,"autoplay")
+
+	withMediaElementPropertyWatchers(e)
+
 	SetAttribute(e, "id", id)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+
+func Audio(id string, options ...string) AudioElement{
+	return AudioElement{ui.BasicElement{LoadFromStorage(newAudio(id, options...))}}
+}
+
+// VideoElement
+type VideoElement struct{
+	ui.BasicElement
+}
+
+func(v VideoElement) Buffered() jsTimeRanges{
+	b:= JSValue(v.AsElement()).Get("buiffered")
+	return newTimeRanges(b)
+}
+
+func(v VideoElement)CurrentTime() time.Duration{
+	return time.Duration(JSValue(v.AsElement()).Get("currentTime").Float())* time.Second
+}
+
+func(v VideoElement)Duration() time.Duration{
+	return  time.Duration(JSValue(v.AsElement()).Get("duration").Float())*time.Second
+}
+
+func(v VideoElement)PlayBackRate() float64{
+	return JSValue(v.AsElement()).Get("playbackRate").Float()
+}
+
+func(v VideoElement)Ended() bool{
+	return JSValue(v.AsElement()).Get("ended").Bool()
+}
+
+func(v VideoElement)ReadyState() float64{
+	return JSValue(v.AsElement()).Get("readyState").Float()
+}
+
+func(v VideoElement)Seekable()  jsTimeRanges{
+	b:= JSValue(v.AsElement()).Get("seekable")
+	return newTimeRanges(b)
+}
+
+func(v VideoElement) Volume() float64{
+	return  JSValue(v.AsElement()).Get("volume").Float()
+}
+
+
+func(v VideoElement) Muted() bool{
+	return JSValue(v.AsElement()).Get("muted").Bool()
+}
+
+func(v VideoElement) Paused() bool{
+	return JSValue(v.AsElement()).Get("paused").Bool()
+}
+
+func(v VideoElement) Loop() bool{
+	return JSValue(v.AsElement()).Get("loop").Bool()
+}
+
+
+type videoModifier struct{}
+var VideoModifier videoModifier
+
+func(m videoModifier) Height(h float64) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetDataSetUI("height", ui.Number(h))
+		return e
+	}
+}
+
+func(m videoModifier) Width(w float64) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetDataSetUI("width", ui.Number(w))
+		return e
+	}
+}
+
+func(m videoModifier) Poster(url string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("poster", ui.String(url))
+		return e
+	}
+}
+
+
+func(m videoModifier) PlaysInline(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("playsinline", ui.Bool(b))
+		return e
+	}
+}
+
+func(m videoModifier) Controls(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("controls", ui.Bool(b))
+		return e
+	}
+}
+
+func(m videoModifier) CrossOrigin(option string)func(*ui.Element)*ui.Element{
+	mod:= ui.String("anonymous")
+	if option == "use-credentials"{
+		mod = ui.String(option)
+	}
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("crossorigin", mod)
+		return e
+	}
+}
+
+func(m videoModifier) Loop(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("loop", ui.Bool(b))
+		return e
+	}
+}
+
+func(m videoModifier) Muted(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("muted", ui.Bool(b))
+		return e
+	}
+}
+
+func(m videoModifier) Preload(option string)func(*ui.Element)*ui.Element{
+	mod:= ui.String("metadata")
+	switch option{
+	case "none":
+		mod = ui.String(option)
+	case "auto":
+		mod = ui.String(option)
+	case "":
+		mod = ui.String("auto")
+	}
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("preload", mod)
+		return e
+	}
+}
+
+func(m videoModifier) Src(src string)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("src", ui.String(src))
+		return e
+	}
+}
+
+func(m videoModifier) CurrentTime(t float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("currentTime", ui.Number(t))
+		return e
+	}
+}
+
+func(m videoModifier) DefaultPlayBackRate(r float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("defaultPlaybackRate", ui.Number(r))
+		return e
+	}
+}
+
+func(m videoModifier) PlayBackRate(r float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("playbackRate", ui.Number(r))
+		return e
+	}
+}
+
+func(m videoModifier) Volume(v float64)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("volume", ui.Number(v))
+		return e
+	}
+}
+
+func(m videoModifier) PreservesPitch(b bool)func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("preservesPitch", ui.Bool(b))
+		return e
+	}
+}
 
 var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
@@ -3113,7 +3551,20 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	exist := !htmlVideo.IsNull()
 	if !exist {
 		htmlVideo = js.Global().Get("document").Call("createElement", "video")
-	} 
+	}
+
+	withNumberAttributeWatcher(e,"width")
+	withNumberAttributeWatcher(e,"height")
+	withStringAttributeWatcher(e,"src")
+	withStringAttributeWatcher(e,"preload")
+	withStringAttributeWatcher(e,"poster")
+	withBoolAttributeWatcher(e,"playsinline")
+	withBoolAttributeWatcher(e,"muted")
+	withBoolAttributeWatcher(e,"loop")
+	withStringAttributeWatcher(e,"crossorigin")
+	withBoolAttributeWatcher(e,"controls")
+
+	withMediaElementPropertyWatchers(e)
 
 	SetAttribute(e, "id", id)
 
@@ -3122,7 +3573,11 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
+func Video(id string, options ...string) VideoElement{
+	return VideoElement{ui.BasicElement{LoadFromStorage(newVideo(id, options...))}}
+}
 
+// SourceElement
 type SourceElement struct{
 	ui.BasicElement
 }
@@ -4836,15 +5291,62 @@ func withBoolAttributeWatcher(e *ui.Element, attr string){
 	e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if evt.NewValue().(ui.Bool) {
 			SetAttribute(evt.Origin(), attr, "")
+			return false
 		}
 		RemoveAttribute(evt.Origin(), attr)
 		return false
 	}))
 }
 
+func withStringPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		JSValue(evt.Origin()).Set(propname,string(evt.NewValue().(ui.String)))
+		return false
+	}))
+}
+
+func withBoolPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		JSValue(evt.Origin()).Set(propname,bool(evt.NewValue().(ui.Bool)))
+		return false
+	}))
+}
+
+func withNumberPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		JSValue(evt.Origin()).Set(propname,float64(evt.NewValue().(ui.Number)))
+		return false
+	}))
+}
+
+func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, max int){
+	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		v:= float64(evt.NewValue().(ui.Number))
+		if v < float64(min){
+			v = float64(min)
+		}
+
+		if v > float64(max){
+			v = float64(max)
+		}
+		JSValue(evt.Origin()).Set(propname,v)
+		return false
+	}))
+}
+
+func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element{
+	withNumberPropertyWatcher(e,"currentTime")
+	withNumberPropertyWatcher(e,"defaultPlaybackRate")
+	withBoolPropertyWatcher(e,"disableRemotePlayback")
+	withNumberPropertyWatcher(e,"playbackRate")
+	withClampedNumberPropertyWatcher(e,"volume",0,1)
+	withBoolPropertyWatcher(e,"preservesPitch")
+	return e
+}
+
 
 // Attr is a modifier that allows to set the value of an attribute if supported.
-// Idf the element is not watching the ui property named after the attribute name, it does nothing.
+// If the element is not watching the ui property named after the attribute name, it does nothing.
 func Attr(name,value string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.SetDataSetUI(name,ui.String(value))

@@ -132,15 +132,10 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		jscurrtarget := evt.Get("currentTarget")
 		currtargetid := jscurrtarget.Get("id")
 
-		var value ui.Value
-		rv:= ui.NewObject().Set("value",ui.String(jstarget.Get("value").String()))
-		value = rv
-		
+		rv:= ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
+	
 
 		ui.Do(func(){
-
-			
-
 			if currtargetid.Truthy() {
 				currentTarget= Elements.GetByID(currtargetid.String())
 				if currentTarget == nil {
@@ -194,7 +189,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	
 			if typ == "popstate" {
 				rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
-				value =  rv
+
 				/*u,err:= url.ParseRequestURI(value)
 				if err!= nil{
 					value = ""
@@ -218,25 +213,40 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			}
 	
 			if typ == "keyup" || typ == "keydown" || typ == "keypress" {
-				v:= ui.NewObject()
-				v.Set("key",ui.String(evt.Get("key").String()))
+				rv.Set("key",ui.String(evt.Get("key").String()))
 				if evt.Get("shiftKey").Truthy(){
-					v.Set("shiftKey",ui.Bool(true))
+					rv.Set("shiftKey",ui.Bool(true))
 				}
-				value = v
 			}
 	
 			if typ == "click"{
 				button:= ui.Number(evt.Get("button").Float()) // TODO add other click event properties
 				ctrlKey:= ui.Bool(evt.Get("ctrlKey").Bool())
-				v:= ui.NewObject()
-				v.Set("button",button)
-				v.Set("ctrlKey",ctrlKey)
-	
-				value = v
+				rv.Set("button",button)
+				rv.Set("ctrlKey",ctrlKey)
 			}
+
+			if v:=jstarget.Get("value"); v.Truthy(){
+				rv.Set("value",ui.String(v.String()))
+			}
+
+			jsUIEvent:= js.Global().Get("UIEvent")
+			jsInputEvent:= js.Global().Get("InputEvent")
+			jsHashChangeEvent:= js.Global().Get("HashChangeEvent")
+			
+			if evt.InstanceOf(jsInputEvent){
+				rv.Set("data",ui.String(evt.Get("data").String()))
+				rv.Set("inputType", ui.String(evt.Get("inputType").String()))
+			}
+
+			if evt.InstanceOf(jsHashChangeEvent){
+				rv.Set("newURL",ui.String(evt.Get("newURL").String()))
+				rv.Set("oldURL",ui.String(evt.Get("oldURL").String()))
+			}
+
+
 	
-			goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, value)
+			goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv)
 			goevt.SetPhase(phase)
 			currentTarget.Handle(goevt)
 
