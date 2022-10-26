@@ -176,6 +176,75 @@ func storer(s string) func(element *ui.Element, category string, propname string
 	}
 }
 
+func SerializeProps(e *ui.Element) string{
+	state:= ui.NewObject()
+	for cat,ps:= range e.Properties.Categories{
+		propsm:= ui.NewObject() // property store type map
+		state.Set(cat,propsm)
+		
+		// For default props
+		for prop,val:= range ps.Default{
+			propsm.Set("default/"+prop,val)
+		}
+
+		// For Local props
+		for prop,val:= range ps.Local{
+			propsm.Set("local/"+prop,val)
+		}
+
+		// For inherited props
+		for prop,val:= range ps.Inherited{
+			propsm.Set("inherited/"+prop,val)
+		}
+
+		// For inheritable props
+		for prop,val:= range ps.Inheritable{
+			propsm.Set("inheritable/"+prop,val)
+		}
+
+		// watchers
+		for prop,w:= range ps.Watchers{
+			wlist:= ui.NewList()
+			propsm.Set("watchers/"+prop,wlist)
+			for _,watcher:= range w.List{
+				wlist = append(wlist,watcher)
+			}
+		}
+	}
+
+	return stringify(state.RawValue())
+}
+
+func DeserializeProps(rawstate string, e *ui.Element) error{
+	rstate:= ui.NewObject()
+	err:= json.Unmarshal([]byte(rawstate),&rstate)
+	if err!= nil{
+		return err
+	}
+	state := rstate.Value().(ui.Object)
+
+	for cat,propsm:= range state{
+		for k,val:= range propsm.(ui.Object){
+			split:= strings.Split(k,"/")
+			if len(split) != 2{
+				continue
+			}
+			typ:= split[0]
+			if typ == "watchers"{
+				watchers := val.(ui.Object).Value().(ui.List)
+				for _,w:= range watchers{
+					e.Properties.NewWatcher(cat,split[1],w.(*ui.Element))
+				}
+				
+			}else{
+				prop:= split[1]
+				ui.LoadProperty(e,cat,prop,typ,val.(ui.Value))
+			}
+		}
+	}
+	return nil
+}
+
 func stringify(v interface{}) string {
 	res, err := json.Marshal(v)
 	if err != nil {
@@ -768,7 +837,7 @@ func GetDocument() Document{
 	return *mainDocument
 }
 
-var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
+var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
 
@@ -1454,8 +1523,34 @@ func Div(id string, options ...string) DivElement {
 	return DivElement{ui.BasicElement{LoadFromStorage(newDiv(id, options...))}}
 }
 
+const SSRStateSuffix = "-ssr-state"
+const HydrationAttrName = "data-needh2o"
+
 // LoadFromStorage will load an element properties.
+// If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
+// atribute, the props are loaded from this attribute instead.
 func LoadFromStorage(e *ui.Element) *ui.Element {
+	n:= JSValue(e)
+	if  n.Call("hasAttribute",HydrationAttrName).Bool(){
+		script := JSValue(GetDocument()).Call("getElementById",e.ID+ SSRStateSuffix)
+		if !script.Truthy(){
+			panic("Unable to find script")
+		}
+		// TODO check integrtity attribute and verify hash
+		// TODO obfuscate props?
+		datastring:= script.Get("text").String()
+		err := DeserializeProps(datastring,e)
+		if err!= nil{
+			panic(err)
+		}
+		n.Call("removeAtribute",HydrationAttrName)
+		script.Call("remove")
+
+		return e
+	}
+
+
+
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
 		if isSynced:=lb.(ui.Bool); isSynced{

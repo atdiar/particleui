@@ -1768,6 +1768,15 @@ func (p PropertyStore) Load(category string, propname string, proptype string, v
 	}
 }
 
+func(p PropertyStore) NewWatcher(category string, propname string, watcher *Element){
+	ps, ok := p.Categories[category]
+	if !ok {
+		ps = newProperties()
+		p.Categories[category] = ps
+	}
+	ps.NewWatcher(propname,watcher)
+}
+
 // Get retrieves the value of a property stored within a given category.
 // A category acts as a namespace for property keys.
 func (p PropertyStore) Get(category string, propname string) (Value, bool) {

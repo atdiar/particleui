@@ -383,7 +383,7 @@ func(l List) Filter(validator func(Value)bool) List{
 			insertIndex++
 		}
 	}
-	nl = nl[:insertIndex]
+	nl = nl[:insertIndex] // TODO clear potential remaining trailing elements?
 	return nl
 }
 

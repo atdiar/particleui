@@ -186,6 +186,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	
 			var nevt interface{}
 			nevt = nativeEvent{evt}
+
+			goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv)
+			goevt.SetPhase(phase)
 	
 			if typ == "popstate" {
 				rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
@@ -212,19 +215,12 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				}
 			}
 	
-			if typ == "keyup" || typ == "keydown" || typ == "keypress" {
-				rv.Set("key",ui.String(evt.Get("key").String()))
-				if evt.Get("shiftKey").Truthy(){
-					rv.Set("shiftKey",ui.Bool(true))
-				}
-			}
-	
-			if typ == "click"{
+			/*if typ == "click"{
 				button:= ui.Number(evt.Get("button").Float()) // TODO add other click event properties
 				ctrlKey:= ui.Bool(evt.Get("ctrlKey").Bool())
 				rv.Set("button",button)
 				rv.Set("ctrlKey",ctrlKey)
-			}
+			}*/
 
 			if v:=jstarget.Get("value"); v.Truthy(){
 				rv.Set("value",ui.String(v.String()))
@@ -233,6 +229,8 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			jsUIEvent:= js.Global().Get("UIEvent")
 			jsInputEvent:= js.Global().Get("InputEvent")
 			jsHashChangeEvent:= js.Global().Get("HashChangeEvent")
+			jsKeyboardEvent := js.Global().Get("KeyboardEvent")
+			jsMouseEvent:= js.Global().Get("MouseEvent")
 			
 			if evt.InstanceOf(jsInputEvent){
 				rv.Set("data",ui.String(evt.Get("data").String()))
@@ -244,10 +242,23 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				rv.Set("oldURL",ui.String(evt.Get("oldURL").String()))
 			}
 
+			if evt.InstanceOf(jsUIEvent){
+				rv.Set("detail",ui.Number(evt.Get("detail").Float()))
+			}
 
+			if evt.InstanceOf(jsKeyboardEvent){
+				event:= newKeyboardEvent(goevt)
+				keyboardEventSerialized(rv,event)
+				goevt = event
+			}
+
+			if evt.InstanceOf(jsMouseEvent){
+				event:= newMouseEvent(goevt)
+				mouseEventSerialized(rv,event)
+				goevt = event
+			}
 	
-			goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv)
-			goevt.SetPhase(phase)
+			
 			currentTarget.Handle(goevt)
 
 		})
@@ -270,3 +281,322 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	})
 
 }
+
+
+type KeyboardEvent struct{
+	ui.Event
+
+	altKey bool
+	code string
+	ctrlKey bool
+	isComposing bool
+	key string
+	location float64
+	metaKey bool
+	repeat bool
+	shiftKey bool
+
+}
+
+func keyboardEventSerialized(o ui.Object,e KeyboardEvent){
+	o.Set("altKey",ui.Bool(e.altKey))
+	o.Set("ctrlKey",ui.Bool(e.ctrlKey))
+	o.Set("shiftKey", ui.Bool(e.shiftKey))
+	o.Set("metaKey",ui.Bool(e.metaKey))
+
+	o.Set("repeat",ui.Bool(e.repeat))
+	o.Set("isComposing",ui.Bool(e.isComposing))
+
+	o.Set("location",ui.Number(e.location))
+
+	o.Set("code",ui.String(e.code))
+	o.Set("key",ui.String(e.key))
+}
+
+func(k KeyboardEvent) GetModifierState()bool{
+	return k.altKey || k.ctrlKey || k.metaKey || k.shiftKey
+}
+
+func(k KeyboardEvent) AltKey() bool{
+	return k.altKey
+}
+
+func(k KeyboardEvent) CtrlKey() bool{
+	return k.ctrlKey
+}
+
+func(k KeyboardEvent) MetaKey() bool{
+	return k.metaKey
+}
+
+func(k KeyboardEvent) ShiftKey() bool{
+	return k.shiftKey
+}
+
+func(k KeyboardEvent) Code() string{
+	return k.code
+}
+
+func(k KeyboardEvent) Composing() bool{
+	return k.isComposing
+}
+
+func(k KeyboardEvent) Key() string{
+	return k.key
+}
+
+func(k KeyboardEvent) Location() float64{
+	return k.location
+}
+
+func(k KeyboardEvent) Repeat() bool{
+	return k.repeat
+}
+
+func newKeyboardEvent(e ui.Event) KeyboardEvent{
+	var k KeyboardEvent
+	k.Event = e
+	evt:= e.Native().(js.Value)
+	
+	if v:=evt.Get("key"); v.Truthy(){
+		k.key = v.String()
+	}
+
+	if v:=evt.Get("altKey"); v.Truthy(){
+		k.altKey = v.Bool()
+	}
+	
+	if v:= evt.Get("ctrlKey"); v.Truthy(){
+		k.ctrlKey = v.Bool()
+	}
+
+	if v:= evt.Get("metaKey");v.Truthy(){
+		k.metaKey = v.Bool()
+	}
+
+	if v:= evt.Get("shiftKey"); v.Truthy(){
+		k.shiftKey = v.Bool()
+	}
+
+	if v:=evt.Get("code"); v.Truthy(){
+		k.code = v.String()
+	}
+
+	if v:= evt.Get("isComposing"); v.Truthy(){
+		k.isComposing = v.Bool()
+	}
+
+	if v:= evt.Get("repeat"); v.Truthy(){
+		k.repeat = v.Bool()
+	}
+
+	if v:=evt.Get("location"); v.Truthy(){
+		k.location = v.Float()
+	}
+	return k
+}
+
+type MouseEvent struct{
+	ui.Event
+
+	altKey bool
+	button float64
+	buttons float64
+	clientX float64
+	clientY float64
+	ctrlKey bool
+	metaKey bool
+	movementX float64
+	movementY float64
+	offsetX float64
+	offsetY float64
+	pageX float64
+	pageY float64
+	relatedTarget *ui.Element
+	screenX float64
+	screenY float64
+	shiftKey bool
+}
+
+func mouseEventSerialized(o ui.Object,e MouseEvent){
+	o.Set("altKey",ui.Bool(e.altKey))
+	o.Set("ctrlKey",ui.Bool(e.ctrlKey))
+	o.Set("shiftKey", ui.Bool(e.shiftKey))
+	o.Set("metaKey",ui.Bool(e.metaKey))
+
+	o.Set("button",ui.Number(e.button))
+	o.Set("buttons",ui.Number(e.buttons))
+	o.Set("clientX",ui.Number(e.clientX))
+	o.Set("clientY",ui.Number(e.clientY))
+	o.Set("movementX",ui.Number(e.movementX))
+	o.Set("movemnentY",ui.Number(e.movementY))
+	o.Set("offsetX",ui.Number(e.offsetX))
+	o.Set("offsetY",ui.Number(e.offsetY))
+	o.Set("pageX",ui.Number(e.pageX))
+	o.Set("pageY",ui.Number(e.pageY))
+	o.Set("screenX",ui.Number(e.screenX))
+	o.Set("screenY",ui.Number(e.screenY))
+
+	o.Set("relatedTarget",e.relatedTarget)
+
+}
+
+func(k MouseEvent) GetModifierState()bool{
+	return k.altKey || k.ctrlKey || k.metaKey || k.shiftKey
+}
+
+func(k MouseEvent) AltKey() bool{
+	return k.altKey
+}
+
+func(k MouseEvent) CtrlKey() bool{
+	return k.ctrlKey
+}
+
+func(k MouseEvent) MetaKey() bool{
+	return k.metaKey
+}
+
+func(k MouseEvent) ShiftKey() bool{
+	return k.shiftKey
+}
+
+func(k MouseEvent) Button() float64{
+	return k.button
+}
+
+func(k MouseEvent) Buttons() float64{
+	return k.buttons
+}
+
+func(k MouseEvent) ClientX() float64{
+	return k.clientX
+}
+
+func(k MouseEvent) X() float64{
+	return k.clientX
+}
+
+func(k MouseEvent) ClientY() float64{
+	return k.clientY
+}
+
+func(k MouseEvent) Y() float64{
+	return k.clientY
+}
+
+func(k MouseEvent) MovementX() float64{
+	return k.movementX
+}
+
+func(k MouseEvent) MovementY() float64{
+	return k.movementY
+}
+
+func(k MouseEvent) OffsetX() float64{
+	return k.offsetX
+}
+
+func(k MouseEvent) OffsetY() float64{
+	return k.offsetY
+}
+
+func(k MouseEvent) PageX() float64{
+	return k.pageX
+}
+
+func(k MouseEvent) PageY() float64{
+	return k.pageY
+}
+
+func(k MouseEvent) ScreenX() float64{
+	return k.screenX
+}
+
+func(k MouseEvent) ScreenY() float64{
+	return k.screenY
+}
+
+func(k MouseEvent) RelatedTarget() *ui.Element{
+	return k.RelatedTarget()
+}
+
+
+func newMouseEvent(e ui.Event) MouseEvent{
+	var k MouseEvent
+	k.Event = e
+	evt:= e.Native().(js.Value)
+	
+	if v:=evt.Get("button"); v.Truthy(){
+		k.button = v.Float()
+	}
+
+	if v:=evt.Get("buttons"); v.Truthy(){
+		k.buttons = v.Float()
+	}
+
+	if v:=evt.Get("altKey"); v.Truthy(){
+		k.altKey = v.Bool()
+	}
+	
+	if v:= evt.Get("ctrlKey"); v.Truthy(){
+		k.ctrlKey = v.Bool()
+	}
+
+	if v:= evt.Get("metaKey");v.Truthy(){
+		k.metaKey = v.Bool()
+	}
+
+	if v:= evt.Get("shiftKey"); v.Truthy(){
+		k.shiftKey = v.Bool()
+	}
+
+	if v:=evt.Get("movementX"); v.Truthy(){
+		k.movementX = v.Float()
+	}
+
+	if v:= evt.Get("movementY"); v.Truthy(){
+		k.movementY = v.Float()
+	}
+
+	if v:= evt.Get("offsetX"); v.Truthy(){
+		k.offsetX = v.Float()
+	}
+
+	if v:=evt.Get("offsetY"); v.Truthy(){
+		k.offsetY = v.Float()
+	}
+
+	if v:= evt.Get("clientX"); v.Truthy(){
+		k.clientX = v.Float()
+	}
+
+	if v:=evt.Get("clientY"); v.Truthy(){
+		k.clientY = v.Float()
+	}
+
+	if v:= evt.Get("pageX"); v.Truthy(){
+		k.pageX = v.Float()
+	}
+
+	if v:=evt.Get("pageX"); v.Truthy(){
+		k.pageX = v.Float()
+	}
+
+	if v:= evt.Get("screenX"); v.Truthy(){
+		k.screenX = v.Float()
+	}
+
+	if v:=evt.Get("screenY"); v.Truthy(){
+		k.screenY = v.Float()
+	}
+
+	if v:=evt.Get("relatedTarget"); v.Truthy(){
+		if id:= v.Get("id"); id.Truthy(){
+			k.relatedTarget= Elements.GetByID(id.String())
+		}
+	}
+	return k
+}
+
+
