@@ -1,13 +1,12 @@
-//go:build !server && js && wasm
+//go:build server
 
 package doc
 
 import (
-
-	"syscall/js"
 	"strings"
-	"github.com/atdiar/particleui"
 
+	"github.com/atdiar/particleui"
+	"golang.org/x/net/html"
 )
 
 
@@ -38,13 +37,16 @@ func (t TextNode) Value() ui.String {
 
 var newTextNode = Elements.NewConstructor("text", func(id string) *ui.Element {
 	e := ui.NewElement(id, Elements.DocType)
-	htmlTextNode := js.Global().Get("document").Call("createTextNode", "")
+	htmlTextNode := &html.Node{}
+	htmlTextNode.Type = html.TextNode
+	htmlTextNode.Data = ""
+
 	n := NewNativeElementWrapper(htmlTextNode)
 	e.Native = n
 
 	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if s, ok := evt.NewValue().(ui.String); ok { // if data.text is deleted, nothing happens, so no check for nil of  evt.NewValue() TODO handkle all the Value types
-			htmlTextNode.Set("nodeValue", string(s))
+			htmlTextNode.Data = string(s)
 		}
 
 		return false

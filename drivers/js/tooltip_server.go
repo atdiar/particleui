@@ -1,14 +1,11 @@
-//go:build !server 
+//go:build server
 
 package doc
 
 import (
-
-	"syscall/js"
 	"github.com/atdiar/particleui"
-
+	"golang.org/x/net/html"
 )
-
 
 // Tooltip defines the type implementing the interface of a tooltip ui.Element.
 // The default ui.Element interface is reachable via a call to the   AsBasicElement() method.
@@ -33,12 +30,10 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(id string) *ui.
 	e.Set("internals", "tag", ui.String("div"))
 	e = enableClasses(e)
 
-	htmlTooltip := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTooltip.IsNull()
-
-	if !exist {
-		htmlTooltip = js.Global().Get("document").Call("createElement", "div")
-	}
+	htmlTooltip := &html.Node{}
+	htmlTooltip.Data = "div"
+	htmlTooltip.Type = html.RawNode
+	
 
 	n := NewNativeElementWrapper(htmlTooltip)
 	e.Native = n
@@ -62,7 +57,11 @@ var tooltipConstructor = Elements.NewConstructor("tooltip", func(id string) *ui.
 		tooltip := evt.Origin()
 		tooltip.RemoveChildren()
 
-		htmlTooltip.Set("textContent", strcontent)
+		htmlTextNode := &html.Node{}
+		htmlTextNode.Type = html.TextNode
+		htmlTextNode.Data = string(strcontent)
+
+		htmlTooltip.AppendChild(htmlTextNode)
 
 		return false
 	})

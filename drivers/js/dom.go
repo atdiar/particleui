@@ -1,9 +1,8 @@
-// go:build js && wasm
-
 // Package doc defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build js-based UIs.
-
 package doc
+
+
 
 import (
 	"encoding/json"
@@ -11,11 +10,12 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"syscall/js"
+	//"syscall/js"
 	"time"
 	"github.com/atdiar/particleui"
 	"net/url"
 )
+
 
 func init(){
 	ui.NativeEventBridge = NativeEventBridge
@@ -23,14 +23,6 @@ func init(){
 }
 
 var (
-	// DOCTYPE holds the document doctype.
-	DOCTYPE = "html/js"
-	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE).
-		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
-		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
-		ApplyGlobalOption(cleanStorageOnDelete).
-		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
 	
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 	mainDocument *Document
@@ -48,133 +40,7 @@ const (
 	onInput
 )
 
-type jsStore struct {
-	store js.Value
-}
 
-func (s jsStore) Get(key string) (js.Value, bool) {
-	v := s.store.Call("getItem", key)
-	if !v.Truthy() {
-		return v, false
-	}
-	return v, true
-}
-
-func (s jsStore) Set(key string, value js.Value) {
-	JSON := js.Global().Get("JSON")
-	res := JSON.Call("stringify", value)
-	s.store.Call("setItem", key, res)
-}
-
-func(s jsStore) Delete(key string){
-	s.store.Call("removeItem",key)
-}
-
-// Let's add sessionstorage and localstorage for Element properties.
-// For example, an Element which would have been created with the sessionstorage option
-// would have every set properties stored in sessionstorage, available for
-// later recovery. It enables to have data that persists runs and loads of a
-// web app.
-
-func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-		store := jsStore{js.Global().Get(s)}
-		categoryExists := element.Properties.HasCategory(category)
-		propertyExists := element.Properties.HasProperty(category, propname)
-
-		// log.Print("CALL TO STORE: ", category, categoryExists, propname, propertyExists) // DEBUG
-
-		// Let's check whether the element exists in store. In the negative case,
-		// we can act as if no category has been registered.
-		// Every indices need to be generated and stored.
-		var indexed bool
-
-		storedcategories, ok := element.Get("index", "categories")
-		if ok {
-			sc, ok := storedcategories.(ui.List)
-			if ok {
-				for _, cat := range sc {
-					catstr, ok := cat.(ui.String)
-					if !ok {
-						indexed = false
-						break
-					}
-					if string(catstr) != category {
-						continue
-					}
-					indexed = true
-					break
-				}
-			}
-		}
-		if !(category == "index" && propname == "categories") {
-			if !indexed {
-				catlist := ui.NewList()
-				for k := range element.Properties.Categories {
-					catlist = append(catlist, ui.String(k))
-				}
-				if !categoryExists {
-					catlist = append(catlist, ui.String(category))
-				}
-				catlist = append(catlist, ui.String("index"))
-				// log.Print("indexed catlist", catlist) // DEBUG
-				element.Set("index", "categories", catlist)
-			}
-		}
-
-		if !categoryExists || !indexed {
-			categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
-
-			for k := range element.Properties.Categories {
-				categories = append(categories, k)
-			}
-			if !categoryExists {
-				categories = append(categories, category)
-			}
-			v := js.ValueOf(categories)
-			store.Set(element.ID, v)
-		}
-		proptype := "Local"
-		if len(flags) > 0 {
-			if flags[0] {
-				proptype = "Inheritable"
-			}
-		}
-
-		if !propertyExists || !indexed {
-			props := make([]interface{}, 0, 4)
-			c, ok := element.Properties.Categories[category]
-			if !ok {
-				props = append(props, proptype+"/"+propname)
-				v := js.ValueOf(props)
-				store.Set(element.ID+"/"+category, v)
-			} else {
-				for k := range c.Default {
-					props = append(props, "Default/"+k)
-				}
-				for k := range c.Inherited {
-					props = append(props, "Inherited/"+k)
-				}
-				for k := range c.Local {
-					props = append(props, "Local/"+k)
-				}
-				for k := range c.Inheritable {
-					props = append(props, "Inheritable/"+k)
-				}
-
-				props = append(props, proptype+"/"+propname)
-				// log.Print("all props stored...", props) // DEBUG
-				v := js.ValueOf(props)
-				store.Set(element.ID+"/"+category, v)
-			}
-		}
-		item := value.RawValue()
-		v := stringify(item)
-		store.Set(element.ID+"/"+category+"/"+propname, js.ValueOf(v))
-		element.Set("event","storesynced",ui.Bool(false))
-		return
-	}
-}
 
 func SerializeProps(e *ui.Element) string{
 	state:= ui.NewObject()
@@ -253,140 +119,6 @@ func stringify(v interface{}) string {
 	return string(res)
 }
 
-var sessionstorefn = storer("sessionStorage")
-var localstoragefn = storer("localStorage")
-
-func loader(s string) func(e *ui.Element) error {
-	return func(e *ui.Element) error {
-		store := jsStore{js.Global().Get(s)}
-		id := e.ID
-
-		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsoncategories, ok := store.Get(id)
-		if !ok {
-			return nil // Not necessarily an error in the general case. element just does not exist in store
-		}
-
-		categories := make([]string, 0, 50)
-		properties := make([]string, 0, 50)
-		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
-		if err != nil {
-			return err
-		}
-		//log.Print(categories, properties) //DEBUG
-		for _, category := range categories {
-			jsonproperties, ok := store.Get(e.ID + "/" + category)
-			if !ok {
-				continue
-			}
-			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
-			if err != nil {
-				log.Print(err)
-				return err
-			}
-
-			for _, property := range properties {
-				// let's retrieve the propname (it is suffixed by the proptype)
-				// then we can retrieve the value
-				// log.Print("debug...", category, property) // DEBUG
-				proptypename := strings.Split(property, "/")
-				proptype := proptypename[0]
-				propname := proptypename[1]
-				jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
-				if ok {					
-					var rawvaluemapstring string
-					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
-					if err != nil {
-						return err
-					}
-					
-					rawvalue := ui.NewObject()
-					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
-					if err != nil {
-						return err
-					}
-					
-					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
-					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
-				}
-			}
-		}
-		/*e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			ui.Rerender(e)
-			return false
-		}).RunOnce())*/
-		
-		ui.Rerender(e)
-		
-		return nil
-	}
-}
-
-var loadfromsession = loader("sessionStorage")
-var loadfromlocalstorage = loader("localStorage")
-
-func clearer(s string) func(element *ui.Element){
-	return func(element *ui.Element){
-		store := jsStore{js.Global().Get(s)}
-		id := element.ID
-
-		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsoncategories, ok := store.Get(id)
-		if !ok {
-			return
-		}
-
-		categories := make([]string, 0, 20)
-		properties := make([]string, 0, 50)
-		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
-		if err != nil {
-			return 
-		}
-		
-		for _, category := range categories {
-			jsonproperties, ok := store.Get(id + "/" + category)
-			if !ok {
-				continue
-			}
-			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
-			if err != nil {
-				store.Delete(id)
-				panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
-			}
-
-			for _, property := range properties {
-				// let's retrieve the propname (it is suffixed by the proptype)
-				// then we can retrieve the value
-				// log.Print("debug...", category, property) // DEBUG
-				proptypename := strings.Split(property, "/")
-				//proptype := proptypename[0]
-				propname := proptypename[1]
-				store.Delete(id + "/" + category + "/" + propname)
-			}
-			store.Delete(id + "/" + category)
-		}
-		store.Delete(id)
-		element.Set("event","storesynced",ui.Bool(false))
-	}
-}
-
-var clearfromsession = clearer("sessionStorage")
-var clearfromlocalstorage = clearer("localStorage")
-
-var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e *ui.Element)*ui.Element{
-	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		ClearFromStorage(evt.Origin())
-		if e.Native != nil{
-			j:= JSValue(e)
-			if j.Truthy(){
-				j.Call("remove")
-			}
-		}
-		
-		return false
-	}))
-	return e
-})
 
 // Window is a ype that represents a browser window
 type Window struct {
@@ -416,39 +148,14 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 	//e.Set("event", "firsttimemounted", ui.Bool(true)) TODO DEBUG
 	e.ElementStore = Elements
 	e.Parent = e
-	wd := js.Global().Get("document").Get("defaultView")
-	if !wd.Truthy() {
-		panic("unable to access windows")
-	}
-	e.Native = NewNativeElementWrapper(wd)
+	e.Native,_ = NewNativeElementIfAbsent("defaultView","window")
 
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		target := evt.Origin()
-		newtitle, ok := evt.NewValue().(ui.String)
-		if !ok {
-			return true
-		}
-
-		if target != e {
-			return true
-		}
-		nat, ok := target.Native.(NativeElement)
-		if !ok {
-			return true
-		}
-		jswindow := nat.Value
-		if !jswindow.Truthy() {
-			log.Print("Unable to access native Window object")
-			return true
-		}
-		jswindow.Get("document").Set("title", string(newtitle))
-
-		return false
-	})
-	e.Watch("ui", "title", e, h)
+	e.Watch("ui", "title", e, windowTitleHandler)
 
 	return e
 })
+
+
 
 func newWindow(title string, options ...string) Window {
 	e:= newWindowConstructor("window", options...)
@@ -476,112 +183,8 @@ func GetWindow(options ...string) Window {
 	return Window{ui.BasicElement{w}}
 }
 
-// NativeElement defines a wrapper around a js.Value that implements the
-// ui.NativeElementWrapper interface.
-type NativeElement struct {
-	js.Value
-}
 
-func NewNativeElementWrapper(v js.Value) NativeElement {
-	return NativeElement{v}
-}
 
-func (n NativeElement) AppendChild(child *ui.Element) {
-	v, ok := child.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot append " + child.ID)
-		return
-	}
-	n.Value.Call("append", v.Value)
-}
-
-func (n NativeElement) PrependChild(child *ui.Element) {
-	v, ok := child.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot prepend " + child.ID)
-		return
-	}
-	n.Value.Call("prepend", v.Value)
-}
-
-func (n NativeElement) InsertChild(child *ui.Element, index int) {
-	v, ok := child.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot insert " + child.ID)
-		return
-	}
-	childlist := n.Value.Get("children")
-	length := childlist.Get("length").Int()
-	if index > length {
-		log.Print("insertion attempt out of bounds.")
-		return
-	}
-
-	if index == length {
-		n.Value.Call("append", v.Value)
-		return
-	}
-	r := childlist.Call("item", index)
-	n.Value.Call("insertBefore", v.Value, r)
-}
-
-func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
-	nold, ok := old.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot replace " + old.ID)
-		return
-	}
-	nnew, ok := new.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot replace with " + new.ID)
-		return
-	}
-	//nold.Call("replaceWith", nnew) also works
-	n.Value.Call("replaceChild", nnew.Value, nold.Value)
-}
-
-func (n NativeElement) RemoveChild(child *ui.Element) {
-	v, ok := child.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot remove ", child.Native)
-		return
-	}
-	v.Value.Call("remove")
-	//n.Value.Call("removeChild", v.Value)
-
-}
-
-func (n NativeElement) SetChildren(children ...*ui.Element) {
-	fragment := js.Global().Get("document").Call("createDocumentFragment")
-	for _, child := range children {
-		v, ok := child.Native.(NativeElement)
-		if !ok {
-			panic("wrong format for native element underlying objects.Cannot append " + child.ID)
-		}
-		fragment.Call("append", v.Value)
-	}
-	n.Value.Call("append", fragment)
-}
-
-// JSValue retrieves the js.Value corresponding to the Element submmitted as
-// argument.
-func JSValue(el ui.AnyElement) js.Value {
-	e:= el.AsElement()
-	n, ok := e.Native.(NativeElement)
-	if !ok {
-		DEBUG(e.ID)
-		panic("js.Value not wrapped in NativeElement type")
-	}
-	return n.Value
-}
-
-// SetInnerHTML sets the innerHTML property of HTML elements.
-// Please note that it is unsafe to sets client submittd HTML inputs.
-func SetInnerHTML(e *ui.Element, html string) *ui.Element {
-	jsv := JSValue(e)
-	jsv.Set("innerHTML", html)
-	return e
-}
 
 
 /*
@@ -623,95 +226,7 @@ func EnableLocalPersistence() string {
 	return "localstorage"
 }
 
-func isScrollable(property string) bool {
-	switch property {
-	case "auto":
-		return true
-	case "scroll":
-		return true
-	default:
-		return false
-	}
-}
 
-var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.Watch("navigation", "ready", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			router := ui.GetRouter()
-
-			ejs := JSValue(e)
-			wjs := js.Global().Get("document").Get("defaultView")
-
-			stylesjs := wjs.Call("getComputedStyle", ejs)
-			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
-			overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
-			overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
-
-			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
-
-			if scrollable {
-				if js.Global().Get("history").Get("scrollRestoration").Truthy() {
-					js.Global().Get("history").Set("scrollRestoration", "manual")
-				}
-				e.SetDataSetUI("scrollrestore", ui.Bool(true))
-				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
-					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
-					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-					router.History.Set(e.ID, "scrollTop", scrolltop)
-					router.History.Set(e.ID, "scrollLeft", scrollleft)
-					return false
-				}))
-
-				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-					b, ok := e.Get("event", "shouldscroll")
-					if !ok {
-						return false
-					}
-					if scroll := b.(ui.Bool); scroll {
-						t, ok := router.History.Get(e.ID, "scrollTop")
-						if !ok {
-							ejs.Set("scrollTop", 0)
-							ejs.Set("scrollLeft", 0)
-							return false
-						}
-						l, ok := router.History.Get(e.ID, "scrollLeft")
-						if !ok {
-							ejs.Set("scrollTop", 0)
-							ejs.Set("scrollLeft", 0)
-							return false
-						}
-						top := t.(ui.Number)
-						left := l.(ui.Number)
-						ejs.Set("scrollTop", float64(top))
-						ejs.Set("scrollLeft", float64(left))
-						if e.ID != e.Root().ID {
-							e.Set("event", "shouldscroll", ui.Bool(false)) //always scroll root
-						}
-					}
-					return false
-				})
-				e.Watch("event", "navigationend", e.Root(), h)
-			} else {
-				e.SetDataSetUI("scrollrestore", ui.Bool(false))
-			}
-			return false
-		}))
-		return false
-	}).RunASAP().RunOnce())
-
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
-
-		sc, ok := e.Get("ui", "scrollrestore")
-		if !ok {
-			return false
-		}
-		if scrollrestore := sc.(ui.Bool); scrollrestore {
-			e.Set("event", "shouldscroll", ui.Bool(true))
-		}
-		return false
-	}))
-	return e
-})
 
 func EnableScrollRestoration() string {
 	return "scrollrestoration"
@@ -841,13 +356,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
 
-	root := js.Global().Get("document").Get("documentElement")
-	if !root.Truthy() {
-		log.Print("failed to instantiate root element for the document")
-		return e
-	}
-	n := NewNativeElementWrapper(root)
-	e.Native = n
+	e.Native,_ = NewNativeElementIfAbsent("documentElement", "html")
 	SetAttribute(e, "id", id)
 
 	e.Watch("ui","lang",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -857,33 +366,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
   
 
-    e.Watch("ui","history",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-        var route string
-        r,ok:= evt.Origin().Get("ui","currentroute")
-        if !ok{
-            panic("current route is unknown")
-        }
-        route = string(r.(ui.String))
-
-        history:= evt.NewValue().(ui.Object)
-        browserhistory,ok:= evt.OldValue().(ui.Object)
-        if ok{
-            bhc:= browserhistory["cursor"].(ui.Number)
-            hc:= history["cursor"].(ui.Number)
-            if bhc==hc {
-                s := stringify(history.RawValue())
-                js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-            } else{
-				s := stringify(history.RawValue())
-        		js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
-			}
-			return false
-        }
-
-        s := stringify(history.RawValue())
-        js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-        return false
-    }))
+    e.Watch("ui","history",e,historyMutationHandler)
 
 	// makes ViewElements focusable (focus management support)
 	e.Watch("internals", "views",e.Global,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -903,136 +386,17 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 			return false
 		}))
 		
-	})
-
-	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		r:= ui.GetRouter()
-		baseURI:= JSValue(evt.Origin()).Get("baseURI").String() // this is absolute by default
-		u,err:= url.ParseRequestURI(baseURI)
-		if err!= nil{
-			DEBUG(err)
-			return false
-		}
-		r.BasePath = u.Path
-		return false
-	}))
-		
+	})		
 	
-	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		hstate := js.Global().Get("history").Get("state")
-		
-		if hstate.Truthy() {
-			hstateobj := ui.NewObject()
-			err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
-			if err == nil {
-				evt.Origin().SyncUISetData("history", hstateobj.Value())
-			}
-		}
-
-		route := js.Global().Get("location").Get("pathname").String()
-		e.Set("navigation", "routechangerequest", ui.String(route))
-		return false
-	}))
+	e.Watch("navigation", "ready", e,navreadyHandler)
 	
-
-	if js.Global().Get("history").Get("scrollRestoration").Truthy() {
-		js.Global().Get("history").Set("scrollRestoration", "manual")
-	}
-
-
-	// Adding scrollrestoration support
-	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		router := ui.GetRouter()
-
-		ejs := js.Global().Get("document").Get("scrollingElement")
-
-		e.SetDataSetUI("scrollrestore", ui.Bool(true))
-
-		GetWindow().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
-			scrolltop := ui.Number(ejs.Get("scrollTop").Float())
-			scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-			router.History.Set(e.ID, "scrollTop", scrolltop)
-			router.History.Set(e.ID, "scrollLeft", scrollleft)
-			return false
-		}))
-
-		h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			newpageaccess:= router.History.CurrentEntryIsNew()
-			t, oktop := router.History.Get(e.ID, "scrollTop")
-			l, okleft := router.History.Get(e.ID, "scrollLeft")
-
-			if !oktop || !okleft {
-				ejs.Set("scrollTop", 0)
-				ejs.Set("scrollLeft", 0)
-			} else{
-				top := t.(ui.Number)
-				left := l.(ui.Number)
-
-				ejs.Set("scrollTop", float64(top))
-				ejs.Set("scrollLeft", float64(left))
-			}
-			
-			// focus restoration if applicable
-			v,ok:= router.History.Get("ui","focus")
-			if !ok{
-				v,ok= e.Get("ui","focus")
-				if !ok{
-					DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
-					return false
-				}
-				el:=v.(*ui.Element)
-				if el != nil && el.Mounted(){
-					focus(JSValue(el))
-					if newpageaccess{
-						if !partiallyVisible(JSValue(el)){
-							DEBUG("focused element not in view...scrolling")
-							n.Call("scrollIntoView")
-						}
-					}
-						
-				}
-			} else{
-				el:=v.(*ui.Element)
-				if el != nil && el.Mounted(){
-					focus(JSValue(el))
-					if newpageaccess{
-						if !partiallyVisible(JSValue(el)){
-							DEBUG("focused element not in view...scrolling")
-							n.Call("scrollIntoView")
-						}
-					}
-						
-				}
-			}
-			
-			return false
-		})
-		e.Watch("event", "navigationend", e, h)
-
-		return false
-	}))
 
 	e.AppendChild(NewHead("head"))
 	e.AppendChild(Body("body"))
 	return e
-}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
-func Focus(e ui.AnyElement, scrollintoview bool){
-	if !e.AsElement().Mounted(){
-		return
-	}
-	n:= JSValue(e.AsElement())
-	focus(n)
-	if scrollintoview{
-		if !partiallyVisible(n){
-			n.Call("scrollIntoView")
-		}
-	}
-}
 
-func focus(e js.Value){
-	e.Call("focus",map[string]interface{}{"preventScroll": true})
-}
 
 func Autofocus(e *ui.Element) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -1049,97 +413,6 @@ func Autofocus(e *ui.Element) *ui.Element{
 	return e
 }
 
-
-func IsInViewPort(n js.Value) bool{
-	bounding:= n.Call("getBoundingClientRect")
-	top:= int(bounding.Get("top").Float())
-	bottom:= int(bounding.Get("bottom").Float())
-	left:= int(bounding.Get("left").Float())
-	right:= int(bounding.Get("right").Float())
-
-	w:= JSValue(GetWindow().AsElement())
-	var ih int
-	var iw int
-	innerHeight := w.Get("innerHeight")
-	if innerHeight.Truthy(){
-		ih = int(innerHeight.Float())
-		iw = int(w.Get("innerWidth").Float())
-	} else{
-		ih = int(js.Global().Get("document").Get("documentElement").Get("clientHeight").Float())
-		iw = int(js.Global().Get("document").Get("documentElement").Get("clientWidth").Float())
-	}
-	return (top >= 0) && (left >= 0) && (bottom <= ih) && (right <= iw)	
-}
-
-func partiallyVisible(n js.Value) bool{
-	bounding:= n.Call("getBoundingClientRect")
-	top:= int(bounding.Get("top").Float())
-	//bottom:= int(bounding.Get("bottom").Float())
-	left:= int(bounding.Get("left").Float())
-	//right:= int(bounding.Get("right").Float())
-
-	w:= JSValue(GetWindow().AsElement())
-	var ih int
-	var iw int
-	innerHeight := w.Get("innerHeight")
-	if innerHeight.Truthy(){
-		ih = int(innerHeight.Float())
-		iw = int(w.Get("innerWidth").Float())
-	} else{
-		ih = int(js.Global().Get("document").Get("documentElement").Get("clientHeight").Float())
-		iw = int(js.Global().Get("document").Get("documentElement").Get("clientWidth").Float())
-	}
-	return (top >= 0) && (left >= 0) && (top <= ih) && (left <= iw)	
-}
-
-func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is focusable? (edge-case)
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		m:= JSValue(evt.Origin())
-		focusableslist:= `button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])`
-		focusableElements:= m.Call("querySelectorAll",focusableslist)
-		count:= int(focusableElements.Get("length").Float())-1
-		firstfocusable:= focusableElements.Index(0)
-
-		lastfocusable:= focusableElements.Index(count)
-
-		h:= ui.NewEventHandler(func(evt ui.Event)bool{
-			a:= js.Global().Get("document").Get("activeElement")
-			v:=evt.Value().(ui.Object)
-			vkey,ok:= v.Get("key")
-			if !ok{
-				panic("event value is supposed to have a key field.")
-			}
-			key:= string(vkey.(ui.String))
-			if key != "Tab"{
-				return false
-			}
-
-			if _,ok:= v.Get("shiftKey");ok{
-				if a.Equal(firstfocusable){
-					focus(lastfocusable)
-					evt.PreventDefault()
-				}
-			} else{
-				if a.Equal(lastfocusable){
-					focus(firstfocusable)
-					evt.PreventDefault()
-				}
-			}
-			return false
-		})
-		evt.Origin().Root().AddEventListener("keydown",h)
-		// Watches unmounted once
-		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			evt.Origin().Root().RemoveEventListener("keydown",h)
-			return false
-		}).RunOnce())
-		
-		focus(firstfocusable)
-
-		return false
-	}))
-	return e
-}
 
 
 // NewDocument returns the root of new js app. It is the top-most element
@@ -1161,14 +434,9 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlBody:= js.Global().Get("document").Get("body")
-	exist:= htmlBody.Truthy()
-	if !exist{
-		htmlBody= js.Global().Get("document").Call("createElement","body")
-	}
-
-	n := NewNativeElementWrapper(htmlBody)
-	e.Native = n
+	tag:= "body"
+	var exist bool
+	e.Native, exist= NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1186,15 +454,6 @@ func Body(id string, options ...string) BodyElement{
 	return BodyElement{ui.BasicElement{LoadFromStorage(newBody(id,options...))}}
 }
 
-// reset is used to delete all eventlisteners from an Element
-func resete(element js.Value) js.Value {
-	clone := element.Call("cloneNode")
-	parent := element.Get("parentNode")
-	if !parent.IsNull() {
-		element.Call("replaceWith", clone)
-	}
-	return clone
-}
 
 // Head refers to the <head> HTML element of a HTML document, which contains metadata and links to 
 // resources such as title, scripts, stylesheets.
@@ -1210,15 +469,9 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlHead:= js.Global().Get("document").Get("head")
-
-	exist:= htmlHead.Truthy()
-	if !exist{
-		htmlHead= js.Global().Get("document").Call("createElement","head")
-	}
-
-	n := NewNativeElementWrapper(htmlHead)
-	e.Native = n
+	tag:= "head"
+	var exist bool
+	e.Native, exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1253,15 +506,9 @@ var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlMeta:=  js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlMeta.IsNull()
-
-	if !exist {
-		htmlMeta = js.Global().Get("document").Call("createElement", "meta")
-	}
-
-	n := NewNativeElementWrapper(htmlMeta)
-	e.Native = n
+	tag:= "meta"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1312,15 +559,9 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlScript:=  js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlScript.IsNull()
-
-	if !exist {
-		htmlScript = js.Global().Get("document").Call("createElement", "script")
-	}
-
-	n := NewNativeElementWrapper(htmlScript)
-	e.Native = n
+	tag:= "script"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1352,15 +593,9 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlBase:=  js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlBase.IsNull()
-
-	if !exist {
-		htmlBase = js.Global().Get("document").Call("createElement", "base")
-	} 
-
-	n := NewNativeElementWrapper(htmlBase)
-	e.Native = n
+	tag:= "base"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1400,15 +635,9 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlNoScript:=  js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlNoScript.IsNull()
-
-	if !exist {
-		htmlNoScript = js.Global().Get("document").Call("createElement", "noscript")
-	} 
-
-	n := NewNativeElementWrapper(htmlNoScript)
-	e.Native = n
+	tag:= "noscript"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1439,15 +668,9 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlLink:=  js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlLink.IsNull()
-
-	if !exist {
-		htmlLink = js.Global().Get("document").Call("createElement", "link")
-	} 
-
-	n := NewNativeElementWrapper(htmlLink)
-	e.Native = n
+	tag:= "link"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1486,20 +709,14 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlDiv := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlDiv.IsNull()
-
-	// Also, need to try and load any corresponding properties that would have been persisted and retrigger ui.mutations to recover ui state.
-	// Let's defer this to the persistence option so that the loading function of the right persistent storage is used.
-	if !exist {
-		htmlDiv = js.Global().Get("document").Call("createElement", "div")
-	} 
-
-	n := NewNativeElementWrapper(htmlDiv)
-	e.Native = n
+	
+	tag:= "div"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
+
 	e.Watch("ui", "contenteditable", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b, ok := evt.NewValue().(ui.Bool)
 		if !ok {
@@ -1526,106 +743,7 @@ func Div(id string, options ...string) DivElement {
 const SSRStateSuffix = "-ssr-state"
 const HydrationAttrName = "data-needh2o"
 
-// LoadFromStorage will load an element properties.
-// If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
-// atribute, the props are loaded from this attribute instead.
-func LoadFromStorage(e *ui.Element) *ui.Element {
-	n:= JSValue(e)
-	if  n.Call("hasAttribute",HydrationAttrName).Bool(){
-		script := JSValue(GetDocument()).Call("getElementById",e.ID+ SSRStateSuffix)
-		if !script.Truthy(){
-			panic("Unable to find script")
-		}
-		// TODO check integrtity attribute and verify hash
-		// TODO obfuscate props?
-		datastring:= script.Get("text").String()
-		err := DeserializeProps(datastring,e)
-		if err!= nil{
-			panic(err)
-		}
-		n.Call("removeAtribute",HydrationAttrName)
-		script.Call("remove")
 
-		return e
-	}
-
-
-
-	lb,ok:=e.Get("event","storesynced")
-	if ok{
-		if isSynced:=lb.(ui.Bool); isSynced{
-			return e
-		}
-		
-	}
-	pmode := ui.PersistenceMode(e)
-	storage, ok := e.ElementStore.PersistentStorer[pmode]
-	if ok {
-		err := storage.Load(e)
-		if err != nil {
-			log.Print(err)
-			return e
-		}
-		e.Set("event","storesynced",ui.Bool(true))
-	}
-	return e
-}
-
-// PutInStorage stores an element properties in storage (localstorage or sessionstorage).
-func PutInStorage(e *ui.Element) *ui.Element{
-	pmode := ui.PersistenceMode(e)
-	storage,ok:= e.ElementStore.PersistentStorer[pmode]
-	if !ok{
-		return e
-	}
-	for cat,props:= range e.Properties.Categories{
-		if cat != "event"{
-			for prop,val:= range props.Local{
-				storage.Store(e,cat,prop,val)
-			}
-			for prop,val:=range props.Inheritable{
-				storage.Store(e,cat,prop,val,true)
-			}
-		}		
-	}
-	e.Set("event","storesynced",ui.Bool(true))
-	return e
-}
-
-// ClearFromStorage will clear an element properties from storage.
-func ClearFromStorage(e *ui.Element) *ui.Element{
-	pmode:=ui.PersistenceMode(e)
-	storage,ok:= e.ElementStore.PersistentStorer[pmode]
-	if ok{
-		storage.Clear(e)
-		// reset the categories index/list for the element
-		idx,ok:= e.Get("index","categories")
-		if ok{
-			index:=idx.(ui.List)[:0]
-			e.Set("index","categories",index)
-		}
-	}
-	return e
-}
-
-// isPersisted checks whether an element exist in storage alrready
-func isPersisted(e *ui.Element) bool{
-	pmode:=ui.PersistenceMode(e)
-
-	var s string
-	switch pmode{
-	case"sessionstorage":
-		s = "sessionStorage"
-	case "localstorage":
-		s = "localStorage"
-	default:
-		return false
-	}
-
-	store := jsStore{js.Global().Get(s)}
-	_, ok := store.Get(e.ID)
-	return ok
-}
 
 // TODO implement spellcheck and autocomplete methods
 type TextAreaElement struct {
@@ -1647,9 +765,11 @@ func (t TextAreaElement) Text() string {
 	return string(text)
 }
 
-func (t TextAreaElement) SetText(text string) TextAreaElement {
-	t.AsElement().SetDataSetUI("text", ui.String(text))
-	return t
+func(t textAreaModifer) Value(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("value", ui.String(text))
+		return e
+	}
 }
 
 func(t textAreaModifer) Cols(i int) func(*ui.Element)*ui.Element{
@@ -1762,22 +882,14 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlTextArea := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTextArea.IsNull()
-
+	tag:= "textarea"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlTextArea = js.Global().Get("document").Call("createElement", "textarea")
+		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if s, ok := evt.NewValue().(ui.String); ok {
-			old := JSValue(evt.Origin()).Get("value").String()
-			if string(s) != old {
-				SetAttribute(evt.Origin(), "value", string(s))
-			}
-		}
-		return false
-	}))
+	withStringAttributeWatcher(e,"value")
 
 	withNumberAttributeWatcher(e,"rows")
 	withNumberAttributeWatcher(e,"cols")
@@ -1791,10 +903,7 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 	withStringAttributeWatcher(e,"autocomplete")
 	withStringAttributeWatcher(e,"spellcheck")
 
-	n := NewNativeElementWrapper(htmlTextArea)
-	e.Native = n
 
-	SetAttribute(e, "id", id)
 	return e
 }, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -1831,42 +940,7 @@ func EnableSyncOnInput() string {
 	return "SyncOnInput"
 }
 
-func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		callback := ui.NewEventHandler(func(evt ui.Event) bool {
-			if evt.Target().ID != e.ID {
-				return false // we do not stop the event propagation but do not handle the event either
-			}
-			n, ok := e.Native.(NativeElement)
-			if !ok {
-				return true
-			}
-			nn := n.Value
-			v := nn.Get("value")
-			ok = v.Truthy()
-			if !ok {
-				return true
-			}
-			s := v.String()
-			e.SyncUISetData("text", ui.String(s), false)
-			return false
-		})
 
-		if datacapturemode == nil || len(datacapturemode) > 1 {
-			e.AddEventListener("blur", callback)
-			return e
-		}
-		mode := datacapturemode[0]
-		if mode == onInput {
-			e.AddEventListener("input", callback)
-			return e
-		}
-
-		// capture textarea value on blur by default
-		e.AddEventListener("blur", callback)
-		return e
-	}
-}
 
 type HeaderElement struct {
 	ui.BasicElement
@@ -1880,18 +954,13 @@ var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlHeader := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlHeader.IsNull()
-
-	if !exist {
-		htmlHeader = js.Global().Get("document").Call("createElement", "header")
-	}
-
-	n := NewNativeElementWrapper(htmlHeader)
-	e.Native = n
+	tag:= "header"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
+
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -1912,16 +981,9 @@ var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlFooter := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlFooter.IsNull()
-
-	if !exist {
-		htmlFooter = js.Global().Get("document").Call("createElement", "footer")
-	}
-
-	n := NewNativeElementWrapper(htmlFooter)
-	e.Native = n
-
+	tag:= "footer"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1946,17 +1008,13 @@ var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlSection := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlSection.IsNull()
-	if !exist {
-		htmlSection = js.Global().Get("document").Call("createElement", "section")
-	}
-
-	n := NewNativeElementWrapper(htmlSection)
-	e.Native = n
+	tag:= "section"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
+
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -1982,14 +1040,9 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH1 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH1.IsNull()
-	if !exist {
-		htmlH1 = js.Global().Get("document").Call("createElement", "h1")
-	}
-
-	n := NewNativeElementWrapper(htmlH1)
-	e.Native = n
+	tag:= "h1"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2020,14 +1073,9 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH2 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH2.IsNull()
-	if !exist {
-		htmlH2 = js.Global().Get("document").Call("createElement", "h2")
-	}
-
-	n := NewNativeElementWrapper(htmlH2)
-	e.Native = n
+	tag:= "h2"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2058,14 +1106,9 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH3 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH3.IsNull()
-	if !exist {
-		htmlH3 = js.Global().Get("document").Call("createElement", "h3")
-	} 
-
-	n := NewNativeElementWrapper(htmlH3)
-	e.Native = n
+	tag:= "h3"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2097,14 +1140,9 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH4 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH4.IsNull()
-	if !exist {
-		htmlH4 = js.Global().Get("document").Call("createElement", "h4")
-	} 
-
-	n := NewNativeElementWrapper(htmlH4)
-	e.Native = n
+	tag:= "h4"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2135,14 +1173,9 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH5 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH5.IsNull()
-	if !exist {
-		htmlH5 = js.Global().Get("document").Call("createElement", "h5")
-	} 
-
-	n := NewNativeElementWrapper(htmlH5)
-	e.Native = n
+	tag:= "h5"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2173,14 +1206,9 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlH6 := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlH6.IsNull()
-	if !exist {
-		htmlH6 = js.Global().Get("document").Call("createElement", "h6")
-	} 
-
-	n := NewNativeElementWrapper(htmlH6)
-	e.Native = n
+	tag:= "h6"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2212,20 +1240,15 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlSpan := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlSpan.IsNull()
-	if !exist {
-		htmlSpan = js.Global().Get("document").Call("createElement", "span")
-	} 
-
-	n := NewNativeElementWrapper(htmlSpan)
-	e.Native = n
-
-	e.Watch("ui", "text", e, textContentHandler)
-
+	tag:= "span"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
+
+	e.Watch("ui", "text", e, textContentHandler)
+
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2247,16 +1270,12 @@ var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlArticle := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlArticle.IsNull()
+	tag:= "article"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlArticle = js.Global().Get("document").Call("createElement", "article")
-	} 
-
-	n := NewNativeElementWrapper(htmlArticle)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 
 	return e
@@ -2279,17 +1298,12 @@ var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlAside := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlAside.IsNull()
+	tag:= "aside"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlAside = js.Global().Get("document").Call("createElement", "aside")
-	} 
-
-	n := NewNativeElementWrapper(htmlAside)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
-
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2310,17 +1324,12 @@ var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlMain := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlMain.IsNull()
+	tag:= "main"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlMain = js.Global().Get("document").Call("createElement", "main")
-	} 
-
-	n := NewNativeElementWrapper(htmlMain)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
-
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2347,22 +1356,14 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlParagraph := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlParagraph.IsNull()
-	if !exist {
-		htmlParagraph = js.Global().Get("document").Call("createElement", "p")
-	} 
-
-	n := NewNativeElementWrapper(htmlParagraph)
-	e.Native = n
+	tag:= "p"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		JSValue(evt.Origin()).Set("innerText", string(evt.NewValue().(ui.String)))
-		return false
-	}))
+	e.Watch("ui", "text", e, paragraphTextHandler)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2383,15 +1384,9 @@ var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 		e = ui.NewElement(id, Elements.DocType)
 		e = enableClasses(e)
 
-		htmlNav := js.Global().Get("document").Call("getElementById", id)
-		exist := !htmlNav.IsNull()
-		if !exist {
-			htmlNav = js.Global().Get("document").Call("createElement", "nav")
-		}
-
-		n := NewNativeElementWrapper(htmlNav)
-		e.Native = n
-
+		tag:= "nav"
+		var exist bool
+		e.Native,exist = NewNativeElementIfAbsent(id, tag)
 		if !exist {
 			SetAttribute(e, "id", id)
 		}
@@ -2510,24 +1505,16 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlAnchor := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlAnchor.IsNull()
-	if !exist {
-		htmlAnchor = js.Global().Get("document").Call("createElement", "a")
-	} 
-
-	n := NewNativeElementWrapper(htmlAnchor)
-	e.Native = n
+	tag:= "a"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	withStringAttributeWatcher(e,"href")
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		JSValue(evt.Origin()).Set("text", string(evt.NewValue().(ui.String)))
-		return false
-	}))
+	withStringPropertyWatcher(e,"text")
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowPrefetchOnIntent, AllowPrefetchOnRender)
@@ -2628,15 +1615,12 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlButton := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlButton.IsNull()
+	tag:= "button"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlButton = js.Global().Get("document").Call("createElement", "button")
-	} 
-
-	n := NewNativeElementWrapper(htmlButton)
-	e.Native = n
-
+		SetAttribute(e, "id", id)
+	}
 
 	withBoolAttributeWatcher(e,"disabled")
 	withBoolAttributeWatcher(e,"autofocus")
@@ -2647,7 +1631,6 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 
 	e.Watch("ui", "text", e, textContentHandler)
 
-	SetAttribute(e, "id", id)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -2720,15 +1703,13 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlLabel := js.Global().Get("document").Call("getElementById", id)
-	if htmlLabel.IsNull() {
-		htmlLabel = js.Global().Get("document").Call("createElement", "label")
+	tag:= "label"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	if !exist {
+		SetAttribute(e, "id", id)
 	}
 
-	n := NewNativeElementWrapper(htmlLabel)
-	e.Native = n
-
-	SetAttribute(e, "id", id)
 	withStringAttributeWatcher(e,"for")
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
@@ -2882,30 +1863,6 @@ func (i InputElement) SetDisabled(b bool)InputElement{
 	return i
 }
 
-func (i InputElement) Blur() {
-	native, ok := i.AsElement().Native.(NativeElement)
-	if !ok {
-		panic("native element should be of doc.NativeELement type")
-	}
-	native.Value.Call("blur")
-}
-
-func (i InputElement) Focus() {
-	native, ok := i.AsElement().Native.(NativeElement)
-	if !ok {
-		panic("native element should be of doc.NativeELement type")
-	}
-	native.Value.Call("focus")
-}
-
-func (i InputElement) Clear() {
-	native, ok := i.AsElement().Native.(NativeElement)
-	if !ok {
-		panic("native element should be of doc.NativeELement type")
-	}
-	native.Value.Set("value", "")
-}
-
 
 var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Element {
 	e:= Elements.GetByID(id)
@@ -2915,19 +1872,14 @@ var newInputElement= Elements.NewConstructor("input", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlInput := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlInput.IsNull()
+	tag:= "input"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlInput = js.Global().Get("document").Call("createElement", "input")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlInput)
-	e.Native = n
-
-	e.Watch("ui", "value", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		JSValue(evt.Origin()).Set("value", string(evt.NewValue().(ui.String)))
-		return false
-	}))
+	withStringPropertyWatcher(e,"value")
 
 	
 	withStringAttributeWatcher(e,"name")
@@ -3116,14 +2068,12 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "output"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "output")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
+		SetAttribute(e, "id", id)
+	}
 
 	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"form")
@@ -3168,15 +2118,12 @@ var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlImg := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlImg.IsNull()
+	tag:= "img"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlImg = js.Global().Get("document").Call("createElement", "img")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlImg)
-	e.Native = n
-	SetAttribute(e, "id", id)
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"alt")
@@ -3187,6 +2134,10 @@ var newImage= Elements.NewConstructor("img", func(id string) *ui.Element {
 func Img(id string, options ...string) ImgElement {
 	return ImgElement{ui.BasicElement{LoadFromStorage(newImage(id, options...))}}
 }
+
+
+
+
 
 type jsTimeRanges ui.Object
 
@@ -3222,82 +2173,11 @@ func(j jsTimeRanges) Length() int{
 	return int(l.(ui.Number))
 }
 
-func newTimeRanges(v js.Value) jsTimeRanges{
-	var j = ui.NewObject()
-
-	var length int
-	l:= v.Get("length")
-	
-	if l.Truthy(){
-		length = int(l.Float())
-	}
-	j.Set("length",ui.Number(length))
-
-	starts:= ui.NewList()
-	ends := ui.NewList()
-	for i:= 0; i<length;i++{
-		st:= ui.Number(v.Call("start",i).Float())
-		en:= ui.Number(v.Call("end",i).Float())
-		starts[i]=st
-		ends[i]=en
-	}
-	j.Set("start",starts)
-	j.Set("end",ends)
-	return jsTimeRanges(j)
-}
 
 // AudioElement
 type AudioElement struct{
 	ui.BasicElement
 }
-
-func(a AudioElement) Buffered() jsTimeRanges{
-	b:= JSValue(a.AsElement()).Get("buiffered")
-	return newTimeRanges(b)
-}
-
-func(a AudioElement)CurrentTime() time.Duration{
-	return time.Duration(JSValue(a.AsElement()).Get("currentTime").Float())* time.Second
-}
-
-func(a AudioElement)Duration() time.Duration{
-	return  time.Duration(JSValue(a.AsElement()).Get("duration").Float())*time.Second
-}
-
-func(a AudioElement)PlayBackRate() float64{
-	return JSValue(a.AsElement()).Get("playbackRate").Float()
-}
-
-func(a AudioElement)Ended() bool{
-	return JSValue(a.AsElement()).Get("ended").Bool()
-}
-
-func(a AudioElement)ReadyState() float64{
-	return JSValue(a.AsElement()).Get("readyState").Float()
-}
-
-func(a AudioElement)Seekable()  jsTimeRanges{
-	b:= JSValue(a.AsElement()).Get("seekable")
-	return newTimeRanges(b)
-}
-
-func(a AudioElement) Volume() float64{
-	return  JSValue(a.AsElement()).Get("volume").Float()
-}
-
-
-func(a AudioElement) Muted() bool{
-	return JSValue(a.AsElement()).Get("muted").Bool()
-}
-
-func(a AudioElement) Paused() bool{
-	return JSValue(a.AsElement()).Get("paused").Bool()
-}
-
-func(a AudioElement) Loop() bool{
-	return JSValue(a.AsElement()).Get("loop").Bool()
-}
-
 
 type audioModifier struct{}
 var AudioModifier audioModifier
@@ -3407,27 +2287,13 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
-	if e!= nil{
-		// Let's check that this element's constructory is an audio constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "audio"{
-			return e
-		}	
-	}
-	e = ui.NewElement(id, Elements.DocType)
-	e = enableClasses(e)
 
-	htmlAudio := js.Global().Get("document").Call("getElementByID", id)
-	exist := !htmlAudio.IsNull()
+	tag:= "audio"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlAudio = js.Global().Get("document").Call("createElement", "audio")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlAudio)
-	e.Native = n
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"preload")
@@ -3439,7 +2305,6 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 
 	withMediaElementPropertyWatchers(e)
 
-	SetAttribute(e, "id", id)
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -3451,54 +2316,6 @@ func Audio(id string, options ...string) AudioElement{
 type VideoElement struct{
 	ui.BasicElement
 }
-
-func(v VideoElement) Buffered() jsTimeRanges{
-	b:= JSValue(v.AsElement()).Get("buiffered")
-	return newTimeRanges(b)
-}
-
-func(v VideoElement)CurrentTime() time.Duration{
-	return time.Duration(JSValue(v.AsElement()).Get("currentTime").Float())* time.Second
-}
-
-func(v VideoElement)Duration() time.Duration{
-	return  time.Duration(JSValue(v.AsElement()).Get("duration").Float())*time.Second
-}
-
-func(v VideoElement)PlayBackRate() float64{
-	return JSValue(v.AsElement()).Get("playbackRate").Float()
-}
-
-func(v VideoElement)Ended() bool{
-	return JSValue(v.AsElement()).Get("ended").Bool()
-}
-
-func(v VideoElement)ReadyState() float64{
-	return JSValue(v.AsElement()).Get("readyState").Float()
-}
-
-func(v VideoElement)Seekable()  jsTimeRanges{
-	b:= JSValue(v.AsElement()).Get("seekable")
-	return newTimeRanges(b)
-}
-
-func(v VideoElement) Volume() float64{
-	return  JSValue(v.AsElement()).Get("volume").Float()
-}
-
-
-func(v VideoElement) Muted() bool{
-	return JSValue(v.AsElement()).Get("muted").Bool()
-}
-
-func(v VideoElement) Paused() bool{
-	return JSValue(v.AsElement()).Get("paused").Bool()
-}
-
-func(v VideoElement) Loop() bool{
-	return JSValue(v.AsElement()).Get("loop").Bool()
-}
-
 
 type videoModifier struct{}
 var VideoModifier videoModifier
@@ -3629,23 +2446,12 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	}
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
-	if e!= nil{
-		// Let's check that this element's constructory is a video constructor
-		c,ok:= e.Get("internals","constructor")
-		if !ok{
-			panic("a UI element without the constructor property, should not be happening")
-		}
-		if s:= string(c.(ui.String)); s == "video"{
-			return e
-		}	
-	}
-	e = ui.NewElement(id, Elements.DocType)
-	e = enableClasses(e)
 
-	htmlVideo := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlVideo.IsNull()
+	tag:= "video"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlVideo = js.Global().Get("document").Call("createElement", "video")
+		SetAttribute(e, "id", id)
 	}
 
 	withNumberAttributeWatcher(e,"width")
@@ -3663,8 +2469,6 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 
 	SetAttribute(e, "id", id)
 
-	n := NewNativeElementWrapper(htmlVideo)
-	e.Native = n
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -3704,16 +2508,12 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlSource := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlSource.IsNull()
+	tag:= "source"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlSource = js.Global().Get("document").Call("createElement", "source")
-	} 
-
-	n := NewNativeElementWrapper(htmlSource)
-	e.Native = n
-
-	SetAttribute(e, "id", id)
+		SetAttribute(e, "id", id)
+	}
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"type")
@@ -3754,16 +2554,12 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlList := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlList.IsNull()
+	tag:= "ul"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlList = js.Global().Get("document").Call("createElement", "ul")
-	} 
-
-	n := NewNativeElementWrapper(htmlList)
-	e.Native = n
-	
-	SetAttribute(e, "id", id)
+		SetAttribute(e, "id", id)
+	}
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		list, ok := evt.NewValue().(ui.List)
@@ -3809,16 +2605,12 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlList := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlList.IsNull()
+	tag:= "ol"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlList = js.Global().Get("document").Call("createElement", "ol")
-	} 
-
-	n := NewNativeElementWrapper(htmlList)
-	e.Native = n
-
-	SetAttribute(e, "id", id)
+		SetAttribute(e, "id", id)
+	}
 	
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3847,16 +2639,12 @@ var newListItem= Elements.NewConstructor("li", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlListItem := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlListItem.IsNull()
+	tag:= "li"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlListItem = js.Global().Get("document").Call("createElement", "li")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlListItem)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	onuimutation := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 
@@ -3965,16 +2753,12 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlThead := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlThead.IsNull()
+	tag:= "thead"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlThead = js.Global().Get("document").Call("createElement", "thead")
-	} 
-
-	n := NewNativeElementWrapper(htmlThead)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3992,16 +2776,12 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlTr := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTr.IsNull()
+	tag:= "tr"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlTr = js.Global().Get("document").Call("createElement", "tr")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlTr)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4018,16 +2798,12 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "td"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "td")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4044,16 +2820,12 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement:= js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "th"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "th")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4070,16 +2842,12 @@ var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "tbody"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "tbody")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4096,16 +2864,12 @@ var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "tfoot"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "tfoot")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4122,16 +2886,13 @@ var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "col"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "col")
+		SetAttribute(e, "id", id)
 	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"span")
 
 	return e
@@ -4149,16 +2910,13 @@ var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "colgroup"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "colgroup")
+		SetAttribute(e, "id", id)
 	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"span")
 
 	return e
@@ -4176,16 +2934,12 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlTable := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlTable.IsNull()
+	tag:= "table"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlTable = js.Global().Get("document").Call("createElement", "table")
-	} 
-
-	n := NewNativeElementWrapper(htmlTable)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4225,16 +2979,13 @@ var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlCanvas := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlCanvas.IsNull()
+	tag:= "canvas"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlCanvas = js.Global().Get("document").Call("createElement", "canvas")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlCanvas)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
 
@@ -4297,16 +3048,13 @@ var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlSvg := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlSvg.IsNull()
+	tag:= "svg"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlSvg = js.Global().Get("document").Call("createElement", "svg")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlSvg)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
 	withStringAttributeWatcher(e,"viewbox")
@@ -4337,16 +3085,12 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlSummary := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlSummary.IsNull()
+	tag:= "summary"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlSummary = js.Global().Get("document").Call("createElement", "summary")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlSummary)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -4396,16 +3140,12 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlDetails := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlDetails.IsNull()
+	tag:= "details"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlDetails = js.Global().Get("document").Call("createElement", "details")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlDetails)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	e.Watch("ui", "text", e, textContentHandler)
 	withBoolAttributeWatcher(e,"open")
@@ -4453,16 +3193,12 @@ var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlDialog := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlDialog.IsNull()
+	tag:= "dialog"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlDialog = js.Global().Get("document").Call("createElement", "dialog")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlDialog)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	withBoolAttributeWatcher(e,"open")
 
@@ -4494,16 +3230,12 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlCode := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlCode.IsNull()
+	tag:= "code"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlCode = js.Global().Get("document").Call("createElement", "code")
+		SetAttribute(e, "id", id)
 	}
-
-	n := NewNativeElementWrapper(htmlCode)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -4548,16 +3280,13 @@ var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlEmbed := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlEmbed.IsNull()
+	tag:= "embed"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlEmbed = js.Global().Get("document").Call("createElement", "embed")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlEmbed)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
 	withStringAttributeWatcher(e,"type")
@@ -4633,16 +3362,13 @@ var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "object"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "object")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
 	withStringAttributeWatcher(e,"type")
@@ -4669,16 +3395,12 @@ var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "datalist"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "datalist")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+		SetAttribute(e, "id", id)
+	}
 
 	return e
 }, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4736,16 +3458,13 @@ var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "option"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "option")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"value")
 	withStringAttributeWatcher(e,"label")
 	withBoolAttributeWatcher(e,"disabled")
@@ -4800,16 +3519,13 @@ var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "optgroup"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "optgroup")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"label")
 	withBoolAttributeWatcher(e,"disabled")
 
@@ -4868,16 +3584,13 @@ var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "fieldset"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "fieldset")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"form")
 	withStringAttributeWatcher(e,"name")
 	withBoolAttributeWatcher(e,"disabled")
@@ -4907,16 +3620,13 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "legend"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "legend")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
@@ -4955,16 +3665,13 @@ var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Elemen
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "progress"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "progress")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withNumberAttributeWatcher(e,"max")
 	withNumberAttributeWatcher(e,"value")
 
@@ -5044,16 +3751,13 @@ var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "select"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "select")
-	} 
+		SetAttribute(e, "id", id)
+	}
 
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
-
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"form")
 	withStringAttributeWatcher(e,"name")
 	withBoolAttributeWatcher(e,"disabled")
@@ -5158,14 +3862,12 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	e = ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
-	htmlElement := js.Global().Get("document").Call("getElementById", id)
-	exist := !htmlElement.IsNull()
+	tag:= "form"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
 	if !exist {
-		htmlElement = js.Global().Get("document").Call("createElement", "form")
-	} 
-
-	n := NewNativeElementWrapper(htmlElement)
-	e.Native = n
+		SetAttribute(e, "id", id)
+	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		_,ok:= e.Get("ui","action")
@@ -5175,7 +3877,7 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 		return false
 	}))
 
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
+
 	withStringAttributeWatcher(e,"accept-charset")
 	withBoolAttributeWatcher(e,"autocomplete")
 	withStringAttributeWatcher(e,"name")
@@ -5194,82 +3896,7 @@ func Form(id string, options ...string) FormElement {
 
 
 
-func AddClass(target *ui.Element, classname string) {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if ok {
-		c, ok := classes.(ui.String)
-		if !ok {
-			target.Set(category, "class", ui.String(classname), false)
-			return
-		}
-		sc := string(c)
-		if !strings.Contains(sc, classname) {
-			sc = strings.TrimSpace(sc + " " + classname)
-			target.Set(category, "class", ui.String(sc), false)
-		}
-		return
-	}
-	target.Set(category, "class", ui.String(classname), false)
-}
 
-func RemoveClass(target *ui.Element, classname string) {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if !ok {
-		return
-	}
-	rc, ok := classes.(ui.String)
-	if !ok {
-		return
-	}
-
-	c := string(rc)
-	c = strings.TrimPrefix(c, classname)
-	c = strings.TrimPrefix(c, " ")
-	c = strings.ReplaceAll(c, classname, " ")
-
-	target.Set(category, "class", ui.String(c), false)
-}
-
-func Classes(target *ui.Element) []string {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if !ok {
-		return nil
-	}
-	c, ok := classes.(ui.String)
-	if !ok {
-		return nil
-	}
-	return strings.Split(string(c), " ")
-}
-
-func enableClasses(e *ui.Element) *ui.Element {
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		target := evt.Origin()
-		native, ok := target.Native.(NativeElement)
-		if !ok {
-			log.Print("wrong type for native element or native element does not exist")
-			return true
-		}
-		classes, ok := evt.NewValue().(ui.String)
-		if !ok {
-			log.Print("new value of non-string type. Unable to use as css class(es)")
-			return true
-		}
-
-		if len(strings.TrimSpace(string(classes))) != 0 {
-			native.Value.Call("setAttribute", "class", string(classes))
-			return false
-		}
-		native.Value.Call("removeAttribute", "class")
-
-		return false
-	})
-	e.Watch("css", "class", e, h)
-	return e
-}
 
 // TODO check that the string is well formatted style
 func SetInlineCSS(target *ui.Element, str string) {
@@ -5286,58 +3913,6 @@ func AppendInlineCSS(target *ui.Element, str string) { // TODO space separated?
 	SetInlineCSS(target, css)
 }
 
-func GetAttribute(target *ui.Element, name string) string {
-	native, ok := target.Native.(NativeElement)
-	if !ok {
-		log.Print("Cannot retrieve Attribute on non-expected wrapper type")
-		return ""
-	}
-	return native.Value.Call("getAttribute", "name").String()
-}
-
-func SetAttribute(target *ui.Element, name string, value string) {
-	var attrmap ui.Object
-	m, ok := target.Get("data", "attrs")
-	if !ok {
-		attrmap = ui.NewObject()
-	} else {
-		attrmap, ok = m.(ui.Object)
-		if !ok {
-			panic("data/attrs should be stored as a ui.Object")
-			//log.Print(m,attrmap) // SEBUG
-		}
-	}
-
-	attrmap.Set(name, ui.String(value))
-	target.SetData("attrs", attrmap)
-
-	native, ok := target.Native.(NativeElement)
-	if !ok {
-		log.Print("Cannot set Attribute on non-expected wrapper type")
-		return
-	}
-	native.Value.Call("setAttribute", name, value)
-}
-
-func RemoveAttribute(target *ui.Element, name string) {
-	m, ok := target.Get("data", "attrs")
-	if !ok {
-		return
-	}
-	attrmap, ok := m.(ui.Object)
-	if !ok {
-		panic("data/attrs should be stored as a ui.Object")
-	}
-	delete(attrmap, name)
-	target.SetData("attrs", attrmap)
-
-	native, ok := target.Native.(NativeElement)
-	if !ok {
-		log.Print("Cannot delete Attribute using non-expected wrapper type ", target.ID)
-		return
-	}
-	native.Value.Call("removeAttribute", name)
-}
 
 
 // Buttonifyier returns en element modifier that can turn an element into a clickable non-anchor 
@@ -5354,15 +3929,6 @@ func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 }
 
 
-var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	str, ok := evt.NewValue().(ui.String)
-	if !ok {
-		return true
-	}
-	JSValue(evt.Origin()).Set("textContent", string(str))
-
-	return false
-})
 
 // watches ("ui",attr) for a ui.String value.
 func withStringAttributeWatcher(e *ui.Element,attr string){
@@ -5393,42 +3959,6 @@ func withBoolAttributeWatcher(e *ui.Element, attr string){
 	}))
 }
 
-func withStringPropertyWatcher(e *ui.Element,propname string){
-	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,string(evt.NewValue().(ui.String)))
-		return false
-	}))
-}
-
-func withBoolPropertyWatcher(e *ui.Element,propname string){
-	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,bool(evt.NewValue().(ui.Bool)))
-		return false
-	}))
-}
-
-func withNumberPropertyWatcher(e *ui.Element,propname string){
-	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,float64(evt.NewValue().(ui.Number)))
-		return false
-	}))
-}
-
-func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, max int){
-	e.Watch("ui",propname,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		v:= float64(evt.NewValue().(ui.Number))
-		if v < float64(min){
-			v = float64(min)
-		}
-
-		if v > float64(max){
-			v = float64(max)
-		}
-		JSValue(evt.Origin()).Set(propname,v)
-		return false
-	}))
-}
-
 func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element{
 	withNumberPropertyWatcher(e,"currentTime")
 	withNumberPropertyWatcher(e,"defaultPlaybackRate")
@@ -5438,6 +3968,26 @@ func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element{
 	withBoolPropertyWatcher(e,"preservesPitch")
 	return e
 }
+
+
+func withStringPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,stringPropertyWatcher(propname))
+}
+
+func withBoolPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,boolPropertyWatcher(propname))
+}
+
+func withNumberPropertyWatcher(e *ui.Element,propname string){
+	e.Watch("ui",propname,e,numericPropertyWatcher(propname))
+}
+
+func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, max int){
+	e.Watch("ui",propname,e,clampedValueWatcher(propname, min,max))
+}
+
+
+
 
 
 // Attr is a modifier that allows to set the value of an attribute if supported.
