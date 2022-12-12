@@ -28,6 +28,15 @@ var (
 		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
 )
 
+var dEBUGJS = func(v js.Value, isJsonString ...bool){
+	if isJsonString!=nil{
+		o:= js.Global().Get("JSON").Call("parse",v)
+		js.Global().Get("console").Call("log",o)
+		return
+	}
+	js.Global().Get("console").Call("log",v)
+}
+
 // abstractjs 
 type jsStore struct {
 	store js.Value
@@ -206,13 +215,13 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 						return err
 					}
 					
-					rawvalue := ui.NewObject()
+					rawvalue := make(map[string]interface{})
 					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
 					if err != nil {
 						return err
 					}
 					
-					ui.LoadProperty(e, category, propname, proptype, rawvalue.Value())
+					ui.LoadProperty(e, category, propname, proptype, ui.Object(rawvalue).Value())
 					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
@@ -346,26 +355,36 @@ func NewNativeElementIfAbsent(id string, tag string) (ui.NativeElement,bool){
 	}
 
 	if tag == "html"{
-		root := js.Global().Get("document").Get("documentElement")
-		if !root.Truthy() {
-			panic("failed to instantiate root element for the document")
+		root:= js.Global().Get("document").Call("getElementById",id)
+		if !root.Truthy(){
+			root = js.Global().Get("document").Get("documentElement")
+			if !root.Truthy() {
+				panic("failed to instantiate root element for the document")
+			}
+			return NewNativeElementWrapper(root), false
 		}
 		return NewNativeElementWrapper(root), true
 	}
 
 	if tag == "body"{
-		element:= js.Global().Get("document").Get(tag)
+		element:= js.Global().Get("document").Call("getElementById",id)
 		if !element.Truthy(){
-			element= js.Global().Get("document").Call("createElement",tag)
+			element= js.Global().Get("document").Get(tag)
+			if !element.Truthy(){
+				element= js.Global().Get("document").Call("createElement",tag)
+			}
 			return NewNativeElementWrapper(element), false
 		}
 		return NewNativeElementWrapper(element), true
 	}
 
 	if tag == "head"{
-		element:= js.Global().Get("document").Get(tag)
+		element:= js.Global().Get("document").Call("getElementById",id)
 		if !element.Truthy(){
-			element= js.Global().Get("document").Call("createElement",tag)
+			element= js.Global().Get("document").Get(tag)
+			if !element.Truthy(){
+				element= js.Global().Get("document").Call("createElement",tag)
+			}
 			return NewNativeElementWrapper(element), false
 		}
 		return NewNativeElementWrapper(element), true
@@ -474,7 +493,6 @@ func JSValue(el ui.AnyElement) js.Value { // TODO  unexport
 	n, ok := e.Native.(NativeElement)
 	if !ok {
 		DEBUG(e.ID)
-		panic("js.Value not wrapped in NativeElement type")
 	}
 	return n.Value
 }
@@ -493,24 +511,28 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // abstractjs
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	n:= JSValue(e)
-	if  n.Call("hasAttribute",HydrationAttrName).Bool(){
-		script := JSValue(GetDocument()).Call("getElementById",e.ID+ SSRStateSuffix)
-		if !script.Truthy(){
-			panic("Unable to find script")
+	
+	if e.ID != "window"{
+		if  n.Truthy() && n.Call("hasAttribute",HydrationAttrName).Bool(){
+			script := JSValue(GetDocument()).Call("getElementById",e.ID+ SSRStateSuffix)
+			if !script.Truthy(){
+				panic("Unable to find script")
+			}
+			// TODO check integrity attribute and verify hash
+			// TODO obfuscate props?
+			datastring:= script.Get("text").String()
+			err := DeserializeProps(datastring,e)
+			if err!= nil{
+				panic(err)
+			}
+			n.Call("removeAtribute",HydrationAttrName)
+			script.Call("remove")
+	
+			return e
 		}
-		// TODO check integrity attribute and verify hash
-		// TODO obfuscate props?
-		datastring:= script.Get("text").String()
-		err := DeserializeProps(datastring,e)
-		if err!= nil{
-			panic(err)
-		}
-		n.Call("removeAtribute",HydrationAttrName)
-		script.Call("remove")
-
-		return e
+	
 	}
-
+	
 
 
 	lb,ok:=e.Get("event","storesynced")
