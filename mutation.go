@@ -200,3 +200,8 @@ func (m Mutation) OldValue() Value     { return m.OldVal }
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
 	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, oldvalue, e}
 }
+
+
+var NoopMutationHandler = NewMutationHandler(func(evt MutationEvent)bool{
+	return false
+})

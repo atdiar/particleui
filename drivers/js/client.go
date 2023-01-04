@@ -14,7 +14,6 @@ import (
 	"syscall/js"
 	"time"
 	"github.com/atdiar/particleui"
-	"net/url"
 )
 
 var (
@@ -27,6 +26,14 @@ var (
 		ApplyGlobalOption(cleanStorageOnDelete).
 		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
 )
+
+
+// NewBuilder registers a new document building function.
+func NewBuilder(f func()Document){
+	ListenAndServe = func(){
+		f().ListenAndServe()
+	}
+}
 
 var dEBUGJS = func(v js.Value, isJsonString ...bool){
 	if isJsonString!=nil{
@@ -303,6 +310,12 @@ var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e
 	return e
 })
 
+/*var NoFetchWhileHydrating = ui.NewConstructorOption("nofetchwhilehydrating", func(e *ui.Element)*ui.Element{
+	e.On
+	return e
+})
+*/
+
 // isPersisted checks whether an element exist in storage already
 func isPersisted(e *ui.Element) bool{
 	pmode:=ui.PersistenceMode(e)
@@ -512,29 +525,7 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	n:= JSValue(e)
 	
-	if e.ID != "window"{
-		if  n.Truthy() && n.Call("hasAttribute",HydrationAttrName).Bool(){
-			script := JSValue(GetDocument()).Call("getElementById",e.ID+ SSRStateSuffix)
-			if !script.Truthy(){
-				panic("Unable to find script")
-			}
-			// TODO check integrity attribute and verify hash
-			// TODO obfuscate props?
-			datastring:= script.Get("text").String()
-			err := DeserializeProps(datastring,e)
-			if err!= nil{
-				panic(err)
-			}
-			n.Call("removeAtribute",HydrationAttrName)
-			script.Call("remove")
 	
-			return e
-		}
-	
-	}
-	
-
-
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
 		if isSynced:=lb.(ui.Bool); isSynced{
@@ -591,6 +582,49 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 	}
 	return e
 }
+
+func recoverStateHistory() {
+	d:= GetDocument()
+	e:= d.AsElement()
+	n:= e.Native.(NativeElement).Value
+	hydrate:= n.Call("hasAttribute",HydrationAttrName).Bool()
+	if hydrate{
+		statenode := js.Global().Call("getElementById",d.ID+ SSRStateSuffix)
+		if statenode.Truthy(){
+			state:= statenode.Get("textContent").String()
+			v,err:= DeserializeStateHistory(state)
+			if err != nil{
+				return
+			}
+			e.Set("internals","globalstatehistory",v)
+			//disableFetching()
+			e.Set("runtime","recoverablestatehistory",ui.Bool(true))
+			statenode.Call("remove")
+		}
+	}
+	return e
+}
+
+func disableFetching(){
+	GetDocument().AsElement().Set("internals","fetchingenabled",ui.Bool(false))
+}
+
+func enableFetching(){
+	GetDocument().AsElement().Set("internals","fetchingenabled",ui.Bool(true))
+}
+
+var recoverStateHistoryHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	evt.Origin().Watch("navigation","ready",ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+		// replay list of document changes
+		replayStateHistory(event.Origin())
+		//  Remove hydration tag
+		RemoveAttribute(evt.Origin(),HydrationAttrName)
+		event.Origin().Set("event","recoveredstatehistory", ui.Bool(true))
+		//enableFetching() // fetching is disabled before state history get replayed
+		return false
+	}).RunOnce())
+	return false
+})
 
 
 /*
@@ -735,19 +769,10 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	return false
 })
 
-var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{// abstractjs
+var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	e:= evt.Origin()
-	// 1. retrieve Basepath
-	r:= ui.GetRouter()
-	baseURI:= JSValue(evt.Origin()).Get("baseURI").String() // this is absolute by default
-	u,err:= url.ParseRequestURI(baseURI)
-	if err!= nil{
-		panic(err)
-		//return false
-	}
-	r.BasePath = u.Path
 
-	// 2. Retrieve history and deserialize URL into corresponding App state.
+	// Retrieve history and deserialize URL into corresponding App state.
 	hstate := js.Global().Get("history").Get("state")
 	
 	if hstate.Truthy() {

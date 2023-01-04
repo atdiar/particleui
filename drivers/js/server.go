@@ -7,7 +7,13 @@ import (
 	"io"
 	"strings"
 	"net/http"
+	"net/url"
+	"net/http/cookiejar"
+	"os"
 	"time"
+	"sync"
+	"path/filepath"
+	"log"
 
 	"github.com/atdiar/particleui"
 
@@ -21,12 +27,137 @@ var (
 	DOCTYPE = "html"
 	// Elements stores wasm-generated HTML ui.Element constructors.
 	Elements = ui.NewElementStore("default", DOCTYPE)
+	mu *sync.Mutex
+
+	DefaultPattern = "/"
+	StaticPath = "assets"
+
+
+	ServeMux *http.ServeMux
+	Server *http.Server = &http.Server{Addr:":8080",Handler:ServeMux}
+	
+	HTMLhandlerModifier func(http.Handler)http.Handler
+	renderHTMLhandler http.Handler
+
+
+	httpHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		mu.Lock()
+		defer mu.Unlock()
+		// Cookie handling
+		cj, err := cookiejar.New(nil)
+		if err != nil{
+			http.Error(w,"Error creating cookiejar",http.StatusInternalServerError)
+			return
+		}
+		ui.CookieJar = cj
+		ui.HttpClient.Jar = ui.CookieJar
+		cj.SetCookies(r.URL, r.Cookies())
+
+
+
+		h:= renderHTMLhandler
+		if HTMLhandlerModifier != nil{
+			h=HTMLhandlerModifier(h)
+		}
+
+		w = cookiejarWriter{w,r.URL}
+		h.ServeHTTP(w,r)
+
+	})
 )
 
+type cookiejarWriter struct{
+	http.ResponseWriter
+	URL *url.URL
+}
+
+func(c cookiejarWriter) Write(b []byte) (int,error){
+	cookies:= ui.CookieJar.Cookies(c.URL)
+	for _,cookie:= range cookies{
+		http.SetCookie(c.ResponseWriter,cookie)
+	}
+	return c.ResponseWriter.Write(b)
+}
 /*
  Server-side HTML rendering TODO place behind compile directive
 
 */
+
+
+func ChangeServeMux(s *http.ServeMux) {
+	if s == nil{
+		s = http.NewServeMux()
+	}
+	s.Handle(DefaultPattern,httpHandler)
+}
+
+
+
+// ChangeServer changes the http.Server
+// It also registers doc.ServeMux as a http request handler.
+func ChangeServer(s *http.Server){
+	s.Handler = ServeMux
+	Server = s
+}
+
+
+// NewBuilder registers a new document building function. This function should not be called
+// manually afterwards.
+func NewBuilder(f func()Document){
+	fileServer := http.FileServer(http.Dir(StaticPath))
+
+	renderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		path, err := filepath.Abs(r.URL.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		path = filepath.Join(StaticPath, r.URL.Path)
+
+		fi, err := os.Stat(path)
+		if err == nil && !fi.IsDir(){
+			fileServer.ServeHTTP(w,r)
+			return
+		}
+
+
+		if d:=GetDocument(); d != nil{
+			d.Delete()
+		}
+		document:= f()
+		router:= ui.GetRouter()
+		route:= r.URL.Path
+		_,routeexist:= router.Match(route)
+		if routeexist != nil{
+			w.WriteHeader(http.StatusNotFound)
+		}
+
+		router.GoTo(route)
+		err= document.Render(w)
+		if err != nil{ 
+			switch err{
+			case ui.ErrNotFound:
+				w.WriteHeader(http.StatusNotFound)
+			case ui.ErrFrameworkFailure:
+				w.WriteHeader(http.StatusInternalServerError)
+			case ui.ErrUnauthorized:
+				w.WriteHeader(http.StatusUnauthorized)
+			}
+		}		
+	})
+
+
+	// TODO reset global state i.e. ElementStore and Document's BuildOption ?
+	ListenAndServe = func(){
+		log.Print("Listening on: "+Server.Addr)
+		if Server.TLSConfig == nil{
+			Server.ListenAndServe()
+		} else{
+			Server.ListenAndServeTLS("","")
+		}		
+	}
+	
+}
 
 
 var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
@@ -487,46 +618,49 @@ func NewHTMLNode(e *ui.Element) *html.Node {
 
 	
 	// Element state should be stored serialized in script Element and hydration attribute should be set
-	// on the Node
-	n.Attr = append(n.Attr,html.Attribute{"",HydrationAttrName,"true"})
-
+	// on the Document Node
+	if e.ID == GetDocument().AsElement().ID{
+		n.Attr = append(n.Attr,html.Attribute{"",HydrationAttrName,"true"})
+	}
+	
 
 	return n
 }
 
 func RenderHTMLTree(document Document) *html.Node {
 	doc := document.AsBasicElement()
-	indexmap:= make(map[string]*html.Node)
-	return renderHTMLTree(doc.AsElement(), indexmap)
+	h:= &html.Node{}
+	n:= renderHTMLTree(doc.AsElement(),&h)
+	statenode:= generateStateHistoryRecordElement()
+	if statenode != nil{
+		h.AppendChild(statenode)
+	}
+
+	return n
 }
 
-func renderHTMLTree(e *ui.Element, index map[string]*html.Node) *html.Node { // TODO make idempotent
-	d := e.Native.(NativeElement).Value
-	statescriptnode := generateStateInScriptNode((e))
-	index[e.ID+ SSRStateSuffix] = statescriptnode
+func renderHTMLTree(e *ui.Element, pHead **html.Node) *html.Node {
+	d := e.Native.(NativeElement)
+	v:= d.Value
 
-	if e.ID == GetDocument().Body().ID{
-		index["body"] = d
+	if e.ID == GetDocument().Head().AsElement().ID{
+		pHead = &v
 	}
+	d.SetChildren(nil) // removes any child if present
+
 	if e.Children != nil && e.Children.List != nil {
 		for _, child := range e.Children.List {
-			renderHTMLTree(child,index)
-			//d.AppendChild(c)
+			c:= renderHTMLTree(child, pHead)
+			v.AppendChild(c)
 		}
 	}
 
-	bodyNode:= index["body"]
-	delete(index, "body")
-	for _,v:= range index{
-		bodyNode.AppendChild(v)
-	}
-
-	return d
+	return v
 }
 
-func generateStateInScriptNode(e *ui.Element) *html.Node{
-	state:=  SerializeProps(e)
-	script:= `<script id='` + e.ID+SSRStateSuffix+`'>
+func generateStateHistoryRecordElement() *html.Node{
+	state:=  SerializeStateHistory()
+	script:= `<script id='` + GetDocument().AsElement().ID+SSRStateSuffix+`' type="application/json">
 	` + state + `
 	<script>`
 	scriptNode, err:= html.Parse(strings.NewReader(script))
@@ -536,7 +670,5 @@ func generateStateInScriptNode(e *ui.Element) *html.Node{
 	return scriptNode
 }
 
-func NewServeMux(r *ui.Router) *http.ServeMux{
-	s:= http.NewServeMux()
-	return s
-}
+func recoverStateHistory(){}
+var recoverStateHistoryHandler = ui.NoopMutationHandler

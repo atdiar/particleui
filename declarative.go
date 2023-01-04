@@ -33,7 +33,7 @@ func InitRouter(options ...func(*Router)*Router) func(*Element)*Element{
 			if !ok{
 				panic("Router cannot be instantiated with non-ViewElement objects")
 			}
-			NewRouter("/",v ,options...)
+			NewRouter(v ,options...)
 			return false
 		}).RunASAP().RunOnce())
 		return e

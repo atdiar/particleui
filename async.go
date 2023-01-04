@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"sync"
 	"time"
 )
@@ -16,12 +17,18 @@ const(
 	failedFetch	= "failed"
 )
 
+func init(){
+	SetHttpClient(HttpClient)
+}
+
 var HttpClient = http.DefaultClient
+var CookieJar *cookiejar.Jar
 var  PrefetchMaxAge = 5 * time.Second
 
 // SetHttpClient allows for the use of a custom http client.
 // It changes the value of HttpClient whose default value is the default Go http Client.
 func SetHttpClient(c *http.Client){
+	c.Jar = CookieJar
 	HttpClient = c
 }
 
@@ -42,23 +49,6 @@ func Do(fn func()){
 	}()
 }
 
-// NewCriticalSection returns a special function used to run another function.
-// It is special because it ensures that the function being run has sole access to the UI tree.
-// It essentially disallows concurrent mutations of the UI.
-// Typically, it should be used in goroutines that need to modify a Ui ELement by setting data 
-// for instance.
-// A critical function can only be called once. After being called, it turns into a noop.
-// This is consistent with the fact that a goroutine should only use one critical section.
-// Of course, it is still possible to create another critical section function: don't do that.
-func NewCriticalSection() func(func()){
-	var once sync.Once
-	cs:= func(f func()){
-		Lock.Lock()
-		once.Do(f)
-		Lock.Unlock()
-	}
-	return cs
-}
 
 
 // WithFetchedData allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
@@ -228,6 +218,7 @@ func cloneReq(req *http.Request) (*http.Request){
 
 func(e *Element) Prefetch(){
 	e.Set("event","prefetch",Bool(true))
+	
 }
 
 func(e *Element) Fetch(){
@@ -244,9 +235,19 @@ func(e *Element) OnFetched(h *MutationHandler){
 	e.Watch("event","fetched",e,h)
 }
 
+/*
+func fetchEnabled(e *Element) bool{
+	v,ok:= e.Get("internals","fetchingenabled")
+	if !ok{
+		return false
+	}
+	b:= bool(v.(Bool))
+	return b
+}
+*/
 
 // FetchErrors returns, if it exists, a map where each propname key whose fetch failed has a corresponding
-// error string.
+// error string. Useful toi implement retries.
 func FetchErrors(e *Element) (map[string]string,bool){
 	v,ok:= e.Get("runtime","fetcherrors")
 	if !ok{

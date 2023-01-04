@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net/url"
 	"strconv"
 	"strings"
 )
@@ -55,7 +54,6 @@ func UseRouter(user AnyElement, fn func(*Router)) {
 // The router is also in charge of modifying the application state to reach any
 // state registered as a shortcut upon request.
 type Router struct {
-	BasePath string
 	Outlet   ViewElement
 
 	Links map[string]Link
@@ -68,19 +66,16 @@ type Router struct {
 }
 
 // NewRouter takes an Element object which should be the entry point of the router.
-func NewRouter(basepath string, rootview ViewElement, options ...func(*Router)*Router) *Router {
+// By default, the router basepath is initialized to "/".
+func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	if router != nil {
 		panic("A router has already been created")
 	}
 	if !rootview.AsElement().Mountable() {
 		panic("router can only use a view attached to the main tree as a navigation Outlet.")
 	}
-	u, err := url.Parse(basepath)
-	if err != nil {
-		panic(err)
-	}
 
-	r := &Router{u.Path, rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
+	r := &Router{ rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
 
 	r.Outlet.AsElement().Root().Watch("event", "docupdate", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		_, navready := r.Outlet.AsElement().Root().Get("navigation", "ready")
@@ -168,7 +163,6 @@ func (r *Router) GoTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
-	route = strings.TrimPrefix(route, r.BasePath)
 
 	r.History.Push(route)
 	r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
@@ -277,7 +271,6 @@ func (r *Router) handler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, r.BasePath)
 
 		// Retrieve hash if it exists
 		route,hash,found:= strings.Cut(newroute,"#")
@@ -378,7 +371,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 		if !r.LeaveTrailingSlash {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
-		newroute = strings.TrimPrefix(newroute, r.BasePath)
 
 		// Retrieve hash if it exists
 		route,hash,found:= strings.Cut(newroute,"#")

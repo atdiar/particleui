@@ -454,7 +454,8 @@ func (l ListofObjects) Get(index int) Object {
 
 */
 
-// Copy creates a deep-copy of a value. (TODO optimize it by type switching the Value iface)
+// Copy creates a deep-copy of a Value unless it is an *Element in which case it returns the
+// *Element as an objecvt of type Value.
 func Copy(v Value) Value {
 	switch t:= v.(type){
 	case Bool:

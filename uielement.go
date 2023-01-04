@@ -58,6 +58,7 @@ func (e elementStores) Set(store *ElementStore) {
 
 // ElementStore defines a namespace for a list of Element constructors.
 type ElementStore struct {
+	ID  string
 	DocType                  string
 	Constructors             map[string]func(id string, optionNames ...string) *Element
 	GlobalConstructorOptions map[string]func(*Element) *Element
@@ -67,7 +68,7 @@ type ElementStore struct {
 	PersistentStorer map[string]storageFunctions
 	RuntimePropTypes map[string]bool
 
-	Global *Element // the global Element stores the global state shared by all *Elements
+	Global *Element // the global Element stores the global state shared by all UI Elements
 }
 
 type storageFunctions struct {
@@ -113,7 +114,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
 	global := NewElement(storeid, doctype)
-	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
+	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -325,8 +326,26 @@ func NewElement(id string, doctype string) *Element {
 }
 
 func withFetchSupport(e *Element)*Element{
+	/*e.OnFetch(NewMutationHandler(func(evt MutationEvent)bool{
+		if !fetchEnabled(e){
+			return true
+		}
+		return false
+	}))
+	
+
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
-		e.Set("event","fetch", Bool(true))
+		el:= evt.Origin()
+		el.Watch("internals","fetchingenabled",el.Root(),NewMutationHandler(func(event MutationEvent)bool{
+			el.Set("internals","fetchingenabled",event.NewValue())
+			return false
+		}).RunASAP())
+		return false
+	}).RunOnce())
+	*/
+
+	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().Set("event","fetch", Bool(true))
 		return false
 	}))
 
@@ -1351,7 +1370,6 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		}
 		watchers.List = wl[:index]
 	}
-	//e.PropMutationHandlers.DispatchEvent(evt)
 }
 
 

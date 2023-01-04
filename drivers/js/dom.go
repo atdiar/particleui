@@ -2,18 +2,19 @@
 // events and event handlers, and animation properties used to build js-based UIs.
 package doc
 
-
-
 import (
 	"encoding/json"
 	//"errors"
 	"log"
 	"strconv"
 	"strings"
+
 	//"syscall/js"
-	"time"
-	"github.com/atdiar/particleui"
 	"net/url"
+	"runtime"
+	"time"
+
+	"github.com/atdiar/particleui"
 )
 
 
@@ -26,9 +27,28 @@ var (
 	
 	EnablePropertyAutoInheritance = ui.EnablePropertyAutoInheritance
 	mainDocument *Document
+
+	// ListenAndServe triggers the construction of the UI tree and startup the App.
+	ListenAndServe func()
+
+	// DocumentInitializer is a Document specific modifier that is called on creation of a 
+	// new document. By assigning a new value to this global function, we can hook new behaviors
+	// into a NewDocument call.
+	// That can be useful to pass specific properties to a new document object that will specialize 
+	// construction of the document.
+	DocumentInitializer func(Document) Document = func(d Document) Document{return d}
 )
 
+
+
 var NewID = ui.NewIDgenerator(time.Now().UnixNano())
+
+func InBrowser() bool{
+	if runtime.GOARCH== "wasm" && runtime.GOOS == "js"{
+		return true
+	}
+	return false
+}
 
 // mutationCaptureMode describes how a Go App may capture textarea value changes
 // that happen in native javascript. For instance, when a blur event is dispatched
@@ -42,73 +62,25 @@ const (
 
 
 
-func SerializeProps(e *ui.Element) string{
-	state:= ui.NewObject()
-	for cat,ps:= range e.Properties.Categories{
-		propsm:= ui.NewObject() // property store type map
-		state.Set(cat,propsm)
-		
-		// For default props
-		for prop,val:= range ps.Default{
-			propsm.Set("default/"+prop,val)
-		}
-
-		// For Local props
-		for prop,val:= range ps.Local{
-			propsm.Set("local/"+prop,val)
-		}
-
-		// For inherited props
-		for prop,val:= range ps.Inherited{
-			propsm.Set("inherited/"+prop,val)
-		}
-
-		// For inheritable props
-		for prop,val:= range ps.Inheritable{
-			propsm.Set("inheritable/"+prop,val)
-		}
-
-		// watchers
-		for prop,w:= range ps.Watchers{
-			wlist:= ui.NewList()
-			propsm.Set("watchers/"+prop,wlist)
-			for _,watcher:= range w.List{
-				wlist = append(wlist,watcher)
-			}
-		}
+func SerializeStateHistory() string{
+	d:= GetDocument().AsElement()
+	sth,ok:= d.Get("internals","globalstatehistory")
+	if !ok{
+		return ""
 	}
+	state:= sth.(ui.List)
 
 	return stringify(state.RawValue())
 }
 
-func DeserializeProps(rawstate string, e *ui.Element) error{
-	rstate:= ui.NewObject()
-	err:= json.Unmarshal([]byte(rawstate),&rstate)
+func DeserializeStateHistory(rawstate string) (ui.Value,error){
+	state:= ui.NewObject()
+	err:= json.Unmarshal([]byte(rawstate),&state)
 	if err!= nil{
-		return err
+		return nil,err
 	}
-	state := rstate.Value().(ui.Object)
-
-	for cat,propsm:= range state{
-		for k,val:= range propsm.(ui.Object){
-			split:= strings.Split(k,"/")
-			if len(split) != 2{
-				continue
-			}
-			typ:= split[0]
-			if typ == "watchers"{
-				watchers := val.(ui.Object).Value().(ui.List)
-				for _,w:= range watchers{
-					e.Properties.NewWatcher(cat,split[1],w.(*ui.Element))
-				}
-				
-			}else{
-				prop:= split[1]
-				ui.LoadProperty(e,cat,prop,typ,val.(ui.Value))
-			}
-		}
-	}
-	return nil
+	
+	return state.Value(), nil
 }
 
 func stringify(v interface{}) string {
@@ -120,7 +92,7 @@ func stringify(v interface{}) string {
 }
 
 
-// Window is a ype that represents a browser window
+// Window is a type that represents a browser window
 type Window struct {
 	UIElement ui.BasicElement
 }
@@ -338,6 +310,16 @@ func (d Document) OnNavigationEnd(h *ui.MutationHandler){
 	d.AsElement().Watch("event","navigationend", d, h)
 }
 
+func(d Document) Delete(){ // TODO check for dangling references
+	ui.Do(func(){
+		e:= d.AsElement()
+		ui.CancelNav()
+		e.DeleteChildren()
+		mainDocument = nil
+		Elements.Delete(e.ID)
+	})
+}
+
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
@@ -348,8 +330,8 @@ func(d Document) ListenAndServe(){
 	ui.GetRouter().ListenAndServe("popstate", GetWindow().AsElement())
 }
 
-func GetDocument() Document{
-	return *mainDocument
+func GetDocument() *Document{
+	return mainDocument
 }
 
 var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
@@ -364,7 +346,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		return false
 	}).RunASAP())
 
-  
+	
 
     e.Watch("ui","history",e,historyMutationHandler)
 
@@ -386,17 +368,41 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 			return false
 		}))
 		
-	})		
-	
-	e.Watch("navigation", "ready", e,navreadyHandler)
+	})	
 	
 
 	e.AppendChild(NewHead("head"))
 	e.AppendChild(Body("body"))
+
+	recoverStateHistory()
+
+	e.Watch("navigation", "ready", e,navreadyHandler)
+	e.Watch("runtime","recoverablestatehistory",e,recoverStateHistoryHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
-
+func replayStateHistory(e *ui.Element) {
+	rh,ok:= e.Get("internals","globalstatehistory")
+	if !ok{
+		panic("somehow recovering state failed. Unexpected error")
+	}
+	history, ok:= rh.(ui.List)
+	if !ok{
+		panic("state history should have been a ui.List. Wrong type. Unexpected error")
+	}
+	for _,rawop:= range history{
+		op:= rawop.(ui.Object)
+		elementid:= string(op.MustGetString("id"))
+		category:= string(op.MustGetString("cat"))
+		propname:= string(op.MustGetString("prop"))
+		value,_:= op.Get("val")
+		el:= Elements.GetByID(elementid)
+		if el == nil{
+			panic("Unable to recover state for this element id. Element  doesn't exist")
+		}
+		el.Set(category,propname,value)
+	}
+}
 
 func Autofocus(e *ui.Element) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -418,8 +424,10 @@ func Autofocus(e *ui.Element) *ui.Element{
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
 func NewDocument(id string, options ...string) Document {
-	mainDocument = &Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
-	return GetDocument()
+	d:= Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
+	d = DocumentInitializer(d)
+	mainDocument = &d
+	return d
 }
 
 type BodyElement struct{
@@ -520,33 +528,33 @@ func NewMeta(id string, options ...string) Meta{
 	return Meta{ui.BasicElement{LoadFromStorage(newMeta(id,options...))}}
 }
 
-// Script is an ELement that refers to the HTML ELement of the same name that embeds executable 
+// ScriptElement is an ELement that refers to the HTML ELement of the same name that embeds executable 
 // code or data.
-type Script struct{
+type ScriptElement struct{
 	ui.BasicElement
 }
 
-func(s Script) Src(source string) Script{
+func(s ScriptElement) Src(source string) ScriptElement{
 	SetAttribute(s.AsElement(),"src",source)
 	return s
 }
 
-func(s Script) Type(typ string) Script{
+func(s ScriptElement) Type(typ string) ScriptElement{
 	SetAttribute(s.AsElement(),"type",typ)
 	return s
 }
 
-func(s Script) Async() Script{
+func(s ScriptElement) Async() ScriptElement{
 	SetAttribute(s.AsElement(),"async","")
 	return s
 }
 
-func(s Script) Defer() Script{
+func(s ScriptElement) Defer() ScriptElement{
 	SetAttribute(s.AsElement(),"defer","")
 	return s
 }
 
-func(s Script) SetInnerHTML(content string) Script{
+func(s ScriptElement) SetInnerHTML(content string) ScriptElement{
 	SetInnerHTML(s.AsElement(),content)
 	return s
 }
@@ -569,18 +577,18 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	return e
 })
 
-func NewScript(id string, options ...string) Script{
-	return Script{ui.BasicElement{LoadFromStorage(newScript(id,options...))}}
+func Script(id string, options ...string) ScriptElement{
+	return ScriptElement{ui.BasicElement{LoadFromStorage(newScript(id,options...))}}
 }
 
-// Base allows to define the baseurl or the basepath for the links within a page.
+// BaseElement allows to define the baseurl or the basepath for the links within a page.
 // In our current use-case, it will mostly be used when generating HTML (SSR or SSG).
 // It is then mostly a build-time concern.
-type Base struct{
+type BaseElement struct{
 	ui.BasicElement
 }
 
-func(b Base) SetHREF(url string) Base{
+func(b BaseElement) SetHREF(url string) BaseElement{
 	b.AsElement().SetDataSetUI("href",ui.String(url))
 	return b
 }
@@ -608,21 +616,21 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	return e
 })
 
-func NewBase(id string, options ...string) Base{
-	return Base{ui.BasicElement{LoadFromStorage(newBase(id,options...))}}
+func Base(id string, options ...string) BaseElement{
+	return BaseElement{ui.BasicElement{LoadFromStorage(newBase(id,options...))}}
 }
 
 
-// NoScript refers to an element that defines a section of HTMNL to be inserted in a page if a script
+// NoScriptElement refers to an element that defines a section of HTMNL to be inserted in a page if a script
 // type is unsupported on the page of scripting is turned off.
 // As such, this is mostly useful during SSR or SSG, for examplt to display a message if javascript
 // is disabled.
 // Indeed, if scripts are disbaled, wasm will not be able to insert this dynamically into the page.
-type NoScript struct{
+type NoScriptElement struct{
 	ui.BasicElement
 }
 
-func(s NoScript) SetInnerHTML(content string) NoScript{
+func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
 	SetInnerHTML(s.AsElement(),content)
 	return s
 }
@@ -645,17 +653,17 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	return e
 })
 
-func NewNoScript(id string, options ...string) Script{
-	return Script{ui.BasicElement{LoadFromStorage(newNoScript(id,options...))}}
+func NoScript(id string, options ...string) NoScriptElement{
+	return NoScriptElement{ui.BasicElement{LoadFromStorage(newNoScript(id,options...))}}
 }
 
 // Link refers to the <link> HTML Element which allow to specify the location of external resources
 // such as stylesheets or a favicon.
-type Link struct{
+type LinkElement struct{
 	ui.BasicElement
 }
 
-func(l Link) SetAttribute(name,value string) Link{
+func(l LinkElement) SetAttribute(name,value string) LinkElement{
 	SetAttribute(l.AsElement(),name,value)
 	return l
 }
@@ -678,8 +686,8 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	return e
 })
 
-func NewLink(id string, options ...string) Link{
-	return Link{ui.BasicElement{LoadFromStorage(newLink(id,options...))}}
+func Link(id string, options ...string) LinkElement{
+	return LinkElement{ui.BasicElement{LoadFromStorage(newLink(id,options...))}}
 }
 
 
