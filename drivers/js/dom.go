@@ -115,9 +115,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 	e := ui.NewElement("window", DOCTYPE)
 	e.Set("event", "mounted", ui.Bool(true))
 	e.Set("event", "mountable", ui.Bool(true))
-	//e.Set("event", "attached", ui.Bool(true))
-	//e.Set("event", "firstmount", ui.Bool(true))
-	//e.Set("event", "firsttimemounted", ui.Bool(true)) TODO DEBUG
+
 	e.ElementStore = Elements
 	e.Parent = e
 	e.Native,_ = NewNativeElementIfAbsent("defaultView","window")
@@ -310,8 +308,12 @@ func (d Document) OnNavigationEnd(h *ui.MutationHandler){
 	d.AsElement().Watch("event","navigationend", d, h)
 }
 
+func(d Document) OnReady(h *ui.MutationHandler){
+	d.AsElement().Watch("navigation","ready",d,h)
+}
+
 func(d Document) Delete(){ // TODO check for dangling references
-	ui.Do(func(){
+	ui.DoSync(func(){
 		e:= d.AsElement()
 		ui.CancelNav()
 		e.DeleteChildren()

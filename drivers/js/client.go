@@ -597,20 +597,28 @@ func recoverStateHistory() {
 				return
 			}
 			e.Set("internals","globalstatehistory",v)
-			//disableFetching()
+			e.Watch("navigation","ready",e,ui.NewMUtationHandler(func(evt ui.MutationEvent)bool{
+				disableNavigation:= ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+					ui.CancelNav()
+					return false
+				})
+
+				evt.Origin().Watch("event","navigationstart",evt.Origin(),disableNavigation)
+
+				evt.Origin().Watch("event","recoveredstatehistory",evt.Origin(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+					event.Origin().RemoveMuationHandler("event","navigationstart",event.Origin(),disableNavigation)
+					// remove navigation restricition
+					return false
+				}).RunOnce())
+
+				return false
+			}).RunOnce())
+			
 			e.Set("runtime","recoverablestatehistory",ui.Bool(true))
 			statenode.Call("remove")
 		}
 	}
 	return e
-}
-
-func disableFetching(){
-	GetDocument().AsElement().Set("internals","fetchingenabled",ui.Bool(false))
-}
-
-func enableFetching(){
-	GetDocument().AsElement().Set("internals","fetchingenabled",ui.Bool(true))
 }
 
 var recoverStateHistoryHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -620,7 +628,6 @@ var recoverStateHistoryHandler = ui.NewMutationHandler(func(evt ui.MutationEvent
 		//  Remove hydration tag
 		RemoveAttribute(evt.Origin(),HydrationAttrName)
 		event.Origin().Set("event","recoveredstatehistory", ui.Bool(true))
-		//enableFetching() // fetching is disabled before state history get replayed
 		return false
 	}).RunOnce())
 	return false

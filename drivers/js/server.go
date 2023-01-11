@@ -171,6 +171,21 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 })
 
 var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
+	e:= evt.Origin()
+	e.ElementStore.MutationCapture = true
+	e.Watch("internals","lastmutation",e.ElementStore.Global,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+		// TODO if mutation is not fetch type event, append it to internals,globalstatehistory
+		var history ui.List
+		hl,ok:= e.Get("internals","globalstatehistory")
+		if !ok{
+			history = ui.NewList()
+		}
+		history = hl.(ui.List)
+		history = append(history,event.NewValue())
+		e.Set("internals","globalstatehistory",history)
+		return false
+	}))
+
 	return false
 })
 

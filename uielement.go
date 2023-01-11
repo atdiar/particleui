@@ -69,6 +69,7 @@ type ElementStore struct {
 	RuntimePropTypes map[string]bool
 
 	Global *Element // the global Element stores the global state shared by all UI Elements
+	MutationCapture bool
 }
 
 type storageFunctions struct {
@@ -114,7 +115,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
 	global := NewElement(storeid, doctype)
-	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global}
+	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global,false}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -345,7 +346,7 @@ func withFetchSupport(e *Element)*Element{
 	*/
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().Set("event","fetch", Bool(true))
+		evt.Origin().Fetch()
 		return false
 	}))
 
@@ -599,10 +600,6 @@ func attach(parent *Element, child *Element, activeview bool) {
 		// not mountable nor mounted.
 
 		if child.Mounted() {
-			/*_, ok := child.Get("event", "firstmount")
-			if !ok {
-				child.Set("event", "firstmount", Bool(true))
-			}*/
 			child.Set("event", "mount", Bool(true))
 		}
 	}
@@ -611,20 +608,10 @@ func attach(parent *Element, child *Element, activeview bool) {
 func finalize(child *Element, attaching bool, wasmounted bool) {
 	if attaching {
 		if child.Mounted() {
-			/*_, ok := child.Get("event", "firsttimemounted")
-			if !ok {
-				child.Set("event", "firsttimemounted", Bool(true))
-			}*/
 			child.Set("event", "mounted", Bool(true))
 		}
 
 	} else { // detaching
-		/*m, ok := child.Get("event", "mounted")
-		if ok {
-			if vm := m.(Bool); vm {
-				child.Set("event", "mounted", Bool(false))
-			}
-		}*/
 		if wasmounted{
 			child.Set("event","unmounted",Bool(true))
 		}
@@ -1121,7 +1108,7 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 
 // removeHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of 
-func (e *Element) removeHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
+func (e *Element) RemoveMutationHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	_, ok := owner.AsElement().Properties.Categories[category]
 	if !ok {
 		return e
@@ -1287,6 +1274,24 @@ func isRuntimeCategory(e *ElementStore, category string) bool{
 	return ok
 }
 
+
+func(e *Element) TriggerEvent(name string, value ...Value){
+	n:= len(value)
+	switch {
+	case n == 0:
+		e.Set("event", name,Bool(true))
+	case n==1:
+		e.Set("event",name,value[0])
+	default:
+		e.Set("event",name,NewList(value...))
+	}
+}
+
+// WatchEventt enables an elements to watch for an event occuring on any Element including itself.
+func(e *Element) WatchEvent(name string, target Watchable, h *MutationHandler){
+	e.Watch("event",name,target,h)
+}
+
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
@@ -1339,37 +1344,42 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 		panic("category should exist since property should have been stored")
 	}
 	watchers, ok := props.Watchers[propname]
-	if !ok {
-		return
-	}
-	if watchers == nil {
-		return
+	if ok && watchers != nil{
+		var needcleanup bool
+		var index int
+		wl:= watchers.List[:0]
+		for i, w := range watchers.List {
+			if w == nil{
+				if !needcleanup{
+					wl = watchers.List[:i]
+					index = i+1
+					needcleanup = true
+				}
+				continue
+			}
+			w.PropMutationHandlers.DispatchEvent(evt)
+			if needcleanup{
+				wl = append(wl,w)
+				index++
+			}
+		}
+		if needcleanup{
+			for i:= index; i<len(watchers.List);i++{
+				watchers.List[i] = nil
+			}
+			watchers.List = wl[:index]
+		}
 	}
 
-	var needcleanup bool
-	var index int
-	wl:= watchers.List[:0]
-	for i, w := range watchers.List {
-		if w == nil{
-			if !needcleanup{
-				wl = watchers.List[:i]
-				index = i+1
-				needcleanup = true
-			}
-			continue
-		}
-		w.PropMutationHandlers.DispatchEvent(evt)
-		if needcleanup{
-			wl = append(wl,w)
-			index++
-		}
+	if e.ElementStore.MutationCapture{
+		m:= NewObject()
+		m.Set("id",String(e.ID))
+		m.Set("cat",String(category))
+		m.Set("prop",String(propname))
+		m.Set("val",Copy(value))
+		e.ElementStore.Global.Set("internals","lastmutation",m)
 	}
-	if needcleanup{
-		for i:= index; i<len(watchers.List);i++{
-			watchers.List[i] = nil
-		}
-		watchers.List = wl[:index]
-	}
+
 }
 
 
@@ -1407,7 +1417,7 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 	}
 	e.Properties.Set("data", propname, value, inheritable)
 
-	e.Set("ui", propname, value, flags...)
+	// e.Set("ui", propname, value, flags...) // Initial position but let's put that after data change propagation DEBUG
 
 	evt := e.NewMutationEvent("data", propname, value, oldvalue)
 
@@ -1416,15 +1426,13 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 		panic("category should exist since property should have been stored")
 	}
 	watchers, ok := props.Watchers[propname]
-	if !ok {
-		return
+	if ok && watchers != nil {
+		for _, w := range watchers.List {
+			w.PropMutationHandlers.DispatchEvent(evt)
+		}
 	}
-	if watchers == nil {
-		return
-	}
-	for _, w := range watchers.List {
-		w.PropMutationHandlers.DispatchEvent(evt)
-	}
+
+	e.Set("ui", propname, value, flags...)
 }
 
 // SyncUISetData is used in event handlers when a user changed a value accessible

@@ -100,6 +100,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	r.Outlet.AsElement().Root().Watch("event","navigationstart",r.Outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
 		CancelNav()
 		NavContext,CancelNav = newCancelableNavContext()
+		// TODO if state is being replayed, cancelnav
 		return false
 	}))
 
@@ -495,7 +496,7 @@ func (r *Router) ListenAndServe(events string, target *Element) {
 
 func (r *Router) verifyLinkActivation() {
 	for _, l := range r.Links {
-		_, ok := l.Raw.Get("event", "verified")
+		_, ok := l.Raw.Get("internals", "verified")
 		if !ok {
 			panic("Link activation failure: " + l.URI())
 		}
@@ -887,9 +888,9 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		if isValidLink(Link{e}){
-			_, ok := e.Get("event", "verified")
+			_, ok := e.Get("internals", "verified")
 			if !ok {
-				e.Set("event", "verified", Bool(true))
+				e.Set("internals", "verified", Bool(true))
 			}
 		}
 
