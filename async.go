@@ -3,10 +3,12 @@ package ui
 import (
 	"bytes"
 	"context"
+	"encoding/base32"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"time"
 )
 
@@ -67,7 +69,7 @@ func DoAsync(f func()){
 	}()
 }
 
-// SetDataFetcher allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
+// NewDataFetcher allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
 // It accepts a function as argument that is tasked with converting the *http.Response into 
 // a Value that can be stored as an element property.
 // Unless stated otherwise, the data is made prefetchable as well.
@@ -75,7 +77,8 @@ func DoAsync(f func()){
 //
 // The fetching occurs during the "fetch" event ("event","fetch") that is triggered each time an element
 // is mounted.
-func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehandler func(*http.Response)(Value,error), noprefetch ...bool) {
+func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehandler func(*http.Response)(Value,error), noprefetch ...bool) {
+	e.RemoveDataFetcher(propname)
 	prefetchable:= true
 	if noprefetch != nil{
 		prefetchable = false
@@ -100,6 +103,11 @@ func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehand
 				ctx,cancelFn:= context.WithCancel(r.Context())
 				r = r.WithContext(ctx)
 
+				evt.Origin().OnDeleted(NewMutationHandler(func(event MutationEvent)bool{
+					cancelFn()
+					return false
+				}).RunOnce())
+
 				oncancelprefetch:= NewMutationHandler(func(event MutationEvent)bool{
 					cancelFn()
 					return false
@@ -118,6 +126,15 @@ func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehand
 				evt.Origin().WatchEvent("removedatafetcher", evt.Origin(), fetchcancelerremover)
 
 				evt.Origin().Watch("event","cancelprefetchrequests",evt.Origin(),oncancelprefetch)
+
+
+				// After a new http.Request has been launched and a response has been returned, cancel and refetch
+				// the data corresponding to the req.URL
+				evt.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),evt.Origin().ElementStore.Global,NewMutationHandler(func(event MutationEvent)bool{
+					//event.Origin().invalidatePrefetch()
+					cancelFn()
+					return false
+				}).RunOnce())
 
 				evt.Origin().fetchData(propname,r,responsehandler,true)
 				return false
@@ -157,6 +174,11 @@ func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehand
 			return false
 		}).RunOnce()
 
+		evt.Origin().OnDeleted(NewMutationHandler(func(event MutationEvent)bool{
+			cancelFn()
+			return false
+		}).RunOnce())
+
 		var fetchcancelerremover *MutationHandler
 		fetchcancelerremover=NewMutationHandler(func(event MutationEvent)bool{
 			p:= string(event.NewValue().(String))
@@ -171,6 +193,17 @@ func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehand
 		evt.Origin().WatchEvent("removedatafetcher", evt.Origin(), fetchcancelerremover)
 
 		evt.Origin().Watch("event","cancelfetchrequests",evt.Origin(),oncancelfetch)
+
+		// After a new http.Request has been launched and a response has been returned, cancel and refetch
+		// the data corresponding to the req.URL
+		evt.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),evt.Origin().ElementStore.Global,NewMutationHandler(func(event MutationEvent)bool{
+			//event.Origin().invalidatePrefetch()
+			e.InvalidateFetch(propname)
+			cancelFn()
+			e.Fetch()
+			return false
+		}).RunOnce())
+
 
 		evt.Origin().fetchData(propname,r,responsehandler,false)
 		return false
@@ -192,12 +225,12 @@ func(e *Element) SetDataFetcher(propname string, req *http.Request, responsehand
 
 }
 
-func(e *Element) SetURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
+func(e *Element) NewURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
 	req,err:= http.NewRequestWithContext(NavContext,"GET",url,nil)
 	if err!= nil{
 		panic(url + " is malformed most likely. Unable to create new request")
 	}
-	e.SetDataFetcher(propname,req,responsehandler,noprefetch...)
+	e.NewDataFetcher(propname,req,responsehandler,noprefetch...)
 }
 
 func(e *Element) RemoveDataFetcher(propname string){
@@ -221,7 +254,7 @@ func(e *Element) cancelPrefetch(){
 func CancelFetchOnError(e *Element) *Element{
 	e.OnFetched(NewMutationHandler(func(evt MutationEvent)bool{
 		oldv:= evt.OldValue()
-		o,ok:= oldv.(Bool) // TODO review this, this seems wrong if nothing was ever fetched for instance
+		o,ok:= oldv.(Bool)
 		if !ok{
 			if oldv == nil{
 				o = true
@@ -269,11 +302,6 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 
 	
 	DoAsync(func(){
-		select{
-		case <-NavContext.Done():
-			return 
-		default:
-		}
 
 		res, err:= HttpClient.Do(req)
 		if err!= nil{
@@ -288,7 +316,9 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			return
 		}
 		defer res.Body.Close()
-
+		if responsehandler == nil{
+			return
+		}
 		v,err:= responsehandler(res)
 		if err!= nil{
 			DoSync(func() {
@@ -678,3 +708,138 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 	return !bool(stale.(Bool))
 }
 
+// An Element should also be able to sned requests to a remote server besides retrieving data
+// via GET (POST, PUT, PATCH,  UPDATE, DELETE)
+// When such a request is made to an endpoint, the Data Fetched should be invalidated and refetched.
+
+// NewRequest makes a http Request using the default client
+func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Response)(Value,error)){
+	
+	e.TriggerEvent(newRequestEventName("start",req.URL.String()),newRequestStateObject(nil,nil))
+	
+	
+	r:= cloneReq(req)
+	ctx,cancelFn:= context.WithCancel(r.Context())
+	r = r.WithContext(ctx)
+
+	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+		e.CancelRequest(r)
+		return false
+	}).RunOnce())
+
+	e.WatchEvent(newRequestEventName("cancel",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+		cancelFn()
+		return false
+	}).RunOnce())
+
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
+		e.CancelRequest(r)
+		return false
+	}).RunOnce())
+
+	e.WatchEvent(newRequestEventName("end",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().ElementStore.Global.TriggerEvent(newRequestEventName("end",req.URL.String()), evt.NewValue())
+		return false
+	}))
+	
+	DoAsync(func() {
+		res, err:= HttpClient.Do(req)
+		if err!= nil{
+			DoSync(func(){
+				e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(nil,err))
+			})
+			return
+		}
+		defer res.Body.Close()
+		if responsehandler == nil{
+			return
+		}
+		v,err:= responsehandler(res)
+		if err!= nil{
+			DoSync(func(){
+				e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(nil,err))
+			})
+			return
+		}
+		DoSync(func(){
+			e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(v,nil))
+		})
+	})
+}
+
+func(e *Element)CancelRequest(req *http.Request){
+	e.TriggerEvent(newRequestEventName("cancel",req.URL.String()))
+}
+
+func newRequestStateObject(value Value, err error) Object{
+	r:= NewObject()
+	r.Set("value",value)
+	if err != nil{
+		r.Set("error",String(err.Error()))
+	}
+
+	return r
+}
+
+func newRequestEventName(typ string, URL string) string{
+	var prefix string = "request"
+	prefix+= typ+"_"
+	u,err:= url.Parse(URL)
+	if err!= nil{
+		panic(err)
+	}
+	u.RawQuery=""
+	eurl:= base32.StdEncoding.EncodeToString([]byte(u.String()))
+	return prefix+eurl
+
+}
+
+func(e *Element) OnRequestStart(req *http.Request,h *MutationHandler){
+	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,h)
+}
+
+func(e *Element) OnRequestEnd(req *http.Request,h *MutationHandler){
+	e.WatchEvent(newRequestEventName("end",req.URL.String()),e,h)
+}
+
+
+// GetResponse returns the response ot a request as an interface. If the request failed,
+// the error returned by the Error method is non-nil.
+// If the response does not exist yet, the interface is nil.
+func GetResponse(e *Element, req *http.Request) interface{Value() Value; Error() error}{
+	v,ok:= e.Get("event", newRequestEventName("end",req.URL.String()))
+	if !ok{
+		return nil
+	}
+	return newResponseObject(v)
+}
+
+type responseObject struct{
+	Val Value
+	Err error
+}
+
+func(r responseObject) Value() Value{
+	return r.Val
+}
+
+func(r responseObject) Error() error{
+	return r.Err
+}
+
+func newResponseObject(u Value) (responseObject){
+	o,ok:= u.(Object)
+	if !ok{
+		panic("value used as response object should be of type Object")
+	}
+	rv,ok:= o.Get("value")
+	if !ok{
+		panic(" expected value field in response object")
+	}
+	es,ok:= o.Get("error")
+	if !ok{
+		return responseObject{rv,nil}
+	}
+	e:= errors.New(string(es.(String)))
+	return responseObject{rv,e}
+}
