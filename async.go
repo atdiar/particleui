@@ -316,6 +316,18 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			return
 		}
 		defer res.Body.Close()
+		if res.StatusCode < http.StatusOK && res.StatusCode >= 300{
+			DoSync(func() {
+				if prefetching{
+					e.prefetchCompleted(propname,false)
+				}else{
+					e.pushFetchError(propname,errors.New(res.Status))
+					e.fetchCompleted(propname,false)
+				}	
+			})
+			return
+		}
+		
 		if responsehandler == nil{
 			return
 		}
@@ -360,55 +372,6 @@ func(e *Element) Prefetch(){
 	e.TriggerEvent("prefetch")
 	
 }
-
-/*
-type fetchoption Object
-func(f fetchoption) Force() bool{
-	return bool(Object(f).MustGetBool("force"))
-}
-
-func(f fetchoption) FetchAll() bool{
-	l:= Object(f).MustGetList("props")
-	return len(l) == 0
-}
-
-func(f fetchoption) PropList() []string{
-	l:= Object(f).MustGetList("props")
-	if len(l) == 0{
-		return nil
-	}
-	v:= make([]string, len(l))
-	for _,p:= range l{
-		v = append(v,string(p.(String)))
-	}
-	return v
-}
-
-// FetchOption returns a Value that can further specify the fetch behavior.
-// if forced is true, Fetch will be triggered even if the data is already present. (refetch)
-// I f a property name is passed, fetch will only attempt to fetch the data for that string 
-// if it has been registered for fetching via one of the WIthFetcheddData... functions.
-func FetchOption(forced bool,proplist ...string) fetchoption{
-	v:= NewObject()
-	v.Set("force",Bool(forced))
-	l:=NewList()
-	for _,p:= range proplist{
-		l = append(l,String(p))
-	}
-	v.Set("props",l)
-	return fetchoption(v)
-}
-
-func(e *Element) Fetch(options ...fetchoption){
-	e.Properties.Delete("runtime","fetcherrors")
-	e.Properties.Delete("fetchstatus","cancelled")
-
-	for _,o:= range options{
-		e.TriggerEvent("fetch",Object(o))
-	}
-	
-}
-*/
 
 
 func(e *Element) Fetch(){
@@ -714,7 +677,8 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 
 // NewRequest makes a http Request using the default client
 func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Response)(Value,error)){
-	
+	// it's a new request, henceforth the previous response must be eliminated.
+	e.Properties.Delete("event",newRequestEventName("end",req.URL.String())) 
 	e.TriggerEvent(newRequestEventName("start",req.URL.String()),newRequestStateObject(nil,nil))
 	
 	
@@ -722,10 +686,14 @@ func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Respon
 	ctx,cancelFn:= context.WithCancel(r.Context())
 	r = r.WithContext(ctx)
 
-	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
-		e.CancelRequest(r)
+	// TODO does it have to get cancelled
+	// the server should implement idempotency
+	// What about stale responses then?
+	/*e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+		e.CancelRequest(r) // TODO does it have to get cancelled
 		return false
 	}).RunOnce())
+	*/
 
 	e.WatchEvent(newRequestEventName("cancel",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
 		cancelFn()

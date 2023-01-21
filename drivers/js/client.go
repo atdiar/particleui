@@ -132,11 +132,6 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			store.Set(element.ID, v)
 		}
 		proptype := "Local"
-		if len(flags) > 0 {
-			if flags[0] {
-				proptype = "Inheritable"
-			}
-		}
 
 		if !propertyExists || !indexed {
 			props := make([]interface{}, 0, 4)
@@ -149,14 +144,8 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				for k := range c.Default {
 					props = append(props, "Default/"+k)
 				}
-				for k := range c.Inherited {
-					props = append(props, "Inherited/"+k)
-				}
 				for k := range c.Local {
 					props = append(props, "Local/"+k)
-				}
-				for k := range c.Inheritable {
-					props = append(props, "Inheritable/"+k)
 				}
 
 				props = append(props, proptype+"/"+propname)
@@ -557,9 +546,6 @@ func PutInStorage(e *ui.Element) *ui.Element{
 		if cat != "event"{
 			for prop,val:= range props.Local{
 				storage.Store(e,cat,prop,val)
-			}
-			for prop,val:=range props.Inheritable{
-				storage.Store(e,cat,prop,val,true)
 			}
 		}		
 	}

@@ -2,10 +2,10 @@
 package ui
 
 import (
+	//"encoding/base32"
 	"errors"
 	"log"
 	"math/rand"
-	"strconv"
 	"strings"
 )
 
@@ -14,17 +14,19 @@ var (
 	DEBUG         = log.Print // DEBUG
 )
 
-// NewIDgenerator returns a function used to create new IDs. It uses
-// a Pseudo-Random Number Generator (PRNG) as it is desirable to have as deterministic
-// IDs as possible. Notably for the mostly tstaic elements.
+// newIDgenerator returns a function used to create new IDs. It uses
+// a Pseudo-Random Number Generator (PRNG) as it is desirable to generate deterministic sequences.
 // Evidently, as users navigate the app differently and may create new Elements
-// in a different order (hence calling the ID generator is path-dependent), we
-// do not expect to have the same id structure for different runs of a same program.
-func NewIDgenerator(seed int64) func() string {
+func newIDgenerator(charlen int, seed int64) func() string {
+	source := rand.NewSource(seed)
+	r := rand.New(source)
 	return func() string {
-		rand.Seed(seed)
-		str := strconv.Itoa(rand.Int())
-		return str
+		var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+		b := make([]rune, charlen)
+		for i := range b {
+			b[i] = letter[r.Intn(len(letter))]
+		}
+		return string(b)
 	}
 }
 
@@ -70,6 +72,10 @@ type ElementStore struct {
 
 	Global *Element // the global Element stores the global state shared by all UI Elements
 	MutationCapture bool
+
+	Seed int64
+	IDCharLength int
+	genID func() string
 }
 
 type storageFunctions struct {
@@ -115,7 +121,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
 	global := NewElement(storeid, doctype)
-	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global,false}
+	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]*Element), make(map[string]storageFunctions, 5), make(map[string]bool,8),global,false,8,21, newIDgenerator(8,21)}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -185,9 +191,30 @@ func(e *ElementStore) AddConstructorOptions(elementtype string, options ...Const
 	return e
 }
 
+// SeedIDgenerator sets a new seed for the NewID method which generates IDs using a PRNG.
+func(e *ElementStore) SeedIDgenerator(seed int64) *ElementStore{
+	e.Seed = seed
+	e.genID = newIDgenerator(e.IDCharLength,seed)
+	return e
+}
+
+func(e *ElementStore) IDLength(l int) *ElementStore{
+	e.IDCharLength = l
+	e.genID = newIDgenerator(l,e.Seed)
+	return e
+}
+
+func(e *ElementStore) NewID() string{
+	id:= e.genID()
+	v:= e.GetByID(id)
+	if v != nil{
+		return e.NewID()
+	}
+	return id
+}
+
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
-	options = append(options, allowPropertyInheritanceOnMount)
 
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
@@ -233,6 +260,7 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 	e.Constructors[elementtype] = c
 	return c
 }
+
 
 func(e *ElementStore) NewObservable(id string, options ...string) Observable{
 	c:= e.Constructors["observable"]
@@ -1292,6 +1320,17 @@ func(e *Element) WatchEvent(name string, target Watchable, h *MutationHandler){
 	e.Watch("event",name,target,h)
 }
 
+/*
+// Canonicalize returns the base32 encoding of a string if it contains the delimmiter "/"
+// It can be used 
+func Canonicalize(s string) string{
+	if strings.Contains(s,"/"){
+		return base32.StdEncoding.EncodeToString([]byte(s))
+	}
+	return s
+}
+*/
+
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
@@ -1301,19 +1340,13 @@ func (e *Element) Get(category, propname string) (Value, bool) {
 }
 
 // Set inserts a key/value pair under a given category in the element property store.
-// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
-// The "ui" category is unformally reserved for properties that are a UI representation
-// of data.
-// NOTE: One category is never persisted: "event" as it corresonds
+// NOTE:some categories that store runtime data are never persisted: e.g. "event" as it corresponds
 // to transient, runtime-only props.
-func (e *Element) Set(category string, propname string, value Value, flags ...bool) {
+func (e *Element) Set(category string, propname string, value Value) {
 	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
-		panic("category string and/or propname seems to contain a slash. This is not accepted. (" + category + "," + propname + ")")
+		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
-	var inheritable bool
-	if len(flags) > 0 {
-		inheritable = flags[0]
-	}
+
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
 
@@ -1330,11 +1363,11 @@ func (e *Element) Set(category string, propname string, value Value, flags ...bo
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok && !isRuntimeCategory(e.ElementStore,category) {
-			storage.Store(e, category, propname, value, flags...)
+			storage.Store(e, category, propname, value)
 		}
 	}
 
-	e.Properties.Set(category, propname, value, inheritable)
+	e.Properties.Set(category, propname, value)
 
 	// Mutation event propagation
 	evt := e.NewMutationEvent(category, propname, value, oldvalue)
@@ -1388,11 +1421,10 @@ func (e *Element) GetData(propname string) (Value, bool) {
 }
 
 // SetData inserts a key/value pair under the "data" category in the element property store.
-// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
 // It does not automatically update any potential property representation stored
 // for rendering use in the "ui" category/namespace.
-func (e *Element) SetData(propname string, value Value, flags ...bool) {
-	e.Set("data", propname, value, flags...)
+func (e *Element) SetData(propname string, value Value) {
+	e.Set("data", propname, value)
 }
 
 // SetDataSetUI will set a "data" property and update the same-name property value
@@ -1400,11 +1432,7 @@ func (e *Element) SetData(propname string, value Value, flags ...bool) {
 // Typically NOT used when the data is being updated from the UI.
 // This is used where Synchronization between the data and its representation are
 // needed. (in opposition to automatically updating the UI via data mutation observervation)
-func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
-	var inheritable bool
-	if len(flags) > 0 {
-		inheritable = flags[0]
-	}
+func (e *Element) SetDataSetUI(propname string, value Value) {
 	oldvalue, _ := e.GetData(propname)
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
@@ -1412,10 +1440,10 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
-			storage.Store(e, "data", propname, value, flags...)
+			storage.Store(e, "data", propname, value)
 		}
 	}
-	e.Properties.Set("data", propname, value, inheritable)
+	e.Properties.Set("data", propname, value)
 
 	// e.Set("ui", propname, value, flags...) // Initial position but let's put that after data change propagation DEBUG
 
@@ -1432,7 +1460,7 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 		}
 	}
 
-	e.Set("ui", propname, value, flags...)
+	e.Set("ui", propname, value)
 }
 
 // SyncUISetData is used in event handlers when a user changed a value accessible
@@ -1441,12 +1469,7 @@ func (e *Element) SetDataSetUI(propname string, value Value, flags ...bool) {
 // (to avoid rerendering an already up-to-date User Interface)
 //
 //
-// First flag in the variadic argument, if true, denotes whether the property should be inheritable.
-func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
-	var inheritable bool
-	if len(flags) > 0 {
-		inheritable = flags[0]
-	}
+func (e *Element) SyncUISetData(propname string, value Value) {
 
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
@@ -1454,18 +1477,17 @@ func (e *Element) SyncUISetData(propname string, value Value, flags ...bool) {
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok {
-			storage.Store(e, "ui", propname, value, flags...)
+			storage.Store(e, "ui", propname, value)
 		}
 	}
 
-	e.Properties.Set("ui", propname, value, inheritable)
+	e.Properties.Set("ui", propname, value)
 
-	e.Set("data", propname, value, flags...)
+	e.Set("data", propname, value)
 }
 
 // LoadProperty is a function typically used to restore a UI Element properties.
 // It does not trigger mutation events. 
-// The proptype is a string that describes the property (default,inherited, local, or inheritable).
 // For properties of the 'ui' namespace, i.e. properties that are used for rendering,
 // we create and dispatch a mutation event since loading a property modifies the UI.
 func LoadProperty(e *Element, category string, propname string, proptype string, value Value) {
@@ -1485,20 +1507,8 @@ func Rerender(e *Element) *Element{
 		return e
 	}
 	propset := make(map[string]struct{},256)
-	for prop,value:= range p.Inheritable{
-		propset[prop]=struct{}{}
-		evt := e.NewMutationEvent(category, prop, value, nil)
-		e.PropMutationHandlers.DispatchEvent(evt)
-	}
-	for prop,value:= range p.Local{
-		if _,exist:= propset[prop];!exist{
-			propset[prop]=struct{}{}
-			evt := e.NewMutationEvent(category, prop, value, nil)
-			e.PropMutationHandlers.DispatchEvent(evt)
-		}	
-	}
 
-	for prop,value:= range p.Inherited{
+	for prop,value:= range p.Local{
 		if _,exist:= propset[prop];!exist{
 			propset[prop]=struct{}{}
 			evt := e.NewMutationEvent(category, prop, value, nil)
@@ -1518,52 +1528,10 @@ func Rerender(e *Element) *Element{
 }
 
 
-
 func SetDefault(e *Element, category string, propname string, value Value) {
 	e.Properties.SetDefault(category, propname, value)
 }
 
-func InheritProperties(target *Element, src *Element, categories ...string) {
-	for cat, ps := range src.Properties.Categories {
-		if categories != nil {
-			for _, c := range categories {
-				if c == cat {
-					pst, ok := target.Properties.Categories[cat]
-					if !ok {
-						pst = newProperties()
-						target.Properties.Categories[cat] = pst
-					}
-					pst.Inherit(ps)
-					break
-				}
-			}
-			continue
-		}
-		pst, ok := target.Properties.Categories[cat]
-		if !ok {
-			pst = newProperties()
-			target.Properties.Categories[cat] = pst
-		}
-		pst.Inherit(ps)
-	}
-}
-
-var allowPropertyInheritanceOnMount = NewConstructorOption("propertyinheritance", func(e *Element) *Element {
-	h := NewMutationHandler(func(evt MutationEvent) bool {
-		element := evt.Origin()
-		InheritProperties(element, element.Parent)
-		return false
-	})
-	e.OnMount(h)
-	return e
-})
-
-// EnablePropertyAutoInheritance is an option that when passed to an Element
-// constructor, allows an Element to inherit the properties of its parent
-// when it is mounted in the DOM tree.
-func EnablePropertyAutoInheritance() string {
-	return "propertyinheritance"
-}
 
 // computeRoute returns the path to an Element.
 //
@@ -1783,12 +1751,8 @@ func (p PropertyStore) Load(category string, propname string, proptype string, v
 	switch proptype {
 	case "default":
 		ps.Default[propname] = value
-	case "inherited":
-		ps.Inherited[propname] = value
 	case "local":
 		ps.Local[propname] = value
-	case "inheritable":
-		ps.Inheritable[propname] = value
 	default:
 		return
 	}
@@ -1861,19 +1825,13 @@ func (p PropertyStore) SetDefault(category string, propname string, value Value)
 type Properties struct {
 	Default map[string]Value
 
-	Inherited map[string]Value //Inherited property cannot be mutated by the inheritor
-
 	Local map[string]Value
 
-	Inheritable map[string]Value // the value of a property overrides the value stored in any of its predecessor value store
-	// map key is the address of the element's  property
-	// being watched and elements is the list of elements watching this property
-	// Inheritable encompasses overidden values and inherited values that are being passed down.
 	Watchers map[string]*Elements
 }
 
 func newProperties() Properties {
-	return Properties{make(map[string]Value), make(map[string]Value), make(map[string]Value), make(map[string]Value), make(map[string]*Elements)}
+	return Properties{make(map[string]Value), make(map[string]Value), make(map[string]*Elements)}
 }
 
 func (p Properties) NewWatcher(propName string, watcher *Element) {
@@ -1910,15 +1868,7 @@ func (p Properties) IsWatching(propname string, e *Element) bool {
 
 // Get returns a copy of the value stored for a given property.
 func (p Properties) Get(propName string) (Value, bool) {
-	v, ok := p.Inheritable[propName]
-	if ok {
-		return Copy(v), ok
-	}
-	v, ok = p.Local[propName]
-	if ok {
-		return Copy(v), ok
-	}
-	v, ok = p.Inherited[propName]
+	v, ok := p.Local[propName]
 	if ok {
 		return Copy(v), ok
 	}
@@ -1930,23 +1880,11 @@ func (p Properties) Get(propName string) (Value, bool) {
 }
 
 func (p Properties) Set(propName string, value Value, inheritable bool) {
-	if inheritable {
-		p.Inheritable[propName] = Copy(value)
-		return
-	}
 	p.Local[propName] = Copy(value)
 }
 
 func (p Properties) Delete(propname string) {
 	delete(p.Local, propname)
-}
-
-func (p Properties) Inherit(source Properties) {
-	if source.Inheritable != nil {
-		for k, v := range source.Inheritable {
-			p.Inherited[k] = v
-		}
-	}
 }
 
 // PropertyGroup returns a string denoting whether a property is a default one,
@@ -1956,17 +1894,9 @@ func (p Properties) PropertyGroup(propname string) string {
 	if ok {
 		return "Default"
 	}
-	_, ok = p.Inherited[propname]
-	if ok {
-		return "Inherited"
-	}
 	_, ok = p.Local[propname]
 	if ok {
 		return "Local"
-	}
-	_, ok = p.Inheritable[propname]
-	if ok {
-		return "Inheritable"
 	}
 	return ""
 }

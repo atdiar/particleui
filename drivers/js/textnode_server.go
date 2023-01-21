@@ -58,7 +58,7 @@ var newTextNode = Elements.NewConstructor("text", func(id string) *ui.Element {
 // NewTextNode creates a text node.
 //
 func NewTextNode() TextNode {
-	return TextNode{newTextNode("textnode", NewID())}
+	return TextNode{newTextNode("textnode", Elements.NewID())}
 }
 
 type TemplatedTextNode struct {
