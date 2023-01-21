@@ -194,6 +194,12 @@ func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehand
 
 		evt.Origin().Watch("event","cancelfetchrequests",evt.Origin(),oncancelfetch)
 
+		// invalidation should make sure that any inflight fetch is cancelled (response is stale)
+		evt.Origin().WatchEvent("invalidate_"+propname+"_fetch",evt.Origin(),NewMutationHandler(func(event MutationEvent)bool{
+			cancelFn()
+			return false
+		}).RunOnce())
+
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the req.URL
 		evt.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),evt.Origin().ElementStore.Global,NewMutationHandler(func(event MutationEvent)bool{
@@ -247,7 +253,7 @@ func(e *Element) cancelPrefetch(){
 	e.TriggerEvent("cancelprefetchrequests")
 }
 
-
+/*
 // CancelFetchOnError is an Element modifier that automatically aborts all ongoing fetches as soon 
 // as one failed.
 // It is not the default so as to leave the possibility to implement retries.
@@ -270,6 +276,8 @@ func CancelFetchOnError(e *Element) *Element{
 
 	return e
 }
+
+*/
 
 // WasFetchCancelled answers the question of whether a fecth was cancelled or not.
 // It can be used when handling a "fetched" event (OnFetched) to differentiate fetching failure
@@ -406,6 +414,7 @@ func(e *Element) InvalidateFetch(propname string){
 	r.Set(propname,s)
 
 	e.Set("runtime", "fetchlist",r)
+	e.TriggerEvent("invalidate_"+propname+"_fetch") // needs to send a signal to cancel fetches that are in flight
 }
 
 func(e *Element)InvalidateAllFetches(){
@@ -686,14 +695,11 @@ func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Respon
 	ctx,cancelFn:= context.WithCancel(r.Context())
 	r = r.WithContext(ctx)
 
-	// TODO does it have to get cancelled
-	// the server should implement idempotency
-	// What about stale responses then?
-	/*e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
-		e.CancelRequest(r) // TODO does it have to get cancelled
+	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+		e.CancelRequest(r) 
 		return false
 	}).RunOnce())
-	*/
+	
 
 	e.WatchEvent(newRequestEventName("cancel",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
 		cancelFn()
