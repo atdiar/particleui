@@ -18,6 +18,7 @@ import (
 	"github.com/atdiar/particleui"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 
@@ -160,9 +161,19 @@ func NewBuilder(f func()Document){
 }
 
 
+var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
+	SetTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
+	return false
+})
+
 var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
 	// TODO need to set the document title somehow (set the relevant attribute)
-
+	d:= GetDocument()
+	if d == nil{
+		return true
+	}
+	newtitle:= evt.NewValue().(ui.String)
+	d.SetTitle(string(newtitle))
 	return false
 })
 
@@ -192,11 +203,38 @@ var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {//
 
 
 // SetInnerHTML sets the innerHTML property of HTML elements.
-// Please note that it is unsafe to sets client submittd HTML inputs.
-func SetInnerHTML(e *ui.Element, html string) *ui.Element {
-	// TODO
+// Please note that it is unsafe to sets client submitted HTML inputs.
+func SetInnerHTML(e *ui.Element, innerhtml string) *ui.Element {
+	p,err:= html.Parse(strings.NewReader(innerhtml))
+	if err!=nil{
+		panic(err)
+
+	}
+	e.Native.(NativeElement).SetChildren(nil)
+	e.Native.(NativeElement).Value.AppendChild(p)
 	return e
-} // abstractjs
+}
+
+// SetTextContent sets the textContent of HTML elements.
+func SetTextContent(e *ui.Element, text string) *ui.Element {
+
+	n:= e.Native.(NativeElement).Value
+	f:= n.FirstChild
+	c:= f
+	for c != nil{
+		if c.Type == html.TextNode{
+			c.Data = text
+			return e
+		}
+		c = f.NextSibling
+	}
+	n.AppendChild(textNode(text))
+	return e
+}
+
+func textNode(s string) *html.Node{
+	return &html.Node{Type: html.TextNode,Data: s}
+}
 
 // LoadFromStorage will load an element properties.
 // If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
@@ -225,29 +263,10 @@ func NewNativeElementIfAbsent(id string, tag string) (ui.NativeElement,bool){
 		return  NewNativeElementWrapper(nil), true
 	}
 
-	if tag == "html"{
-		return NewNativeElementWrapper(nil), true
-	}
-
-	if tag == "body"{
-		n := &html.Node{}
-		n.Type = html.RawNode
-		n.Data = tag
-
-		return NewNativeElementWrapper(n), true
-	}
-
-	if tag == "head"{
-		n := &html.Node{}
-		n.Type = html.RawNode
-		n.Data = tag
-
-		return NewNativeElementWrapper(n), true
-	}
-
 	n := &html.Node{}
-	n.Type = html.RawNode
+	n.Type = html.ElementNode
 	n.Data = tag
+	n.DataAtom = atom.Lookup([]byte(tag))
 
 	return NewNativeElementWrapper(n), true
 }
@@ -388,53 +407,44 @@ func newTimeRanges() jsTimeRanges{
 
 
 func(a AudioElement) Buffered() jsTimeRanges{
-	// TODO get from attr ?
 	return newTimeRanges()
 }
 
 func(a AudioElement)CurrentTime() time.Duration{
-	// TODO get from attr ?
 	return 0
 }
 
 func(a AudioElement)Duration() time.Duration{
-	// TODO get from attr ?
 	return  0
 }
 
 func(a AudioElement)PlayBackRate() float64{
-	// TODO get from attr ?
 	return 0
 }
 
 func(a AudioElement)Ended() bool{
-	// TODO get from attr ?
 	return false
 }
 
 func(a AudioElement)ReadyState() float64{
-	// TODO get from attr ?
 	return 0
 }
 
 func(a AudioElement)Seekable()  jsTimeRanges{
-	// TODO get from attr ?
 	return newTimeRanges()
 }
 
 func(a AudioElement) Volume() float64{
-	// TODO get from attr ?
 	return  0
 }
 
 
 func(a AudioElement) Muted() bool{
-	// TODO get from attr ?
 	return false
 }
 
 func(a AudioElement) Paused() bool{
-	// TODO get from attr ?
+
 	return false
 }
 
@@ -502,175 +512,122 @@ func(v VideoElement) Loop() bool{
 
 
 
-func AddClass(target *ui.Element, classname string) {
-	// TODO
-}
-
-func RemoveClass(target *ui.Element, classname string) {
-	// TODO
-}
-
-func Classes(target *ui.Element) []string {
-	// TODO
-	return nil
-}
-
 func enableClasses(e *ui.Element) *ui.Element {
-	// TODO
+	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		target := evt.Origin()
+		_, ok := target.Native.(NativeElement)
+		if !ok {
+			log.Print("wrong type for native element or native element does not exist")
+			return true
+		}
+		classes, ok := evt.NewValue().(ui.String)
+		if !ok {
+			log.Print("new value of non-string type. Unable to use as css class(es)")
+			return true
+		}
+
+		if len(strings.TrimSpace(string(classes))) != 0 {
+			SetAttribute(evt.Origin(),"class",string(classes))
+			return false
+		}
+		RemoveAttribute(evt.Origin(),"class")
+		return false
+	})
+	e.Watch("css", "class", e, h)
 	return e
 }
 
 func GetAttribute(target *ui.Element, name string) string {
-	// TODO
+	for _,a:= range target.Native.(NativeElement).Value.Attr{
+		if a.Key == name{
+			return a.Val
+		}
+		continue
+	}
 	return ""
 }
 
-// abstractjs
 func SetAttribute(target *ui.Element, name string, value string) {
-	// TODO
+	Attrs:= target.Native.(NativeElement).Value.Attr
+
+	for _,a:= range Attrs{
+		if a.Key == name{
+			a.Val = value
+			return
+		}
+		continue
+	}
+	Attrs = append(Attrs,html.Attribute{"",name,value})
+
 }
 
 // abstractjs
 func RemoveAttribute(target *ui.Element, name string) {
+	Attrs:= target.Native.(NativeElement).Value.Attr
+	var index = -1
+
+	for i,a:= range Attrs{
+		if a.Key == name{
+			index = i
+			break
+		}
+		continue
+	}
+	if index > -1{
+		copy(Attrs[:index],Attrs[index+1:])
+		Attrs[len(Attrs)-1]=html.Attribute{}
+		Attrs = Attrs[:len(Attrs)-1]
+	}
 
 }
 
+
 var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	/*str, ok := evt.NewValue().(ui.String)
-	if !ok {
-		return true
-	}
-	JSValue(evt.Origin()).Set("textContent", string(str)) */
-
-	// TODO
-
+	str := string(evt.NewValue().(ui.String))
+	SetTextContent(evt.Origin(),str)
 	return false
 })
 
 var paragraphTextHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	//JSValue(evt.Origin()).Set("innerText", string(evt.NewValue().(ui.String)))
-
-	// TODO
+	SetTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
 	return false
 })
 
 func numericPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		// JSValue(evt.Origin()).Set(propname,float64(evt.NewValue().(ui.Number)))
-		return false
-	})
+	return ui.NoopMutationHandler
 }
 
 func boolPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		// JSValue(evt.Origin()).Set(propname,bool(evt.NewValue().(ui.Bool)))
-		return false
-	})
+	return ui.NoopMutationHandler
 }
 
 func stringPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		// JSValue(evt.Origin()).Set(propname,string(evt.NewValue().(ui.String)))
-		return false
-	})
+	return ui.NoopMutationHandler
 }
 
 
 func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
-	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		/*v:= float64(evt.NewValue().(ui.Number))
-		if v < float64(min){
-			v = float64(min)
-		}
-
-		if v > float64(max){
-			v = float64(max)
-		}
-		JSValue(evt.Origin()).Set(propname,v)
-		*/
-		return false
-	})
+	return ui.NoopMutationHandler
 }
 
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 func (d Document) Render(w io.Writer) error {
-	return html.Render(w, RenderHTMLTree(d))
+	return html.Render(w, HTMLDocumentNode(d))
 }
 
-func NewHTMLNode(e *ui.Element) *html.Node {
-	if e.DocType != Elements.DocType {
-		panic("Bad Element doctype")
-	}
-	v, ok := e.Get("internals", "constructor")
-	if !ok {
-		return nil
-	}
-	tag, ok := v.(ui.String)
-	if !ok {
-		panic("constructor name should be a string")
-	}
-	data := string(tag)
-	nodetype := html.RawNode
-	
-	n := &html.Node{}
-	n.Type = nodetype
-	n.Data = data
-
-	attrs, ok := e.GetData("attrs")
-	if !ok {
-		return n
-	}
-	tattrs, ok := attrs.(ui.Object)
-	if !ok {
-		panic("attributes is supposed to be a ui.Object type")
-	}
-	for k, v := range tattrs {
-		a := html.Attribute{"", k, string(v.(ui.String))}
-		n.Attr = append(n.Attr, a)
-	}
-
-	
-	// Element state should be stored serialized in script Element and hydration attribute should be set
-	// on the Document Node
-	if e.ID == GetDocument().AsElement().ID{
-		n.Attr = append(n.Attr,html.Attribute{"",HydrationAttrName,"true"})
-	}
-	
-
-	return n
-}
-
-func RenderHTMLTree(document Document) *html.Node {
-	doc := document.AsBasicElement()
-	h:= &html.Node{}
-	n:= renderHTMLTree(doc.AsElement(),&h)
+func HTMLDocumentNode(document Document) *html.Node {
+	doc := document.AsElement()
+	h:= &html.Node{Type: html.DoctypeNode}
+	n:= doc.Native.(NativeElement).Value
+	h.AppendChild(n)
 	statenode:= generateStateHistoryRecordElement()
 	if statenode != nil{
-		h.AppendChild(statenode)
+		document.Head().AsElement().Native.(NativeElement).Value.AppendChild(statenode)
 	}
 
-	return n
-}
-
-func renderHTMLTree(e *ui.Element, pHead **html.Node) *html.Node {
-	d := e.Native.(NativeElement)
-	v:= d.Value
-
-	if e.ID == GetDocument().Head().AsElement().ID{
-		pHead = &v
-	}
-	d.SetChildren(nil) // removes any child if present
-
-	if e.Children != nil && e.Children.List != nil {
-		for _, child := range e.Children.List {
-			c:= renderHTMLTree(child, pHead)
-			v.AppendChild(c)
-		}
-	}
-
-	return v
+	return h
 }
 
 func generateStateHistoryRecordElement() *html.Node{

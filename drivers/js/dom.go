@@ -321,6 +321,10 @@ func(d Document) Delete(){ // TODO check for dangling references
 	})
 }
 
+func(d Document) SetTitle(title string){
+	d.AsElement().SetDataSetUI("title",ui.String(title))
+}
+
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
@@ -379,8 +383,18 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e.Watch("navigation", "ready", e,navreadyHandler)
 	e.Watch("runtime","recoverablestatehistory",e,recoverStateHistoryHandler)
+	e.Watch("ui", "title", e, documentTitleHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
+
+var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
+	d:= Document{ui.BasicElement{evt.Origin()}}
+	t:= Title.WithID("documenttitle")()
+	t.Set(string(evt.NewValue().(ui.String)))
+	d.Head().AppendChild(t)
+
+	return false
+})
 
 func replayStateHistory(e *ui.Element) {
 	rh,ok:= e.Get("internals","globalstatehistory")
@@ -465,6 +479,7 @@ func Body(id string, options ...string) BodyElement{
 }
 
 
+
 // Head refers to the <head> HTML element of a HTML document, which contains metadata and links to 
 // resources such as title, scripts, stylesheets.
 type HeadElement struct{
@@ -543,6 +558,47 @@ type metaConstructor func(...string) MetaElement
 func(c metaConstructor) WithID(id string) func(options ...string)MetaElement{
 	return func(options ...string) MetaElement {
 		return MetaElement{ui.BasicElement{LoadFromStorage(newMeta(id, options...))}}
+	}
+}
+
+
+type TitleElement struct{
+	ui.BasicElement
+}
+
+func(m TitleElement) Set(title string) TitleElement{
+	m.AsElement().SetDataSetUI("title",ui.String(title))
+	return m
+}
+
+var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
+	e:= Elements.GetByID(id)
+	if e!= nil{
+		panic(id + " : this id is already in use")
+	}
+	e = ui.NewElement(id, Elements.DocType)
+	e = enableClasses(e)
+
+	tag:= "title"
+	var exist bool
+	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	if !exist {
+		SetAttribute(e, "id", id)
+	}
+	e.Watch("ui","title",e,titleElementChangeHandler)
+
+	return e
+})
+
+
+var Title = titleConstructor(func (options ...string) TitleElement {
+	return TitleElement{ui.BasicElement{LoadFromStorage(newTitle(Elements.NewID(), options...))}}
+})
+
+type titleConstructor func(...string) TitleElement
+func(c titleConstructor) WithID(id string) func(options ...string)TitleElement{
+	return func(options ...string) TitleElement {
+		return TitleElement{ui.BasicElement{LoadFromStorage(newTitle(id, options...))}}
 	}
 }
 
@@ -4330,6 +4386,58 @@ func(c formConstructor) WithID(id string) func(options ...string)FormElement{
 }
 
 
+
+
+func AddClass(target *ui.Element, classname string) {
+	category := "css"
+	classes, ok := target.Get(category, "class")
+	if ok {
+		c, ok := classes.(ui.String)
+		if !ok {
+			target.Set(category, "class", ui.String(classname))
+			return
+		}
+		sc := string(c)
+		if !strings.Contains(sc, classname) {
+			sc = strings.TrimSpace(sc + " " + classname)
+			target.Set(category, "class", ui.String(sc))
+		}
+		return
+	}
+	target.Set(category, "class", ui.String(classname))
+}
+
+func RemoveClass(target *ui.Element, classname string) {
+	category := "css"
+	classes, ok := target.Get(category, "class")
+	if !ok {
+		return
+	}
+	rc, ok := classes.(ui.String)
+	if !ok {
+		return
+	}
+
+	c := string(rc)
+	c = strings.TrimPrefix(c, classname)
+	c = strings.TrimPrefix(c, " ")
+	c = strings.ReplaceAll(c, classname, " ")
+
+	target.Set(category, "class", ui.String(c))
+}
+
+func Classes(target *ui.Element) []string {
+	category := "css"
+	classes, ok := target.Get(category, "class")
+	if !ok {
+		return nil
+	}
+	c, ok := classes.(ui.String)
+	if !ok {
+		return nil
+	}
+	return strings.Split(string(c), " ")
+}
 
 
 // TODO check that the string is well formatted style

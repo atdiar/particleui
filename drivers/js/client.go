@@ -324,6 +324,15 @@ func isPersisted(e *ui.Element) bool{
 	return ok
 }
 
+var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
+	target := evt.Origin()
+	newtitle:= evt.NewValue().(ui.String)
+
+
+	js.Global().Get("document").Set("title", string(newtitle))
+
+	return false
+})
 
 
 var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
@@ -1161,56 +1170,6 @@ func(v VideoElement) Loop() bool{
 
 
 
-func AddClass(target *ui.Element, classname string) {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if ok {
-		c, ok := classes.(ui.String)
-		if !ok {
-			target.Set(category, "class", ui.String(classname), false)
-			return
-		}
-		sc := string(c)
-		if !strings.Contains(sc, classname) {
-			sc = strings.TrimSpace(sc + " " + classname)
-			target.Set(category, "class", ui.String(sc), false)
-		}
-		return
-	}
-	target.Set(category, "class", ui.String(classname), false)
-}
-
-func RemoveClass(target *ui.Element, classname string) {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if !ok {
-		return
-	}
-	rc, ok := classes.(ui.String)
-	if !ok {
-		return
-	}
-
-	c := string(rc)
-	c = strings.TrimPrefix(c, classname)
-	c = strings.TrimPrefix(c, " ")
-	c = strings.ReplaceAll(c, classname, " ")
-
-	target.Set(category, "class", ui.String(c), false)
-}
-
-func Classes(target *ui.Element) []string {
-	category := "css"
-	classes, ok := target.Get(category, "class")
-	if !ok {
-		return nil
-	}
-	c, ok := classes.(ui.String)
-	if !ok {
-		return nil
-	}
-	return strings.Split(string(c), " ")
-}
 
 func enableClasses(e *ui.Element) *ui.Element {
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
