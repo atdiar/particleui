@@ -48,9 +48,18 @@ var WorkQueue = make(chan func())
 // Goroutines launched from the main thread that need access to the main UI tree must use it.
 // Only a sincgle DOSync must be used within a DoAsync.
 func DoSync(fn func()){
+	ch := make(chan struct{})
 	go func(){
-		WorkQueue <- fn
+		WorkQueue <- newwork(fn,ch)
 	}()
+	<-ch
+}
+
+func newwork(f func(), signalDone chan struct{}) func(){
+	return func(){
+		f()
+		close(signalDone)
+	}
 }
 
 // DoAsync pushes a function onto a goroutine for execution, as long as navigation is still valid. 

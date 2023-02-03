@@ -4,6 +4,7 @@
 package doc
 
 import (
+	"context"
 	"io"
 	"strings"
 	"net/http"
@@ -37,6 +38,11 @@ var (
 	ServeMux *http.ServeMux
 	Server *http.Server = &http.Server{Addr:":8080",Handler:ServeMux}
 	
+	// HTMLHandlerModifier, when not nil, enables to change the behaviour of the request handling.
+	// It corresponds loosely to the ability of adding middleware/endware request handler, by using
+	// request handler composition.
+	// One use-case could be to process http cookies to retrieve info that could be used to customize
+	// Document creation, whcih can be done by changing the DocumentInitializer.
 	HTMLhandlerModifier func(http.Handler)http.Handler
 	renderHTMLhandler http.Handler
 
@@ -104,7 +110,7 @@ func ChangeServer(s *http.Server){
 
 // NewBuilder registers a new document building function. This function should not be called
 // manually afterwards.
-func NewBuilder(f func()Document){
+func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
 	renderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
@@ -121,19 +127,26 @@ func NewBuilder(f func()Document){
 			return
 		}
 
-
 		if d:=GetDocument(); d != nil{
 			d.Delete()
 		}
 		document:= f()
-		router:= ui.GetRouter()
-		route:= r.URL.Path
-		_,routeexist:= router.Match(route)
-		if routeexist != nil{
-			w.WriteHeader(http.StatusNotFound)
-		}
+		
+		go func(){
+			document.ListenAndServe(r.Context())	// launches a new UI thread
+		}() 
+		
 
-		router.GoTo(route)
+		ui.DoSync(func() {
+			router:= ui.GetRouter()
+			route:= r.URL.Path
+			_,routeexist:= router.Match(route)
+			if routeexist != nil{
+				w.WriteHeader(http.StatusNotFound)
+			}
+			router.GoTo(route)
+		})
+		
 		err= document.Render(w)
 		if err != nil{ 
 			switch err{
@@ -149,20 +162,41 @@ func NewBuilder(f func()Document){
 
 
 	// TODO reset global state i.e. ElementStore and Document's BuildOption ?
-	ListenAndServe = func(){
+	return func(ctx context.Context){
 		log.Print("Listening on: "+Server.Addr)
-		if Server.TLSConfig == nil{
-			Server.ListenAndServe()
-		} else{
-			Server.ListenAndServeTLS("","")
-		}		
+		if ctx == nil{
+			ctx = context.Background()
+		}
+		go func(){ // allows for graceful shutdown signaling
+			if Server.TLSConfig == nil{
+				if err:=Server.ListenAndServe(); err!= nil && err != http.ErrServerClosed{
+					log.Fatal(err)
+				}
+			} else{
+				if err:= Server.ListenAndServeTLS("",""); err!= nil && err != http.ErrServerClosed{
+					log.Fatal(err)
+				}
+			}		
+		}()
+
+		for{
+			select{
+			case <-ctx.Done():
+				err:= Server.Shutdown(ctx)
+				if err!= nil{
+					panic(err)
+				}
+			}
+			log.Printf("Server shutdown")
+		}
+		
 	}
 	
 }
 
 
 var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
-	SetTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
+	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
 	return false
 })
 
@@ -215,8 +249,8 @@ func SetInnerHTML(e *ui.Element, innerhtml string) *ui.Element {
 	return e
 }
 
-// SetTextContent sets the textContent of HTML elements.
-func SetTextContent(e *ui.Element, text string) *ui.Element {
+// setTextContent sets the textContent of HTML elements.
+func setTextContent(e *ui.Element, text string) *ui.Element {
 
 	n:= e.Native.(NativeElement).Value
 	f:= n.FirstChild
@@ -584,12 +618,12 @@ func RemoveAttribute(target *ui.Element, name string) {
 
 var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	str := string(evt.NewValue().(ui.String))
-	SetTextContent(evt.Origin(),str)
+	setTextContent(evt.Origin(),str)
 	return false
 })
 
 var paragraphTextHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	SetTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
+	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
 	return false
 })
 
@@ -614,10 +648,10 @@ func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 func (d Document) Render(w io.Writer) error {
-	return html.Render(w, HTMLDocumentNode(d))
+	return html.Render(w, newHTMLDocument(d))
 }
 
-func HTMLDocumentNode(document Document) *html.Node {
+func newHTMLDocument(document Document) *html.Node {
 	doc := document.AsElement()
 	h:= &html.Node{Type: html.DoctypeNode}
 	n:= doc.Native.(NativeElement).Value

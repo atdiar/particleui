@@ -7,6 +7,7 @@
 package doc
 
 import (
+	"context"
 	"encoding/json"
 	//"errors"
 	"log"
@@ -29,9 +30,9 @@ var (
 
 
 // NewBuilder registers a new document building function.
-func NewBuilder(f func()Document){
-	ListenAndServe = func(){
-		f().ListenAndServe()
+func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
+	return  func(ctx context.Context){
+		f().ListenAndServe(ctx)
 	}
 }
 
@@ -521,7 +522,7 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // atribute, the props are loaded from this attribute instead.
 // abstractjs
 func LoadFromStorage(e *ui.Element) *ui.Element {
-	n:= JSValue(e)
+	//n:= JSValue(e) TODO delete this line
 	
 	
 	lb,ok:=e.Get("event","storesynced")

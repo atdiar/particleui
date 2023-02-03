@@ -94,7 +94,7 @@ var AllowTooltip = ui.NewConstructorOption("AllowTooltip", func(target *ui.Eleme
 	// Let's observe the target element which owns the tooltip too so that we can
 	// change the tooltip automatically from there.
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.Set("data", "content", evt.NewValue(), false)
+		e.Set("data", "content", evt.NewValue())
 		return false
 	})
 	target.Watch("tooltip", "content", target, h)

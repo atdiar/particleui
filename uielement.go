@@ -58,7 +58,7 @@ func (e elementStores) Set(store *ElementStore) {
 	e.stores[store.Global.ID] = store
 }
 
-// ElementStore defines a namespace for a list of Element constructors.
+// ElementStore defines a namespace for a list of Element constructors. // TODO Make immutable
 type ElementStore struct {
 	ID  string
 	DocType                  string
