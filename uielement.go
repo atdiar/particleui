@@ -562,7 +562,7 @@ func (e *Element) DispatchEvent(evt Event) bool {
 		if evt.Stopped() {
 			return true
 		}
-
+		evt.SetCurrentTarget(ancestor)
 		done = ancestor.Handle(evt) // Handling deemed finished in user side logic
 		if done || evt.Stopped() {
 			return true
@@ -571,6 +571,7 @@ func (e *Element) DispatchEvent(evt Event) bool {
 
 	// Second phase: we handle the events at target
 	evt.SetPhase(2)
+	evt.SetCurrentTarget(e)
 	done = e.Handle(evt)
 	if done {
 		return true
@@ -586,6 +587,7 @@ func (e *Element) DispatchEvent(evt Event) bool {
 		if evt.Stopped() {
 			return true
 		}
+		evt.SetCurrentTarget(ancestor)
 		done = ancestor.Handle(evt)
 		if done {
 			return true
