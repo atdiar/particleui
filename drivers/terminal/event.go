@@ -74,9 +74,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				var done bool
 				rawevt := newInputEvent(event)
 				evt := ui.NewEvent("input",false,true,listener,listener,rawevt,rawevt.Value())
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					done = listener.Handle(evt)
+					done = listener.DispatchEvent(evt)
 				})
 				if done{
 					return nil
@@ -93,9 +93,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			listener.Native.(NativeElement).Value.(*tview.Box).SetBlurFunc(func(){
 				defer apprecovery()
 				evt := ui.NewEvent("blur",false,true,listener,listener,nil,nil)
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					listener.Handle(evt)
+					listener.DispatchEvent(evt)
 				})
 			})
 
@@ -112,9 +112,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			listener.Native.(NativeElement).Value.(*tview.Box).SetFocusFunc(func(){
 				defer apprecovery()
 				evt := ui.NewEvent("focus",false,true,listener,listener,nil,nil)
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					listener.Handle(evt)
+					listener.DispatchEvent(evt)
 				})
 			})
 			if listener.NativeEventUnlisteners.List == nil {
@@ -131,10 +131,10 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				defer apprecovery()
 				n:= NativeDrawEvent{screen,x,y,width,height}
 				evt := ui.NewEvent("draw",false,true,listener,listener,n,nil)
-				evt.SetPhase(2)
+				
 				var ix,iy,iw,ih int
 				ui.DoSync(func(){
-					listener.Handle(evt)
+					listener.DispatchEvent(evt)
 					ix,iy,iw,ih = listener.Native.(NativeElement).Value.(*tview.Box).GetInnerRect()
 				})
 				return ix,iy,iw,ih
@@ -155,16 +155,17 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				k.(*tview.Button).SetExitFunc(func(key tcell.Key){
 					defer apprecovery()
 					evt := ui.NewEvent("exit",false,true,listener,listener,key,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.(*tview.Button).SetExitFunc(nil)
-					})
+				})
+
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.(*tview.Button).SetExitFunc(nil)
 				})
 			}
 		}
@@ -176,95 +177,102 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				k.SetSelectedFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("selected",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					}) 
+					 
+				})
+
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
 				})
 			case *tview.DropDown:
 				k.SetSelectedFunc(func(text string, index int){
 					defer apprecovery()
 					rawevt:=newDropDownSelectedEvent(text,index)
 					evt := ui.NewEvent("selected",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					}) 
+					
 				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
+				}) 
 			case *tview.List:
 				k.SetSelectedFunc(func(index int, mainText string, secondaryText string, shorcut rune){
 					defer apprecovery()
 					rawevt:=newListSelectedEvent(index,mainText,secondaryText,shorcut)
 					evt := ui.NewEvent("selected",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					}) 
+					
 				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
+				}) 
 			case *tview.Table:
 				k.SetSelectedFunc(func(row int, column int){
 					defer apprecovery()
 					rawevt:=newTableSelectedEvent(row,column)
 					evt := ui.NewEvent("selected",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					}) 
+					 
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
 				})
 			case *tview.TreeView:
 				k.SetSelectedFunc(func(node *tview.TreeNode){
 					defer apprecovery()
 					rawevt:=newTreeViewSelectedEvent(node)
 					evt := ui.NewEvent("selected",false,true,listener,listener,rawevt,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
 				})
 			case *tview.TreeNode:
 				k.SetSelectedFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("selected",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetSelectedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetSelectedFunc(nil)
 				})
 			}
 		}
@@ -277,96 +285,102 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					defer apprecovery()
 					rawevt:=newDoneEvent(key,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.List:
 				k.SetDoneFunc(func(){
 					defer apprecovery()
 					rawevt:=newDoneEvent(tcell.KeyESC,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.Table:
 				k.SetDoneFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newDoneEvent(key,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.TreeView:
 				k.SetDoneFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newDoneEvent(key,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.DropDown:
 				k.SetDoneFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newDoneEvent(key,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.TextView:
 				k.SetDoneFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newDoneEvent(key,-1,"")
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			case *tview.Modal:
 				k.SetDoneFunc(func(buttonIndex int, buttonLabel string){
@@ -376,16 +390,17 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 						rawevt.Key = tcell.KeyEscape
 					}
 					evt := ui.NewEvent("done",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetDoneFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetDoneFunc(nil)
 				})
 			}
 		}
@@ -397,92 +412,98 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				k.SetChangedFunc(func(text string){
 					defer apprecovery()
 					evt := ui.NewEvent("changed",false,true,listener,listener,text,ui.String(text))
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 			case *tview.TextView:
 				k.SetChangedFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("changed",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 			case *tview.Checkbox:
 				k.SetChangedFunc(func(checked bool){
 					defer apprecovery()
 					evt := ui.NewEvent("changed",false,true,listener,listener,checked,ui.Bool(checked))
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 			case *tview.List:
 				k.SetChangedFunc(func(index int,mainText,secondaryText string,shortcut rune){
 					defer apprecovery()
 					rawevt:=newListChangedEvent(index,mainText,secondaryText,shortcut)
 					evt := ui.NewEvent("changed",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 			case *tview.Pages:
 				k.SetChangedFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("changed",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 			case *tview.TextArea:
 				k.SetChangedFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("changed",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetChangedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetChangedFunc(nil)
 				})
 
 			}
@@ -495,17 +516,17 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				defer apprecovery()
 				rawevt:=newInputFieldAutocompletedEvent(text,index,source)
 				evt := ui.NewEvent("autocompleted",false,true,listener,listener,rawevt,rawevt.Value())
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					listener.Handle(evt)
-				})
-				if listener.NativeEventUnlisteners.List == nil {
-					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-				}
-				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-					k.SetAutocompletedFunc(nil)
+					listener.DispatchEvent(evt)
 				})
 				return true
+			})
+			if listener.NativeEventUnlisteners.List == nil {
+				listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+			}
+			listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+				k.SetAutocompletedFunc(nil)
 			})
 		}
 
@@ -516,16 +537,16 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				defer apprecovery()
 				rawevt:=newTableSelectionChangedEvent(start,end)
 				evt := ui.NewEvent("selectionchanged",false,true,listener,listener,rawevt,rawevt.Value())
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					listener.Handle(evt)
+					listener.DispatchEvent(evt)
 				})
-				if listener.NativeEventUnlisteners.List == nil {
-					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-				}
-				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-					k.SetSelectionChangedFunc(nil)
-				})
+			})
+			if listener.NativeEventUnlisteners.List == nil {
+				listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+			}
+			listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+				k.SetSelectionChangedFunc(nil)
 			})
 		}
 
@@ -534,19 +555,18 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			k := k.(*tview.TableCell)
 			k.SetClickedFunc(func() bool{
 				defer apprecovery()
-				var done bool
 				evt := ui.NewEvent("clicked",false,true,listener,listener,nil,nil)
-				evt.SetPhase(2)
+				
 				ui.DoSync(func(){
-					done = listener.Handle(evt)
+					listener.DispatchEvent(evt)
 				})
-				if listener.NativeEventUnlisteners.List == nil {
-					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-				}
-				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-					k.SetClickedFunc(nil)
-				})
-				return done
+				return false
+			})
+			if listener.NativeEventUnlisteners.List == nil {
+				listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+			}
+			listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+				k.SetClickedFunc(nil)
 			})
 		}
 
@@ -556,18 +576,18 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				kk.SetCancelFunc(func(){
 					defer apprecovery()
 					evt := ui.NewEvent("cancel",false,true,listener,listener,nil,nil)
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						kk.SetCancelFunc(nil)
-					})
-					return 
+					
 				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					kk.SetCancelFunc(nil)
+				}) 
 			}
 		}
 
@@ -579,96 +599,102 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					}) 
+					
 				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
+				}) 
 			case *tview.Checkbox:
 				k.SetFinishedFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
 				})
 			case *tview.DropDown:
 				k.SetFinishedFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
 				})
 			case *tview.Image:
 				k.SetFinishedFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
 				})
 			case *tview.InputField:
 				k.SetFinishedFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
 				})
 			case *tview.TextView:
 				k.SetFinishedFunc(func(key tcell.Key){
 					defer apprecovery()
 					rawevt:=newFinishedEvent(key)
 					evt := ui.NewEvent("finished",false,true,listener,listener,rawevt,rawevt.Value())
-					evt.SetPhase(2)
+					
 					ui.DoSync(func(){
-						listener.Handle(evt)
+						listener.DispatchEvent(evt)
 					})
-					if listener.NativeEventUnlisteners.List == nil {
-						listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-					}
-					listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-						k.SetFinishedFunc(nil)
-					})
+					
+				})
+				if listener.NativeEventUnlisteners.List == nil {
+					listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+				}
+				listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+					k.SetFinishedFunc(nil)
 				})
 			}
 			

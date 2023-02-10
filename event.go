@@ -22,6 +22,22 @@ type Event interface {
 	Native() interface{} // returns the native event object
 }
 
+type nativeEventObject struct{
+	Event
+}
+
+func(nativeEventObject) DispatchNative(){}
+
+func MakeDispatchNative(e Event) nativeEventObject{
+	return nativeEventObject{e}
+}
+
+// DispatchNative is the interface implemented by events that should be dispatched on the native
+// platform.
+type DispatchNative interface{
+	DispatchNative()
+}
+
 type eventObject struct {
 	typ           string
 	target        *Element

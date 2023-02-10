@@ -537,20 +537,22 @@ func (e *Element) Handle(evt Event) bool {
 //
 // Events are propagated following the model set by web browser DOM events:
 // 3 phases being the capture phase, at-target and then bubbling up if allowed.
-func (e *Element) DispatchEvent(evt Event) *Element {
+func (e *Element) DispatchEvent(evt Event) bool {
 	native:= NativeDispatch
 	if !e.Mounted() {
 		panic("FAILURE: element notmounted? " + e.ID)
 	}
 
 	if native != nil {
-		native(evt)
-		return e
+		if _,ok:= evt.(DispatchNative);ok{
+			native(evt)
+			return true
+		}
 	}
 
 	if e.path == nil {
 		log.Print("Error: Element path does not exist (yet).")
-		return e
+		return true
 	}
 
 	// First we apply the capturing event handlers PHASE 1
@@ -558,12 +560,12 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 	var done bool
 	for _, ancestor := range e.path.List {
 		if evt.Stopped() {
-			return e
+			return true
 		}
 
 		done = ancestor.Handle(evt) // Handling deemed finished in user side logic
 		if done || evt.Stopped() {
-			return e
+			return true
 		}
 	}
 
@@ -571,25 +573,25 @@ func (e *Element) DispatchEvent(evt Event) *Element {
 	evt.SetPhase(2)
 	done = e.Handle(evt)
 	if done {
-		return e
+		return true
 	}
 
 	// Third phase : bubbling
 	if !evt.Bubbles() {
-		return e
+		return true
 	}
 	evt.SetPhase(3)
 	for k := len(e.path.List) - 1; k >= 0; k-- {
 		ancestor := e.path.List[k]
 		if evt.Stopped() {
-			return e
+			return true
 		}
 		done = ancestor.Handle(evt)
 		if done {
-			return e
+			return true
 		}
 	}
-	return e
+	return done
 }
 
 
