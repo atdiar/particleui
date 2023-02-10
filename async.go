@@ -333,6 +333,8 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 			return
 		}
 		defer res.Body.Close()
+		/* TODO that should be handled by the responsehandler
+		
 		if res.StatusCode < http.StatusOK && res.StatusCode >= 300{
 			DoSync(func() {
 				if prefetching{
@@ -343,7 +345,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 				}	
 			})
 			return
-		}
+		}*/
 		
 		if responsehandler == nil{
 			return

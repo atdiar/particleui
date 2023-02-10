@@ -8,7 +8,7 @@ import(
 
 	"github.com/rivo/tview"
 	"github.com/atdiar/particleui"
-	//"github.com/gdamore/tcell/v2"
+	"github.com/gdamore/tcell/v2"
 )
 
 var (
@@ -18,7 +18,6 @@ var (
 	Elements = ui.NewElementStore("default", DOCTYPE)
 	
 
-	mainDocument *Document
 
 
 	// DocumentInitializer is a Document specific modifier that is called on creation of a 
@@ -41,20 +40,20 @@ var (
 // On change, the terminal view would be redrawn (maybe some optimizations can happen if needed)
 
 
-// Window is a type that represents a Terminal window
-type Window struct {
+// ApplicationElement is a type that represents a Terminal application
+type ApplicationElement struct {
 	UIElement ui.BasicElement
 }
 
-func (w Window) AsBasicElement() ui.BasicElement {
+func (w ApplicationElement) AsBasicElement() ui.BasicElement {
 	return w.UIElement
 }
 
-func (w Window) AsElement() *ui.Element {
+func (w ApplicationElement) AsElement() *ui.Element {
 	return w.UIElement.AsElement()
 }
 
-func(w Window) appRunning() bool{
+func(w ApplicationElement) running() bool{
 	var ok bool
 	ui.DoSync(func() {
 		_,ok= w.UIElement.AsElement().Get("event","running")
@@ -62,77 +61,203 @@ func(w Window) appRunning() bool{
 	return ok
 }
 
-
-func(w Window) NativeElement() *tview.Application{
-	return w.AsElement().Native.(applicationWrapper).Value
+func(w ApplicationElement) Draw(){
+	w.NativeElement().Draw()
 }
 
-// Run calls for the terminal app startup after having triggered a "running" event on the window.
-func(w Window) Run(){
+func(w ApplicationElement) GetAfterDrawFunc() func(screen tcell.Screen){
+	var f func(tcell.Screen)
+	w.QueueUpdate(func(){
+		f = w.NativeElement().GetAfterDrawFunc()
+	})
+	return f
+}
+
+func(w ApplicationElement) GetBeforeDrawFunc() (f func(screen tcell.Screen) bool){
+	w.QueueUpdate(func(){
+		f = w.NativeElement().GetBeforeDrawFunc()
+	})
+	return f
+}
+
+func(w ApplicationElement) GetFocus() tview.Primitive{
+	var p tview.Primitive
+	w.QueueUpdate(func(){
+		p = w.NativeElement().GetFocus()
+	})
+	return p
+}
+
+func(w ApplicationElement) GetInputCapture() (f func(*tcell.EventKey)*tcell.EventKey){
+	w.QueueUpdate(func(){
+		f = w.NativeElement().GetInputCapture()
+	})
+	return f
+}
+
+func(w ApplicationElement) GetMouseCapture() (f func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction)){
+	w.QueueUpdate(func(){
+		f = w.NativeElement().GetMouseCapture()
+	})
+	return f
+}
+
+func(w ApplicationElement) ResizeToFullScreen(e ui.AnyElement){
+	w.QueueUpdate(func(){
+		w.NativeElement().ResizeToFullScreen(e.AsElement().Native.(NativeElement).Value.(tview.Primitive))
+	})
+}
+
+func(w ApplicationElement) NativeElement() *tview.Application{
+	return w.AsElement().Native.(NativeElement).Value.(*tview.Application)
+}
+
+// Run calls for the terminal app startup after having triggered a "running" event on the application.
+func(w ApplicationElement) Run(){
 	ui.DoSync(func() {
 		w.UIElement.AsElement().TriggerEvent("running")
 	})
 	w.NativeElement().Run()
 }
 
+// Stop stops the application, causing Run() to return. 
+func(w ApplicationElement) Stop(){
+	w.QueueUpdate(func(){
+		w.NativeElement().Stop()
+	})
+}
 
-var newWindow= Elements.NewConstructor("window", func(id string) *ui.Element {
+// Suspend temporarily suspends the application by exiting terminal UI mode and invoking the provided 
+// function "f". When "f" returns, terminal UI mode is entered again and the application resumes.
+//
+// A return value of true indicates that the application was suspended and "f" was called. If false 
+// is returned, the application was already suspended, terminal UI mode was not exited, and "f" 
+// was not called. 
+func(w ApplicationElement) Suspend(f func())bool{
+	var b bool
+	w.QueueUpdate(func(){
+		b = w.NativeElement().Suspend(f)
+	})
+	return b
+}
+
+// Sync forces a full re-sync of the screen buffer with the actual screen during the next event cycle. 
+// This is useful for when the terminal screen is corrupted so you may want to offer your users a 
+// keyboard shortcut to refresh the screen. 
+func(w ApplicationElement) Sync(){
+	w.QueueUpdate(func(){
+		w.NativeElement().Sync()
+	})
+}
+
+
+var newApplication= Elements.NewConstructor("application", func(id string) *ui.Element {
 	e := ui.NewElement(id, DOCTYPE)
 	e.Set("event", "mounted", ui.Bool(true))
 	e.Set("event", "mountable", ui.Bool(true))
 
 	e.ElementStore = Elements
 	e.Parent = e
-	e.Native = newApplicationWrapper(tview.NewApplication())
+	e.Native = NewNativeElementWrapper(tview.NewApplication())
 
 	return e
 })
 
-
-
-func window(options ...string) Window {
-	e:= newWindow("window", options...)
-	return Window{ui.BasicElement{LoadFromStorage(e)}}
+type appModifier struct{}
+func(m appModifier) AsApplicationElement(e *ui.Element) ApplicationElement{
+	return ApplicationElement{ui.BasicElement{e}}
 }
 
-func GetWindow() Window {
-	w := Elements.GetByID("window")
+func(m appModifier) EnableMNouse(enable bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().EnableMouse(enable)
+		})
+		return e
+	}
+}
+
+func(m appModifier) SetAfterDrawFunc(handler func(screen tcell.Screen)) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetAfterDrawFunc(handler)
+		})
+		return e
+	}
+}
+
+func(m appModifier) SetBeforeDrawFunc(handler func(screen tcell.Screen)bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetBeforeDrawFunc(handler)
+		})
+		return e
+	}
+}
+
+func(m appModifier) SetFocus(p *ui.Element) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetFocus(p.Native.(NativeElement).Value.(tview.Primitive))
+		})
+		return e
+	}
+}
+
+func(m appModifier) SetInputCapture(capture func(event *tcell.EventKey)*tcell.EventKey) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetInputCapture(capture)
+		})
+		return e
+	}
+}
+
+
+func(m appModifier) SetMouseCapture(capture func(event *tcell.EventMouse, actrion tview.MouseAction) (*tcell.EventMouse,tview.MouseAction)) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetMouseCapture(capture)
+		})
+		return e
+	}
+}
+
+func(m appModifier) SetRoot(p *ui.Element, fullscreen bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		GetApplication().QueueUpdate(func(){
+			m.AsApplicationElement(e).NativeElement().SetRoot(p.Native.(NativeElement).Value.(tview.Primitive), fullscreen)
+		})
+		return e
+	}
+}
+
+
+func application(options ...string) ApplicationElement {
+	e:= newApplication("term-application", options...)
+	return ApplicationElement{ui.BasicElement{LoadFromStorage(e)}}
+}
+
+func GetApplication() ApplicationElement {
+	w := Elements.GetByID("term-application")
 	if w ==nil{
-		return window()
+		return application()
 	}
 	
-	return Window{ui.BasicElement{w}}
+	return ApplicationElement{ui.BasicElement{w}}
 }
-
-type applicationWrapper struct{
-	Value *tview.Application
-}
-func newApplicationWrapper(a *tview.Application) applicationWrapper{
-	return applicationWrapper{a}
-}
-
-func (n applicationWrapper) AppendChild(child *ui.Element) {}
-
-func (n applicationWrapper) PrependChild(child *ui.Element) {}
-
-func (n applicationWrapper) InsertChild(child *ui.Element, index int) {}
-
-func (n applicationWrapper) ReplaceChild(old *ui.Element, new *ui.Element) {}
-
-func (n applicationWrapper) RemoveChild(child *ui.Element) {}
-
-func (n applicationWrapper) SetChildren(children ...*ui.Element) {}
 
 // NativeElement defines a wrapper around a js.Value that implements the
 // ui.NativeElementWrapper interface.
 type NativeElement struct {
-	Value tview.Primitive
+	Value any
 }
 
-func NewNativeElementWrapper(v tview.Primitive) NativeElement {
+func NewNativeElementWrapper(v any) NativeElement {
 	return NativeElement{v}
 }
 
+// TODO implement these methods by switching on the type of the Native Element
 func (n NativeElement) AppendChild(child *ui.Element) {}
 
 func (n NativeElement) PrependChild(child *ui.Element) {}
@@ -217,7 +342,7 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 		go func(){
 			document.ListenAndServe(ctx) // launches the UI thread
 		}()
-		GetWindow().Run()
+		GetApplication().Run()
 		
 	}
 }
@@ -231,8 +356,8 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 // Note: the dual is that native event callbacks  should wrap all their UI tree mutating functions in 
 // a siungle ui.DoSync. This is automatically done when registering an event handle via 
 // *ui.Element.AddEventListener for instance.
-func (w Window) QueueUpdate(f func()){
-	if !w.appRunning(){
+func (w ApplicationElement) QueueUpdate(f func()){
+	if !w.running(){
 		f()
 		return
 	}
@@ -241,8 +366,8 @@ func (w Window) QueueUpdate(f func()){
 
 // QueueUpdateDraw is the same as QueueuUpdate with the difference that it refreshes the screen.
 // It might be the more sensible option depending on the granularity of the UI change.
-func (w Window) QueueUpdateDraw(f func()){
-	if !w.appRunning(){
+func (w ApplicationElement) QueueUpdateDraw(f func()){
+	if !w.running(){
 		f()
 		w.NativeElement().Draw()
 		return
@@ -268,13 +393,12 @@ func(d Document) Delete(){ // TODO check for dangling references
 		e:= d.AsElement()
 		ui.CancelNav()
 		e.DeleteChildren()
-		mainDocument = nil
 		Elements.Delete(e.ID)
 	})
 }
 
 func (d Document) NativeElement() tview.Primitive{
-	return d.AsElement().Native.(NativeElement).Value
+	return d.AsElement().Native.(NativeElement).Value.(tview.Primitive)
 }
 
 
@@ -288,14 +412,14 @@ func (d Document) NativeElement() tview.Primitive{
 //
 // By construction, this is a blocking function.
 func(d Document) ListenAndServe(ctx context.Context){
-	if mainDocument ==nil{
-		panic("document is missing")
-	}
-	ui.GetRouter().ListenAndServe(ctx,"", GetWindow())
+	ui.GetRouter().ListenAndServe(ctx,"", GetApplication())
 }
 
-func GetDocument() *Document{
-	return mainDocument
+func GetDocument(e *ui.Element) *Document{
+	if e.Root() == nil{
+		return nil
+	}
+	return &Document{ui.BasicElement{e.Root()}}
 }
 
 var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
@@ -305,7 +429,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 	root:= tview.NewBox()
 	e.Native = NewNativeElementWrapper(root)
 
-	w:= GetWindow()
+	w:= GetApplication()
 
 	err := w.NativeElement().SetRoot(root, true)
 	if err!= nil{
@@ -334,7 +458,6 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 func NewDocument(id string, options ...string) Document {
 	d:= Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
 	d = DocumentInitializer(d)
-	mainDocument = &d
 	return d
 }
 
@@ -346,6 +469,194 @@ type BoxElement struct{
 
 func(e BoxElement) NativeElement() *tview.Box{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Box)
+}
+
+func(e BoxElement) Blur(){
+	GetApplication().QueueUpdateDraw(func() {
+		e.NativeElement().Blur()
+	})
+}
+
+func(e BoxElement) Focus(delegate func(p tview.Primitive)){
+	GetApplication().QueueUpdateDraw(func() {
+		e.NativeElement().Focus(delegate)
+	})
+}
+
+func(e BoxElement) GetBakcgroundColor() tcell.Color{
+	var c tcell.Color
+	GetApplication().QueueUpdate(func() {
+		c= e.NativeElement().GetBackgroundColor()
+	})
+	return c
+}
+
+func(e BoxElement) GetBorderAttributes() tcell.AttrMask{
+	var c tcell.AttrMask
+	GetApplication().QueueUpdate(func() {
+		c= e.NativeElement().GetBorderAttributes()
+	})
+	return c
+}
+
+func(e BoxElement) GetBorderColor() tcell.Color{
+	var c tcell.Color
+	GetApplication().QueueUpdate(func() {
+		c= e.NativeElement().GetBorderColor()
+	})
+	return c
+}
+
+func(e BoxElement) GetDrawFunc() (f func(screen tcell.Screen,x,y,width,height int)(int,int,int,int)){
+	GetApplication().QueueUpdate(func() {
+		f= e.NativeElement().GetDrawFunc()
+	})
+	return f
+}
+
+func (e BoxElement) GetInnerRect() (x0, y0, x1, y1 int) {
+	GetApplication().QueueUpdate(func() {
+		x0, y0, x1, y1 = e.NativeElement().GetInnerRect()
+	})
+	return x0, y0, x1, y1
+}
+
+
+
+// GetInputCapture returns the function that is called when the user presses a key.
+func(e BoxElement) GetInputCapture() func(event *tcell.EventKey) *tcell.EventKey{
+	var f func(event *tcell.EventKey) *tcell.EventKey
+	GetApplication().QueueUpdate(func() {
+		f= e.NativeElement().GetInputCapture()
+	})
+	return f
+}
+
+// GetMouseCapture returns the function that is called when the user presses a mouse button.
+func(e BoxElement) GetMouseCapture() func(actiion tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse){
+	var f func(actiion tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse)
+	GetApplication().QueueUpdate(func() {
+		f= e.NativeElement().GetMouseCapture()
+	})
+	return f
+}
+
+func (e BoxElement) GetRect() (x0, y0, x1, y1 int) {
+	GetApplication().QueueUpdate(func() {
+		x0, y0, x1, y1 = e.NativeElement().GetRect()
+	})
+	return x0, y0, x1, y1
+}
+
+func (e BoxElement) GetTitle() string {
+	var t string
+	GetApplication().QueueUpdate(func() {
+		t = e.NativeElement().GetTitle()
+	})
+	return t
+}
+
+func (e BoxElement) HasFocus() bool {
+	var t bool
+	GetApplication().QueueUpdate(func() {
+		t = e.NativeElement().HasFocus()
+	})
+	return t
+}
+
+func (e BoxElement) InRect(x,y int) bool {
+	var t bool
+	GetApplication().QueueUpdate(func() {
+		t = e.NativeElement().InRect(x,y)
+	})
+	return t
+}
+
+func(e BoxElement) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	var f func(event *tcell.EventKey, setFocus func(p tview.Primitive))
+	GetApplication().QueueUpdate(func() {
+		f= e.NativeElement().InputHandler()
+	})
+	return f
+}
+
+func(e BoxElement) MouseHandler() (f func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consume bool, capture tview.Primitive)){
+	GetApplication().QueueUpdate(func() {
+		f= e.NativeElement().MouseHandler()
+	})
+	return f
+}
+
+
+
+type boxModifier struct{}
+var BoxModifier boxModifier
+
+func (b boxModifier) AsBoxElement(e *ui.Element) BoxElement{
+	return BoxElement{ui.BasicElement{e}}
+}
+
+func(m boxModifier) SetBackgroundColor(color tcell.Color) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdateDraw(func() {
+			m.AsBoxElement(e).NativeElement().SetBackgroundColor(color)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetBorder(border bool) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetBorder(border)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetBorderColor(color tcell.Color) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetBorderColor(color)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetBorderAttributes(attributes tcell.AttrMask) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetBorderAttributes(attributes)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetTitle(title string) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetTitle(title)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetTitleAlign(align int) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetTitleAlign(align)
+		})
+		return e
+	}
+}
+
+func(m boxModifier) SetTitleColor(color tcell.Color) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		GetApplication().QueueUpdate(func() {
+			m.AsBoxElement(e).NativeElement().SetTitleColor(color)
+		})
+		return e
+	}
 }
 
 
@@ -504,7 +815,7 @@ func(m pagesModifier) AddPage(name string, elements ...ui.AnyElement) func(*ui.E
 			p:= PagesElement{ui.BasicElement{evt.Origin()}}.NativeElement()
 			pname:= string(evt.NewValue().(ui.String))
 			
-			GetWindow().QueueUpdateDraw(func(){
+			GetApplication().QueueUpdateDraw(func(){
 				if p.HasPage(pname){
 					p.SwitchToPage(pname)
 				} else{
@@ -524,7 +835,7 @@ func(m pagesModifier) AddPage(name string, elements ...ui.AnyElement) func(*ui.E
 
 func(m pagesModifier) HidePage(name string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		GetWindow().QueueUpdateDraw(func(){
+		GetApplication().QueueUpdateDraw(func(){
 			m.AsPagesElement(e).NativeElement().HidePage(name)
 		})
 		return e
@@ -533,7 +844,7 @@ func(m pagesModifier) HidePage(name string) func(*ui.Element)*ui.Element{
 
 func(m pagesModifier) ShowPage(name string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		GetWindow().QueueUpdateDraw(func(){
+		GetApplication().QueueUpdateDraw(func(){
 			m.AsPagesElement(e).NativeElement().ShowPage(name)
 		})
 		return e
@@ -544,7 +855,7 @@ func(m pagesModifier) ShowPage(name string) func(*ui.Element)*ui.Element{
 // It has not effect if part of a layout (flex or grid)
 func(m pagesModifier) SetRect(x,y,width,height int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		GetWindow().QueueUpdateDraw(func(){
+		GetApplication().QueueUpdateDraw(func(){
 			tview.Primitive(m.AsPagesElement(e).NativeElement()).SetRect(x,y,width,height)
 		})
 		return e
