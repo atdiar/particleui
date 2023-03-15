@@ -16,7 +16,7 @@ func defaultAnnouncer() DivElement{
 	SetInlineCSS(a.AsElement(),"clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; overflow:hidden; position:absolute;white-space:nowrap;width:1px;")
 
 	a.AsElement().Watch("event","mounted",a,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		w:= GetWindow().AsElement()
+		w:= GetDocument(evt.Origin()).Window().AsElement()
 		evt.Origin().Watch("ui","title",w,ui.NewMutationHandler(func(tevt ui.MutationEvent)bool{
 			title:= string(tevt.NewValue().(ui.String))
 			DivElement{ui.BasicElement{evt.Origin()}}.SetText(title)

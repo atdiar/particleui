@@ -132,24 +132,20 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			v := js.ValueOf(categories)
 			store.Set(element.ID, v)
 		}
-		proptype := "Local"
 
 		if !propertyExists || !indexed {
 			props := make([]interface{}, 0, 4)
 			c, ok := element.Properties.Categories[category]
 			if !ok {
-				props = append(props, proptype+"/"+propname)
+				props = append(props, propname)
 				v := js.ValueOf(props)
 				store.Set(element.ID+"/"+category, v)
 			} else {
-				for k := range c.Default {
-					props = append(props, "Default/"+k)
-				}
 				for k := range c.Local {
-					props = append(props, "Local/"+k)
+					props = append(props, k)
 				}
 
-				props = append(props, proptype+"/"+propname)
+				props = append(props, propname)
 				// log.Print("all props stored...", props) // DEBUG
 				v := js.ValueOf(props)
 				store.Set(element.ID+"/"+category, v)
@@ -158,7 +154,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 		item := value.RawValue()
 		v := stringify(item)
 		store.Set(element.ID+"/"+category+"/"+propname, js.ValueOf(v))
-		element.Set("event","storesynced",ui.Bool(false))
+		element.TriggerEvent("storesynced",ui.Bool(false))
 		return
 	}
 }
@@ -201,9 +197,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				// let's retrieve the propname (it is suffixed by the proptype)
 				// then we can retrieve the value
 				// log.Print("debug...", category, property) // DEBUG
-				proptypename := strings.Split(property, "/")
-				proptype := proptypename[0]
-				propname := proptypename[1]
+				propname := property
 				jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
 				if ok {					
 					var rawvaluemapstring string
@@ -218,7 +212,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 						return err
 					}
 					
-					ui.LoadProperty(e, category, propname, proptype, ui.Object(rawvalue).Value())
+					ui.LoadProperty(e, category, propname, ui.Object(rawvalue).Value())
 					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
@@ -289,7 +283,10 @@ var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e
 	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		ClearFromStorage(evt.Origin())
 		if e.Native != nil{
-			j:= JSValue(e)
+			j,ok:= JSValue(e)
+			if !ok{
+				return false
+			}
 			if j.Truthy(){
 				j.Call("remove") // abstractjs
 			}
@@ -326,14 +323,19 @@ func isPersisted(e *ui.Element) bool{
 }
 
 var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
-	target := evt.Origin()
-	newtitle:= evt.NewValue().(ui.String)
-
-
-	js.Global().Get("document").Set("title", string(newtitle))
-
+	SetTextContent(evt.Origin(),evt.NewValue().(ui.String).String())
 	return false
 })
+
+func SetTextContent(e *ui.Element, text string) {
+	if e.Native != nil {
+		nat, ok := e.Native.(NativeElement)
+		if !ok {
+			panic("trying to set text content on a non-DOM element")
+		}
+		nat.Value.Set("textContent", string(text))
+	}
+}
 
 
 var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
@@ -357,7 +359,102 @@ var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	return false
 })
 
-func NewNativeElementIfAbsent(id string, tag string) (ui.NativeElement,bool){
+
+// TODO
+// it also recovers the mutationtrace
+func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRStateNodeID string) bool{
+	if !document.Truthy(){
+		return false
+	}
+	//  get native document status by looking for the ssr hint encoded in the page (data attribute)
+	// the data attribute should be removed once the document state is replayed.
+	statenode:= document.Call("getElementById",SSRStateNodeID )
+	if !statenode.Truthy(){
+		// TODO panicking here but probably should defer to client side rendering
+		panic("fw err: failure to retrieve SSR trace. node is absent")
+	}
+	state:= statenode.Get("textContent").String()
+	v,err:= DeserializeStateHistory(state)
+	if err != nil{
+		panic(err)
+	}
+	root.Set("internals","mutationtrace",v)	
+	root.WatchEvent("mutationreplayed",root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		statenode.Call("remove")
+		return false
+	}))
+
+	return true
+}
+
+func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
+	id:= e.ID
+	if e.IsRoot(){
+		//
+		if  nativeDocumentAlreadyRendered(e,js.Global().Get("document"), id + SSRStateSuffix){
+			e.ElementStore.EnableMutationReplay()
+			e.WatchEvent("mutationreplayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
+				evt.Origin().ElementStore.MutationReplay = false
+				return false
+			}))
+		}
+	}
+	
+	if e.ElementStore.MutationReplay{
+		e.WatchEvent("mutationreplayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+
+			if tag == "window"{
+				wd := js.Global().Get("document").Get("defaultView")
+				if !wd.Truthy() {
+					panic("unable to access windows")
+				}
+				evt.Origin().Native = NewNativeElementWrapper(wd)
+			}
+		
+			if tag == "html"{
+				root:= js.Global().Get("document").Call("getElementById",id)
+				if !root.Truthy(){
+					root = js.Global().Get("document").Get("documentElement")
+					if !root.Truthy() {
+						panic("failed to instantiate root element for the document")
+					}
+				}
+				evt.Origin().Native = NewNativeElementWrapper(root)
+			}
+		
+			if tag == "body"{
+				element:= js.Global().Get("document").Call("getElementById",id)
+				if !element.Truthy(){
+					element= js.Global().Get("document").Get(tag)
+					if !element.Truthy(){
+						element= js.Global().Get("document").Call("createElement",tag)
+					}
+				}
+				evt.Origin().Native = NewNativeElementWrapper(element)
+			}
+		
+			if tag == "head"{
+				element:= js.Global().Get("document").Call("getElementById",id)
+				if !element.Truthy(){
+					element= js.Global().Get("document").Get(tag)
+					if !element.Truthy(){
+						element= js.Global().Get("document").Call("createElement",tag)
+					}
+				}
+				evt.Origin().Native = NewNativeElementWrapper(element)
+			}
+		
+			element:= js.Global().Get("document").Call("getElementById",id)
+			if !element.Truthy(){
+				element= js.Global().Get("document").Call("createElement",tag)
+			}
+			evt.Origin().Native = NewNativeElementWrapper(element) 
+				
+			return false
+
+		}).RunOnce())
+		return nil,false
+	}
 	if tag == "window"{
 		wd := js.Global().Get("document").Get("defaultView")
 		if !wd.Truthy() {
@@ -500,19 +597,22 @@ func (n NativeElement) SetChildren(children ...*ui.Element) {
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as
 // argument.
-func JSValue(el ui.AnyElement) js.Value { // TODO  unexport
+func JSValue(el ui.AnyElement) (js.Value,bool) { // TODO  unexport
 	e:= el.AsElement()
 	n, ok := e.Native.(NativeElement)
 	if !ok {
-		DEBUG(e.ID)
+		return js.Value{},ok
 	}
-	return n.Value
+	return n.Value, true
 }
 
 // SetInnerHTML sets the innerHTML property of HTML elements.
 // Please note that it is unsafe to sets client submittd HTML inputs.
 func SetInnerHTML(e *ui.Element, html string) *ui.Element {
-	jsv := JSValue(e)
+	jsv,ok := JSValue(e)
+	if !ok{
+		return e
+	}
 	jsv.Set("innerHTML", html)
 	return e
 } // abstractjs
@@ -579,55 +679,6 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 	return e
 }
 
-func recoverStateHistory() {
-	d:= GetDocument()
-	e:= d.AsElement()
-	n:= e.Native.(NativeElement).Value
-	hydrate:= n.Call("hasAttribute",HydrationAttrName).Bool()
-	if hydrate{
-		statenode := js.Global().Call("getElementById",d.ID+ SSRStateSuffix)
-		if statenode.Truthy(){
-			state:= statenode.Get("textContent").String()
-			v,err:= DeserializeStateHistory(state)
-			if err != nil{
-				return
-			}
-			e.Set("internals","globalstatehistory",v)
-			e.Watch("navigation","ready",e,ui.NewMUtationHandler(func(evt ui.MutationEvent)bool{
-				disableNavigation:= ui.NewMutationHandler(func(event ui.MutationEvent)bool{
-					ui.CancelNav()
-					return false
-				})
-
-				evt.Origin().Watch("event","navigationstart",evt.Origin(),disableNavigation)
-
-				evt.Origin().Watch("event","recoveredstatehistory",evt.Origin(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
-					event.Origin().RemoveMuationHandler("event","navigationstart",event.Origin(),disableNavigation)
-					// remove navigation restricition
-					return false
-				}).RunOnce())
-
-				return false
-			}).RunOnce())
-			
-			e.Set("runtime","recoverablestatehistory",ui.Bool(true))
-			statenode.Call("remove")
-		}
-	}
-	return e
-}
-
-var recoverStateHistoryHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-	evt.Origin().Watch("navigation","ready",ui.NewMutationHandler(func(event ui.MutationEvent)bool{
-		// replay list of document changes
-		replayStateHistory(event.Origin())
-		//  Remove hydration tag
-		RemoveAttribute(evt.Origin(),HydrationAttrName)
-		event.Origin().Set("event","recoveredstatehistory", ui.Bool(true))
-		return false
-	}).RunOnce())
-	return false
-})
 
 
 /*
@@ -656,7 +707,7 @@ func isScrollable(property string) bool {
 }
 // abstractjs
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	if e.ID == GetDocument().AsElement().ID{
+	if e.ID == GetDocument(e).AsElement().ID{
 		if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 			js.Global().Get("history").Set("scrollRestoration", "manual")
 		}
@@ -665,9 +716,12 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.Watch("navigation", "ready", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			router := ui.GetRouter()
+			router := ui.GetRouter(evt.Origin())
 
-			ejs := JSValue(e)
+			ejs,ok := JSValue(e)
+			if !ok{
+				return false
+			}
 			wjs := js.Global().Get("document").Get("defaultView")
 
 			stylesjs := wjs.Call("getComputedStyle", ejs)
@@ -791,15 +845,16 @@ var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	return false
 })
 
-var rootScrollRestorationSupport = func(e *ui.Element)*ui.Element { // abstractjs
+var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstractjs
+	e:= root
 	n:= e.Native.(NativeElement).Value
-	router := ui.GetRouter()
+	router := ui.GetRouter(root)
 
 	ejs := js.Global().Get("document").Get("scrollingElement")
 
 	e.SetDataSetUI("scrollrestore", ui.Bool(true))
 
-	GetWindow().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+	GetDocument(e).Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 		scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 		scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
 		router.History.Set(e.ID, "scrollTop", scrolltop)
@@ -831,11 +886,17 @@ var rootScrollRestorationSupport = func(e *ui.Element)*ui.Element { // abstractj
 				DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
 				return false
 			}
-			el:=v.(*ui.Element)
+			elid:=v.(ui.String).String()
+			el:= GetDocument(evt.Origin()).GetElementById(elid)
+
 			if el != nil && el.Mounted(){
-				focus(JSValue(el))
+				j,ok:= JSValue(el)
+				if !ok{
+					panic("element does nto seem to have been connected to its native DOM element")
+				}
+				focus(j)
 				if newpageaccess{
-					if !partiallyVisible(JSValue(el)){
+					if !partiallyVisible(el){
 						DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
@@ -843,11 +904,17 @@ var rootScrollRestorationSupport = func(e *ui.Element)*ui.Element { // abstractj
 					
 			}
 		} else{
-			el:=v.(*ui.Element)
+			elid:=v.(ui.String).String()
+			el:= GetDocument(evt.Origin()).GetElementById(elid)
+
 			if el != nil && el.Mounted(){
-				focus(JSValue(el))
+				j,ok:= JSValue(el)
+				if !ok{
+					panic("element does nto seem to have been connected to its native DOM element")
+				}
+				focus(j)
 				if newpageaccess{
-					if !partiallyVisible(JSValue(el)){
+					if !partiallyVisible(el){
 						DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
@@ -867,10 +934,13 @@ func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 	if !e.AsElement().Mounted(){
 		return
 	}
-	n:= JSValue(e.AsElement())
+	n,ok:= JSValue(e.AsElement())
+	if !ok{
+		return
+	}
 	focus(n)
 	if scrollintoview{
-		if !partiallyVisible(n){
+		if !partiallyVisible(e.AsElement()){
 			n.Call("scrollIntoView")
 		}
 	}
@@ -883,14 +953,20 @@ func focus(e js.Value){ // abstractjs
 
 // abstractjs
 func IsInViewPort(e *ui.Element) bool{
-	n:= JSValue(e)
+	n,ok:= JSValue(e)
+	if !ok{
+		return false
+	}
 	bounding:= n.Call("getBoundingClientRect")
 	top:= int(bounding.Get("top").Float())
 	bottom:= int(bounding.Get("bottom").Float())
 	left:= int(bounding.Get("left").Float())
 	right:= int(bounding.Get("right").Float())
 
-	w:= JSValue(GetWindow().AsElement())
+	w,ok:= JSValue(GetDocument(e).Window().AsElement())
+	if !ok{
+		panic("seems that the window is not connected to its native DOM element")
+	}
 	var ih int
 	var iw int
 	innerHeight := w.Get("innerHeight")
@@ -905,14 +981,21 @@ func IsInViewPort(e *ui.Element) bool{
 }
 
 // abstractjs
-func partiallyVisible(n js.Value) bool{
+func partiallyVisible(e *ui.Element) bool{
+	n,ok:= JSValue(e)
+	if !ok{
+		return false
+	}
 	bounding:= n.Call("getBoundingClientRect")
 	top:= int(bounding.Get("top").Float())
 	//bottom:= int(bounding.Get("bottom").Float())
 	left:= int(bounding.Get("left").Float())
 	//right:= int(bounding.Get("right").Float())
 
-	w:= JSValue(GetWindow().AsElement())
+	w,ok:= JSValue(GetDocument(e).Window().AsElement())
+	if !ok{
+		panic("seems that the window is not connected to its native DOM element")
+	}
 	var ih int
 	var iw int
 	innerHeight := w.Get("innerHeight")
@@ -929,7 +1012,10 @@ func partiallyVisible(n js.Value) bool{
 // abstractjs
 func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is focusable? (edge-case)
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		m:= JSValue(evt.Origin())
+		m,ok:= JSValue(evt.Origin())
+		if !ok{
+			return false
+		}
 		focusableslist:= `button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])`
 		focusableElements:= m.Call("querySelectorAll",focusableslist)
 		count:= int(focusableElements.Get("length").Float())-1
@@ -979,7 +1065,11 @@ func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is f
 
 
 var paragraphTextHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	JSValue(evt.Origin()).Set("innerText", string(evt.NewValue().(ui.String)))
+	j,ok:= JSValue(evt.Origin())
+	if !ok{
+		return false
+	}
+	j.Set("innerText", string(evt.NewValue().(ui.String)))
 	return false
 })
 
@@ -1001,7 +1091,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 				return true
 			}
 			s := v.String()
-			e.SyncUISetData("text", ui.String(s), false)
+			e.SyncUISetData("text", ui.String(s))
 			return false
 		})
 
@@ -1074,99 +1164,188 @@ func newTimeRanges(v js.Value) jsTimeRanges{
 
 
 func(a AudioElement) Buffered() jsTimeRanges{
-	b:= JSValue(a.AsElement()).Get("buiffered")
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	
+	b:= j.Get("buiffered")
 	return newTimeRanges(b)
 }
 
 func(a AudioElement)CurrentTime() time.Duration{
-	return time.Duration(JSValue(a.AsElement()).Get("currentTime").Float())* time.Second
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return time.Duration(j.Get("currentTime").Float())* time.Second
 }
 
 func(a AudioElement)Duration() time.Duration{
-	return  time.Duration(JSValue(a.AsElement()).Get("duration").Float())*time.Second
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return  time.Duration(j.Get("duration").Float())*time.Second
 }
 
 func(a AudioElement)PlayBackRate() float64{
-	return JSValue(a.AsElement()).Get("playbackRate").Float()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("playbackRate").Float()
 }
 
 func(a AudioElement)Ended() bool{
-	return JSValue(a.AsElement()).Get("ended").Bool()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("ended").Bool()
 }
 
 func(a AudioElement)ReadyState() float64{
-	return JSValue(a.AsElement()).Get("readyState").Float()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("readyState").Float()
 }
 
 func(a AudioElement)Seekable()  jsTimeRanges{
-	b:= JSValue(a.AsElement()).Get("seekable")
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	b:= j.Get("seekable")
 	return newTimeRanges(b)
 }
 
 func(a AudioElement) Volume() float64{
-	return  JSValue(a.AsElement()).Get("volume").Float()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("volume").Float()
 }
 
 
 func(a AudioElement) Muted() bool{
-	return JSValue(a.AsElement()).Get("muted").Bool()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("muted").Bool()
 }
 
 func(a AudioElement) Paused() bool{
-	return JSValue(a.AsElement()).Get("paused").Bool()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("paused").Bool()
 }
 
 func(a AudioElement) Loop() bool{
-	return JSValue(a.AsElement()).Get("loop").Bool()
+	j,ok:= JSValue(a.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("loop").Bool()
 }
 
 
 
 func(v VideoElement) Buffered() jsTimeRanges{
-	b:= JSValue(v.AsElement()).Get("buiffered")
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	b:= j.Get("buiffered")
 	return newTimeRanges(b)
 }
 
 func(v VideoElement)CurrentTime() time.Duration{
-	return time.Duration(JSValue(v.AsElement()).Get("currentTime").Float())* time.Second
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return time.Duration(j.Get("currentTime").Float())* time.Second
 }
 
 func(v VideoElement)Duration() time.Duration{
-	return  time.Duration(JSValue(v.AsElement()).Get("duration").Float())*time.Second
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return  time.Duration(j.Get("duration").Float())*time.Second
 }
 
 func(v VideoElement)PlayBackRate() float64{
-	return JSValue(v.AsElement()).Get("playbackRate").Float()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("playbackRate").Float()
 }
 
 func(v VideoElement)Ended() bool{
-	return JSValue(v.AsElement()).Get("ended").Bool()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("ended").Bool()
 }
 
 func(v VideoElement)ReadyState() float64{
-	return JSValue(v.AsElement()).Get("readyState").Float()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("readyState").Float()
 }
 
 func(v VideoElement)Seekable()  jsTimeRanges{
-	b:= JSValue(v.AsElement()).Get("seekable")
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	b:= j.Get("seekable")
 	return newTimeRanges(b)
 }
 
 func(v VideoElement) Volume() float64{
-	return  JSValue(v.AsElement()).Get("volume").Float()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return  j.Get("volume").Float()
 }
 
 
 func(v VideoElement) Muted() bool{
-	return JSValue(v.AsElement()).Get("muted").Bool()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("muted").Bool()
 }
 
 func(v VideoElement) Paused() bool{
-	return JSValue(v.AsElement()).Get("paused").Bool()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("paused").Bool()
 }
 
 func(v VideoElement) Loop() bool{
-	return JSValue(v.AsElement()).Get("loop").Bool()
+	j,ok:= JSValue(v.AsElement())
+	if !ok{
+		panic("element is not connected to Native dom node.")
+	}
+	return j.Get("loop").Bool()
 }
 
 
@@ -1201,6 +1380,27 @@ func enableClasses(e *ui.Element) *ui.Element {
 
 
 func GetAttribute(target *ui.Element, name string) string {
+	_,ok:= JSValue(target)
+	if !ok{
+		// returns the value potentially stored in the attreibute map
+		m, ok := target.Get("data", "attrs")
+		if !ok {
+			return ""
+		}
+		attrmap, ok := m.(ui.Object)
+		if !ok {
+			return ""
+		}
+		v, ok := attrmap.Get(name)
+		if !ok {
+			return ""
+		}
+		s, ok := v.(ui.String)
+		if !ok {
+			panic("bad type for attribute value")
+		}
+		return string(s)
+	}
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot retrieve Attribute on non-expected wrapper type")
@@ -1211,6 +1411,10 @@ func GetAttribute(target *ui.Element, name string) string {
 
 // abstractjs
 func SetAttribute(target *ui.Element, name string, value string) {
+	_,ok:= JSValue(target)
+	if !ok{
+		return 
+	}
 	var attrmap ui.Object
 	m, ok := target.Get("data", "attrs")
 	if !ok {
@@ -1236,6 +1440,11 @@ func SetAttribute(target *ui.Element, name string, value string) {
 
 // abstractjs
 func RemoveAttribute(target *ui.Element, name string) {
+	_,ok:= JSValue(target)
+	if !ok{
+		return 
+	}
+
 	m, ok := target.Get("data", "attrs")
 	if !ok {
 		return
@@ -1258,11 +1467,16 @@ func RemoveAttribute(target *ui.Element, name string) {
 
 // abstractjs
 var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	j,ok:= JSValue(evt.Origin())
+	if !ok{
+		return false
+	}
+
 	str, ok := evt.NewValue().(ui.String)
 	if !ok {
 		return true
 	}
-	JSValue(evt.Origin()).Set("textContent", string(str))
+	j.Set("textContent", string(str))
 
 	return false
 })
@@ -1270,6 +1484,10 @@ var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 
 func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
 	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		j,ok:= JSValue(evt.Origin())
+		if !ok{
+			return false
+		}
 		v:= float64(evt.NewValue().(ui.Number))
 		if v < float64(min){
 			v = float64(min)
@@ -1278,28 +1496,40 @@ func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
 		if v > float64(max){
 			v = float64(max)
 		}
-		JSValue(evt.Origin()).Set(propname,v)
+		j.Set(propname,v)
 		return false
 	})
 }
 
 func numericPropertyWatcher(propname string) *ui.MutationHandler{
 	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,float64(evt.NewValue().(ui.Number)))
+		j,ok:= JSValue(evt.Origin())
+		if !ok{
+			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
+		}
+		j.Set(propname,float64(evt.NewValue().(ui.Number)))
 		return false
 	})
 }
 
 func boolPropertyWatcher(propname string) *ui.MutationHandler{
 	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,bool(evt.NewValue().(ui.Bool)))
+		j,ok:= JSValue(evt.Origin())
+		if !ok{
+			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
+		}
+		j.Set(propname,bool(evt.NewValue().(ui.Bool)))
 		return false
 	})
 }
 
 func stringPropertyWatcher(propname string) *ui.MutationHandler{
 	return ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		JSValue(evt.Origin()).Set(propname,string(evt.NewValue().(ui.String)))
+		j,ok:= JSValue(evt.Origin())
+		if !ok{
+			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
+		}
+		j.Set(propname,string(evt.NewValue().(ui.String)))
 		return false
 	})
 }

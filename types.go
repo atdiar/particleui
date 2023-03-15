@@ -14,33 +14,6 @@ type Value interface {
 	ValueType() string
 }
 
-func (e *Element) discriminant() discriminant { return "particleui" }
-func(e *Element) notNil(){}
-func (e *Element) ValueType() string          { return "Element" }
-func (e *Element) RawValue() Object {
-	o := NewObject().SetType("Element")
-
-	o["id"] = String(e.ID)
-	constructoroptions, ok := e.Get("internals", "constructoroptions")
-	if ok {
-		o.Set("constructoroptions", constructoroptions)
-	}
-
-	constructorname, ok := e.Get("internals", "constructor")
-	if !ok {
-		DEBUG("no constructorname for ", e.ID, e)
-		return nil
-	}
-	cname, ok := constructorname.(String)
-	if !ok {
-		DEBUG("bad constructorname")
-		return nil
-	}
-	o["constructorname"] = cname
-
-	o["elementstoreid"] = String(e.ElementStore.Global.ID)
-	return o.RawValue()
-}
 
 type Bool bool
 
@@ -54,6 +27,10 @@ func (b Bool) RawValue() Object {
 }
 func (b Bool) ValueType() string { return "Bool" }
 
+func(b Bool) Bool() bool{
+	return bool(b)
+}
+
 type String string
 
 func (s String) discriminant() discriminant { return "particleui" }
@@ -66,6 +43,8 @@ func (s String) RawValue() Object {
 }
 func (s String) ValueType() string { return "String" }
 
+func(s String) String() string{return string(s)}
+
 type Number float64
 
 func (n Number) discriminant() discriminant { return "particleui" }
@@ -77,6 +56,10 @@ func (n Number) RawValue() Object {
 	return o.RawValue()
 }
 func (n Number) ValueType() string { return "Number" }
+
+func(n Number) Float64() float64{return float64(n)}
+func(n Number) Int() int {return int(n)}
+func(n Number) Int64() int64{return int64(n)}
 
 type Object map[string]interface{}
 
@@ -254,99 +237,7 @@ func (o Object) Value() Value {
 			}
 			p.Set(k, u.Value())
 		}
-		return p
-	case "Element":
-		p := NewObject()
-		for k, val := range o {
-			v, ok := val.(Value)
-			if !ok {
-				m, ok := val.(map[string]interface{})
-				if ok {
-					obj := Object(m)
-					p.Set(k, obj.Value())
-					continue
-				}
-				p[k] = val
-				continue
-			}
-			u, ok := v.(Object)
-			if ok {
-				p.Set(k, u.Value())
-				continue
-			}
-			p.Set(k, v)
-		}
-
-		id, ok := p.Get("id")
-		if !ok {
-			DEBUG("no id")
-			return nil
-		}
-		
-		elementstoreid, ok := p.Get("elementstoreid")
-		if !ok {
-			DEBUG("no elementstore id")
-			return nil
-		}
-		constructorname, ok := p.Get("constructorname")
-		if !ok {
-			DEBUG("no constructor name")
-			return nil
-		}
-		elstoreid, ok := elementstoreid.(String)
-		if !ok {
-			DEBUG("Wrong type for ElementStore ID")
-			return nil
-		}
-		// Let's get the elementstore
-		elstore, ok := Stores.Get(string(elstoreid))
-		if !ok {
-			DEBUG("no elementstore")
-			return nil
-		}
-		// Let's try to see if the element is in the ElementStore already
-		elid, ok := id.(String)
-		if !ok {
-			DEBUG("Wrong type for Element ID stored in ui.Value")
-			return nil
-		}
-		element := elstore.GetByID(string(elid))
-		if element != nil {
-			return element
-		}
-		// Otherwise we construct it. (TODO: make sure that element constructors try to get the data in store)
-		cname, ok := constructorname.(String)
-		if !ok {
-			DEBUG("Wrong type for constructor name.")
-			return nil
-		}
-		constructor, ok := elstore.Constructors[string(cname)]
-		if !ok {
-			DEBUG("constructor not found at the recorded name from Element store. Cannot create Element " + elid + " from Value")
-			return nil
-		}
-
-		coptions := make([]string, 0)
-		constructoroptions, ok := p.Get("constructoroptions")
-		if ok {
-			objoptlist, ok := constructoroptions.(Object)
-			if ok {
-				voptlist := objoptlist.Value()
-				optlist, ok := voptlist.(List)
-				if ok {
-					for _, opt := range optlist {
-						sopt, ok := opt.(String)
-						if !ok {
-							DEBUG("bad option")
-							return nil
-						}
-						coptions = append(coptions, string(sopt))
-					}
-				}
-			}
-		}
-		return constructor(string(elid), coptions...)
-
+		return p		
 	default:
 		return o
 	}
@@ -564,18 +455,6 @@ func Equal(v Value, w Value) bool {
 			}
 		}
 		return true
-	case "Element":
-		ve,ok:= v.(*Element)
-		if !ok{
-			panic("Element was astonishingly not marshalled back")
-		}
-		we,ok:= w.(*Element)
-		if !ok{
-			panic("Element was astonishingly not marshalled back")
-		}
-		if ve.ID != we.ID{
-			return false
-		}
 	}
 	return true
 }

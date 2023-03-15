@@ -74,7 +74,10 @@ func defaultGoEventTranslator(evt ui.Event) js.Value {
 // NativeDispatch allows for the propagation of a JS event created in Go.
 func NativeDispatch(evt ui.Event){
 	e:= defaultGoEventTranslator(evt)
-	t:= JSValue(evt.Target())
+	t,ok:= JSValue(evt.Target())
+	if !ok{
+		return
+	}
 	if t.Truthy(){
 		t.Call("dispatchEvent",e)
 	}
@@ -87,7 +90,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		defer func() {
 			if r := recover(); r != nil {
-				body:= Document{ui.BasicElement{listener.Root()}}.Body().AsElement()
+				body:= GetDocument(listener).Body().AsElement()
 				msg:= Div("appfailure","appfailure")
 				SetInlineCSS(msg.AsElement(),`all: initial;`)
 
@@ -101,7 +104,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					DEBUG(r)
 				}
 				body.SetChildren(msg)
-				GetWindow().SetTitle("Critical App Failure")
+				GetDocument(listener).Window().SetTitle("Critical App Failure")
 			}
 		}()
 
@@ -127,22 +130,22 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		rv:= ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
 	
 
-		ui.Do(func(){
+		ui.DoSync(func(){
 			if currtargetid.Truthy() {
-				currentTarget= Elements.GetByID(currtargetid.String())
+				currentTarget= GetDocument(listener).GetElementById(currtargetid.String())
 				if currentTarget == nil {
 					DEBUG("no currenttarget found for this element despite a valid id")
 					return 
 				}
 				if targetid.Truthy() {
-					target = Elements.GetByID(targetid.String())	
+					target = GetDocument(listener).GetElementById(targetid.String())	
 					if target == nil {
 						DEBUG("no target found for this element despite a valid id")
 						return 
 					}
 				}else{
 					if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
-						target = GetWindow().AsElement()		
+						target = GetDocument(listener).Window().AsElement()
 					} else{
 						DEBUG("no target found for this element, no id and it's not the window")
 						return
@@ -153,9 +156,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				// this might be a stretch... but we assume that the only valid element without
 				// a native side ID is the window in javascript.
 				if jscurrtarget.Equal(js.Global().Get("document").Get("defaultView")) {
-					currentTarget = GetWindow().AsElement()
+					currentTarget = GetDocument(listener).Window().AsElement()
 					if targetid.Truthy() {
-						target = Elements.GetByID(targetid.String())	
+						target = GetDocument(listener).GetElementById(targetid.String())	
 						if target == nil {
 							DEBUG("currenttarget is window but no target found for this element despite a valid id")
 							return 

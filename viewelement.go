@@ -45,21 +45,25 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 		v.AddView(view)
 	}
 
-	// necessary if the element we make a viewElement of was already mounted. It doesn't get reattached unless modification
-	l, ok := e.Global.Get("internals", "views")
-	if !ok {
-		list := NewList(e)
-		e.Global.Set("internals", "views", list)
-	} else {
-		list, ok := l.(List)
+	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
+		l, ok := evt.Origin().Root().Get("internals", "views")
 		if !ok {
-			list = NewList(e)
-			e.Global.Set("internals", "views", list)
+			list := NewList(String((evt.Origin().ID)))
+			evt.Origin().Root().Set("internals", "views", list)
 		} else {
-			list = append(list, e)
-			e.Global.Set("internals", "views", list)
+			list, ok := l.(List)
+			if !ok {
+				list = NewList(String(evt.Origin().ID))
+				evt.Origin().Root().Set("internals", "views", list)
+			} else {
+				list = append(list, String(evt.Origin().ID))
+				evt.Origin().Root().Set("internals", "views", list)
+			}
 		}
-	}
+		return false
+
+	}).RunASAP().RunOnce())
+	
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
 		l, ok := evt.Origin().Global.Get("internals", "views")
@@ -67,7 +71,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 			list, ok := l.(List)
 			if ok{
 				list = list.Filter(func(v Value)bool{
-					return !Equal(v,evt.Origin())
+					return !Equal(v,String(evt.Origin().ID))
 				})
 				evt.Origin().Global.Set("internals", "views", list)
 			}

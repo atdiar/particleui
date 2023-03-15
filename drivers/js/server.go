@@ -28,7 +28,7 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE)
+	Elements = ui.NewElementStore("default", DOCTYPE).WithMutationCapture()
 	mu *sync.Mutex
 
 	DefaultPattern = "/"
@@ -42,7 +42,7 @@ var (
 	// It corresponds loosely to the ability of adding middleware/endware request handler, by using
 	// request handler composition.
 	// One use-case could be to process http cookies to retrieve info that could be used to customize
-	// Document creation, whcih can be done by changing the DocumentInitializer.
+	// Document creation, which can be done by changing the DocumentInitializer.
 	HTMLhandlerModifier func(http.Handler)http.Handler
 	renderHTMLhandler http.Handler
 
@@ -107,6 +107,19 @@ func ChangeServer(s *http.Server){
 	Server = s
 }
 
+// NewDocumentInitializerHandler returns a http.Handler that sets the DocumentInitializer
+// If needed, it should be called as a middleware by wrapping HTMLHandlerModifier.
+func NewDocumentInitializerHandler(modifier func(r *http.Request, d Document)) http.Handler{
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		DocumentInitializer = func(d Document)Document{
+			modifier(r,d)
+			if DocumentInitializer != nil{
+				return DocumentInitializer(d)
+			}
+			return d
+		}
+	})
+}
 
 // NewBuilder registers a new document building function. This function should not be called
 // manually afterwards.
@@ -127,9 +140,6 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 			return
 		}
 
-		if d:=GetDocument(); d != nil{
-			d.Delete()
-		}
 		document:= f()
 		
 		go func(){
@@ -157,11 +167,12 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 			case ui.ErrUnauthorized:
 				w.WriteHeader(http.StatusUnauthorized)
 			}
-		}		
+		}
+
 	})
 
 
-	// TODO reset global state i.e. ElementStore and Document's BuildOption ?
+	// TODO reset global state i.e. ElementStore and Document's BuildOption ? and PRNG based ID generator oo
 	return func(ctx context.Context){
 		log.Print("Listening on: "+Server.Addr)
 		if ctx == nil{
@@ -200,25 +211,13 @@ var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)
 	return false
 })
 
-var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
-	// TODO need to set the document title somehow (set the relevant attribute)
-	d:= GetDocument()
-	if d == nil{
-		return true
-	}
-	newtitle:= evt.NewValue().(ui.String)
-	d.SetTitle(string(newtitle))
-	return false
-})
-
 var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{ // abstractjs
 	return false
 })
 
 var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
 	e:= evt.Origin()
-	e.ElementStore.MutationCapture = true
-	e.Watch("internals","lastmutation",e.ElementStore.Global,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+	e.Watch("internals","mutationrecords",e.Global,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
 		// TODO if mutation is not fetch type event, append it to internals,globalstatehistory
 		var history ui.List
 		hl,ok:= e.Get("internals","globalstatehistory")
@@ -292,7 +291,7 @@ func isPersisted(e *ui.Element) bool{
 	return false
 }
 
-func NewNativeElementIfAbsent(id string, tag string) (ui.NativeElement,bool){
+func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 	if tag == "window"{
 		return  NewNativeElementWrapper(nil), true
 	}
@@ -656,7 +655,7 @@ func newHTMLDocument(document Document) *html.Node {
 	h:= &html.Node{Type: html.DoctypeNode}
 	n:= doc.Native.(NativeElement).Value
 	h.AppendChild(n)
-	statenode:= generateStateHistoryRecordElement()
+	statenode:= generateStateHistoryRecordElement(doc) // TODO review all this logic
 	if statenode != nil{
 		document.Head().AsElement().Native.(NativeElement).Value.AppendChild(statenode)
 	}
@@ -664,9 +663,9 @@ func newHTMLDocument(document Document) *html.Node {
 	return h
 }
 
-func generateStateHistoryRecordElement() *html.Node{
-	state:=  SerializeStateHistory()
-	script:= `<script id='` + GetDocument().AsElement().ID+SSRStateSuffix+`' type="application/json">
+func generateStateHistoryRecordElement(e *ui.Element) *html.Node{
+	state:=  SerializeStateHistory(e)
+	script:= `<script id='` + e.ID+SSRStateSuffix+`' type="application/json">
 	` + state + `
 	<script>`
 	scriptNode, err:= html.Parse(strings.NewReader(script))

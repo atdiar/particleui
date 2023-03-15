@@ -14,9 +14,6 @@ var (
 	ErrUnauthorized     = errors.New("Unauthorized")
 	ErrFrameworkFailure = errors.New("Framework Failure")
 )
-// NavContext holds the navigation context. It is cancelled before being reinitialized on 
-// Each new navigation start.
-var NavContext, CancelNav = newCancelableNavContext()
 
 func newCancelableNavContext()(context.Context, context.CancelFunc){
 	return  context.WithCancel(context.Background())
@@ -26,22 +23,22 @@ func newCancelableNavContext()(context.Context, context.CancelFunc){
 // It can be retrieved by a call to GetRouter
 var router *Router
 
-// GetRouter returns the application Router object if it has been created.
+// GetRouter returns the document router if it has been created.
 // If it has not yet, it panics.
-// Henceforth, it is only safe to call this function 
-func GetRouter() *Router {
+func GetRouter(root *Element) *Router {
 	if router == nil {
 		panic("FAILURE: trying to retrieve router before it has been created.")
 	}
-	return router
+	return root.router
 }
+
 
 // UseRouter is a convenience function that allows for an Element to call a
 // router-using function when mounted.
 func UseRouter(user AnyElement, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
 		evt.Origin().Watch("event","initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
-			fn(GetRouter())
+			fn(GetRouter(evt.Origin().Root()))
 			return false
 		}).RunASAP())
 		return false
@@ -55,6 +52,8 @@ func UseRouter(user AnyElement, fn func(*Router)) {
 // state registered as a shortcut upon request.
 type Router struct {
 	Outlet   ViewElement
+	NavContext context.Context
+	NavCancel context.CancelFunc
 
 	Links map[string]Link
 
@@ -75,20 +74,21 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 		panic("router can only use a view attached to the main tree as a navigation Outlet.")
 	}
 
-	r := &Router{ rootview, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(), false}
+	r := &Router{ rootview,nil,nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root()), false}
 
 	r.Outlet.AsElement().Root().Watch("event", "docupdate", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
-		_, navready := r.Outlet.AsElement().Root().Get("navigation", "ready")
+		_, navready := evt.Origin().Get("navigation", "ready")
 		if !navready {
-			v, ok := r.Outlet.AsElement().Global.Get("internals", "views")
+			v, ok := evt.Origin().Get("internals", "views")
 			if ok {
 				l, ok := v.(List)
 				if ok {
 					for _, val := range l {
-						viewEl, ok := val.(*Element)
-						if !ok || !viewEl.isViewElement() {
-							panic("internals/views does not hold a proper Element")
+						viewRef, ok := val.(String)
+						if !ok {
+							panic("expected an Element ID string stored for this ViewElementt")
 						}
+						viewEl:= GetById(r.Outlet.AsElement().Root(),viewRef.String())
 						r.insert(ViewElement{viewEl})
 					}
 				}
@@ -98,8 +98,10 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}))
 
 	r.Outlet.AsElement().Root().Watch("event","navigationstart",r.Outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
-		CancelNav()
-		NavContext,CancelNav = newCancelableNavContext()
+		r.NavCancel()
+		NavContext,CancelNav := newCancelableNavContext()
+		r.NavContext = NavContext
+		r.NavCancel = CancelNav
 		// TODO if state is being replayed, cancelnav
 		return false
 	}))
@@ -127,7 +129,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 
 	// 1. Let's see if the URI matches any of the registered routes.
 	v,_,a, err := r.Routes.match(newroute)
-	r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
+	r.Outlet.AsElement().Root().Set("navigation", "targetviewid", String(v.AsElement().ID))
 	if err != nil {
 		log.Print(err) // DEBUG
 		if err == ErrNotFound {
@@ -321,7 +323,7 @@ func (r *Router) handler() *MutationHandler {
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		v,_,a, err := r.Routes.match(newroute)
-		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
+		r.Outlet.AsElement().Root().Set("navigation", "targetviewid", String(v.AsElement().ID))
 		if err != nil {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
@@ -385,7 +387,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v,_, a, err := r.Routes.match(newroute)
-		r.Outlet.AsElement().Root().Set("navigation", "targetview", v.AsElement())
+		r.Outlet.AsElement().Root().Set("navigation", "targetviewid", String(v.AsElement().ID))
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {
@@ -455,14 +457,18 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	root := r.Outlet
 
 	// Let's make sure that all the mounted views have been registered.
-	v, ok := r.Outlet.AsElement().Global.Get("internals", "views")
+	v, ok := r.Outlet.AsElement().Root().Get("internals", "views")
 	if ok {
 		l, ok := v.(List)
 		if ok {
 			for _, val := range l {
-				viewEl, ok := val.(*Element)
-				if !ok || !viewEl.isViewElement() {
-					panic("internals/views does not hold a proper Element")
+				viewRef, ok := val.(String)
+				if !ok {
+					panic("internals/views does not hold a proper Reference")
+				}
+				viewEl:= GetById(r.Outlet.AsElement().Root(),viewRef.String())
+				if viewEl == nil{
+					panic("framework error: view not found")
 				}
 				if viewEl.Mountable() {
 					r.insert(ViewElement{viewEl})
@@ -857,7 +863,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 			panic("pui_ERROR: somehow the link constructor has not been regristered.")
 		}
 		e := c(r.Outlet.AsElement().ID+"-"+viewname)
-		e.SetData("viewelements",NewList(r.Outlet.AsElement()))
+		e.SetData("viewelements",NewList(String(r.Outlet.AsElement().ID)))
 		e.SetData("viewnames", NewList(String(viewname)))
 		e.SetData("uri", String("/"+viewname))
 		l= Link{e}
@@ -873,6 +879,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 		return ll
 	}
 	e:= l.AsElement()
+	registerElement(r.Outlet.AsElement().Root(),e)
 
 	// Let's retrieve the target viewElement and corresponding view name
 	v,ok:= e.GetData("viewelements")
@@ -885,7 +892,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	}*/
 	vl:= v.(List)
 	//nl:= n.(List)
-	view:= ViewElement{vl[len(vl)-1].(*Element)}
+	view:= ViewElement{GetById(r.Outlet.AsElement().Root(),vl[len(vl)-1].(String).String())}
 	//viewname = string(nl[len(nl)-1].(String))
 
 
@@ -970,7 +977,7 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 		}
 		vl:= v.(List)
 		nl:= n.(List)
-		vl = append(vl,ve.AsElement())
+		vl = append(vl,String(ve.AsElement().ID))
 		nl = append(nl,String(viewname))
 		ne.SetData("viewelements",vl)
 		ne.SetData("viewnames",nl)
@@ -979,7 +986,7 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 			if i==0{
 				continue
 			}
-			id:= velem.(*Element).ID
+			id:= string(velem.(String))
 			vname:= string(nl[i].(String))
 			uri = "/" + id + "/" + vname
 		}
@@ -1008,7 +1015,7 @@ func isValidLink(l Link) bool{
 	vl:= v.(List)
 	nl:= n.(List)
 
-	targetview:= vl[len(vl)-1].(*Element)
+	targetview:= GetById(l.AsElement().Root(),string(vl[len(vl)-1].(String)))
 	viewname := string(nl[len(nl)-1].(String))
 
 	vap:= targetview.ViewAccessPath.Nodes
@@ -1017,7 +1024,7 @@ func isValidLink(l Link) bool{
 		return false
 	}
 	for i,n:= range vap{
-		vnode:= vl[i].(*Element)
+		vnode:= GetById(l.AsElement().Root(),string(vl[i].(String)))
 		if vnode.ID != n.Element.ID{
 			return false
 		}
@@ -1044,6 +1051,7 @@ func hasView(v ViewElement, vname string)bool{
 
 // NavHistory holds the Navigation History. (aka NavStack)
 type NavHistory struct {
+	AppRoot *Element
 	Stack  []string
 	State  []Observable
 	Cursor int
@@ -1062,13 +1070,16 @@ func (n *NavHistory) Set(category string, propname string, val Value) {
 	n.State[n.Cursor].Set(category, propname, val)
 }
 
-func NewNavigationHistory() *NavHistory {
+func NewNavigationHistory(approot *Element) *NavHistory {
 	n:= &NavHistory{}
+	n.AppRoot = approot
 	n.Stack = make([]string, 0, 1024)
 	n.State = make([]Observable, 0, 1024)
 	n.Cursor = -1
 	n.NewState = func(id string) Observable{
-		return newObservable(id)
+		o:= newObservable(id)
+		RegisterElement(approot,o.AsElement())
+		return o
 	}
 	n.RecoverState = func(o Observable)Observable{return o}
 	n.Length = 1024
@@ -1088,7 +1099,7 @@ func (n *NavHistory) Value() Value {
 	// Prepare State for serialization
 	state:=make([]Value,len(n.State))
 	for i,entry:= range n.State{
-		state[i]= entry.AsElement()
+		state[i]= String(entry.AsElement().ID) // TODO store state objects in navhistory registry and implement recovery
 	}
 	o.Set("state",List(state))
 
@@ -1120,8 +1131,8 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 			n.Stack=append(n.Stack,string(nexturl))
 
 			stentry:= state[i]
-			stateObj:= stentry.(*Element)
-			n.State = append(n.State, n.RecoverState(Observable{stateObj}))
+			stateObjid:= stentry.(String).String()
+			n.State = append(n.State, n.RecoverState(Observable{GetById(n.AppRoot,stateObjid)}))
 		}
 	}
 	

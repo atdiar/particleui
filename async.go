@@ -67,10 +67,10 @@ func newwork(f func(), signalDone chan struct{}) func(){
 // is tied to navigation. For example, when triggering  http.Requests to fetch data for a given route.
 // Elements must not be accessed in a DoAsync unless a DoSync is used to push changes back to the main
 // goroutine.
-func DoAsync(f func()){
+func DoAsync(root *Element,f func()){
 	go func(){
 		select{
-		case <-NavContext.Done():
+		case <-GetRouter(root).NavContext.Done():
 			return 
 		default:
 			f()
@@ -138,12 +138,16 @@ func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehand
 
 
 				// After a new http.Request has been launched and a response has been returned, cancel and refetch
-				// the data corresponding to the req.URL
-				evt.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),evt.Origin().ElementStore.Global,NewMutationHandler(func(event MutationEvent)bool{
-					//event.Origin().invalidatePrefetch()
-					cancelFn()
+				// the data corresponding to the req.URL (it just cancels the prefecthing here. 
+				// The fetching should ensue as normal)
+				evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
+					event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
+						cancelFn()
+						return false
+					}).RunOnce())
 					return false
-				}).RunOnce())
+				}).RunOnce().RunASAP())
+				
 
 				evt.Origin().fetchData(propname,r,responsehandler,true)
 				return false
@@ -211,13 +215,15 @@ func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehand
 
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the req.URL
-		evt.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),evt.Origin().ElementStore.Global,NewMutationHandler(func(event MutationEvent)bool{
-			//event.Origin().invalidatePrefetch()
-			e.InvalidateFetch(propname)
-			cancelFn()
-			e.Fetch()
+		evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
+			event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
+				e.InvalidateFetch(propname)
+				cancelFn()
+				e.Fetch()
+				return false
+			}).RunOnce())
 			return false
-		}).RunOnce())
+		}).RunOnce().RunASAP())
 
 
 		evt.Origin().fetchData(propname,r,responsehandler,false)
@@ -241,7 +247,8 @@ func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehand
 }
 
 func(e *Element) NewURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
-	req,err:= http.NewRequestWithContext(NavContext,"GET",url,nil)
+	router:= GetRouter(e.Root())
+	req,err:= http.NewRequestWithContext(router.NavContext,"GET",url,nil)
 	if err!= nil{
 		panic(url + " is malformed most likely. Unable to create new request")
 	}
@@ -318,7 +325,7 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 	}
 
 	
-	DoAsync(func(){
+	DoAsync(e.Root(),func(){
 
 		res, err:= HttpClient.Do(req)
 		if err!= nil{
@@ -691,7 +698,7 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 	return !bool(stale.(Bool))
 }
 
-// An Element should also be able to sned requests to a remote server besides retrieving data
+// An Element should also be able to send requests to a remote server besides retrieving data
 // via GET (POST, PUT, PATCH,  UPDATE, DELETE)
 // When such a request is made to an endpoint, the Data Fetched should be invalidated and refetched.
 
@@ -723,11 +730,13 @@ func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Respon
 	}).RunOnce())
 
 	e.WatchEvent(newRequestEventName("end",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().ElementStore.Global.TriggerEvent(newRequestEventName("end",req.URL.String()), evt.NewValue())
+		if evt.Origin().Root() != nil{ // means it was mounted once
+			evt.Origin().Root().TriggerEvent(newRequestEventName("end",req.URL.String()), evt.NewValue())
+		}
 		return false
 	}))
 	
-	DoAsync(func() {
+	DoAsync(e.Root(),func() {
 		res, err:= HttpClient.Do(req)
 		if err!= nil{
 			DoSync(func(){

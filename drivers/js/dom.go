@@ -5,12 +5,8 @@ package doc
 import (
 	"context"
 	"encoding/json"
-	//"errors"
-	"log"
 	"strconv"
 	"strings"
-
-	//"syscall/js"
 	"net/url"
 	"time"
 
@@ -48,9 +44,9 @@ const (
 
 
 
-func SerializeStateHistory() string{
-	d:= GetDocument().AsElement()
-	sth,ok:= d.Get("internals","globalstatehistory")
+func SerializeStateHistory(e *ui.Element) string{ // TODO review mutationcapture state handling
+	d:= GetDocument(e).AsElement()
+	sth,ok:= d.Get("internals","mutationtrace")
 	if !ok{
 		return ""
 	}
@@ -80,19 +76,15 @@ func stringify(v interface{}) string {
 
 // Window is a type that represents a browser window
 type Window struct {
-	UIElement ui.BasicElement
-}
-
-func (w Window) AsBasicElement() ui.BasicElement {
-	return w.UIElement
+	Raw *ui.Element
 }
 
 func (w Window) AsElement() *ui.Element {
-	return w.UIElement.AsElement()
+	return w.Raw
 }
 
 func (w Window) SetTitle(title string) {
-	w.AsBasicElement().AsElement().Set("ui", "title", ui.String(title))
+	w.AsElement().Set("ui", "title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -104,9 +96,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 
 	e.ElementStore = Elements
 	e.Parent = e
-	e.Native,_ = NewNativeElementIfAbsent("defaultView","window")
-
-	e.Watch("ui", "title", e, windowTitleHandler)
+	e.Native,_ = ConnectNative(e,"window")
 
 	return e
 })
@@ -116,29 +106,8 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 func newWindow(title string, options ...string) Window {
 	e:= newWindowConstructor("window", options...)
 	e.Set("ui", "title", ui.String(title))
-	return Window{ui.BasicElement{LoadFromStorage(e)}}
+	return Window{LoadFromStorage(e)}
 }
-
-func GetWindow(options ...string) Window {
-	w := Elements.GetByID("window")
-	if w == nil {
-		return newWindow("Created with ParticleUI", options...)
-	}
-	cname, ok := w.Get("internals", "constructor")
-	if !ok {
-		return newWindow("Created with ParticleUI", options...)
-	}
-	nname, ok := cname.(ui.String)
-	if !ok {
-		return newWindow("Created with ParticleUI", options...)
-	}
-	if string(nname) != "window" {
-		log.Print("There is a UI Element whose id is similar to the Window name. This is incorrect.")
-		return Window{}
-	}
-	return Window{ui.BasicElement{w}}
-}
-
 
 
 
@@ -191,7 +160,8 @@ func EnableScrollRestoration() string {
 var RouterConfig = func(r *ui.Router) *ui.Router{
 
 	ns:= func(id string) ui.Observable{
-		o:= NewObservable(id,EnableSessionPersistence())
+		d:= GetDocument(r.Outlet.AsElement())
+		o:= d.NewObservable(id,EnableSessionPersistence())
 		//PutInStorage(o.AsElement()) DEBUG
 		return o
 	}
@@ -211,11 +181,11 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	SetAttribute(pnf.AsElement(),"role","alert")
 	SetInlineCSS(pnf.AsElement(),`all: initial;`)
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
+		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetviewid")
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{v.(*ui.Element)}
+		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("notfound"){
 			tv.ActivateView("notfound")
 			return false
@@ -224,10 +194,10 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		document:=  Document{ui.BasicElement{r.Outlet.AsElement().Root()}}
+		document:=  GetDocument(r.Outlet.AsElement())
 		body:= document.Body().AsElement()
 		body.SetChildren(pnf)
-		GetWindow().SetTitle("Page Not Found")
+		document.Window().SetTitle("Page Not Found")
 
 		return false
 	}))
@@ -235,11 +205,11 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	// unauthorized
 	ui.AddView("unauthorized",Div(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
 	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetview")
+		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetviewid")
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{v.(*ui.Element)}
+		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("unauthorized"){
 			tv.ActivateView("unauthorized")
 			return false // DEBUG TODO return true?
@@ -259,30 +229,57 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 }
 
 
-var newObservable = Elements.Constructors["observable"]
+var newObservable = Elements.NewConstructor("observable", func(id string) *ui.Element {
+	e := ui.NewElement("observable", "observable")
 
-func NewObservable(id string, options ...string) ui.Observable{
-	e:= Elements.GetByID(id)
-	if e != nil{
-		ui.Delete(e)
-	}
-	return ui.Observable{newObservable(id,options...)}
-}
+	e.ElementStore = Elements
+
+	return e
+},AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
+
 
 type Document struct {
 	ui.BasicElement
 }
 
+func (d Document) Window() Window {
+	w:= d.GetElementById("window")
+	if w != nil{
+		return Window{w}
+	}
+	wd:= newWindow("zui - window")
+	d.AsElement().BindValue("ui","title",wd.AsElement())
+	return wd
+}
+
+func (d Document)GetElementById(id string) *ui.Element{
+	return ui.GetById(d.AsElement(),id)
+}
+
+func(d Document) NewObservable(id string, options ...string) ui.Observable{
+	if e:=d.GetElementById(id); e != nil{
+		ui.Delete(e)
+	}
+	o:= newObservable(id,options...)
+	
+	ui.RegisterElement(d.AsElement(),o)
+	o.AsElement().TriggerEvent("mountable")
+	o.AsElement().TriggerEvent("mounted")
+
+	return ui.Observable{LoadFromStorage(o)}
+}	
+
+
 func(d Document) Head() *ui.Element{
 	b,ok:= d.AsElement().Get("ui","head")
 	if !ok{ return nil}
-	return b.(*ui.Element)
+	return d.GetElementById(b.(ui.String).String())
 }
 
 func(d Document) Body() *ui.Element{
 	b,ok:= d.AsElement().Get("ui","body")
 	if !ok{ return nil}
-	return b.(*ui.Element)
+	return d.GetElementById(b.(ui.String).String())
 }
 
 func(d Document) SetLang(lang string) Document{
@@ -295,16 +292,18 @@ func (d Document) OnNavigationEnd(h *ui.MutationHandler){
 }
 
 func(d Document) OnReady(h *ui.MutationHandler){
-	d.AsElement().Watch("navigation","ready",d,h)
+	d.AsElement().Watch("ui","ready",d,h)
+}
+
+func(d Document) Router() *ui.Router{
+	return ui.GetRouter(d.AsElement())
 }
 
 func(d Document) Delete(){ // TODO check for dangling references
 	ui.DoSync(func(){
 		e:= d.AsElement()
-		ui.CancelNav()
-		e.DeleteChildren()
-		mainDocument = nil
-		Elements.Delete(e.ID)
+		d.Router().NavCancel()
+		ui.Delete(e)
 	})
 }
 
@@ -319,18 +318,21 @@ func(d Document) ListenAndServe(ctx context.Context){
 	if mainDocument ==nil{
 		panic("document is missing")
 	}
-	ui.GetRouter().ListenAndServe(ctx,"popstate", GetWindow())
+	ui.GetRouter(d.AsElement()).ListenAndServe(ctx,"popstate", d.Window())
 }
 
-func GetDocument() *Document{
-	return mainDocument
+func GetDocument(e *ui.Element) *Document{
+	if e.Root() == nil{
+		return nil
+	}
+	return &Document{ui.BasicElement{e.Root()}}
 }
 
 var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
 
-	e.Native,_ = NewNativeElementIfAbsent("documentElement", "html")
+	e.Native,_ = ConnectNative(e, "html")
 	SetAttribute(e, "id", id)
 
 	e.Watch("ui","lang",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -345,10 +347,11 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	// makes ViewElements focusable (focus management support)
 	e.Watch("internals", "views",e.Global,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		l:= evt.NewValue().(ui.List)
-		view:= l[len(l)-1].(*ui.Element)
+		viewstr:= l[len(l)-1].(ui.String)
+		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view,"tabindex","-1")
 		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			e.SetDataSetUI("focus",view)
+			e.SetDataSetUI("focus",ui.String(view.ID))
 			return false
 		}))
 		return false
@@ -356,21 +359,26 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	ui.UseRouter(e,func(r *ui.Router){
 		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
-			r.History.Set("ui","focus",evt.Target())
+			r.History.Set("ui","focus",ui.String(evt.Target().ID))
 			return false
 		}))
 		
 	})	
 	
 
-	e.AppendChild(Head("head"))
+	e.AppendChild(Head("head")) 
 	e.AppendChild(Body("body"))
 
-	recoverStateHistory()
+	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.SetDataSetUI("ready", ui.String("true"))
+		return false
+	}))
 
-	e.Watch("navigation", "ready", e,navreadyHandler)
-	e.Watch("runtime","recoverablestatehistory",e,recoverStateHistoryHandler)
+	e.Watch("ui", "ready", e,navreadyHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
+
+	mutationreplay(e)
+	
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
@@ -383,33 +391,41 @@ var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool 
 	return false
 })
 
-func replayStateHistory(e *ui.Element) {
-	rh,ok:= e.Get("internals","globalstatehistory")
+func mutationreplay(root *ui.Element) {
+	e:= root
+	if !e.ElementStore.MutationReplay{
+		return
+	}
+	rh,ok:= e.Get("internals","mutationtrace")
 	if !ok{
 		panic("somehow recovering state failed. Unexpected error")
 	}
-	history, ok:= rh.(ui.List)
+	mutationtrace, ok:= rh.(ui.List)
 	if !ok{
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
-	for _,rawop:= range history{
+	for _,rawop:= range mutationtrace{
 		op:= rawop.(ui.Object)
 		elementid:= string(op.MustGetString("id"))
 		category:= string(op.MustGetString("cat"))
 		propname:= string(op.MustGetString("prop"))
 		value,_:= op.Get("val")
-		el:= Elements.GetByID(elementid)
+		el:= GetDocument(e).GetElementById(elementid)
 		if el == nil{
 			panic("Unable to recover state for this element id. Element  doesn't exist")
 		}
+		el.BindValue("event","mutationreplayed",e)
 		el.Set(category,propname,value)
 	}
+
+	e.TriggerEvent("mutationreplayed")
+	e.TriggerEvent("")
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Watch("event","navigationend",evt.Origin().Root(),ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			r:= ui.GetRouter()
+		evt.Origin().Watch("event","navigationend",evt.Origin().Root(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+			r:= ui.GetRouter(event.Origin())
 			if !r.History.CurrentEntryIsNew(){
 				return false
 			}
@@ -438,22 +454,19 @@ type BodyElement struct{
 }
 
 var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "body"
 	var exist bool
-	e.Native, exist= NewNativeElementIfAbsent(id, tag)
+	e.Native, exist= ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Root().Set("ui","body",evt.Origin())
+		evt.Origin().Root().Set("ui","body",ui.String(evt.Origin().ID))
 		return false
 	}))
 
@@ -474,22 +487,19 @@ type HeadElement struct{
 }
 
 var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "head"
 	var exist bool
-	e.Native, exist = NewNativeElementIfAbsent(id, tag)
+	e.Native, exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Root().Set("ui","head",evt.Origin())
+		evt.Origin().Root().Set("ui","head",ui.String(evt.Origin().ID))
 		return false
 	}))
 
@@ -517,16 +527,13 @@ func(m MetaElement) SetAttribute(name,value string) MetaElement{
 }
 
 var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "meta"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -555,16 +562,13 @@ func(m TitleElement) Set(title string) TitleElement{
 }
 
 var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "title"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -615,16 +619,13 @@ func(s ScriptElement) SetInnerHTML(content string) ScriptElement{
 }
 
 var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "script"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -656,16 +657,13 @@ func(b BaseElement) SetHREF(url string) BaseElement{
 }
 
 var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "base"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -703,16 +701,13 @@ func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
 }
 
 var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "noscript"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -741,16 +736,13 @@ func(l LinkElement) SetAttribute(name,value string) LinkElement{
 }
 
 var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "link"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -787,17 +779,14 @@ func (d DivElement) SetText(str string) DivElement {
 }
 
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	
 	tag:= "div"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -816,7 +805,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 // Div is a constructor for html div elements.
 // The name constructor argument is used by the framework for automatic route
@@ -900,7 +889,7 @@ func(t textAreaModifer) Required(b bool) func(*ui.Element)*ui.Element{
 func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -966,16 +955,13 @@ func(t textAreaModifer) Spellcheck(mode string)func(*ui.Element)*ui.Element{
 }
 
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "textarea"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -996,7 +982,7 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 
 	return e
-}, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+}, allowTextAreaDataBindingOnBlur, allowTextAreaDataBindingOnInput,AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 
 // TextArea is a constructor for a textarea html element.
@@ -1042,22 +1028,19 @@ type HeaderElement struct {
 }
 
 var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "header"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Header is a constructor for a html header element.
 var Header = headerConstructor(func (options ...string) HeaderElement {
@@ -1074,22 +1057,19 @@ type FooterElement struct {
 }
 
 var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "footer"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Footer is a constructor for an html footer element.
 var Footer = footerConstructor(func (options ...string) FooterElement {
@@ -1107,22 +1087,19 @@ type SectionElement struct {
 }
 
 var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "section"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Section is a constructor for html section elements.
 var Section = sectionConstructor(func (options ...string) SectionElement {
@@ -1144,23 +1121,20 @@ func (h H1Element) SetText(s string) H1Element {
 }
 
 var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h1"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // H1 is a constructor for html heading H1 elements.
 var H1 = h1Constructor(func (options ...string) H1Element {
@@ -1182,23 +1156,20 @@ func (h H2Element) SetText(s string) H2Element {
 }
 
 var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h2"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // H2 is a constructor for html heading H2 elements.
 var H2 = h2Constructor(func (options ...string) H2Element {
@@ -1220,23 +1191,20 @@ func (h H3Element) SetText(s string) H3Element {
 }
 
 var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h3"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // H3 is a constructor for html heading H3 elements.
 var H3 = h3Constructor(func (options ...string) H3Element {
@@ -1258,24 +1226,19 @@ func (h H4Element) SetText(s string) H4Element {
 }
 
 var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		// Let's check that this element's constructory is a h4 constructor
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h4"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // H4 is a constructor for html heading H4 elements.
 var H4 = h4Constructor(func (options ...string) H4Element {
@@ -1297,23 +1260,20 @@ func (h H5Element) SetText(s string) H5Element {
 }
 
 var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h5"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // H5 is a constructor for html heading H5 elements.
 var H5 = h5Constructor(func (options ...string) H5Element {
@@ -1335,23 +1295,20 @@ func (h H6Element) SetText(s string) H6Element {
 }
 
 var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "h6"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 
 // H6 is a constructor for html heading H6 elements.
@@ -1374,16 +1331,13 @@ func (s SpanElement) SetText(str string) SpanElement {
 }
 
 var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "span"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1391,7 +1345,7 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Span is a constructor for html span elements.
 var Span = spanConstructor(func (options ...string) SpanElement {
@@ -1409,23 +1363,20 @@ type ArticleElement struct {
 
 
 var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "article"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Article = articleConstructor(func (options ...string) ArticleElement {
 	return ArticleElement{ui.BasicElement{LoadFromStorage(newArticle(Elements.NewID(), options...))}}
@@ -1442,22 +1393,19 @@ type AsideElement struct {
 }
 
 var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "aside"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Aside = asideConstructor(func (options ...string) AsideElement {
 	return AsideElement{ui.BasicElement{LoadFromStorage(newAside(Elements.NewID(), options...))}}
@@ -1473,22 +1421,19 @@ type MainElement struct {
 }
 
 var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "main"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Main = mainConstructor(func (options ...string) MainElement {
 	return MainElement{ui.BasicElement{LoadFromStorage(newMain(Elements.NewID(), options...))}}
@@ -1510,23 +1455,20 @@ func (p ParagraphElement) SetText(s string) ParagraphElement {
 }
 
 var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "p"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	e.Watch("ui", "text", e, paragraphTextHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Paragraph is a constructor for html paragraph elements.
 var Paragraph = paragraphConstructor(func (options ...string) ParagraphElement {
@@ -1543,22 +1485,18 @@ type NavElement struct {
 }
 
 var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
-		e:= Elements.GetByID(id)
-		if e!= nil{
-			panic(id + " : this id is already in use")
-		}
-		e = ui.NewElement(id, Elements.DocType)
+		e := ui.NewElement(id, Elements.DocType)
 		e = enableClasses(e)
 
 		tag:= "nav"
 		var exist bool
-		e.Native,exist = NewNativeElementIfAbsent(id, tag)
+		e.Native,exist = ConnectNative(e, tag)
 		if !exist {
 			SetAttribute(e, "id", id)
 		}
 
 		return e
-	}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+	},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Nav is a constructor for a html nav element.
 var Nav = navConstructor(func (options ...string) NavElement {
@@ -1614,7 +1552,9 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}))
 
-	a.AsElement().SetData("link",link.AsElement())
+	a.AsElement().SetData("link", ui.String(link.AsElement().ID))
+
+	
 
 	pm,ok:= a.AsElement().Get("internals","prefetchmode")
 	if ok && !prefetchDisabled(){
@@ -1668,16 +1608,13 @@ func (a AnchorElement) SetText(text string) AnchorElement {
 }
 
 var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "a"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1687,7 +1624,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	withStringPropertyWatcher(e,"text")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowPrefetchOnIntent, AllowPrefetchOnRender)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowPrefetchOnIntent, AllowPrefetchOnRender)
 
 // Anchor creates an html anchor element.
 var Anchor = anchorConstructor(func (options ...string) AnchorElement {
@@ -1757,7 +1694,7 @@ func(m buttonModifer) Text(str string) func(*ui.Element)*ui.Element{
 func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -1783,16 +1720,13 @@ func (b ButtonElement) SetText(str string) ButtonElement {
 }
 
 var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "button"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1807,7 +1741,7 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Button returns a button ui.BasicElement.
 // TODO (add attribute watchers for form button element)
@@ -1837,7 +1771,7 @@ func(m labelModifier) Text(str string) func(*ui.Element)*ui.Element{
 func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if e.Mounted(){
@@ -1860,7 +1794,7 @@ func (l LabelElement) SetText(s string) LabelElement {
 
 func (l LabelElement) For(e *ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		d:= GetDocument()
+		d:= GetDocument(evt.Origin())
 		
 		evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			if e.Mounted(){
@@ -1874,16 +1808,13 @@ func (l LabelElement) For(e *ui.Element) LabelElement {
 }
 
 var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "label"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -1891,7 +1822,7 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	withStringAttributeWatcher(e,"for")
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Label = labelConstructor(func (options ...string) LabelElement {
 	return LabelElement{ui.BasicElement{LoadFromStorage(newLabel(Elements.NewID(), options...))}}
@@ -2048,16 +1979,13 @@ func (i InputElement) SetDisabled(b bool)InputElement{
 
 
 var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "input"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2205,7 +2133,7 @@ var OutputModifer outputModifier
 func(m outputModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -2230,7 +2158,7 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		var inputlist string
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				
@@ -2253,16 +2181,13 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 
 
 var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "output"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2273,7 +2198,7 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	withBoolAttributeWatcher(e,"disabled")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Output = outputConstructor(func (options ...string) OutputElement {
 	return OutputElement{ui.BasicElement{LoadFromStorage(newOutput(Elements.NewID(), options...))}}
@@ -2308,16 +2233,13 @@ func (i imgModifier) Alt(s string) func(*ui.Element)*ui.Element{
 }
 
 var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "img"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2326,7 +2248,7 @@ var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
 	withStringAttributeWatcher(e,"alt")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Img = imgConstructor(func (options ...string) ImgElement {
 	return ImgElement{ui.BasicElement{LoadFromStorage(newImg(Elements.NewID(), options...))}}
@@ -2481,16 +2403,13 @@ func(m audioModifier) DisableRemotePlayback(b bool)func(*ui.Element)*ui.Element{
 }
 
 var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "audio"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2506,7 +2425,7 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	withMediaElementPropertyWatchers(e)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Audio = audioConstructor(func (options ...string) AudioElement {
 	return AudioElement{ui.BasicElement{LoadFromStorage(newAudio(Elements.NewID(), options...))}}
@@ -2645,16 +2564,13 @@ func(m videoModifier) PreservesPitch(b bool)func(*ui.Element)*ui.Element{
 }
 
 var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "video"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2675,7 +2591,7 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	SetAttribute(e, "id", id)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Video = videoConstructor(func (options ...string) VideoElement {
 	return VideoElement{ui.BasicElement{LoadFromStorage(newVideo(Elements.NewID(), options...))}}
@@ -2711,16 +2627,13 @@ func(s sourceModifier) Type(typ string) func(*ui.Element)*ui.Element{
 
 
 var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "source"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2729,7 +2642,7 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	withStringAttributeWatcher(e,"type")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Source = sourceConstructor(func (options ...string) SourceElement {
 	return SourceElement{ui.BasicElement{LoadFromStorage(newSource(Elements.NewID(), options...))}}
@@ -2762,39 +2675,16 @@ func (l UlElement) Values() ui.List {
 }
 
 var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "ul"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
-
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		list, ok := evt.NewValue().(ui.List)
-		if !ok {
-			return true
-		}
-
-		for i, v := range list {
-			item := Elements.GetByID(id + "-item-" + strconv.Itoa(i))
-			if item != nil {
-				LiElement{ui.BasicElement{item}}.SetValue(v)
-			} else {
-				item = Li(id+"-item-"+strconv.Itoa(i)).SetValue(v).AsBasicElement().AsElement()
-			}
-
-			evt.Origin().AppendChild(ui.BasicElement{item})
-		}
-		return false
-	})
-	e.Watch("ui", "list", e, h)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2818,16 +2708,13 @@ func (l OlElement) SetValue(lobjs ui.List) OlElement {
 }
 
 var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "ol"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -2857,61 +2744,26 @@ type LiElement struct {
 	ui.BasicElement
 }
 
-func (li LiElement) SetValue(v ui.Value) LiElement {
-	li.AsElement().SetDataSetUI("value", v)
+
+func(li LiElement) SetElement(e *ui.Element) LiElement{ // TODO Might be unnecessary in which case remove
+	li.AsElement().SetChildren(e)
 	return li
 }
 
 var newLi= Elements.NewConstructor("li", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "li"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
-
-	onuimutation := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-
-		// we apply the modifications to the UI
-		v := evt.NewValue()
-		var item *ui.Element
-		switch t := v.(type) {
-		case ui.String:
-			item = NewTextNode().SetValue(t).Element()
-		case ui.Bool:
-			item = NewTextNode().Element()
-			item.SetDataSetUI("text", t)
-		case ui.Number:
-			item = NewTextNode().Element()
-			item.SetDataSetUI("text", t)
-		case ui.Object:
-			item = NewTextNode().Element()
-			item.SetDataSetUI("text", t)
-		case *ui.Element:
-			if t != nil {
-				item = t
-			} else {
-				return true
-			}
-
-		default:
-			log.Print("not the type we want") // DEBUG
-			return true
-		}
-
-		evt.Origin().SetChildren(ui.BasicElement{item})
-		return false
-	})
-	e.Watch("ui", "value", e, onuimutation)
+	
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Li = liConstructor(func (options ...string) LiElement {
 	return LiElement{ui.BasicElement{LoadFromStorage(newLi(Elements.NewID(), options...))}}
@@ -2982,22 +2834,19 @@ type TfootElement struct {
 }
 
 var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "thead"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Thead = theadConstructor(func (options ...string) TheadElement {
 	return TheadElement{ui.BasicElement{LoadFromStorage(newThead(Elements.NewID(), options...))}}
@@ -3010,22 +2859,19 @@ func(c theadConstructor) WithID(id string, options ...string)TheadElement{
 
 
 var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "tr"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tr = trConstructor(func (options ...string) TrElement {
 	return TrElement{ui.BasicElement{LoadFromStorage(newTr(Elements.NewID(), options...))}}
@@ -3037,22 +2883,19 @@ func(c trConstructor) WithID(id string, options ...string)TrElement{
 }
 
 var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "td"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Td = tdConstructor(func (options ...string) TdElement {
 	return TdElement{ui.BasicElement{LoadFromStorage(newTd(Elements.NewID(), options...))}}
@@ -3064,22 +2907,19 @@ func(c tdConstructor) WithID(id string, options ...string)TdElement{
 }
 
 var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "th"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Th = thConstructor(func (options ...string) ThElement {
 	return ThElement{ui.BasicElement{LoadFromStorage(newTh(Elements.NewID(), options...))}}
@@ -3091,22 +2931,19 @@ func(c thConstructor) WithID(id string, options ...string)ThElement{
 }
 
 var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "tbody"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tbody = tbodyConstructor(func (options ...string) TbodyElement {
 	return TbodyElement{ui.BasicElement{LoadFromStorage(newTbody(Elements.NewID(), options...))}}
@@ -3118,22 +2955,19 @@ func(c tbodyConstructor) WithID(id string, options ...string)TbodyElement{
 }
 
 var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "tfoot"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tfoot = tfootConstructor(func (options ...string) TfootElement {
 	return TfootElement{ui.BasicElement{LoadFromStorage(newTfoot(Elements.NewID(), options...))}}
@@ -3145,16 +2979,13 @@ func(c tfootConstructor) WithID(id string, options ...string)TfootElement{
 }
 
 var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "col"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3162,7 +2993,7 @@ var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 	withNumberAttributeWatcher(e,"span")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Col = colConstructor(func (options ...string) ColElement {
 	return ColElement{ui.BasicElement{LoadFromStorage(newCol(Elements.NewID(), options...))}}
@@ -3174,16 +3005,13 @@ func(c colConstructor) WithID(id string, options ...string)ColElement{
 }
 
 var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "colgroup"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3191,7 +3019,7 @@ var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element
 	withNumberAttributeWatcher(e,"span")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var ColGroup = colgroupConstructor(func (options ...string) ColGroupElement {
 	return ColGroupElement{ui.BasicElement{LoadFromStorage(newColGroup(Elements.NewID(), options...))}}
@@ -3203,22 +3031,19 @@ func(c colgroupConstructor) WithID(id string, options ...string)ColGroupElement{
 }
 
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "table"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Table = tableConstructor(func (options ...string) TableElement {
 	return TableElement{ui.BasicElement{LoadFromStorage(newTable(Elements.NewID(), options...))}}
@@ -3253,16 +3078,13 @@ func(c canvasModifier) Width(w int) func(*ui.Element)*ui.Element{
 }
 
 var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "canvas"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3271,7 +3093,7 @@ var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 	withNumberAttributeWatcher(e,"width")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Canvas = canvasConstructor(func (options ...string) CanvasElement {
 	return CanvasElement{ui.BasicElement{LoadFromStorage(newCanvas(Elements.NewID(), options...))}}
@@ -3327,16 +3149,13 @@ func(s svgModifier) Y(y string) func(*ui.Element)*ui.Element{
 }
 
 var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "svg"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3348,7 +3167,7 @@ var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 	withStringAttributeWatcher(e,"y")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Svg = svgConstructor(func (options ...string) SvgElement {
 	return SvgElement{ui.BasicElement{LoadFromStorage(newSvg(Elements.NewID(), options...))}}
@@ -3369,16 +3188,13 @@ func (s SummaryElement) SetText(str string) SummaryElement {
 }
 
 var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "summary"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3386,7 +3202,7 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Summary = summaryConstructor(func (options ...string) SummaryElement {
 	return SummaryElement{ui.BasicElement{LoadFromStorage(newSummary(Elements.NewID(), options...))}}
@@ -3429,16 +3245,13 @@ func(d DetailsElement) IsOpened() bool{
 }
 
 var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "details"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3447,7 +3260,7 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 	withBoolAttributeWatcher(e,"open")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Details = detailsConstructor(func (options ...string) DetailsElement {
 	return DetailsElement{ui.BasicElement{LoadFromStorage(newDetails(Elements.NewID(), options...))}}
@@ -3487,16 +3300,13 @@ func(d DialogElement) IsOpened() bool{
 }
 
 var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "dialog"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3504,7 +3314,7 @@ var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 	withBoolAttributeWatcher(e,"open")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Dialog = dialogConstructor(func (options ...string) DialogElement {
 	return DialogElement{ui.BasicElement{LoadFromStorage(newDialog(Elements.NewID(), options...))}}
@@ -3529,16 +3339,13 @@ func (c CodeElement) SetText(str string) CodeElement {
 }
 
 var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "code"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3546,7 +3353,7 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Code = codeConstructor(func (options ...string) CodeElement {
 	return CodeElement{ui.BasicElement{LoadFromStorage(newCode(Elements.NewID(), options...))}}
@@ -3584,16 +3391,13 @@ func(e EmbedElement) SetSrc(src string) EmbedElement{
 
 
 var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "embed"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3604,7 +3408,7 @@ var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 	withStringAttributeWatcher(e,"src")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Embed = embedConstructor(func (options ...string) EmbedElement {
 	return EmbedElement{ui.BasicElement{LoadFromStorage(newEmbed(Elements.NewID(), options...))}}
@@ -3655,7 +3459,7 @@ func(o objectModifier) Data(u url.URL)func(*ui.Element)*ui.Element{
 func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -3671,16 +3475,13 @@ func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 
 
 var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "object"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3692,7 +3493,7 @@ var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 	withStringAttributeWatcher(e,"form")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Object = objectConstructor(func (options ...string) ObjectElement {
 	return ObjectElement{ui.BasicElement{LoadFromStorage(newObject(Elements.NewID(), options...))}}
@@ -3709,22 +3510,19 @@ type DatalistElement struct{
 }
 
 var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "datalist"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Datalist = datalistConstructor(func (options ...string) DatalistElement {
 	return DatalistElement{ui.BasicElement{LoadFromStorage(newDatalist(Elements.NewID(), options...))}}
@@ -3777,16 +3575,13 @@ func(o OptionElement) SetValue(opt string) OptionElement{
 }
 
 var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "option"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3797,7 +3592,7 @@ var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 	withBoolAttributeWatcher(e,"selected")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Option = optionConstructor(func (options ...string) OptionElement {
 	return OptionElement{ui.BasicElement{LoadFromStorage(newOption(Elements.NewID(), options...))}}
@@ -3843,16 +3638,13 @@ func(o OptgroupElement) SetDisabled(b bool) OptgroupElement{
 }
 
 var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "optgroup"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3861,7 +3653,7 @@ var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Elemen
 	withBoolAttributeWatcher(e,"disabled")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Optgroup = optgroupConstructor(func (options ...string) OptgroupElement {
 	return OptgroupElement{ui.BasicElement{LoadFromStorage(newOptgroup(Elements.NewID(), options...))}}
@@ -3883,7 +3675,7 @@ var FieldsetModifer fieldsetModifier
 func(m fieldsetModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -3913,16 +3705,13 @@ func(m fieldsetModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 
 
 var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "fieldset"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3932,7 +3721,7 @@ var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Elemen
 	withBoolAttributeWatcher(e,"disabled")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Fieldset = fieldsetConstructor(func (options ...string) FieldsetElement {
 	return FieldsetElement{ui.BasicElement{LoadFromStorage(newFieldset(Elements.NewID(), options...))}}
@@ -3954,16 +3743,13 @@ func(l LegendElement) SetText(s string) LegendElement{
 }
 
 var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "legend"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -3971,7 +3757,7 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	e.Watch("ui", "text", e, textContentHandler)
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Legend = legendConstructor(func (options ...string) LegendElement {
 	return LegendElement{ui.BasicElement{LoadFromStorage(newLegend(Elements.NewID(), options...))}}
@@ -4004,16 +3790,13 @@ func(p ProgressElement) SetValue(v float64) ProgressElement{
 }
 
 var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "progress"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -4022,7 +3805,7 @@ var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Elemen
 	withNumberAttributeWatcher(e,"value")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Progress = progressConstructor(func (options ...string) ProgressElement {
 	return ProgressElement{ui.BasicElement{LoadFromStorage(newProgress(Elements.NewID(), options...))}}
@@ -4065,7 +3848,7 @@ func(m selectModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 func (m selectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument()
+			d:= GetDocument(evt.Origin())
 			
 			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -4095,16 +3878,13 @@ func(m selectModifier) Name(name string) func(*ui.Element)*ui.Element{
 
 
 var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "select"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -4119,7 +3899,7 @@ var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Select = selectConstructor(func (options ...string) SelectElement {
 	return SelectElement{ui.BasicElement{LoadFromStorage(newSelect(Elements.NewID(), options...))}}
@@ -4211,16 +3991,13 @@ func(f formModifier) Charset(charset string) func(*ui.Element) *ui.Element{
 }
 
 var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
-	e:= Elements.GetByID(id)
-	if e!= nil{
-		panic(id + " : this id is already in use")
-	}
-	e = ui.NewElement(id, Elements.DocType)
+	
+	e := ui.NewElement(id, Elements.DocType)
 	e = enableClasses(e)
 
 	tag:= "form"
 	var exist bool
-	e.Native,exist = NewNativeElementIfAbsent(id, tag)
+	e.Native,exist = ConnectNative(e, tag)
 	if !exist {
 		SetAttribute(e, "id", id)
 	}
@@ -4244,7 +4021,7 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	withStringAttributeWatcher(e,"target")
 
 	return e
-}, AllowTooltip, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
+},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Form = formConstructor(func (options ...string) FormElement {
 	return FormElement{ui.BasicElement{LoadFromStorage(newForm(Elements.NewID(), options...))}}

@@ -42,15 +42,12 @@ var (
 
 // ApplicationElement is a type that represents a Terminal application
 type ApplicationElement struct {
-	UIElement ui.BasicElement
+	UIElement *ui.Element
 }
 
-func (w ApplicationElement) AsBasicElement() ui.BasicElement {
-	return w.UIElement
-}
 
 func (w ApplicationElement) AsElement() *ui.Element {
-	return w.UIElement.AsElement()
+	return w.UIElement
 }
 
 func(w ApplicationElement) running() bool{
@@ -165,7 +162,7 @@ var newApplication= Elements.NewConstructor("application", func(id string) *ui.E
 
 type appModifier struct{}
 func(m appModifier) AsApplicationElement(e *ui.Element) ApplicationElement{
-	return ApplicationElement{ui.BasicElement{e}}
+	return ApplicationElement{e}
 }
 
 func(m appModifier) EnableMNouse(enable bool) func(*ui.Element)*ui.Element{
@@ -235,7 +232,7 @@ func(m appModifier) SetRoot(p *ui.Element, fullscreen bool) func(*ui.Element)*ui
 
 func application(options ...string) ApplicationElement {
 	e:= newApplication("term-application", options...)
-	return ApplicationElement{ui.BasicElement{LoadFromStorage(e)}}
+	return ApplicationElement{LoadFromStorage(e)}
 }
 
 func GetApplication() ApplicationElement {
@@ -244,7 +241,7 @@ func GetApplication() ApplicationElement {
 		return application()
 	}
 	
-	return ApplicationElement{ui.BasicElement{w}}
+	return ApplicationElement{w}
 }
 
 // NativeElement defines a wrapper around a js.Value that implements the
@@ -376,7 +373,7 @@ func (w ApplicationElement) QueueUpdateDraw(f func()){
 }
 
 type Document struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 
@@ -419,7 +416,7 @@ func GetDocument(e *ui.Element) *Document{
 	if e.Root() == nil{
 		return nil
 	}
-	return &Document{ui.BasicElement{e.Root()}}
+	return &Document{e.Root()}
 }
 
 var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
@@ -456,7 +453,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 // in the tree of Elements that consitute the full document.
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
-	d:= Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
+	d:= Document{LoadFromStorage(newDocument(id, options...))}
 	d = DocumentInitializer(d)
 	return d
 }
@@ -464,7 +461,7 @@ func NewDocument(id string, options ...string) Document {
 
 // BoxElement
 type BoxElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e BoxElement) NativeElement() *tview.Box{
@@ -593,7 +590,7 @@ type boxModifier struct{}
 var BoxModifier boxModifier
 
 func (b boxModifier) AsBoxElement(e *ui.Element) BoxElement{
-	return BoxElement{ui.BasicElement{e}}
+	return BoxElement{e}
 }
 
 func(m boxModifier) SetBackgroundColor(color tcell.Color) func(*ui.Element) *ui.Element {
@@ -672,12 +669,12 @@ var newBox = Elements.NewConstructor("box",func(id string)*ui.Element{
 
 
 var Box = boxConstructor(func (options ...string) BoxElement {
-	return BoxElement{ui.BasicElement{LoadFromStorage(newBox(Elements.NewID(), options...))}}
+	return BoxElement{LoadFromStorage(newBox(Elements.NewID(), options...))}
 })
 
 type boxConstructor func(...string) BoxElement
 func(c boxConstructor) WithID(id string, options ...string)BoxElement{
-	e:= BoxElement{ui.BasicElement{LoadFromStorage(newBox(id, options...))}}
+	e:= BoxElement{LoadFromStorage(newBox(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -686,11 +683,22 @@ func(c boxConstructor) WithID(id string, options ...string)BoxElement{
 
 // ButtonElement
 type ButtonElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e ButtonElement) NativeElement() *tview.Button{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Button)
+}
+
+func(e ButtonElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -708,13 +716,13 @@ var newButton = Elements.NewConstructor("button",func(id string)*ui.Element{
 var Button = func (label string, options ...string) ButtonElement {
 	e:= newButton(Elements.NewID(), options...)
 	e.Native.(NativeElement).Value.(*tview.Button).SetLabel(label)
-	return ButtonElement{ui.BasicElement{LoadFromStorage(e)}}
+	return ButtonElement{LoadFromStorage(e)}
 }
 
 type buttonConstructor func(label string, options ...string) ButtonElement
 func(c buttonConstructor) WithID(id string) func(label string, options ...string)ButtonElement{
 	return func(label string, options ...string) ButtonElement{
-		e:= ButtonElement{ui.BasicElement{LoadFromStorage(newButton(id, options...))}}
+		e:= ButtonElement{LoadFromStorage(newButton(id, options...))}
 		e.NativeElement().SetLabel(label)
 		return e
 	}	
@@ -723,11 +731,22 @@ func(c buttonConstructor) WithID(id string) func(label string, options ...string
 
 // GridElement
 type GridElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e GridElement) NativeElement() *tview.Grid{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Grid)
+}
+
+func(e GridElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -743,12 +762,12 @@ var newGrid = Elements.NewConstructor("grid",func(id string)*ui.Element{
 
 
 var Grid = gridConstructor(func (options ...string) GridElement {
-	return GridElement{ui.BasicElement{LoadFromStorage(newGrid(Elements.NewID(), options...))}}
+	return GridElement{LoadFromStorage(newGrid(Elements.NewID(), options...))}
 })
 
 type gridConstructor func(...string) GridElement
 func(c gridConstructor) WithID(id string, options ...string)GridElement{
-	e:= GridElement{ui.BasicElement{LoadFromStorage(newGrid(id, options...))}}
+	e:= GridElement{LoadFromStorage(newGrid(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -756,13 +775,23 @@ func(c gridConstructor) WithID(id string, options ...string)GridElement{
 
 // FlexElement
 type FlexElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e FlexElement) NativeElement() *tview.Flex{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Flex)
 }
 
+func(e FlexElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
 
 var newFlex = Elements.NewConstructor("flex",func(id string)*ui.Element{
 	
@@ -776,12 +805,12 @@ var newFlex = Elements.NewConstructor("flex",func(id string)*ui.Element{
 
 
 var Flex = flexConstructor(func (options ...string) FlexElement {
-	return FlexElement{ui.BasicElement{LoadFromStorage(newFlex(Elements.NewID(), options...))}}
+	return FlexElement{LoadFromStorage(newFlex(Elements.NewID(), options...))}
 })
 
 type flexConstructor func(...string) FlexElement
 func(c flexConstructor) WithID(id string, options ...string)FlexElement{
-	e:= FlexElement{ui.BasicElement{LoadFromStorage(newFlex(id, options...))}}
+	e:= FlexElement{LoadFromStorage(newFlex(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -789,18 +818,29 @@ func(c flexConstructor) WithID(id string, options ...string)FlexElement{
 
 // PagesElement
 type PagesElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e PagesElement) NativeElement() *tview.Pages{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Pages)
 }
 
+func(e PagesElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
 type pagesModifier struct{}
 var PagesModifier pagesModifier
 
 func(m pagesModifier) AsPagesElement(e *ui.Element) PagesElement{
-	return PagesElement{ui.BasicElement{e}}
+	return PagesElement{e}
 }
 
 func(m pagesModifier) AddPage(name string, elements ...ui.AnyElement) func(*ui.Element)*ui.Element{
@@ -808,11 +848,11 @@ func(m pagesModifier) AddPage(name string, elements ...ui.AnyElement) func(*ui.E
 		b:= Box()
 		page:= b.AsElement().SetChildren(elements...)
 		ui.NewViewElement(e,ui.NewView(name,page))
-		p:= PagesElement{ui.BasicElement{e}}
+		p:= PagesElement{e}
 		p.NativeElement().AddPage(name,b.NativeElement(), true, false)
 
 		ui.ViewElement{e}.OnActivated(name, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			p:= PagesElement{ui.BasicElement{evt.Origin()}}.NativeElement()
+			p:= PagesElement{evt.Origin()}.NativeElement()
 			pname:= string(evt.NewValue().(ui.String))
 			
 			GetApplication().QueueUpdateDraw(func(){
@@ -875,12 +915,12 @@ var newPages = Elements.NewConstructor("pages",func(id string)*ui.Element{
 
 
 var Pages = pagesConstructor(func (options ...string) PagesElement {
-	return PagesElement{ui.BasicElement{LoadFromStorage(newPages(Elements.NewID(), options...))}}
+	return PagesElement{LoadFromStorage(newPages(Elements.NewID(), options...))}
 })
 
 type pagesConstructor func(...string) PagesElement
 func(c pagesConstructor) WithID(id string, options ...string)PagesElement{
-	e:= PagesElement{ui.BasicElement{LoadFromStorage(newPages(id, options...))}}
+	e:= PagesElement{LoadFromStorage(newPages(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -888,11 +928,22 @@ func(c pagesConstructor) WithID(id string, options ...string)PagesElement{
 
 // ModalElement
 type ModalElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e ModalElement) NativeElement() *tview.Modal{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Modal)
+}
+
+func(e ModalElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -908,12 +959,12 @@ var newModal = Elements.NewConstructor("modal",func(id string)*ui.Element{
 
 
 var Modal = modalConstructor(func (options ...string) ModalElement {
-	return ModalElement{ui.BasicElement{LoadFromStorage(newModal(Elements.NewID(), options...))}}
+	return ModalElement{LoadFromStorage(newModal(Elements.NewID(), options...))}
 })
 
 type modalConstructor func(...string) ModalElement
 func(c modalConstructor) WithID(id string, options ...string)ModalElement{
-	e:= ModalElement{ui.BasicElement{LoadFromStorage(newModal(id, options...))}}
+	e:= ModalElement{LoadFromStorage(newModal(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -921,13 +972,23 @@ func(c modalConstructor) WithID(id string, options ...string)ModalElement{
 
 // FormElement
 type FormElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e FormElement) NativeElement() *tview.Form{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Form)
 }
 
+func(e FormElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
 
 var newForm = Elements.NewConstructor("form",func(id string)*ui.Element{
 	
@@ -941,12 +1002,12 @@ var newForm = Elements.NewConstructor("form",func(id string)*ui.Element{
 
 
 var Form = formConstructor(func (options ...string) FormElement {
-	return FormElement{ui.BasicElement{LoadFromStorage(newForm(Elements.NewID(), options...))}}
+	return FormElement{LoadFromStorage(newForm(Elements.NewID(), options...))}
 })
 
 type formConstructor func(...string) FormElement
 func(c formConstructor) WithID(id string, options ...string)FormElement{
-	e:= FormElement{ui.BasicElement{LoadFromStorage(newForm(id, options...))}}
+	e:= FormElement{LoadFromStorage(newForm(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -954,13 +1015,23 @@ func(c formConstructor) WithID(id string, options ...string)FormElement{
 
 // ImageElement
 type ImageElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e ImageElement) NativeElement() *tview.Image{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Image)
 }
 
+func(e ImageElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
 
 var newImage = Elements.NewConstructor("image",func(id string)*ui.Element{
 	
@@ -974,12 +1045,12 @@ var newImage = Elements.NewConstructor("image",func(id string)*ui.Element{
 
 
 var Image = imageConstructor(func (options ...string) ImageElement {
-	return ImageElement{ui.BasicElement{LoadFromStorage(newImage(Elements.NewID(), options...))}}
+	return ImageElement{LoadFromStorage(newImage(Elements.NewID(), options...))}
 })
 
 type imageConstructor func(...string) ImageElement
 func(c imageConstructor) WithID(id string, options ...string)ImageElement{
-	e:= ImageElement{ui.BasicElement{LoadFromStorage(newImage(id, options...))}}
+	e:= ImageElement{LoadFromStorage(newImage(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -987,11 +1058,22 @@ func(c imageConstructor) WithID(id string, options ...string)ImageElement{
 
 // CheckboxElement
 type CheckboxElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e CheckboxElement) NativeElement() *tview.Checkbox{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Checkbox)
+}
+
+func(e CheckboxElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1007,12 +1089,12 @@ var newCheckbox = Elements.NewConstructor("checkbox",func(id string)*ui.Element{
 
 
 var Checkbox = checkboxConstructor(func (options ...string) CheckboxElement {
-	return CheckboxElement{ui.BasicElement{LoadFromStorage(newCheckbox(Elements.NewID(), options...))}}
+	return CheckboxElement{LoadFromStorage(newCheckbox(Elements.NewID(), options...))}
 })
 
 type checkboxConstructor func(...string) CheckboxElement
 func(c checkboxConstructor) WithID(id string, options ...string)CheckboxElement{
-	e:= CheckboxElement{ui.BasicElement{LoadFromStorage(newCheckbox(id, options...))}}
+	e:= CheckboxElement{LoadFromStorage(newCheckbox(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1020,11 +1102,22 @@ func(c checkboxConstructor) WithID(id string, options ...string)CheckboxElement{
 
 // DropDownElement
 type DropDownElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e DropDownElement) NativeElement() *tview.DropDown{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.DropDown)
+}
+
+func(e DropDownElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1040,12 +1133,12 @@ var newDropDown = Elements.NewConstructor("dropdown",func(id string)*ui.Element{
 
 
 var DropDown = dropdownConstructor(func (options ...string) DropDownElement {
-	return DropDownElement{ui.BasicElement{LoadFromStorage(newDropDown(Elements.NewID(), options...))}}
+	return DropDownElement{LoadFromStorage(newDropDown(Elements.NewID(), options...))}
 })
 
 type dropdownConstructor func(...string) DropDownElement
 func(c dropdownConstructor) WithID(id string, options ...string)DropDownElement{
-	e:= DropDownElement{ui.BasicElement{LoadFromStorage(newDropDown(id, options...))}}
+	e:= DropDownElement{LoadFromStorage(newDropDown(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1053,11 +1146,22 @@ func(c dropdownConstructor) WithID(id string, options ...string)DropDownElement{
 
 // InputFieldElement
 type InputFieldElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e InputFieldElement) NativeElement() *tview.InputField{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.InputField)
+}
+
+func(e InputFieldElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1073,12 +1177,12 @@ var newInputField = Elements.NewConstructor("inputfield",func(id string)*ui.Elem
 
 
 var InputField = inputfieldConstructor(func (options ...string) InputFieldElement {
-	return InputFieldElement{ui.BasicElement{LoadFromStorage(newInputField(Elements.NewID(), options...))}}
+	return InputFieldElement{LoadFromStorage(newInputField(Elements.NewID(), options...))}
 })
 
 type inputfieldConstructor func(...string) InputFieldElement
 func(c inputfieldConstructor) WithID(id string, options ...string)InputFieldElement{
-	e:= InputFieldElement{ui.BasicElement{LoadFromStorage(newInputField(id, options...))}}
+	e:= InputFieldElement{LoadFromStorage(newInputField(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1086,11 +1190,22 @@ func(c inputfieldConstructor) WithID(id string, options ...string)InputFieldElem
 
 // ListElement
 type ListElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e ListElement) NativeElement() *tview.List{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.List)
+}
+
+func(e ListElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1106,12 +1221,12 @@ var newList = Elements.NewConstructor("list",func(id string)*ui.Element{
 
 
 var List = listConstructor(func (options ...string) ListElement {
-	return ListElement{ui.BasicElement{LoadFromStorage(newList(Elements.NewID(), options...))}}
+	return ListElement{LoadFromStorage(newList(Elements.NewID(), options...))}
 })
 
 type listConstructor func(...string) ListElement
 func(c listConstructor) WithID(id string, options ...string)ListElement{
-	e:= ListElement{ui.BasicElement{LoadFromStorage(newList(id, options...))}}
+	e:= ListElement{LoadFromStorage(newList(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1119,11 +1234,22 @@ func(c listConstructor) WithID(id string, options ...string)ListElement{
 
 // TreeViewElement
 type TreeViewElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e TreeViewElement) NativeElement() *tview.TreeView{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.TreeView)
+}
+
+func(e TreeViewElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1139,12 +1265,12 @@ var newTreeView = Elements.NewConstructor("treeview",func(id string)*ui.Element{
 
 
 var TreeView = treeviewConstructor(func (options ...string) TreeViewElement {
-	return TreeViewElement{ui.BasicElement{LoadFromStorage(newTreeView(Elements.NewID(), options...))}}
+	return TreeViewElement{LoadFromStorage(newTreeView(Elements.NewID(), options...))}
 })
 
 type treeviewConstructor func(...string) TreeViewElement
 func(c treeviewConstructor) WithID(id string, options ...string)TreeViewElement{
-	e:= TreeViewElement{ui.BasicElement{LoadFromStorage(newTreeView(id, options...))}}
+	e:= TreeViewElement{LoadFromStorage(newTreeView(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1152,11 +1278,22 @@ func(c treeviewConstructor) WithID(id string, options ...string)TreeViewElement{
 
 // TableElement
 type TableElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e TableElement) NativeElement() *tview.Table{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.Table)
+}
+
+func(e TableElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1172,12 +1309,12 @@ var newTable = Elements.NewConstructor("table",func(id string)*ui.Element{
 
 
 var Table = tableConstructor(func (options ...string) TableElement {
-	return TableElement{ui.BasicElement{LoadFromStorage(newTable(Elements.NewID(), options...))}}
+	return TableElement{LoadFromStorage(newTable(Elements.NewID(), options...))}
 })
 
 type tableConstructor func(...string) TableElement
 func(c tableConstructor) WithID(id string, options ...string)TableElement{
-	e:= TableElement{ui.BasicElement{LoadFromStorage(newTable(id, options...))}}
+	e:= TableElement{LoadFromStorage(newTable(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1185,11 +1322,22 @@ func(c tableConstructor) WithID(id string, options ...string)TableElement{
 
 // TextAreaElement
 type TextAreaElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e TextAreaElement) NativeElement() *tview.TextArea{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.TextArea)
+}
+
+func(e TextAreaElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1205,12 +1353,12 @@ var newTextArea = Elements.NewConstructor("textarea",func(id string)*ui.Element{
 
 
 var TextArea = textareaConstructor(func (options ...string) TextAreaElement {
-	return TextAreaElement{ui.BasicElement{LoadFromStorage(newTextArea(Elements.NewID(), options...))}}
+	return TextAreaElement{LoadFromStorage(newTextArea(Elements.NewID(), options...))}
 })
 
 type textareaConstructor func(...string) TextAreaElement
 func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
-	e:= TextAreaElement{ui.BasicElement{LoadFromStorage(newTextArea(id, options...))}}
+	e:= TextAreaElement{LoadFromStorage(newTextArea(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e
@@ -1218,11 +1366,22 @@ func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
 
 // TextViewElement
 type TextViewElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e TextViewElement) NativeElement() *tview.TextView{
 	return e.AsElement().Native.(NativeElement).Value.(*tview.TextView)
+}
+
+func(e TextViewElement) UnderlyingBox() BoxElement{
+	box:= Elements.GetByID(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
 }
 
 
@@ -1238,12 +1397,12 @@ var newTextView = Elements.NewConstructor("textview",func(id string)*ui.Element{
 
 
 var TextView = textviewConstructor(func (options ...string) TextViewElement {
-	return TextViewElement{ui.BasicElement{LoadFromStorage(newTextView(Elements.NewID(), options...))}}
+	return TextViewElement{LoadFromStorage(newTextView(Elements.NewID(), options...))}
 })
 
 type textviewConstructor func(...string) TextViewElement
 func(c textviewConstructor) WithID(id string, options ...string)TextViewElement{
-	e:= TextViewElement{ui.BasicElement{LoadFromStorage(newTextView(id, options...))}}
+	e:= TextViewElement{LoadFromStorage(newTextView(id, options...))}
 	n:= e.NativeElement()
 	n.SetTitle(id)
 	return e

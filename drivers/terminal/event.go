@@ -12,6 +12,8 @@ import (
 	"github.com/rivo/tview"
 )
 
+// TODO check whihc elements may bubble and whcih may be cancelable
+
 // CreateKeyEvent returns a new KeyEvent.
 func CreateKeyEvent(target *ui.Element, evt *tcell.EventKey) ui.Event {
 	e:= ui.NewEvent("key",false,true,target,target,evt,nil)
@@ -687,6 +689,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					
 					ui.DoSync(func(){
 						listener.DispatchEvent(evt)
+
 					})
 					
 				})

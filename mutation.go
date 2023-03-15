@@ -136,10 +136,11 @@ type MutationHandler struct {
 	Fn func(MutationEvent) bool
 	Once bool
 	ASAP bool
+	binding bool
 }
 
 func NewMutationHandler(f func(evt MutationEvent) bool) *MutationHandler {
-	return &MutationHandler{f,false,false}
+	return &MutationHandler{f,false,false,false}
 }
 
 // RunOnce indicates that the handler will run only for the next occurence of a mutation event. 
@@ -151,6 +152,7 @@ func(m *MutationHandler) RunOnce() *MutationHandler{
 	}
 	n:= NewMutationHandler(m.Fn)
 	n.ASAP = m.ASAP
+	n.binding = m.binding
 	n.Once = true
 	return n
 }
@@ -165,7 +167,19 @@ func(m *MutationHandler) RunASAP() *MutationHandler{
 	}
 	n:= NewMutationHandler(m.Fn)
 	n.Once = m.Once
+	n.binding = m.binding
 	n.ASAP = true
+	return n
+}
+
+func(m *MutationHandler) binder() *MutationHandler{
+	if m.binding{
+		return m
+	}
+	n:= NewMutationHandler(m.Fn)
+	n.Once = m.Once
+	n.ASAP = m.ASAP
+	n.binding = true
 	return n
 }
 

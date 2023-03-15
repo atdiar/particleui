@@ -17,11 +17,12 @@ func (o Observable) AsElement() *Element {
 	return o.UIElement
 }
 
-func newObservable(id string, options ...func(*Element)*Element) Observable {
+func newObservable(id string) Observable {
 	if strings.Contains(id, "/") {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
 	e := &Element{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -41,11 +42,26 @@ func newObservable(id string, options ...func(*Element)*Element) Observable {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 	}
-	e.Set("internals","constructor",String("observable"))
-	for _,option:=range options{
-		e=option(e)
-	}
+
+	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
+		registerElement(evt.Origin().Root(),evt.Origin())
+		evt.Origin().BindValue("internals","documentstate",evt.Origin().Root()) // normal vs replaying vs ...
+		return false
+	}).RunOnce())
+
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
+		unregisterElement(evt.Origin().Root(),e)
+		return false
+	}).RunOnce())
+
+	
+
+	e = withFetchSupport(e)
+
 	return Observable{e}
 }
 
@@ -64,16 +80,6 @@ func (o Observable) Watch(category string, propname string, owner Watchable, h *
 
 func (o Observable) Unwatch(category string, propname string, owner Watchable) Observable {
   o.AsElement().Unwatch(category,propname,owner)
-  return o
-}
-
-func (o Observable) WatchGroup(category string, target Watchable, h *MutationHandler) Observable {
-  o.AsElement().WatchGroup(category,target,h)
-  return o
-}
-
-func (o Observable) UnwatchGroup(category string, owner *Element) Observable {
-  o.AsElement().UnwatchGroup(category,owner)
   return o
 }
 
