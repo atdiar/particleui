@@ -1,28 +1,16 @@
 package ui
 
 import (
-	"bytes"
 	"context"
 	"encoding/base32"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"time"
 )
 
-const(
-	runningFetch = "started"
-	successfulFetch = "successful"
-	abortedFetch = "aborted"
-	failedFetch	= "failed"
 
-	// ReplayNavMode is a navigation mode. When navigation is in replay mode, it means that
-	// all navocontext-aware async goroutines are cancelled icnludind outbound fetch calls.
-	ReplayNavMode = "replay"
-	NormalNavMode = "normal"
-)
 
 func init(){
 	SetHttpClient(HttpClient)
@@ -78,7 +66,78 @@ func DoAsync(root *Element,f func()){
 	}()
 }
 
-// NewDataFetcher allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
+
+
+func(e *Element) setDataPrefetcher(propname string, reqfunc func(e*Element) *http.Request, responsehandler func(*http.Response)(Value,error)) {
+	// TODO panic if data fetcher already exists for this propname
+	if e.fetching(prefetchTxName(propname,"start")){ // todo this is not the right propname to check. should use the fetching transition prop name
+		panic("a data fetcher has already been set for this element and property")
+	}
+	
+
+	e.registerPrefetch(propname)
+	var ctx context.Context
+	var cancelFn context.CancelFunc
+		
+	
+	prefetch := NewMutationHandler(func(evt MutationEvent)bool{
+		if  evt.Origin().isFetchedDataValid(propname){
+			return false
+		}
+		if evt.Origin().isPrefetchedDataValid(propname){
+			return false
+		}
+		
+		r:= reqfunc(e)
+		ctx,cancelFn = context.WithCancel(r.Context())
+		r = r.WithContext(ctx)
+
+
+		// After a new http.Request has been launched and a response has been returned, cancel and refetch
+		// the data corresponding to the r.URL (it just cancels the prefecthing here. 
+		// The fetching should ensue as normal)
+		evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
+			event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
+				cancelFn()
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce().RunASAP())
+		
+
+		evt.Origin().fetchData(propname,r,responsehandler,true)
+		return false
+	}).fetcher()
+
+	cancel := NewMutationHandler(func(event MutationEvent)bool{
+		cancelFn()
+		return false
+	}).RunOnce()
+
+	end := NewMutationHandler(func(evt MutationEvent)bool{
+		switch t:=evt.NewValue().(type){
+		case String:
+			if t.String() == "cancelled"{
+				e.prefetchCompleted(propname,false)
+			} else{
+				panic("unexpected prefetch transition end value")
+			}
+		case Bool:
+			if t.Bool(){
+				evt.Origin().prefetchCompleted(propname,true)
+			} else{
+				evt.Origin().prefetchCompleted(propname,false) 
+			}
+		}
+		return false
+	}).RunOnce()
+
+	e.newPrefetchTransition(propname,prefetch,cancel,end) 
+
+}
+
+
+// SetDataFetcher allows an element to retrieve data by sending a http Get request as soon as it gets mounted.
 // It accepts a function as argument that is tasked with converting the *http.Response into 
 // a Value that can be stored as an element property.
 // Unless stated otherwise, the data is made prefetchable as well.
@@ -86,140 +145,43 @@ func DoAsync(root *Element,f func()){
 //
 // The fetching occurs during the "fetch" event ("event","fetch") that is triggered each time an element
 // is mounted.
-func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehandler func(*http.Response)(Value,error), noprefetch ...bool) {
-	e.RemoveDataFetcher(propname)
-	prefetchable:= true
-	if noprefetch != nil{
-		prefetchable = false
+func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.Request, responsehandler func(*http.Response)(Value,error), prefetchable bool) {
+	// TODO panic if data fetcher already exists for this propname
+	if e.fetching(fetchTxName(propname,"start")){ // todo this is not the right propname to check. should use the fetching transition prop name
+		panic("a data fetcher has already been set for this element and property")
 	}
-	
+
+	e.registerfetch(propname)
 
 	if prefetchable{
-		if !e.isPrefetchable(propname){
-			e.makePrefetchable(propname)
-			
-			
-
-			prefetchhandler := NewMutationHandler(func(evt MutationEvent)bool{
-				if  evt.Origin().isFetchedDataValid(propname){
-					return false
-				}
-				if evt.Origin().isPrefetchedDataValid(propname){
-					return false
-				}
-				
-				r:= cloneReq(req)
-				ctx,cancelFn:= context.WithCancel(r.Context())
-				r = r.WithContext(ctx)
-
-				evt.Origin().OnDeleted(NewMutationHandler(func(event MutationEvent)bool{
-					cancelFn()
-					return false
-				}).RunOnce())
-
-				oncancelprefetch:= NewMutationHandler(func(event MutationEvent)bool{
-					cancelFn()
-					return false
-				}).RunOnce()
-
-				var fetchcancelerremover *MutationHandler
-				fetchcancelerremover= NewMutationHandler(func(event MutationEvent)bool{
-					p:= string(event.NewValue().(String))
-					if p != propname{
-						return true
-					}
-					event.Origin().RemoveMutationHandler("event","cancelprefetchrequests",event.Origin(),oncancelprefetch)
-					event.Origin().RemoveMutationHandler("event","removedatafetcher",event.Origin(),fetchcancelerremover)
-					return false
-				})
-				evt.Origin().WatchEvent("removedatafetcher", evt.Origin(), fetchcancelerremover)
-
-				evt.Origin().Watch("event","cancelprefetchrequests",evt.Origin(),oncancelprefetch)
-
-
-				// After a new http.Request has been launched and a response has been returned, cancel and refetch
-				// the data corresponding to the req.URL (it just cancels the prefecthing here. 
-				// The fetching should ensue as normal)
-				evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
-					event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
-						cancelFn()
-						return false
-					}).RunOnce())
-					return false
-				}).RunOnce().RunASAP())
-				
-
-				evt.Origin().fetchData(propname,r,responsehandler,true)
-				return false
-			})
-
-			var dataprefetcherremover *MutationHandler
-			dataprefetcherremover=NewMutationHandler(func(evt MutationEvent)bool{
-				p:= string(evt.NewValue().(String))
-				if p != propname{
-					return true
-				}
-				evt.Origin().RemoveMutationHandler("event","prefetch",evt.Origin(),prefetchhandler)
-				evt.Origin().RemoveMutationHandler("event","removedatafetcher",evt.Origin(),dataprefetcherremover)
-				return false
-			})
-			e.WatchEvent("removedatafetcher", e, dataprefetcherremover)
-
-			e.Watch("event","prefetch",e,prefetchhandler)
-		}
+		e.setDataPrefetcher(propname, reqfunc, responsehandler)
 	}
 
-	fetchhandler:= NewMutationHandler(func(evt MutationEvent) bool{
+	var ctx context.Context
+	var cancelFn context.CancelFunc
+
+
+	fetch:= NewMutationHandler(func(evt MutationEvent) bool{
 		if evt.Origin().isFetchedDataValid(propname){
 			return false
 		}
 		if evt.Origin().isPrefetchedDataValid(propname){
-			evt.Origin().fetchCompleted(propname,true)
+			evt.Origin().endfetchTransition(propname)
 			return false
 		}
+		
 
-		r:= cloneReq(req)
-		ctx,cancelFn:= context.WithCancel(r.Context())
+		r:= reqfunc(e)
+		ctx,cancelFn= context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
 
-		oncancelfetch:= NewMutationHandler(func(event MutationEvent)bool{
-			cancelFn()
-			return false
-		}).RunOnce()
-
-		evt.Origin().OnDeleted(NewMutationHandler(func(event MutationEvent)bool{
-			cancelFn()
-			return false
-		}).RunOnce())
-
-		var fetchcancelerremover *MutationHandler
-		fetchcancelerremover=NewMutationHandler(func(event MutationEvent)bool{
-			p:= string(event.NewValue().(String))
-			if p != propname{
-				return false
-			}
-			event.Origin().RemoveMutationHandler("event","cancelfetchrequests",event.Origin(),oncancelfetch)
-			event.Origin().RemoveMutationHandler("event","removedatafetcher",event.Origin(),fetchcancelerremover)
-			return false
-		})
-
-		evt.Origin().WatchEvent("removedatafetcher", evt.Origin(), fetchcancelerremover)
-
-		evt.Origin().Watch("event","cancelfetchrequests",evt.Origin(),oncancelfetch)
-
-		// invalidation should make sure that any inflight fetch is cancelled (response is stale)
-		evt.Origin().WatchEvent("invalidate_"+propname+"_fetch",evt.Origin(),NewMutationHandler(func(event MutationEvent)bool{
-			cancelFn()
-			return false
-		}).RunOnce())
 
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
-		// the data corresponding to the req.URL
+		// the data corresponding to the r.URL
 		evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
 			event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
-				e.InvalidateFetch(propname)
-				cancelFn()
-				e.Fetch()
+				event.Origin().InvalidateFetch(propname)
+				event.Origin().Fetch()
 				return false
 			}).RunOnce())
 			return false
@@ -228,72 +190,66 @@ func(e *Element) NewDataFetcher(propname string, req *http.Request, responsehand
 
 		evt.Origin().fetchData(propname,r,responsehandler,false)
 		return false
-	})
+	}).fetcher()
 
-	var datafetcherremover *MutationHandler
-	datafetcherremover=NewMutationHandler(func(evt MutationEvent)bool{
-		p:= string(evt.NewValue().(String))
-		if p != propname{
-			return true
-		}
-		evt.Origin().RemoveMutationHandler("event","fetch",evt.Origin(),fetchhandler)
-		evt.Origin().RemoveMutationHandler("event","removedatafetcher",evt.Origin(),datafetcherremover)
+	cancel := NewMutationHandler(func(event MutationEvent)bool{
+		cancelFn()
 		return false
-	})
-	e.WatchEvent("removedatafetcher", e, datafetcherremover)
+	}).RunOnce()
 
-	e.OnFetch(fetchhandler)             
+	end := NewMutationHandler(func(evt MutationEvent)bool{
+		switch t:=evt.NewValue().(type){
+		case String:
+			if t.String() == "cancelled"{
+				e.fetchCompleted(propname,false)
+			} else{
+				panic("unexpected fetch transition end value")
+			}
+		case Bool:
+			if t.Bool(){
+				evt.Origin().fetchCompleted(propname,true)
+			} else{
+				evt.Origin().fetchCompleted(propname,false) 
+			}
+		}
+		return false
+	}).RunOnce()
+
+	e.newFetchTransition(propname,fetch,cancel,end)             
 
 }
 
-func(e *Element) NewURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), noprefetch ...bool){
+func(e *Element) SetURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), prefetchable bool){
 	router:= GetRouter(e.Root())
-	req,err:= http.NewRequestWithContext(router.NavContext,"GET",url,nil)
+	r,err:= http.NewRequestWithContext(router.NavContext,"GET",url,nil)
 	if err!= nil{
-		panic(url + " is malformed most likely. Unable to create new request")
+		panic(url + " might be malformed. Unable to create new request")
 	}
-	e.NewDataFetcher(propname,req,responsehandler,noprefetch...)
-}
-
-func(e *Element) RemoveDataFetcher(propname string){
-	e.TriggerEvent("removedatafetcher",String(propname))
+	e.SetDataFetcher(propname,func(*Element) *http.Request{return r},responsehandler, prefetchable)
 }
 
 // CancelFetch will abort ongoing fetch requests.
-func(e *Element) CancelFetch(){
-	e.TriggerEvent("cancelfetchrequests")
-	e.Set("fetchstatus","cancelled",Bool(true))
+func(e *Element) CancelAllFetches(){
+	// iterate through alln props registered for fetching (runtime fetchlist)
+	// cancel the fetch transition for each of them
+	f,ok:= e.Get("runtime","fetchlist")
+	if !ok{
+		return
+	}
+	fetchlist:= f.(Object).MustGetList("fetch_index")
+	for _,propname:= range fetchlist{
+		e.CancelFetch(propname.(String).String())
+	}
 }
 
-func(e *Element) cancelPrefetch(){
-	e.TriggerEvent("cancelprefetchrequests")
+func(e *Element) CancelFetch(propname string){
+	e.cancelfetchTransition(propname)
 }
 
-/*
-// CancelFetchOnError is an Element modifier that automatically aborts all ongoing fetches as soon 
-// as one failed.
-// It is not the default so as to leave the possibility to implement retries.
-func CancelFetchOnError(e *Element) *Element{
-	e.OnFetched(NewMutationHandler(func(evt MutationEvent)bool{
-		oldv:= evt.OldValue()
-		o,ok:= oldv.(Bool)
-		if !ok{
-			if oldv == nil{
-				o = true
-			}
-			panic("OldValue for Fetched event of unexpected type. For a first time fetch, should be nil")
-		}
-		n:= evt.NewValue().(Bool)
-		if !n && o{
-			e.TriggerEvent("cancelfetchrequests")
-		}
-		return false
-	}))
-
-	return e
+func(e *Element) cancelPrefetch(propname string){
+	e.cancelprefetchTransition(propname)
 }
 
-*/
 
 // WasFetchCancelled answers the question of whether a fecth was cancelled or not.
 // It can be used when handling a "fetched" event (OnFetched) to differentiate fetching failure
@@ -305,7 +261,10 @@ func(e *Element) WasFetchCancelled() bool{
 
 
 
-func(e *Element) fetchData(propname string, req *http.Request, responsehandler func(*http.Response) (Value,error), prefetch bool){
+func(e *Element) fetchData(propname string, r *http.Request, responsehandler func(*http.Response) (Value,error), prefetch bool){
+	if responsehandler == nil{
+		panic("response handler is not specified. Will not be able to process the data fetching request")
+	}
 	var prefetching = prefetch
 
 	if e.isPrefetchedDataValid(propname){
@@ -314,57 +273,35 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 		}
 		return
 	} else if !prefetching{
-		e.cancelPrefetch()
-	}
-
-	// Register new fetch in fetchlist unless fetch is already running
-	startfetch:= e.initFetch(propname)
-
-	if !startfetch{
-		return
+		e.cancelPrefetch(propname)
 	}
 
 	
 	DoAsync(e.Root(),func(){
 
-		res, err:= HttpClient.Do(req)
+		res, err:= HttpClient.Do(r)
 		if err!= nil{
 			DoSync(func() {
 				if prefetching{
-					e.prefetchCompleted(propname,false)
+					e.EndTransition("prefecth-"+propname, Bool(false))
 				}else{
-					e.pushFetchError(propname,err)
-					e.fetchCompleted(propname,false)
+					e.pushFetchError(propname,err) 
+					e.EndTransition("fetch-"+propname, Bool(false))
 				}	
 			})
 			return
 		}
 		defer res.Body.Close()
-		/* TODO that should be handled by the responsehandler
-		
-		if res.StatusCode < http.StatusOK && res.StatusCode >= 300{
-			DoSync(func() {
-				if prefetching{
-					e.prefetchCompleted(propname,false)
-				}else{
-					e.pushFetchError(propname,errors.New(res.Status))
-					e.fetchCompleted(propname,false)
-				}	
-			})
-			return
-		}*/
-		
-		if responsehandler == nil{
-			return
-		}
+
+
 		v,err:= responsehandler(res)
 		if err!= nil{
 			DoSync(func() {
 				if prefetching{
-					e.prefetchCompleted(propname,false)
+					e.EndTransition("prefecth-"+propname, Bool(false))
 				}else{
-					e.pushFetchError(propname,err)
-					e.fetchCompleted(propname,false)
+					e.pushFetchError(propname,err) 
+					e.EndTransition("fetch-"+propname, Bool(false))
 				}	
 			})
 			return
@@ -372,93 +309,172 @@ func(e *Element) fetchData(propname string, req *http.Request, responsehandler f
 		DoSync(func() {
 			e.SetData(propname,v)
 			if prefetching{
-				e.prefetchCompleted(propname,true)
+				e.EndTransition("prefecth-"+propname)
 			}else{
-				e.fetchCompleted(propname,true)
+				e.EndTransition("fetch-"+propname)
 			}
 		})
 	})
 }
 
-func cloneReq(req *http.Request) (*http.Request){
-	r:= req.Clone(req.Context())
-	if req.Body == io.ReadCloser(nil){
+/*
+func cloneReq(r *http.Request) (*http.Request){
+	r:= r.Clone(r.Context())
+	if r.Body == io.ReadCloser(nil){
 		return r
 	}
-	body,err:= io.ReadAll(req.Body)
+	body,err:= io.ReadAll(r.Body)
 	if err!= nil{
 		panic(err)
 	}
-	req.Body = io.NopCloser(bytes.NewReader(body))
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return r
 }
+*/
+
+// enablefetching enablesa fetch transition for an element
+func(e *Element) enablefetching() *Element{
+	prefetch := NewMutationHandler(func(evt MutationEvent)bool{
+		// prefetchstart by iterating on prefetchlist
+		fl,ok:=evt.Origin().Get("runtime","prefetchlist")
+		if !ok{
+			e.EndTransition("prefetch")
+			return false
+		}
+		prefetchlist:= fl.(Object)
+
+		if len(prefetchlist) == 0{
+			e.EndTransition("prefetch")
+		}
+		for propname:= range prefetchlist{
+			e.startprefetchTransition(propname)
+		}
+		
+		return false
+	})
+
+	fetch:= NewMutationHandler(func(evt MutationEvent)bool{
+		// fetchstart by iterating on fetchlist
+		fl,ok:=evt.Origin().Get("runtime","fetchlist")
+		if !ok{
+			e.EndTransition("fetch")
+			return false
+		}
+		fetchlist:= fl.(Object).MustGetList("fetch_index")
+		if len(fetchlist) == 0{
+			e.EndTransition("fetch")
+		}
+		for _,v:= range fetchlist{
+			propname:= v.(String).String()
+			e.startfetchTransition(propname)
+		}
+
+		return false
+	})
+
+	cancel:=  NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().CancelAllFetches()
+		return false
+	})
+
+	e.DefineTransition("prefetch", prefetch,nil,nil)
+	e.DefineTransition("fetch", fetch,cancel,nil)
+
+	e.OnFetchError(NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().OnFetchError(NewMutationHandler(func(event MutationEvent)bool{
+			event.Origin().EndTransition("fetch",event.NewValue())
+			return false
+		}).RunOnce())
+		
+		return false
+	}))
+
+	return e
+}
 
 func(e *Element) Prefetch(){
-	e.TriggerEvent("prefetch")
+	if !e.Registered(){
+		panic("Prefetch can only be called on registered elements")
+	}
 	
+	// should start the prefetching process by triggering the prefetch transitions that have been registered
+	e.StartTransition("prefetch")
+		
 }
 
 
 func(e *Element) Fetch(){
+	if !e.Registered(){
+		panic("Fetch can only be called on registered elements")
+	}
 	e.Properties.Delete("runtime","fetcherrors")
 	e.Properties.Delete("fetchstatus","cancelled")
 
-	e.TriggerEvent("fetch")
+	// should start the fetching process by triggering the fetch transitions that have been registered
+	e.StartTransition("fetch")
 	
 }
 
+func(e *Element) ForceFetch(){
+	e.InvalidateAllFetches()
+	e.Fetch()
+}
+
 func(e *Element) OnFetch(h *MutationHandler){
-	e.WatchEvent("fetch",e,h)
+	e.OnTransitionStart("fetch",h)
+}
+
+func(e *Element) OnFetchCancel(h *MutationHandler){
+	e.OnTransitionCancel("fetch",h)
 }
 
 func(e *Element) OnFetched(h *MutationHandler){
-	e.Watch("event","fetched",e,h)
+	e.OnTransitionEnd("fetch",h)
+}
+
+func(e *Element) OnFetchError(h *MutationHandler){
+	e.Watch("runtime","fetcherrors",e,h)
 }
 
 func(e *Element) InvalidateFetch(propname string){
-	e.invalidatePrefetch(propname)
-	l,ok:=e.Get("runtime","fetchlist")
-	if !ok{
-		return
-	}
-	r:= l.(Object)
-	fs,ok:= r.Get(propname)
-	if !ok{
-		return
-	}
-	s:= fs.(Object)
-	s.Set("stale",Bool(true))
-	r.Set(propname,s)
+	if e.Registered(){
+		e.invalidatePrefetch(propname)
+		l,ok:=e.Get("runtime","fetchlist") 
+		if !ok{
+			return
+		}
+		r:= l.(Object)
+		fs,ok:= r.Get(propname)
+		if !ok{
+			return
+		}
+		s:= fs.(Object)
+		s.Set("stale",Bool(true))
+		r.Set(propname,s)
 
-	e.Set("runtime", "fetchlist",r)
-	e.TriggerEvent("invalidate_"+propname+"_fetch") // needs to send a signal to cancel fetches that are in flight
+		e.Set("runtime", "fetchlist",r)
+		e.CancelFetch(propname)
+	}
 }
 
 func(e *Element)InvalidateAllFetches(){
-	l,ok:=e.Get("runtime","fetchlist")
-	if !ok{
-		return
-	}
-	fl:= l.(Object)
-	for _,pname:= range fl{
-		prop,ok:= pname.(string)
-		if ok{
-			e.InvalidateFetch(prop)
+	if e.Registered(){
+		l,ok:=e.Get("runtime","fetchlist") 
+		if !ok{
+			return
 		}
-	}	
+		fl:= l.(Object)
+		for _,pname:= range fl{
+			prop,ok:= pname.(string)
+			if ok{
+				e.InvalidateFetch(prop)
+			}
+		}	
+	}
 }
 
-/*
-func fetchEnabled(e *Element) bool{
-	v,ok:= e.Get("internals","fetchingenabled")
-	if !ok{
-		return false
-	}
-	b:= bool(v.(Bool))
-	return b
-}
-*/
+
 
 // GetFetchErrors returns, if it exists, a map where each propname key whose fetch failed has a corresponding
 // error. Useful to implement retries.
@@ -475,7 +491,6 @@ func GetFetchErrors(e *Element) (map[string]error,bool){
 }
 
 
-
 func(e *Element) pushFetchError(propname string, err error){
 	var errlist Object
 	v,ok:= e.Get("runtime","fetcherrors")
@@ -487,46 +502,34 @@ func(e *Element) pushFetchError(propname string, err error){
 	e.Set("runtime","fetcherrors",errlist)
 }
 
-func(e *Element) OnFetchError(h *MutationHandler){
-	e.Watch("runtime","fetcherrors",e,h)
-}
 
 
-
-func(e *Element) initFetch(propname string )bool{
+func(e *Element) registerfetch(propname string ){
 	var fetchlist Object
 	var fetchindex List
 
 	o,ok:= e.Get("runtime","fetchlist")
 	if ok{
 		fetchlist= o.(Object)
-		fi,ok:= fetchlist.Get("fetch_index")
+		_,ok:= fetchlist.Get("fetch_index")
 		if !ok{
 			panic("Framework error: fetch index missing")
-		}
-		fetchindex= fi.(List)
-		fso,ok:= fetchlist.Get(propname)
-		if ok{
-			fs,ok:= fso.(Object).Get("status")
-			if ok{
-				if string(fs.(String)) == runningFetch{
-					return false
-				}
-			}
 		}
 	}else{
 		fetchlist = NewObject()
 		fetchindex = NewList()
 	}
 	f:= NewObject()
-	f.Set("status",String("started"))
 	
 	fetchindex = append(fetchindex,String(propname))
 	fetchlist.Set("fetch_index",fetchindex)
 	fetchlist.Set(propname,f)
 	e.Set("runtime","fetchlist",fetchlist)
-	return true
 }
+
+// Note that if an error occured during the fetching process (e.g. on of the fetch failed), 
+// the process is not considered of having completed.
+// The fetch transition is not ended to allow for retries in the error state.
 
 func(e *Element) checkFetchCompletion(){
 	completed := true
@@ -545,44 +548,36 @@ func(e *Element) checkFetchCompletion(){
 		propname := string(prop.(String))
 		status,ok:= l.Get(propname)
 		if !ok{
-			panic("FAIL: a listed propname does not have a status object. This is a error of particleui")
+			return
 		}
 		s:= status.(Object)
 		st,ok:= s.Get("status")
 		if !ok{
-			panic("FAIL: missing status field for the fetch object. This is a framwework error")
+			// this is not completed
+			return
 		}
-		if stat:= string(st.(String)); stat != runningFetch{
-			if stat != successfulFetch{
-				e.Set("event","fetched", Bool(false))
-				return
-			}
+		stat:= st.(String).String()
+		if  stat == "successful"{
+			// this is not completed, this is in a failed state.. the transietion is not ended.
 			continue
 		}
+		
 		completed = false
+		break
 	}
 	if completed{
-		e.Set("event","fetched", Bool(completed))
+		e.EndTransition("fetch")
 	}
 }
 
 
-func(e *Element) makePrefetchable(propname string){
+func(e *Element) registerPrefetch(propname string){
 	l:= NewObject()
 	p:= NewObject()
 	l.Set(propname,p)
 	e.Set("runtime","prefetchlist",l)
 }
 
-func(e *Element)isPrefetchable(propname string) bool{
-	l,ok:=e.Get("runtime","prefetchlist")
-	if !ok{
-		return false
-	}
-	r:= l.(Object)
-	_,ok= r.Get(propname)
-	return ok
-}
 
 func(e *Element) isPrefetchedDataValid(propname string) bool{
 	l,ok:=e.Get("runtime","prefetchlist")
@@ -651,6 +646,7 @@ func(e *Element) invalidatePrefetch(propname string){
 		r.Set(propname,s)	
 	}
 	e.Set("runtime","prefetchlist",r)
+	e.cancelPrefetch(propname)
 }
 
 func(e *Element) fetchCompleted(propname string, successfully bool){
@@ -698,71 +694,119 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 	return !bool(stale.(Bool))
 }
 
+// Fetch transition helpers
+
+func (e *Element) newFetchTransition(propname string, onstart, oncancel,onend *MutationHandler){
+	e.DefineTransition("fetch-"+propname,onstart,oncancel,onend)
+}
+
+func (e *Element) newPrefetchTransition(propname string, onstart, oncancel,onend *MutationHandler){
+	e.DefineTransition("prefetch-"+propname,onstart,oncancel,onend)
+}
+
+func(e *Element) startfetchTransition(propname string){
+	e.StartTransition("fetch-"+propname)
+}
+
+func(e *Element) startprefetchTransition(propname string){
+	e.StartTransition("prefetch-"+propname)
+}
+
+func(e *Element) cancelfetchTransition(propname string){
+	e.CancelTransition("fetch-"+propname)
+}
+
+func(e *Element) cancelprefetchTransition(propname string){
+	e.CancelTransition("prefetch-"+propname)
+}
+
+func(e *Element) endprefetchTransition(propname string, values ...Value){
+	e.EndTransition("prefetch-"+propname, values...)
+}
+
+func(e *Element) endfetchTransition(propname string, values ...Value){
+	e.EndTransition("fetch-"+propname, values...)
+}
+
+
+func fetchTxName(propname, phase string) string {
+	return transition("fetch-"+propname, phase)
+}
+
+func prefetchTxName(propname, phase string) string{
+	return transition("prefetch-"+propname, phase)
+}
+
+
+//  Making requests at the Element level
+
 // An Element should also be able to send requests to a remote server besides retrieving data
 // via GET (POST, PUT, PATCH,  UPDATE, DELETE)
 // When such a request is made to an endpoint, the Data Fetched should be invalidated and refetched.
-
+// This is because the data may have changed on the server side.
+// 
+// The Element should be part of a document i.e. registered.
 // NewRequest makes a http Request using the default client
-func(e *Element) NewRequest(req *http.Request, responsehandler func(*http.Response)(Value,error)){
-	// it's a new request, henceforth the previous response must be eliminated.
-	e.Properties.Delete("event",newRequestEventName("end",req.URL.String())) 
-	e.TriggerEvent(newRequestEventName("start",req.URL.String()),newRequestStateObject(nil,nil))
-	
-	
-	r:= cloneReq(req)
-	ctx,cancelFn:= context.WithCancel(r.Context())
-	r = r.WithContext(ctx)
+func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response)(Value,error)){
+	if !e.Registered(){
+		panic("Element is not registered. Cannot process request")
+	}
 
-	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
-		e.CancelRequest(r) 
+	var ctx context.Context
+	var cancelFn context.CancelFunc
+
+	request := NewMutationHandler(func(evt MutationEvent)bool{
+		ctx,cancelFn= context.WithCancel(r.Context())
+		r = r.WithContext(ctx)
+
+		DoAsync(e.Root(),func() {
+			res, err:= HttpClient.Do(r)
+			if err!= nil{
+				DoSync(func(){
+					e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
+				})
+				return
+			}
+			defer res.Body.Close()
+			if responsehandler == nil{
+				return
+			}
+			v,err:= responsehandler(res)
+			if err!= nil{
+				DoSync(func(){
+					e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
+				})
+				return
+			}
+			DoSync(func(){
+				e.endrequestTransition(r.URL.String(),newRequestStateObject(v,nil))
+			})
+		})
 		return false
-	}).RunOnce())
-	
+	}).RunOnce()
 
-	e.WatchEvent(newRequestEventName("cancel",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
+	
+	cancel := NewMutationHandler(func(evt MutationEvent)bool{
 		cancelFn()
 		return false
-	}).RunOnce())
+	}).RunOnce()
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		e.CancelRequest(r)
+
+	e.newRequestTransition(requestID(r),request,cancel,nil)
+
+	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().OnRequestError(r,NewMutationHandler(func(event MutationEvent)bool{
+			event.Origin().endrequestTransition(r.URL.String(),event.NewValue())
+			return false
+		}).RunOnce())
 		return false
 	}).RunOnce())
-
-	e.WatchEvent(newRequestEventName("end",req.URL.String()),e,NewMutationHandler(func(evt MutationEvent)bool{
-		if evt.Origin().Root() != nil{ // means it was mounted once
-			evt.Origin().Root().TriggerEvent(newRequestEventName("end",req.URL.String()), evt.NewValue())
-		}
-		return false
-	}))
 	
-	DoAsync(e.Root(),func() {
-		res, err:= HttpClient.Do(req)
-		if err!= nil{
-			DoSync(func(){
-				e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(nil,err))
-			})
-			return
-		}
-		defer res.Body.Close()
-		if responsehandler == nil{
-			return
-		}
-		v,err:= responsehandler(res)
-		if err!= nil{
-			DoSync(func(){
-				e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(nil,err))
-			})
-			return
-		}
-		DoSync(func(){
-			e.TriggerEvent(newRequestEventName("end",req.URL.String()),newRequestStateObject(v,nil))
-		})
-	})
+	e.startrequestTransition(requestID(r))
 }
 
-func(e *Element)CancelRequest(req *http.Request){
-	e.TriggerEvent(newRequestEventName("cancel",req.URL.String()))
+func(e *Element)CancelRequest(r *http.Request){
+	e.cancelrequestTransition(r.URL.String())
 }
 
 func newRequestStateObject(value Value, err error) Object{
@@ -775,35 +819,42 @@ func newRequestStateObject(value Value, err error) Object{
 	return r
 }
 
-func newRequestEventName(typ string, URL string) string{
-	var prefix string = "request"
-	prefix+= typ+"_"
-	u,err:= url.Parse(URL)
+
+// requestID provides a base32 encoding of an URL, after removal of the query string
+func requestID(r *http.Request) string{
+	u,err:= url.Parse(r.URL.String())
 	if err!= nil{
 		panic(err)
 	}
 	u.RawQuery=""
 	eurl:= base32.StdEncoding.EncodeToString([]byte(u.String()))
-	return prefix+eurl
-
+	return eurl
 }
 
-func(e *Element) OnRequestStart(req *http.Request,h *MutationHandler){
-	e.WatchEvent(newRequestEventName("start",req.URL.String()),e,h)
+func(e *Element) OnRequestStart(r *http.Request,h *MutationHandler){
+	e.OnTransitionStart("request-"+requestID(r),h)
 }
 
-func(e *Element) OnRequestEnd(req *http.Request,h *MutationHandler){
-	e.WatchEvent(newRequestEventName("end",req.URL.String()),e,h)
+func(e *Element) OnRequestCancel(r *http.Request,h *MutationHandler){
+	e.OnTransitionCancel("request-"+requestID(r),h)
+}
+
+func(e *Element) OnRequestEnd(r *http.Request,h *MutationHandler){
+	e.OnTransitionEnd("request-"+requestID(r),h)
+}
+
+func(e *Element) OnRequestError(r *http.Request,h *MutationHandler){
+	e.WatchEvent("request-error-"+requestID(r),e,h)
 }
 
 
-// GetResponse returns the response ot a request as an interface. If the request failed,
-// the error returned by the Error method is non-nil.
-// If the response does not exist yet, the interface is nil.
-func GetResponse(e *Element, req *http.Request) interface{Value() Value; Error() error}{
-	v,ok:= e.Get("event", newRequestEventName("end",req.URL.String()))
+//RetrieveResponse returns the response received for a request if it exists.
+// Otherwise it retuyrns nil.
+// It is typically used when handling OnRequestEnd.
+func RetrieveResponse(e *Element, r *http.Request) (Value,error){
+	v,ok:= e.Get("event",transition("request-"+requestID(r),"end"))
 	if !ok{
-		return nil
+		return nil,nil
 	}
 	return newResponseObject(v)
 }
@@ -821,7 +872,7 @@ func(r responseObject) Error() error{
 	return r.Err
 }
 
-func newResponseObject(u Value) (responseObject){
+func newResponseObject(u Value) (Value,error){
 	o,ok:= u.(Object)
 	if !ok{
 		panic("value used as response object should be of type Object")
@@ -832,8 +883,27 @@ func newResponseObject(u Value) (responseObject){
 	}
 	es,ok:= o.Get("error")
 	if !ok{
-		return responseObject{rv,nil}
+		return rv,nil
 	}
-	e:= errors.New(string(es.(String)))
-	return responseObject{rv,e}
+	err:= errors.New(string(es.(String)))
+	return rv,err
+}
+
+
+func (e *Element) newRequestTransition(requestID string, onstart, oncancel,onend *MutationHandler){
+	e.DefineTransition("request-"+requestID,onstart,oncancel,onend)
+}
+
+
+func(e *Element) startrequestTransition(requestID string){
+	e.StartTransition("request-"+requestID)
+}
+
+
+func(e *Element) cancelrequestTransition(requestID string){
+	e.CancelTransition("request-"+requestID)
+}
+
+func(e *Element) endrequestTransition(requestID string, values ...Value){
+	e.EndTransition("request-"+requestID, values...)
 }

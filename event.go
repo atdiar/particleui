@@ -298,3 +298,193 @@ func(e *EventHandler) NoBubble() *EventHandler{
 	return n
 }
 
+
+// Transition  events
+// These events can be composed since it is merely function composition of MutationHandler callbacks
+// One would typically create a new transition event and manage the different subtransitions within
+// the transitionstart mutation event handler.
+
+func(e *Element) DefineTransition(name string, onstart, oncancel, onend *MutationHandler){
+	e.WatchEvent(transition(name, "start"), e, NewMutationHandler(func(evt MutationEvent)bool{
+		// Once the event starts, the element  should watch out for cancellation
+		/*_,ok:= e.Get("event",transition(name,"cancel"))
+		if ok{
+			 e.Properties.Delete("event",transition(name, "cancel"))
+		}
+		*/
+
+		e.CancelTransition(name)
+
+		if oncancel != nil{
+			oncancel = oncancel.RunOnce()
+			evt.Origin().WatchEvent(transition(name, "start"), e, NewMutationHandler(func(event MutationEvent)bool{
+				event.Origin().WatchEvent(transition(name, "cancel"), e, oncancel)
+				return false
+			}))
+		}
+		
+		if onend != nil{
+			onend = onend.RunOnce()
+			evt.Origin().WatchEvent(transition(name, "start"), e, NewMutationHandler(func(event MutationEvent)bool{
+				event.Origin().WatchEvent(transition(name, "end"), e, onend)
+				return false
+			}))
+		}
+
+		
+		
+
+		cancelall:= NewMutationHandler(func(evt MutationEvent)bool{
+			e.TriggerEvent(transition(name, "cancel"))
+			return false
+		}).RunOnce()
+
+		// After the transition start, upon cancellation, the elemtn should be able to trigger the transition end.
+		e.OnTransitionCancel(name,NewMutationHandler(func(evt MutationEvent)bool{
+			// TODO check that it does not create problems
+			evt.Origin().TriggerEvent(transition(name, "end"),String("cancelled"))
+			return false
+		}).RunOnce())
+
+		e.WatchEvent("cancelalltransitions", e, cancelall)
+
+		e.WatchEvent(transition(name, "end"), e, NewMutationHandler(func(evt MutationEvent)bool{
+			evt.Origin().Unwatch("event","cancelalltransitions", e)
+			evt.Origin().Unwatch("event",transition(name,"cancel"), e)
+			e.WatchEvent(transition(name,"end"),e,NewMutationHandler(func(evt MutationEvent)bool{
+				evt.Origin().Unwatch("event",transition(name,"end"), e)
+				return false
+			}).RunOnce())
+			return false
+		}).RunOnce())
+
+		return onstart.Handle(evt)
+	}))
+}
+
+func(e *Element) OnTransitionStart(name string, h *MutationHandler){
+	e.WatchEvent(transition(name, "start"), e, NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().WatchEvent(transition(name, "start"), evt.Origin(), h.RunOnce())
+		return false
+	}))
+}
+
+func(e *Element) OnTransitionCancel(name string, h *MutationHandler){
+	e.WatchEvent(transition(name, "start"), e, NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().WatchEvent(transition(name, "cancel"), evt.Origin(), h.RunOnce())
+		return false
+	}))
+}
+
+func(e *Element) OnTransitionEnd(name string, h *MutationHandler){
+	e.WatchEvent(transition(name, "start"), e, NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().WatchEvent(transition(name, "end"), evt.Origin(), h.RunOnce())
+		return false
+	}))
+}
+
+func(e *Element) StartTransition(name string){
+	e.TriggerEvent(transition(name,"start"))
+}
+
+func(e *Element) CancelTransition(name string){
+	e.TriggerEvent(transition(name, "cancel"))
+}
+
+func (e *Element) CancelAllTransitions(){
+	e.TriggerEvent("cancelalltransitions")
+}
+
+func(e *Element) EndTransition(name string, values ...Value){
+	e.TriggerEvent(transition(name,"end"),values...)
+}
+
+func transitionCancelled(e *Element, transitionname string) bool{
+	v,ok:= e.Get("event",transition(transitionname, "end"))
+	if !ok{
+		return false
+	}
+	vv,ok:= v.(String)
+	if !ok{
+		return false
+	}
+	return vv.String() == "cancelled"
+}
+
+
+// NewTransitionChain creates a new transition chain. The transition chain is a sequence of 
+// transitions that are triggered synchronously.
+func(e *Element) NewTransitionChain(name string, transitionevents ...string) func(onstart, oncancel, onend *MutationHandler){
+
+
+	h:= NewMutationHandler(func(evt MutationEvent)bool{
+		// When a transition ends, the next one should start unless cancellation was triggered for one of the transitions
+		// in the chain.
+		l:= len(transitionevents)-1
+		for i,t:= range transitionevents{
+			if  i == 0{
+				e.OnTransitionEnd(name, NewMutationHandler(func(evt MutationEvent)bool{
+					// check cancellation status first
+					if transitionCancelled(e, name){
+						return false
+					}
+					e.TriggerEvent(transition(t, "start"))
+					return false
+				}))
+			}
+
+			if 0 < i &&  i < l{
+				e.OnTransitionEnd(t, NewMutationHandler(func(evt MutationEvent)bool{
+					// check cancellation status first
+					if transitionCancelled(e, t){
+						return false
+					}
+					
+					
+					e.TriggerEvent(transition(transitionevents[i+1], "start"))
+					return false
+				}))
+			} 
+			if i == l {
+				e.OnTransitionEnd(t, NewMutationHandler(func(evt MutationEvent)bool{
+					// check cancellation status first
+					if transitionCancelled(e, t){
+						return false
+					}
+
+					e.TriggerEvent(transition(name, "end"))
+					return false
+				}))
+			}
+
+			e.OnTransitionCancel(name, NewMutationHandler(func(evt MutationEvent)bool{
+				e.TriggerEvent(transition(t, "cancel"))
+				return false
+			}))
+		}
+		if len(transitionevents) > 0{
+			e.TriggerEvent(transition(transitionevents[0], "start"))
+		}
+
+		return false
+	})
+
+
+	return func(onstart, oncancel, onend *MutationHandler){
+		g:= NewMutationHandler(func(evt MutationEvent)bool{
+			if onstart != nil{
+				b:= onstart.Handle(evt)
+				if b {
+					return true
+				}
+			}
+			return h.Handle(evt)
+		})
+		e.DefineTransition(name, g, oncancel, onend)
+	}
+	
+}
+
+func transition(name string, phase string) string{
+	return "tr-"+ name + "-" + phase
+}

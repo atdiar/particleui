@@ -384,7 +384,7 @@ func NewElement(id string, doctype string) *Element {
 		nil,
 		nil,
 		nil,
-		nil
+		nil,
 		nil,
 	}
 
@@ -434,10 +434,6 @@ func withFetchSupport(e *Element)*Element{
 		return false
 	}))
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().CancelFetch()
-		return false
-	}))
 	return e
 }
 
@@ -544,7 +540,7 @@ func (e *Elements) Remove(el *Element) *Elements {
 }
 
 func (e *Elements) RemoveAll() *Elements {
-	for k,_:= range e.List{
+	for k:= range e.List{
 		e.List[k]= nil
 	}
 	e.List = e.List[:0]
@@ -1154,6 +1150,34 @@ func(e *Element) bound(category string, propname string, source *Element) bool{
 	return false
 }
 
+func(e *Element) fetching(propname string) bool{
+	p, ok := e.Properties.Categories["data"]
+	if !ok{
+		return false
+	}
+
+	if !p.IsWatching(propname,e){
+		return false
+	}
+
+	if e.PropMutationHandlers.list == nil{
+		return false
+	}
+
+	mh,ok:= e.PropMutationHandlers.list[e.ID+"/"+"data"+"/"+propname]
+	if !ok{
+		return false
+	}
+
+	for _,h:= range mh.list{
+		if h.fetching{
+			return true
+		}
+	}
+
+	return false
+}
+
 // Watch is simply a shorthand for calling  BindValue followed by OnMutation.
 // One should be careful about property collisions when using this method.
 // Also note that even if the Mutation Handler is set to run once, the binding will remain.
@@ -1370,6 +1394,7 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	}
 	var g *MutationHandler
 	g= NewMutationHandler(func(evt MutationEvent)bool{
+		e.CancelAllTransitions()
 		b:= h.Handle(evt)
 		evt.Origin().PropMutationHandlers.Remove(evt.Origin().ID+"/"+"internals"+"/"+"deleted", g)
 		return b
