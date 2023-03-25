@@ -165,7 +165,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 						}
 					}else{
 						if jstarget.Equal(js.Global().Get("document").Get("defaultView")) {
-							target = GetWindow().AsElement()		
+							target = GetDocument(listener).Window().AsElement()		
 						} else{
 							//DEBUG("target seems to be #document")
 							//dEBUGJS(jstarget)
@@ -205,7 +205,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					hstateobj := ui.NewObject()
 					err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 					if err == nil {
-						GetDocument().AsElement().SyncUISetData("history", hstateobj.Value())
+						GetDocument(listener).AsElement().SyncUISetData("history", hstateobj.Value())
 					}
 				}
 			}
@@ -262,7 +262,10 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	})
 
 
-	tgt:= JSValue(listener)
+	tgt,ok:= JSValue(listener)
+	if !ok{
+
+	}
 	if !tgt.Truthy(){
 		panic("trying to add an event listener to non-existing HTML element on the JS side")
 	}
@@ -434,7 +437,7 @@ func mouseEventSerialized(o ui.Object,e MouseEvent){
 	o.Set("screenX",ui.Number(e.screenX))
 	o.Set("screenY",ui.Number(e.screenY))
 
-	o.Set("relatedTarget",e.relatedTarget)
+	o.Set("relatedTarget",ui.String(e.relatedTarget.ID))
 
 }
 
@@ -509,7 +512,7 @@ func newMouseEvent(e ui.Event) MouseEvent{
 
 	if v:=evt.Get("relatedTarget"); v.Truthy(){
 		if id:= v.Get("id"); id.Truthy(){
-			k.relatedTarget= Elements.GetByID(id.String())
+			k.relatedTarget= GetDocument(e.Target()).GetElementById(id.String())
 		}
 	}
 	return k

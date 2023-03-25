@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -82,27 +83,17 @@ func(e *Element) setDataPrefetcher(propname string, reqfunc func(e*Element) *htt
 	
 	prefetch := NewMutationHandler(func(evt MutationEvent)bool{
 		if  evt.Origin().isFetchedDataValid(propname){
+			evt.Origin().endprefetchTransition(propname)
 			return false
 		}
 		if evt.Origin().isPrefetchedDataValid(propname){
+			evt.Origin().endprefetchTransition(propname)
 			return false
 		}
 		
 		r:= reqfunc(e)
 		ctx,cancelFn = context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
-
-
-		// After a new http.Request has been launched and a response has been returned, cancel and refetch
-		// the data corresponding to the r.URL (it just cancels the prefecthing here. 
-		// The fetching should ensue as normal)
-		evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
-			event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
-				cancelFn()
-				return false
-			}).RunOnce())
-			return false
-		}).RunOnce().RunASAP())
 		
 
 		evt.Origin().fetchData(propname,r,responsehandler,true)
@@ -132,7 +123,7 @@ func(e *Element) setDataPrefetcher(propname string, reqfunc func(e*Element) *htt
 		return false
 	}).RunOnce()
 
-	e.newPrefetchTransition(propname,prefetch,cancel,end) 
+	e.newPrefetchTransition(propname,prefetch,nil, cancel,end) 
 
 }
 
@@ -160,6 +151,16 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 	var ctx context.Context
 	var cancelFn context.CancelFunc
 
+	reqmonitor := NewMutationHandler(func(ev MutationEvent)bool{
+		if strings.EqualFold(verb(ev.NewValue()),"GET"){
+			return false
+		}
+		ev.Origin().invalidatePrefetch(propname)
+		ev.Origin().InvalidateFetch(propname)
+		ev.Origin().Fetch(propname)
+		return false
+	})
+
 
 	fetch:= NewMutationHandler(func(evt MutationEvent) bool{
 		if evt.Origin().isFetchedDataValid(propname){
@@ -169,21 +170,18 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 			evt.Origin().endfetchTransition(propname)
 			return false
 		}
-		
+
+		evt.Origin().cancelPrefetch(propname)
 
 		r:= reqfunc(e)
 		ctx,cancelFn= context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
 
-
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the r.URL
-		evt.Origin().OnMounted(NewMutationHandler(func(event MutationEvent)bool{
-			event.Origin().WatchEvent(newRequestEventName("end",r.URL.String()),event.Origin().Root(),NewMutationHandler(func(MutationEvent)bool{
-				event.Origin().InvalidateFetch(propname)
-				event.Origin().Fetch()
-				return false
-			}).RunOnce())
+		evt.Origin().OnRegistered(NewMutationHandler(func(event MutationEvent)bool{
+			event.Origin().RemoveMutationHandler("event","request-"+requestID(r),event.Origin().Root(),reqmonitor)
+			event.Origin().WatchEvent("request-"+requestID(r),event.Origin().Root(),reqmonitor)
 			return false
 		}).RunOnce().RunASAP())
 
@@ -200,11 +198,11 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 	end := NewMutationHandler(func(evt MutationEvent)bool{
 		switch t:=evt.NewValue().(type){
 		case String:
-			if t.String() == "cancelled"{
+			if m:=t.String(); m == "cancelled" || m == "error"{
 				e.fetchCompleted(propname,false)
-			} else{
-				panic("unexpected fetch transition end value")
 			}
+			// TODO what is the string value is somethign else? Would it have been intercepted by 
+			// a transition handler for the end phase?
 		case Bool:
 			if t.Bool(){
 				evt.Origin().fetchCompleted(propname,true)
@@ -215,7 +213,7 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 		return false
 	}).RunOnce()
 
-	e.newFetchTransition(propname,fetch,cancel,end)             
+	e.newFetchTransition(propname,fetch,nil,cancel,end)             
 
 }
 
@@ -259,7 +257,16 @@ func(e *Element) WasFetchCancelled() bool{
 	return ok
 }
 
-
+func verb(v Value) string{
+	switch t:= v.(type){
+	case String:
+		return t.String()
+	case Object:
+		return t.MustGetString("verb").String()
+	default:
+		return "unknown"
+	}
+}
 
 func(e *Element) fetchData(propname string, r *http.Request, responsehandler func(*http.Response) (Value,error), prefetch bool){
 	if responsehandler == nil{
@@ -283,10 +290,10 @@ func(e *Element) fetchData(propname string, r *http.Request, responsehandler fun
 		if err!= nil{
 			DoSync(func() {
 				if prefetching{
-					e.EndTransition("prefecth-"+propname, Bool(false))
+					e.endprefetchTransition(propname,Bool(false))
 				}else{
 					e.pushFetchError(propname,err) 
-					e.EndTransition("fetch-"+propname, Bool(false))
+					e.errorfetchTransition(propname)
 				}	
 			})
 			return
@@ -298,10 +305,10 @@ func(e *Element) fetchData(propname string, r *http.Request, responsehandler fun
 		if err!= nil{
 			DoSync(func() {
 				if prefetching{
-					e.EndTransition("prefecth-"+propname, Bool(false))
+					e.endprefetchTransition(propname,Bool(false))
 				}else{
 					e.pushFetchError(propname,err) 
-					e.EndTransition("fetch-"+propname, Bool(false))
+					e.errorfetchTransition(propname)
 				}	
 			})
 			return
@@ -309,9 +316,9 @@ func(e *Element) fetchData(propname string, r *http.Request, responsehandler fun
 		DoSync(func() {
 			e.SetData(propname,v)
 			if prefetching{
-				e.EndTransition("prefecth-"+propname)
+				e.endprefetchTransition(propname)
 			}else{
-				e.EndTransition("fetch-"+propname)
+				e.endfetchTransition(propname)
 			}
 		})
 	})
@@ -367,28 +374,27 @@ func(e *Element) enablefetching() *Element{
 		}
 		for _,v:= range fetchlist{
 			propname:= v.(String).String()
+			e.OnTransitionError("fetch-"+propname,NewMutationHandler(func(evt MutationEvent)bool{
+				e.errorfetchTransition(propname)
+				return false
+			}))
 			e.startfetchTransition(propname)
 		}
 
 		return false
 	})
 
+
+
 	cancel:=  NewMutationHandler(func(evt MutationEvent)bool{
 		evt.Origin().CancelAllFetches()
 		return false
 	})
 
-	e.DefineTransition("prefetch", prefetch,nil,nil)
-	e.DefineTransition("fetch", fetch,cancel,nil)
 
-	e.OnFetchError(NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().OnFetchError(NewMutationHandler(func(event MutationEvent)bool{
-			event.Origin().EndTransition("fetch",event.NewValue())
-			return false
-		}).RunOnce())
-		
-		return false
-	}))
+	e.DefineTransition("prefetch", prefetch,nil, nil,nil)
+	e.DefineTransition("fetch", fetch,nil, cancel,nil)
+
 
 	return e
 }
@@ -404,15 +410,21 @@ func(e *Element) Prefetch(){
 }
 
 
-func(e *Element) Fetch(){
+func(e *Element) Fetch(props ...string){
 	if !e.Registered(){
 		panic("Fetch can only be called on registered elements")
 	}
-	e.Properties.Delete("runtime","fetcherrors")
-	e.Properties.Delete("fetchstatus","cancelled")
+	if len(props) == 0{
+		e.Properties.Delete("runtime","fetcherrors")
+		e.Properties.Delete("fetchstatus","cancelled")
 
-	// should start the fetching process by triggering the fetch transitions that have been registered
-	e.StartTransition("fetch")
+		// should start the fetching process by triggering the fetch transitions that have been registered
+		e.StartTransition("fetch")
+		return
+	}
+	for _,prop:= range props{
+		e.startfetchTransition(prop)
+	}
 	
 }
 
@@ -434,7 +446,7 @@ func(e *Element) OnFetched(h *MutationHandler){
 }
 
 func(e *Element) OnFetchError(h *MutationHandler){
-	e.Watch("runtime","fetcherrors",e,h)
+	e.OnTransitionError("fetch",h)
 }
 
 func(e *Element) InvalidateFetch(propname string){
@@ -666,6 +678,7 @@ func(e *Element) fetchCompleted(propname string, successfully bool){
 		delete(s,"stale")
 	}
 	e.Set("runtime", "fetchlist",r)
+	e.checkFetchCompletion()
 }
 
 func(e *Element) isFetchedDataValid(propname string) bool{
@@ -696,12 +709,12 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 
 // Fetch transition helpers
 
-func (e *Element) newFetchTransition(propname string, onstart, oncancel,onend *MutationHandler){
-	e.DefineTransition("fetch-"+propname,onstart,oncancel,onend)
+func (e *Element) newFetchTransition(propname string, onstart, onerror, oncancel,onend *MutationHandler){
+	e.DefineTransition("fetch-"+propname,onstart,onerror, oncancel,onend)
 }
 
-func (e *Element) newPrefetchTransition(propname string, onstart, oncancel,onend *MutationHandler){
-	e.DefineTransition("prefetch-"+propname,onstart,oncancel,onend)
+func (e *Element) newPrefetchTransition(propname string, onstart, onerror, oncancel,onend *MutationHandler){
+	e.DefineTransition("prefetch-"+propname,onstart,onerror,oncancel,onend)
 }
 
 func(e *Element) startfetchTransition(propname string){
@@ -710,6 +723,10 @@ func(e *Element) startfetchTransition(propname string){
 
 func(e *Element) startprefetchTransition(propname string){
 	e.StartTransition("prefetch-"+propname)
+}
+
+func(e *Element) errorfetchTransition(propname string){
+	e.ErrorTransition("fetch-"+propname)
 }
 
 func(e *Element) cancelfetchTransition(propname string){
@@ -785,14 +802,26 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 		return false
 	}).RunOnce()
 
+	onerror:= NewMutationHandler(func(evt MutationEvent)bool{
+		return false
+	}).RunOnce()
+
 	
-	cancel := NewMutationHandler(func(evt MutationEvent)bool{
+	oncancel := NewMutationHandler(func(evt MutationEvent)bool{
 		cancelFn()
 		return false
 	}).RunOnce()
 
+	onend := NewMutationHandler(func(evt MutationEvent)bool{
+		// initially thought that we could do nothing if req was canceleld or on error
+		// but in fact it doesn't matter because a request in flight may still have mutated data on 
+		// the serveer
+		// the clien only controls the request.
+		evt.Origin().Root().TriggerEvent("request-"+requestID(r),String(r.Method))
+		return false
+	}).RunOnce()
 
-	e.newRequestTransition(requestID(r),request,cancel,nil)
+	e.newRequestTransition(requestID(r),request,onerror,oncancel,onend)
 
 	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
 		evt.Origin().OnRequestError(r,NewMutationHandler(func(event MutationEvent)bool{
@@ -808,6 +837,7 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 func(e *Element)CancelRequest(r *http.Request){
 	e.cancelrequestTransition(r.URL.String())
 }
+
 
 func newRequestStateObject(value Value, err error) Object{
 	r:= NewObject()
@@ -859,18 +889,6 @@ func RetrieveResponse(e *Element, r *http.Request) (Value,error){
 	return newResponseObject(v)
 }
 
-type responseObject struct{
-	Val Value
-	Err error
-}
-
-func(r responseObject) Value() Value{
-	return r.Val
-}
-
-func(r responseObject) Error() error{
-	return r.Err
-}
 
 func newResponseObject(u Value) (Value,error){
 	o,ok:= u.(Object)
@@ -890,8 +908,8 @@ func newResponseObject(u Value) (Value,error){
 }
 
 
-func (e *Element) newRequestTransition(requestID string, onstart, oncancel,onend *MutationHandler){
-	e.DefineTransition("request-"+requestID,onstart,oncancel,onend)
+func (e *Element) newRequestTransition(requestID string, onstart, onerror, oncancel,onend *MutationHandler){
+	e.DefineTransition("request-"+requestID,onstart,onerror,oncancel,onend)
 }
 
 

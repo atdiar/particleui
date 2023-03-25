@@ -288,13 +288,14 @@ func(d Document) SetLang(lang string) Document{
 }
 
 func (d Document) OnNavigationEnd(h *ui.MutationHandler){
-	d.AsElement().Watch("event","navigationend", d, h)
+	d.AsElement().WatchEvent("navigation-end", d, h)
 }
 
-func(d Document) OnReady(h *ui.MutationHandler){
-	d.AsElement().Watch("ui","ready",d,h)
+func(d Document) OnLoaded(h *ui.MutationHandler){
+	d.AsElement().WatchEvent("document-loaded",d,h)
 }
 
+// ROuter returns the router associated with the document. It is nil if no router has been created.
 func(d Document) Router() *ui.Router{
 	return ui.GetRouter(d.AsElement())
 }
@@ -369,12 +370,8 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	e.AppendChild(Head("head")) 
 	e.AppendChild(Body("body"))
 
-	e.Watch("navigation", "ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.SetDataSetUI("ready", ui.String("true"))
-		return false
-	}))
 
-	e.Watch("ui", "ready", e,navreadyHandler)
+	e.WatchEvent("document-loaded", e,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
 	mutationreplay(e)
@@ -424,7 +421,7 @@ func mutationreplay(root *ui.Element) {
 
 func Autofocus(e *ui.Element) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Watch("event","navigationend",evt.Origin().Root(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+		evt.Origin().WatchEvent("navigation-end",evt.Origin().Root(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
 			r:= ui.GetRouter(event.Origin())
 			if !r.History.CurrentEntryIsNew(){
 				return false
@@ -891,7 +888,7 @@ func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -1696,7 +1693,7 @@ func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -1773,7 +1770,7 @@ func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if e.Mounted(){
 					e.SetDataSetUI("for", ui.String(e.ID))
 				} else{
@@ -1796,7 +1793,7 @@ func (l LabelElement) For(e *ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		d:= GetDocument(evt.Origin())
 		
-		evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			if e.Mounted(){
 				l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			}
@@ -2135,7 +2132,7 @@ func(m outputModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -2160,7 +2157,7 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				
 				for _,input:= range inputs{
 					if input.Mounted(){
@@ -3461,7 +3458,7 @@ func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -3677,7 +3674,7 @@ func(m fieldsetModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -3850,7 +3847,7 @@ func (m selectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			d:= GetDocument(evt.Origin())
 			
-			evt.Origin().Watch("event","navigationend",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
 					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}

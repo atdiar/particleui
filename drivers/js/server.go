@@ -4,9 +4,11 @@
 package doc
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
+	"net"
 	"net/http"
 	"net/url"
 	"net/http/cookiejar"
@@ -22,13 +24,15 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-
+func init(){
+	ui.HttpClient = modifyClient(ui.HttpClient)
+}
 
 var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE).WithMutationCapture()
+	Elements = ui.NewElementStore("default", DOCTYPE).EnableMutationCapture()
 	mu *sync.Mutex
 
 	DefaultPattern = "/"
@@ -36,7 +40,7 @@ var (
 
 
 	ServeMux *http.ServeMux
-	Server *http.Server = &http.Server{Addr:":8080",Handler:ServeMux}
+	Server *http.Server = newDefaultServer()
 	
 	// HTMLHandlerModifier, when not nil, enables to change the behaviour of the request handling.
 	// It corresponds loosely to the ability of adding middleware/endware request handler, by using
@@ -73,6 +77,24 @@ var (
 	})
 )
 
+func newDefaultServer() *http.Server{
+	host := os.Getenv("HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	server := &http.Server{
+		Addr:    host + ":" + port,
+		Handler: ServeMux,
+	}
+	return server
+}
+
 type cookiejarWriter struct{
 	http.ResponseWriter
 	URL *url.URL
@@ -89,6 +111,75 @@ func(c cookiejarWriter) Write(b []byte) (int,error){
  Server-side HTML rendering TODO place behind compile directive
 
 */
+
+
+type customRoundTripper struct {
+	mux      *http.ServeMux
+	transport http.RoundTripper
+}
+
+func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	host, _, err := net.SplitHostPort(r.URL.Host)
+	if err != nil {
+		// handle error
+		panic(err)
+	}
+
+	serverHost, _, err := net.SplitHostPort(Server.Addr)
+	if err != nil {
+		panic(err)
+	}
+
+	if host == serverHost {
+		// Dispatch the request to the local ServeMux
+		w := &responseRecorder{}
+		Server.Handler.ServeHTTP(w, r)
+		return w.Result(), nil
+	} else {
+		// Forward the request to the remote server using the custom transport
+		return rt.transport.RoundTrip(r)
+	}
+}
+
+// modifyClient returns a round-tripper modiffied client that can forego the network and 
+// generate the response as per the servemux when the host is the server it runs onto. 
+func modifyClient(c *http.Client) *http.Client{
+	if c == nil{
+		c = &http.Client{}
+	}
+	if c.Transport == nil{
+		c.Transport = &http.Transport{}
+	}
+
+	c.Transport = &customRoundTripper{ServeMux, c.Transport}
+
+	return c
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+	body       []byte
+}
+
+func (w *responseRecorder) Write(b []byte) (int, error) {
+	w.body = append(w.body, b...)
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *responseRecorder) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *responseRecorder) Result() *http.Response {
+	return &http.Response{
+		Status:     http.StatusText(w.statusCode),
+		StatusCode: w.statusCode,
+		Body:       io.NopCloser(bytes.NewReader(w.body)),
+		Header:     w.Header(),
+	}
+}
 
 
 func ChangeServeMux(s *http.ServeMux) {
@@ -148,7 +239,7 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 		
 
 		ui.DoSync(func() {
-			router:= ui.GetRouter()
+			router:= ui.GetRouter(document.AsElement())
 			route:= r.URL.Path
 			_,routeexist:= router.Match(route)
 			if routeexist != nil{
@@ -215,21 +306,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	return false
 })
 
-var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
-	e:= evt.Origin()
-	e.Watch("internals","mutationrecords",e.Global,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
-		// TODO if mutation is not fetch type event, append it to internals,globalstatehistory
-		var history ui.List
-		hl,ok:= e.Get("internals","globalstatehistory")
-		if !ok{
-			history = ui.NewList()
-		}
-		history = hl.(ui.List)
-		history = append(history,event.NewValue())
-		e.Set("internals","globalstatehistory",history)
-		return false
-	}))
-
+var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
 	return false
 })
 
@@ -663,9 +740,9 @@ func newHTMLDocument(document Document) *html.Node {
 	return h
 }
 
-func generateStateHistoryRecordElement(e *ui.Element) *html.Node{
-	state:=  SerializeStateHistory(e)
-	script:= `<script id='` + e.ID+SSRStateSuffix+`' type="application/json">
+func generateStateHistoryRecordElement(root *ui.Element) *html.Node{
+	state:=  SerializeStateHistory(root)
+	script:= `<script id='` + root.ID+SSRStateSuffix+`' type="application/json">
 	` + state + `
 	<script>`
 	scriptNode, err:= html.Parse(strings.NewReader(script))

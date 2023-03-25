@@ -715,7 +715,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.Watch("navigation", "ready", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.WatchEvent("document-loaded", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			router := ui.GetRouter(evt.Origin())
 
 			ejs,ok := JSValue(e)
@@ -772,7 +772,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					}
 					return false
 				})
-				e.Watch("event", "navigationend", e.Root(), h)
+				e.WatchhEvent("navigation-end", e.Root(), h)
 			} else {
 				e.SetDataSetUI("scrollrestore", ui.Bool(false))
 			}
@@ -826,7 +826,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	return false
 })
 
-var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	e:= evt.Origin()
 
 	// Retrieve history and deserialize URL into corresponding App state.
@@ -841,7 +841,7 @@ var navreadyHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	}
 
 	route := js.Global().Get("location").Get("pathname").String()
-	e.Set("navigation", "routechangerequest", ui.String(route))
+	e.TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
 })
 
@@ -925,7 +925,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		
 		return false
 	})
-	e.Watch("event", "navigationend", e, h)
+	e.WatchEvent"navigation-end", e, h)
 
 	return e
 }

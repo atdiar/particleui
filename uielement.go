@@ -106,6 +106,7 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 		o:= newObservable(id)
 		return o.AsElement()
 	})
+	es.ApplyGlobalOption(AllowDataFetching)
 	return es
 }
 
@@ -390,6 +391,7 @@ func NewElement(id string, doctype string) *Element {
 
 	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
 		RegisterElement(evt.Origin().Root(),evt.Origin())
+		e.TriggerEvent("registered")
 		return false
 	}).RunOnce())
 	
@@ -398,42 +400,19 @@ func NewElement(id string, doctype string) *Element {
 	return e
 }
 
-
+var AllowDataFetching = NewConstructorOption("allowdatafetching", func(e *Element) *Element {
+	return withFetchSupport(e)
+})
 
 func withFetchSupport(e *Element)*Element{
-	/*e.OnFetch(NewMutationHandler(func(evt MutationEvent)bool{
-		if !fetchEnabled(e){
-			return true
-		}
-		return false
-	}))
-	
-
-	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
-		el:= evt.Origin()
-		el.Watch("internals","fetchingenabled",el.Root(),NewMutationHandler(func(event MutationEvent)bool{
-			el.Set("internals","fetchingenabled",event.NewValue())
-			return false
-		}).RunASAP())
-		return false
-	}).RunOnce())
-	*/
+	e.enablefetching()
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
 		evt.Origin().Fetch()
 		return false
 	}))
 
-	e.OnFetch(NewMutationHandler(func(evt MutationEvent)bool{
-		e.Properties.Delete("runtime","fetchlist")
-		return false
-	}))
-
-	e.Watch("runtime","fetchlist",e,NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().checkFetchCompletion()
-		return false
-	}))
-
+	
 	return e
 }
 
@@ -490,9 +469,6 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 	if c > (l + le) {
 		e.List = e.List[:l+le]
 		copy(e.List[le:], e.List)
-		/*for i, element := range elements {
-			e.List[i] = element
-		}*/
 		copy(e.List,elements)
 		return e
 	}
@@ -1141,7 +1117,8 @@ func(e *Element) bound(category string, propname string, source *Element) bool{
 		return false
 	}
 
-	for _,h:= range mh.list{
+	for i:=len(mh.list)-1;i>=0;i--{
+		h:=mh.list[i]
 		if h.binding{
 			return true
 		}
@@ -1169,7 +1146,8 @@ func(e *Element) fetching(propname string) bool{
 		return false
 	}
 
-	for _,h:= range mh.list{
+	for i:=len(mh.list)-1;i>=0;i--{
+		h:=mh.list[i]
 		if h.fetching{
 			return true
 		}
@@ -1215,8 +1193,9 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	}
 
 	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
-		if e.ID != owner.AsElement().ID{}
-		e.Unwatch(category, propname, owner)
+		if e.ID != owner.AsElement().ID{
+			e.Unwatch(category, propname, owner)
+		}
 		return false
 	}))
 
@@ -1359,7 +1338,7 @@ func (e *Element) OnMountable(h *MutationHandler) {
 }
 
 func(e *Element) OnRegistered(h *MutationHandler){
-	e.WatchEvent("registered", e, h)
+	e.WatchEvent("registered", e, h.RunASAP().RunOnce())
 }
 
 
@@ -1489,7 +1468,9 @@ func (e *Element) Set(category string, propname string, value Value) {
 		var needcleanup bool
 		var index int
 		wl:= watchers.List[:0]
-		for i, w := range watchers.List {
+
+		for i:=0; i<len(watchers.List);i++{
+			w:= watchers.List[i]
 			if w == nil{
 				if !needcleanup{
 					wl = watchers.List[:i]
@@ -1628,7 +1609,8 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 	}
 	watchers, ok := props.Watchers[propname]
 	if ok && watchers != nil {
-		for _, w := range watchers.List {
+		for i:= 0; i<len(watchers.List);i++{
+			w := watchers.List[i]
 			w.PropMutationHandlers.DispatchEvent(evt)
 		}
 	}
@@ -2005,8 +1987,9 @@ func (p Properties) RemoveWatcher(propName string, watcher *Element) {
 	if !ok {
 		return
 	}
-	//list.Remove(watcher)
-	for i,w:= range list.List{
+	
+	for i:=0;i<len(list.List);i++{
+		w:=list.List[i]
 		if w == nil{
 			continue
 		}

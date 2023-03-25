@@ -38,8 +38,7 @@ func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
 	if !ok {
 		return m
 	}
-	//mhs.list = mhs.list[:0]
-	for i:= range mhs.list{
+	for i:=0;i<len(mhs.list);i++{
 		mhs.list[i] = nil
 	}
 	mhs.list= mhs.list[:0]
@@ -80,7 +79,9 @@ func (m *mutationHandlers) Add(h *MutationHandler) *mutationHandlers {
 }
 
 func (m *mutationHandlers) Remove(h *MutationHandler) *mutationHandlers {
-	for i, v := range m.list {
+
+	for i:=0;i<len(m.list);i++{
+		v:= m.list[i]
 		if v == nil{
 			continue
 		}
@@ -96,7 +97,9 @@ func (m *mutationHandlers) Handle(evt MutationEvent) {
 	var index int
 	list:= m.list[:0]
 	var handle = true
-	for i, h := range m.list {
+	
+	for i:=0;i<len(m.list);i++{
+		h:= m.list[i]
 		if h == nil{
 			if !needcleanup{
 				list =m.list[:i]
