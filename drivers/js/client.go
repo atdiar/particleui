@@ -772,7 +772,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					}
 					return false
 				})
-				e.WatchhEvent("navigation-end", e.Root(), h)
+				e.WatchEvent("navigation-end", e.Root(), h)
 			} else {
 				e.SetDataSetUI("scrollrestore", ui.Bool(false))
 			}
@@ -925,7 +925,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		
 		return false
 	})
-	e.WatchEvent"navigation-end", e, h)
+	e.WatchEvent("navigation-end", e, h)
 
 	return e
 }

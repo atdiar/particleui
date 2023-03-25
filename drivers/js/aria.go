@@ -10,7 +10,7 @@ import (
 var AriaChangeAnnouncer =  defaultAnnouncer()
 
 func defaultAnnouncer() DivElement{
-	a:=Div("announcer")
+	a:=Div.WithID("announcer")
 	SetAttribute(a.AsElement(),"aria-live","polite")
 	SetAttribute(a.AsElement(),"aria-atomic","true")
 	SetInlineCSS(a.AsElement(),"clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; overflow:hidden; position:absolute;white-space:nowrap;width:1px;")
