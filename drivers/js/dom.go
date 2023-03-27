@@ -9,6 +9,7 @@ import (
 	"strings"
 	"net/url"
 	"time"
+	"runtime"
 
 	"github.com/atdiar/particleui"
 )
@@ -41,6 +42,15 @@ const (
 	onBlur mutationCaptureMode = iota
 	onInput
 )
+
+// inBrowser indicates whether the document is created in a browser environement or not.
+// This
+func inBrowser() bool{
+	if runtime.GOARCH== "wasm" && runtime.GOOS == "js"{
+		return true
+	}
+	return false
+}
 
 
 
