@@ -349,7 +349,10 @@ func(e *Element) enablefetching() *Element{
 			e.EndTransition("prefetch")
 			return false
 		}
-		prefetchlist:= fl.(Object)
+		prefetchlist,ok:= fl.(Object)
+		if !ok{
+			panic("unexpected preftchlist type")
+		}
 
 		if len(prefetchlist) == 0{
 			e.EndTransition("prefetch")
@@ -412,11 +415,11 @@ func(e *Element) Prefetch(){
 
 func(e *Element) Fetch(props ...string){
 	if !e.Registered(){
-		panic("Fetch can only be called on registered elements")
+		panic("Fetch can only be called on registered elements. Error for "+ e.ID)
 	}
 	if len(props) == 0{
 		e.Properties.Delete("runtime","fetcherrors")
-		e.Properties.Delete("fetchstatus","cancelled")
+		//e.Properties.Delete("fetchstatus","cancelled")
 
 		// should start the fetching process by triggering the fetch transitions that have been registered
 		e.StartTransition("fetch")

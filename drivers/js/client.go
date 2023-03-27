@@ -370,8 +370,8 @@ func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRState
 	// the data attribute should be removed once the document state is replayed.
 	statenode:= document.Call("getElementById",SSRStateNodeID )
 	if !statenode.Truthy(){
-		// TODO panicking here but probably should defer to client side rendering
-		panic("fw err: failure to retrieve SSR trace. node is absent")
+		// TODO: check if the document is already rendered, at least partially, still.
+		return false
 	}
 	state:= statenode.Get("textContent").String()
 	v,err:= DeserializeStateHistory(state)
@@ -767,7 +767,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						ejs.Set("scrollTop", float64(top))
 						ejs.Set("scrollLeft", float64(left))
 						if e.ID != e.Root().ID {
-							e.Set("event", "shouldscroll", ui.Bool(false)) //always scroll root
+							e.TriggerEvent("shouldscroll", ui.Bool(false)) //always scroll root
 						}
 					}
 					return false
@@ -788,7 +788,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 			return false
 		}
 		if scrollrestore := sc.(ui.Bool); scrollrestore {
-			e.Set("event", "shouldscroll", ui.Bool(true))
+			e.TriggerEvent("shouldscroll", ui.Bool(true))
 		}
 		return false
 	}))

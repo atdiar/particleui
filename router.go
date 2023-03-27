@@ -37,10 +37,10 @@ func GetRouter(root *Element) *Router {
 // router-using function when mounted.
 func UseRouter(user AnyElement, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().WatchEvent("initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
-			fn(GetRouter(evt.Origin().Root()))
+		evt.Origin().WatchEvent("initrouter",evt.Origin().AsElement().Root(),NewMutationHandler(func(event MutationEvent)bool{
+			fn(GetRouter(event.Origin()))
 			return false
-		}).RunASAP())
+		}).RunASAP().RunOnce())
 		return false
 	}).RunASAP().RunOnce()
 	user.AsElement().OnMounted(h)
@@ -107,7 +107,8 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}))
 
 	r.Outlet.AsElement().ElementStore.NewConstructor("pui_link", func(id string)*Element{
-		e:= NewElement(id,r.Outlet.AsElement().ElementStore.DocType)
+		e:= NewElement(id,"ROUTER")
+		RegisterElement(r.Outlet.AsElement().Root(),e)
 		return e
 	})
 
@@ -116,7 +117,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}
 
 	router = r
-	r.Outlet.AsElement().Root().TriggerEvent("initrouter",Bool(true))
+	r.Outlet.AsElement().Root().TriggerEvent("initrouter")
 	return r
 }
 
@@ -859,11 +860,12 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	}
 	
 	l,ok:= r.Links["/"+viewname]
+	DEBUG(l,ok)
 	if !ok{
 		// Let's retrieve the link constructor
 		c,ok:= r.Outlet.AsElement().ElementStore.Constructors["pui_link"]
 		if !ok{
-			panic("pui_ERROR: somehow the link constructor has not been regristered.")
+			panic("pui_ERROR: somehow the link constructor has not been registered.")
 		}
 		e := c(r.Outlet.AsElement().ID+"-"+viewname)
 		e.SetData("viewelements",NewList(String(r.Outlet.AsElement().ID)))

@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+var newEventID = newIDgenerator(11,3137396425)
+
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers
 }
@@ -227,8 +229,26 @@ type Mutation struct {
 func (m Mutation) ObservedKey() string { return m.KeyName }
 func (m Mutation) Origin() *Element    { return m.Src }
 func (m Mutation) Type() string        { return m.typ }
-func (m Mutation) NewValue() Value     { return m.NewVal }
-func (m Mutation) OldValue() Value     { return m.OldVal }
+func (m Mutation) NewValue() Value     { 
+	if m.typ == "event"{
+		e,ok:= m.NewVal.(Object).Get("value")
+		if !ok{
+			panic("event value not found")
+		}
+		return e
+	}
+	return m.NewVal 
+}
+func (m Mutation) OldValue() Value     { 
+	if m.typ == "event"{
+		e,ok:= m.OldVal.(Object).Get("value")
+		if !ok{
+			panic("event value not found")
+		}
+		return e
+	}
+	return m.OldVal 
+}
 
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
 	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, oldvalue, e}

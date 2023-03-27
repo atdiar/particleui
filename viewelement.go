@@ -186,7 +186,7 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
 	if h.ASAP {
 		nh = nh.RunASAP()
 	}
-	v.AsElement().Watch("event", "viewactivated", v.AsElement(), nh)
+	v.AsElement().WatchEvent("viewactivated", v.AsElement(), nh)
 }
 
 func (v ViewElement) IsParameterizedView(viewname string) bool {
@@ -264,7 +264,7 @@ func (e *Element) activateView(name string) error {
 
 			e.Set("ui", "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
 			e.Set("ui", "activeview", String(name))
-			e.Set("event", "viewactivated", String(name))
+			e.TriggerEvent("viewactivated", String(name))
 			return nil
 		}
 		// Support for parameterized views
@@ -298,7 +298,7 @@ func (e *Element) activateView(name string) error {
 
 		e.Set("ui", "viewparameter", String(name))
 		e.Set("ui", "activeview", String(name))
-		e.Set("event", "viewactivated", String(name))
+		e.TriggerEvent("viewactivated", String(name))
 		return nil
 	}
 
@@ -331,7 +331,7 @@ func (e *Element) activateView(name string) error {
 
 	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name))
-	e.Set("event", "viewactivated", String(name))
+	e.TriggerEvent("viewactivated", String(name))
 	return nil
 }
 

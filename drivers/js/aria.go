@@ -19,7 +19,7 @@ func defaultAnnouncer() DivElement{
 		w:= GetDocument(evt.Origin()).Window().AsElement()
 		evt.Origin().Watch("ui","title",w,ui.NewMutationHandler(func(tevt ui.MutationEvent)bool{
 			title:= string(tevt.NewValue().(ui.String))
-			DivElement{ui.BasicElement{evt.Origin()}}.SetText(title)
+			DivElement{evt.Origin()}.SetText(title)
 			return false
 		}).RunASAP().RunOnce())
 		return false

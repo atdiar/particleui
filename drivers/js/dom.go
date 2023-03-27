@@ -90,9 +90,8 @@ func (w Window) SetTitle(title string) {
 // TODO see if can get height width of window view port, etc.
 
 var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.Element {
-	e := ui.NewElement("window", DOCTYPE)
-	e.Set("event", "mounted", ui.Bool(true))
-	e.Set("event", "mountable", ui.Bool(true))
+	e := ui.NewElement("window", "BROWSER")
+	
 
 	e.ElementStore = Elements
 	e.Parent = e
@@ -239,7 +238,7 @@ var newObservable = Elements.NewConstructor("observable", func(id string) *ui.El
 
 
 type Document struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (d Document) Window() Window {
@@ -248,6 +247,9 @@ func (d Document) Window() Window {
 		return Window{w}
 	}
 	wd:= newWindow("zui - window")
+	ui.RegisterElement(d.AsElement(),wd.Raw)
+	wd.Raw.TriggerEvent("mounted", ui.Bool(true))
+	wd.Raw.TriggerEvent("mountable", ui.Bool(true))
 	d.AsElement().BindValue("ui","title",wd.AsElement())
 	return wd
 }
@@ -326,7 +328,7 @@ func GetDocument(e *ui.Element) *Document{
 	if e.Root() == nil{
 		return nil
 	}
-	return &Document{ui.BasicElement{e.Root()}}
+	return &Document{e.Root()}
 }
 
 var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
@@ -380,7 +382,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
-	d:= Document{ui.BasicElement{evt.Origin()}}
+	d:= Document{evt.Origin()}
 	t:= Title.WithID("documenttitle")
 	t.Set(string(evt.NewValue().(ui.String)))
 	d.Head().AppendChild(t)
@@ -440,19 +442,19 @@ func Autofocus(e *ui.Element) *ui.Element{
 // in the tree of Elements that consitute the full document.
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
-	d:= Document{ui.BasicElement{LoadFromStorage(newDocument(id, options...))}}
+	d:= Document{LoadFromStorage(newDocument(id, options...))}
 	d = DocumentInitializer(d)
 	mainDocument = &d
 	return d
 }
 
 type BodyElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "body"
@@ -472,12 +474,12 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 
 
 var Body = bodyConstructor(func () BodyElement {
-	return BodyElement{ui.BasicElement{LoadFromStorage(newHead(Elements.NewID()))}}
+	return BodyElement{LoadFromStorage(newHead(Elements.NewID()))}
 })
 
 type bodyConstructor func() BodyElement
 func(c bodyConstructor) WithID(id string, options ...string)BodyElement{
-	return BodyElement{ui.BasicElement{LoadFromStorage(newBody(id, options...))}}
+	return BodyElement{LoadFromStorage(newBody(id, options...))}
 }
 
 
@@ -485,12 +487,12 @@ func(c bodyConstructor) WithID(id string, options ...string)BodyElement{
 // Head refers to the <head> HTML element of a HTML document, which contains metadata and links to 
 // resources such as title, scripts, stylesheets.
 type HeadElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "head"
@@ -510,17 +512,17 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 
 
 var Head = headConstructor(func () HeadElement {
-	return HeadElement{ui.BasicElement{LoadFromStorage(newHead(Elements.NewID()))}}
+	return HeadElement{LoadFromStorage(newHead(Elements.NewID()))}
 })
 
 type headConstructor func() HeadElement
 func(c headConstructor) WithID(id string, options ...string)HeadElement{
-	return HeadElement{ui.BasicElement{LoadFromStorage(newHead(id, options...))}}
+	return HeadElement{LoadFromStorage(newHead(id, options...))}
 }
 
 // Meta : for definition and examples, see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/meta
 type MetaElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(m MetaElement) SetAttribute(name,value string) MetaElement{
@@ -530,7 +532,7 @@ func(m MetaElement) SetAttribute(name,value string) MetaElement{
 
 var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "meta"
@@ -545,17 +547,17 @@ var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 
 
 var Meta = metaConstructor(func () MetaElement {
-	return MetaElement{ui.BasicElement{LoadFromStorage(newMeta(Elements.NewID()))}}
+	return MetaElement{LoadFromStorage(newMeta(Elements.NewID()))}
 })
 
 type metaConstructor func() MetaElement
 func(c metaConstructor) WithID(id string, options ...string)MetaElement{
-	return MetaElement{ui.BasicElement{LoadFromStorage(newMeta(id, options...))}}
+	return MetaElement{LoadFromStorage(newMeta(id, options...))}
 }
 
 
 type TitleElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(m TitleElement) Set(title string) TitleElement{
@@ -565,7 +567,7 @@ func(m TitleElement) Set(title string) TitleElement{
 
 var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "title"
@@ -581,18 +583,18 @@ var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
 
 
 var Title = titleConstructor(func () TitleElement {
-	return TitleElement{ui.BasicElement{LoadFromStorage(newTitle(Elements.NewID()))}}
+	return TitleElement{LoadFromStorage(newTitle(Elements.NewID()))}
 })
 
 type titleConstructor func() TitleElement
 func(c titleConstructor) WithID(id string,options ...string)TitleElement{
-	return TitleElement{ui.BasicElement{LoadFromStorage(newTitle(id, options...))}}
+	return TitleElement{LoadFromStorage(newTitle(id, options...))}
 }
 
 // ScriptElement is an Element that refers to the HTML Element of the same name that embeds executable 
 // code or data.
 type ScriptElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(s ScriptElement) Src(source string) ScriptElement{
@@ -622,7 +624,7 @@ func(s ScriptElement) SetInnerHTML(content string) ScriptElement{
 
 var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "script"
@@ -637,12 +639,12 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 
 
 var Script = scriptConstructor(func () ScriptElement {
-	return ScriptElement{ui.BasicElement{LoadFromStorage(newScript(Elements.NewID()))}}
+	return ScriptElement{LoadFromStorage(newScript(Elements.NewID()))}
 })
 
 type scriptConstructor func() ScriptElement
 func(c scriptConstructor) WithID(id string, options ...string)ScriptElement{
-	return ScriptElement{ui.BasicElement{LoadFromStorage(newScript(id, options...))}}
+	return ScriptElement{LoadFromStorage(newScript(id, options...))}
 }
 
 
@@ -650,7 +652,7 @@ func(c scriptConstructor) WithID(id string, options ...string)ScriptElement{
 // In our current use-case, it will mostly be used when generating HTML (SSR or SSG).
 // It is then mostly a build-time concern.
 type BaseElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(b BaseElement) SetHREF(url string) BaseElement{
@@ -660,7 +662,7 @@ func(b BaseElement) SetHREF(url string) BaseElement{
 
 var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "base"
@@ -679,12 +681,12 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 })
 
 var Base = baseConstructor(func () BaseElement {
-	return BaseElement{ui.BasicElement{LoadFromStorage(newBase(Elements.NewID()))}}
+	return BaseElement{LoadFromStorage(newBase(Elements.NewID()))}
 })
 
 type baseConstructor func() BaseElement
 func(c baseConstructor) WithID(id string, options ...string)BaseElement{
-	return BaseElement{ui.BasicElement{LoadFromStorage(newBase(id, options...))}}
+	return BaseElement{LoadFromStorage(newBase(id, options...))}
 }
 
 
@@ -694,7 +696,7 @@ func(c baseConstructor) WithID(id string, options ...string)BaseElement{
 // is disabled.
 // Indeed, if scripts are disbaled, wasm will not be able to insert this dynamically into the page.
 type NoScriptElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
@@ -704,7 +706,7 @@ func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
 
 var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "noscript"
@@ -718,18 +720,18 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 })
 
 var NoScript = noscriptConstructor(func () NoScriptElement {
-	return NoScriptElement{ui.BasicElement{LoadFromStorage(newNoScript(Elements.NewID()))}}
+	return NoScriptElement{LoadFromStorage(newNoScript(Elements.NewID()))}
 })
 
 type noscriptConstructor func() NoScriptElement
 func(c noscriptConstructor) WithID(id string, options ...string)NoScriptElement{
-	return NoScriptElement{ui.BasicElement{LoadFromStorage(newNoScript(id, options...))}}
+	return NoScriptElement{LoadFromStorage(newNoScript(id, options...))}
 }
 
 // Link refers to the <link> HTML Element which allow to specify the location of external resources
 // such as stylesheets or a favicon.
 type LinkElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(l LinkElement) SetAttribute(name,value string) LinkElement{
@@ -739,7 +741,7 @@ func(l LinkElement) SetAttribute(name,value string) LinkElement{
 
 var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "link"
@@ -753,12 +755,12 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 })
 
 var Link = linkConstructor(func () LinkElement {
-	return LinkElement{ui.BasicElement{LoadFromStorage(newLink(Elements.NewID()))}}
+	return LinkElement{LoadFromStorage(newLink(Elements.NewID()))}
 })
 
 type linkConstructor func() LinkElement
 func(c linkConstructor) WithID(id string, options ...string) LinkElement{
-	return LinkElement{ui.BasicElement{LoadFromStorage(newLink(id, options...))}}
+	return LinkElement{LoadFromStorage(newLink(id, options...))}
 }
 
 
@@ -767,7 +769,7 @@ func(c linkConstructor) WithID(id string, options ...string) LinkElement{
 // DivElement is a concrete type that holds the common interface to Div *ui.Element objects.
 // i.e. ui.Element whose constructor name is "div" and represents html div elements.
 type DivElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (d DivElement) Contenteditable(b bool) DivElement {
@@ -782,7 +784,7 @@ func (d DivElement) SetText(str string) DivElement {
 
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	
@@ -813,12 +815,12 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 // The name constructor argument is used by the framework for automatic route
 // and automatic link generation.
 var Div = divConstructor(func () DivElement {
-	return DivElement{ui.BasicElement{LoadFromStorage(newDiv(Elements.NewID()))}}
+	return DivElement{LoadFromStorage(newDiv(Elements.NewID()))}
 })
 
 type divConstructor func() DivElement
 func(d divConstructor) WithID(id string, options ...string)DivElement{
-	return DivElement{ui.BasicElement{LoadFromStorage(newDiv(id, options...))}}
+	return DivElement{LoadFromStorage(newDiv(id, options...))}
 }
 // var test = Div.WithID("test")(EnableLocalPersistence())
 
@@ -829,7 +831,7 @@ const HydrationAttrName = "data-needh2o"
 
 // TODO implement spellcheck and autocomplete methods
 type TextAreaElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 type textAreaModifer struct{}
@@ -958,7 +960,7 @@ func(t textAreaModifer) Spellcheck(mode string)func(*ui.Element)*ui.Element{
 
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "textarea"
@@ -989,12 +991,12 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 // TextArea is a constructor for a textarea html element.
 var TextArea = textareaConstructor(func () TextAreaElement {
-	return TextAreaElement{ui.BasicElement{LoadFromStorage(newTextArea(Elements.NewID()))}}
+	return TextAreaElement{LoadFromStorage(newTextArea(Elements.NewID()))}
 })
 
 type textareaConstructor func() TextAreaElement
 func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
-	return TextAreaElement{ui.BasicElement{LoadFromStorage(newTextArea(id, options...))}}
+	return TextAreaElement{LoadFromStorage(newTextArea(id, options...))}
 }
 
 // allowTextAreaDataBindingOnBlur is a constructor option for TextArea UI elements enabling
@@ -1026,12 +1028,12 @@ func EnableSyncOnInput() string {
 
 
 type HeaderElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "header"
@@ -1046,21 +1048,21 @@ var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 
 // Header is a constructor for a html header element.
 var Header = headerConstructor(func () HeaderElement {
-	return HeaderElement{ui.BasicElement{LoadFromStorage(newHeader(Elements.NewID()))}}
+	return HeaderElement{LoadFromStorage(newHeader(Elements.NewID()))}
 })
 
 type headerConstructor func() HeaderElement
 func(c headerConstructor) WithID(id string, options ...string)HeaderElement{
-	return HeaderElement{ui.BasicElement{LoadFromStorage(newHeader(id, options...))}}
+	return HeaderElement{LoadFromStorage(newHeader(id, options...))}
 }
 
 type FooterElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "footer"
@@ -1075,22 +1077,22 @@ var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 
 // Footer is a constructor for an html footer element.
 var Footer = footerConstructor(func () FooterElement {
-	return FooterElement{ui.BasicElement{LoadFromStorage(newFooter(Elements.NewID()))}}
+	return FooterElement{LoadFromStorage(newFooter(Elements.NewID()))}
 })
 
 type footerConstructor func() FooterElement
 func(c footerConstructor) WithID(id string, options ...string)FooterElement{
-	return FooterElement{ui.BasicElement{LoadFromStorage(newFooter(id, options...))}}
+	return FooterElement{LoadFromStorage(newFooter(id, options...))}
 
 }
 
 type SectionElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "section"
@@ -1105,16 +1107,16 @@ var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 
 // Section is a constructor for html section elements.
 var Section = sectionConstructor(func () SectionElement {
-	return SectionElement{ui.BasicElement{LoadFromStorage(newSection(Elements.NewID()))}}
+	return SectionElement{LoadFromStorage(newSection(Elements.NewID()))}
 })
 
 type sectionConstructor func() SectionElement
 func(c sectionConstructor) WithID(id string, options ...string)SectionElement{
-	return SectionElement{ui.BasicElement{LoadFromStorage(newSection(id, options...))}}
+	return SectionElement{LoadFromStorage(newSection(id, options...))}
 }
 
 type H1Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H1Element) SetText(s string) H1Element {
@@ -1124,7 +1126,7 @@ func (h H1Element) SetText(s string) H1Element {
 
 var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h1"
@@ -1140,16 +1142,16 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 
 // H1 is a constructor for html heading H1 elements.
 var H1 = h1Constructor(func () H1Element {
-	return H1Element{ui.BasicElement{LoadFromStorage(newH1(Elements.NewID()))}}
+	return H1Element{LoadFromStorage(newH1(Elements.NewID()))}
 })
 
 type h1Constructor func() H1Element
 func(c h1Constructor) WithID(id string, options ...string)H1Element{
-	return H1Element{ui.BasicElement{LoadFromStorage(newH1(id, options...))}}
+	return H1Element{LoadFromStorage(newH1(id, options...))}
 }
 
 type H2Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H2Element) SetText(s string) H2Element {
@@ -1159,7 +1161,7 @@ func (h H2Element) SetText(s string) H2Element {
 
 var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h2"
@@ -1175,16 +1177,16 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 
 // H2 is a constructor for html heading H2 elements.
 var H2 = h2Constructor(func () H2Element {
-	return H2Element{ui.BasicElement{LoadFromStorage(newH2(Elements.NewID()))}}
+	return H2Element{LoadFromStorage(newH2(Elements.NewID()))}
 })
 
 type h2Constructor func() H2Element
 func(c h2Constructor) WithID(id string, options ...string)H2Element{
-	return H2Element{ui.BasicElement{LoadFromStorage(newH2(id, options...))}}
+	return H2Element{LoadFromStorage(newH2(id, options...))}
 }
 
 type H3Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H3Element) SetText(s string) H3Element {
@@ -1194,7 +1196,7 @@ func (h H3Element) SetText(s string) H3Element {
 
 var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h3"
@@ -1210,16 +1212,16 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 
 // H3 is a constructor for html heading H3 elements.
 var H3 = h3Constructor(func () H3Element {
-	return H3Element{ui.BasicElement{LoadFromStorage(newH3(Elements.NewID()))}}
+	return H3Element{LoadFromStorage(newH3(Elements.NewID()))}
 })
 
 type h3Constructor func() H3Element
 func(c h3Constructor) WithID(id string, options ...string)H3Element{
-	return H3Element{ui.BasicElement{LoadFromStorage(newH3(id, options...))}}
+	return H3Element{LoadFromStorage(newH3(id, options...))}
 }
 
 type H4Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H4Element) SetText(s string) H4Element {
@@ -1228,7 +1230,7 @@ func (h H4Element) SetText(s string) H4Element {
 }
 
 var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h4"
@@ -1244,16 +1246,16 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 
 // H4 is a constructor for html heading H4 elements.
 var H4 = h4Constructor(func () H4Element {
-	return H4Element{ui.BasicElement{LoadFromStorage(newH4(Elements.NewID()))}}
+	return H4Element{LoadFromStorage(newH4(Elements.NewID()))}
 })
 
 type h4Constructor func() H4Element
 func(c h4Constructor) WithID(id string, options ...string)H4Element{
-	return H4Element{ui.BasicElement{LoadFromStorage(newH4(id, options...))}}
+	return H4Element{LoadFromStorage(newH4(id, options...))}
 }
 
 type H5Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H5Element) SetText(s string) H5Element {
@@ -1263,7 +1265,7 @@ func (h H5Element) SetText(s string) H5Element {
 
 var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h5"
@@ -1279,16 +1281,16 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 
 // H5 is a constructor for html heading H5 elements.
 var H5 = h5Constructor(func () H5Element {
-	return H5Element{ui.BasicElement{LoadFromStorage(newH5(Elements.NewID()))}}
+	return H5Element{LoadFromStorage(newH5(Elements.NewID()))}
 })
 
 type h5Constructor func() H5Element
 func(c h5Constructor) WithID(id string, options ...string)H5Element{
-	return H5Element{ui.BasicElement{LoadFromStorage(newH5(id, options...))}}
+	return H5Element{LoadFromStorage(newH5(id, options...))}
 }
 
 type H6Element struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (h H6Element) SetText(s string) H6Element {
@@ -1298,7 +1300,7 @@ func (h H6Element) SetText(s string) H6Element {
 
 var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "h6"
@@ -1315,16 +1317,16 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 
 // H6 is a constructor for html heading H6 elements.
 var H6 = h6Constructor(func () H6Element {
-	return H6Element{ui.BasicElement{LoadFromStorage(newH6(Elements.NewID()))}}
+	return H6Element{LoadFromStorage(newH6(Elements.NewID()))}
 })
 
 type h6Constructor func() H6Element
 func(c h6Constructor) WithID(id string, options ...string)H6Element{
-	return H6Element{ui.BasicElement{LoadFromStorage(newH6(id, options...))}}
+	return H6Element{LoadFromStorage(newH6(id, options...))}
 }
 
 type SpanElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (s SpanElement) SetText(str string) SpanElement {
@@ -1334,7 +1336,7 @@ func (s SpanElement) SetText(str string) SpanElement {
 
 var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "span"
@@ -1351,22 +1353,22 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 
 // Span is a constructor for html span elements.
 var Span = spanConstructor(func () SpanElement {
-	return SpanElement{ui.BasicElement{LoadFromStorage(newSpan(Elements.NewID()))}}
+	return SpanElement{LoadFromStorage(newSpan(Elements.NewID()))}
 })
 
 type spanConstructor func() SpanElement
 func(c spanConstructor) WithID(id string, options ...string)SpanElement{
-	return SpanElement{ui.BasicElement{LoadFromStorage(newSpan(id, options...))}}
+	return SpanElement{LoadFromStorage(newSpan(id, options...))}
 }
 
 type ArticleElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 
 var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "article"
@@ -1381,22 +1383,22 @@ var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Article = articleConstructor(func () ArticleElement {
-	return ArticleElement{ui.BasicElement{LoadFromStorage(newArticle(Elements.NewID()))}}
+	return ArticleElement{LoadFromStorage(newArticle(Elements.NewID()))}
 })
 
 type articleConstructor func() ArticleElement
 func(c articleConstructor) WithID(id string, options ...string)ArticleElement{
-	return ArticleElement{ui.BasicElement{LoadFromStorage(newArticle(id, options...))}}
+	return ArticleElement{LoadFromStorage(newArticle(id, options...))}
 }
 
 
 type AsideElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "aside"
@@ -1410,21 +1412,21 @@ var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Aside = asideConstructor(func () AsideElement {
-	return AsideElement{ui.BasicElement{LoadFromStorage(newAside(Elements.NewID()))}}
+	return AsideElement{LoadFromStorage(newAside(Elements.NewID()))}
 })
 
 type asideConstructor func() AsideElement
 func(c asideConstructor) WithID(id string, options ...string)AsideElement{
-	return AsideElement{ui.BasicElement{LoadFromStorage(newAside(id, options...))}}
+	return AsideElement{LoadFromStorage(newAside(id, options...))}
 }
 
 type MainElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "main"
@@ -1438,17 +1440,17 @@ var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Main = mainConstructor(func () MainElement {
-	return MainElement{ui.BasicElement{LoadFromStorage(newMain(Elements.NewID()))}}
+	return MainElement{LoadFromStorage(newMain(Elements.NewID()))}
 })
 
 type mainConstructor func() MainElement
 func(c mainConstructor) WithID(id string, options ...string)MainElement{
-	return MainElement{ui.BasicElement{LoadFromStorage(newMain(id, options...))}}
+	return MainElement{LoadFromStorage(newMain(id, options...))}
 }
 
 
 type ParagraphElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (p ParagraphElement) SetText(s string) ParagraphElement {
@@ -1458,7 +1460,7 @@ func (p ParagraphElement) SetText(s string) ParagraphElement {
 
 var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "p"
@@ -1474,20 +1476,20 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 
 // Paragraph is a constructor for html paragraph elements.
 var Paragraph = paragraphConstructor(func () ParagraphElement {
-	return ParagraphElement{ui.BasicElement{LoadFromStorage(newParagraph(Elements.NewID()))}}
+	return ParagraphElement{LoadFromStorage(newParagraph(Elements.NewID()))}
 })
 
 type paragraphConstructor func() ParagraphElement
 func(c paragraphConstructor) WithID(id string, options ...string)ParagraphElement{
-	return ParagraphElement{ui.BasicElement{LoadFromStorage(newParagraph(id, options...))}}
+	return ParagraphElement{LoadFromStorage(newParagraph(id, options...))}
 }
 
 type NavElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
-		e := ui.NewElement(id, Elements.DocType)
+		e := Elements.NewElement(id)
 		e = enableClasses(e)
 
 		tag:= "nav"
@@ -1502,16 +1504,16 @@ var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 
 // Nav is a constructor for a html nav element.
 var Nav = navConstructor(func () NavElement {
-	return NavElement{ui.BasicElement{LoadFromStorage(newNav(Elements.NewID()))}}
+	return NavElement{LoadFromStorage(newNav(Elements.NewID()))}
 })
 
 type navConstructor func() NavElement
 func(c navConstructor) WithID(id string, options ...string)NavElement{
-	return NavElement{ui.BasicElement{LoadFromStorage(newNav(id, options...))}}
+	return NavElement{LoadFromStorage(newNav(id, options...))}
 }
 
 type AnchorElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (a AnchorElement) SetHREF(target string) AnchorElement {
@@ -1528,7 +1530,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 			hash = "#"+targetid[0]
 		}
 	}
-	a.AsElement().Watch("event", "verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().WatchEvent("verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetHREF(link.URI()+hash)
 		return false
 	}).RunASAP())
@@ -1611,7 +1613,7 @@ func (a AnchorElement) SetText(text string) AnchorElement {
 
 var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "a"
@@ -1630,12 +1632,12 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 
 // Anchor creates an html anchor element.
 var Anchor = anchorConstructor(func () AnchorElement {
-	return AnchorElement{ui.BasicElement{LoadFromStorage(newAnchor(Elements.NewID()))}}
+	return AnchorElement{LoadFromStorage(newAnchor(Elements.NewID()))}
 })
 
 type anchorConstructor func() AnchorElement
 func(c anchorConstructor) WithID(id string, options ...string)AnchorElement{
-	return AnchorElement{ui.BasicElement{LoadFromStorage(newAnchor(id, options...))}}
+	return AnchorElement{LoadFromStorage(newAnchor(id, options...))}
 }
 
 var AllowPrefetchOnIntent = ui.NewConstructorOption("prefetchonintent", func(e *ui.Element)*ui.Element{
@@ -1673,7 +1675,7 @@ func prefetchDisabled() bool{
 }
 
 type ButtonElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 type buttonModifer struct{}
@@ -1723,7 +1725,7 @@ func (b ButtonElement) SetText(str string) ButtonElement {
 
 var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "button"
@@ -1751,13 +1753,13 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 
 // Button returns a button ui.BasicElement.
 var Button = buttonConstructor(func (typ ...string) ButtonElement {
-	return ButtonElement{ui.BasicElement{LoadFromStorage(newButton(Elements.NewID(), typ...))}}
+	return ButtonElement{LoadFromStorage(newButton(Elements.NewID(), typ...))}
 })
 
 type buttonConstructor func(typ ...string) ButtonElement
 func(c buttonConstructor) WithID(id string, typ string, options ...string)ButtonElement{
 	options = append(options, typ)
-	return ButtonElement{ui.BasicElement{LoadFromStorage(newButton(id, options...))}}
+	return ButtonElement{LoadFromStorage(newButton(id, options...))}
 }
 
 func buttonOption(name string) ui.ConstructorOption{
@@ -1770,7 +1772,7 @@ func buttonOption(name string) ui.ConstructorOption{
 }
 
 type LabelElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 type labelModifier struct{}
@@ -1824,7 +1826,7 @@ func (l LabelElement) For(e *ui.Element) LabelElement {
 
 var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "label"
@@ -1840,16 +1842,16 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Label = labelConstructor(func () LabelElement {
-	return LabelElement{ui.BasicElement{LoadFromStorage(newLabel(Elements.NewID()))}}
+	return LabelElement{LoadFromStorage(newLabel(Elements.NewID()))}
 })
 
 type labelConstructor func() LabelElement
 func(c labelConstructor) WithID(id string, options ...string)LabelElement{
-	return LabelElement{ui.BasicElement{LoadFromStorage(newLabel(id, options...))}}
+	return LabelElement{LoadFromStorage(newLabel(id, options...))}
 }
 
 type InputElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 type inputModifier struct{}
@@ -1995,7 +1997,7 @@ func (i InputElement) SetDisabled(b bool)InputElement{
 
 var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "input"
@@ -2124,7 +2126,7 @@ var Input = inputConstructor(func (typ string) InputElement {
 	if typ != ""{
 		typ = "input"
 	}
-	return InputElement{ui.BasicElement{LoadFromStorage(newInput(Elements.NewID(),typ))}}
+	return InputElement{LoadFromStorage(newInput(Elements.NewID(),typ))}
 })
 
 type inputConstructor func(typ string) InputElement
@@ -2132,12 +2134,12 @@ func(c inputConstructor) WithID(id string, typ string, options ...string) InputE
 	if typ != ""{
 		options = append(options, typ)
 	}
-	return InputElement{ui.BasicElement{LoadFromStorage(newInput(id, options...))}}
+	return InputElement{LoadFromStorage(newInput(id, options...))}
 }
 
 // OutputElement
 type OutputElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type outputModifier struct{}
@@ -2195,7 +2197,7 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 
 var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "output"
@@ -2214,17 +2216,17 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Output = outputConstructor(func () OutputElement {
-	return OutputElement{ui.BasicElement{LoadFromStorage(newOutput(Elements.NewID()))}}
+	return OutputElement{LoadFromStorage(newOutput(Elements.NewID()))}
 })
 
 type outputConstructor func() OutputElement
 func(c outputConstructor) WithID(id string, options ...string)OutputElement{
-	return OutputElement{ui.BasicElement{LoadFromStorage(newOutput(id, options...))}}
+	return OutputElement{LoadFromStorage(newOutput(id, options...))}
 }
 
 // ImgElement
 type ImgElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 type imgModifier struct{}
@@ -2247,7 +2249,7 @@ func (i imgModifier) Alt(s string) func(*ui.Element)*ui.Element{
 
 var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "img"
@@ -2264,12 +2266,12 @@ var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Img = imgConstructor(func () ImgElement {
-	return ImgElement{ui.BasicElement{LoadFromStorage(newImg(Elements.NewID()))}}
+	return ImgElement{LoadFromStorage(newImg(Elements.NewID()))}
 })
 
 type imgConstructor func() ImgElement
 func(c imgConstructor) WithID(id string, options ...string)ImgElement{
-	return ImgElement{ui.BasicElement{LoadFromStorage(newImg(id, options...))}}
+	return ImgElement{LoadFromStorage(newImg(id, options...))}
 }
 
 
@@ -2311,7 +2313,7 @@ func(j jsTimeRanges) Length() int{
 
 // AudioElement
 type AudioElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type audioModifier struct{}
@@ -2417,7 +2419,7 @@ func(m audioModifier) DisableRemotePlayback(b bool)func(*ui.Element)*ui.Element{
 
 var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "audio"
@@ -2441,17 +2443,17 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Audio = audioConstructor(func () AudioElement {
-	return AudioElement{ui.BasicElement{LoadFromStorage(newAudio(Elements.NewID()))}}
+	return AudioElement{LoadFromStorage(newAudio(Elements.NewID()))}
 })
 
 type audioConstructor func() AudioElement
 func(c audioConstructor) WithID(id string, options ...string)AudioElement{
-	return AudioElement{ui.BasicElement{LoadFromStorage(newAudio(id, options...))}}
+	return AudioElement{LoadFromStorage(newAudio(id, options...))}
 }
 
 // VideoElement
 type VideoElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type videoModifier struct{}
@@ -2578,7 +2580,7 @@ func(m videoModifier) PreservesPitch(b bool)func(*ui.Element)*ui.Element{
 
 var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "video"
@@ -2607,17 +2609,17 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Video = videoConstructor(func () VideoElement {
-	return VideoElement{ui.BasicElement{LoadFromStorage(newVideo(Elements.NewID()))}}
+	return VideoElement{LoadFromStorage(newVideo(Elements.NewID()))}
 })
 
 type videoConstructor func() VideoElement
 func(c videoConstructor) WithID(id string, options ...string)VideoElement{
-	return VideoElement{ui.BasicElement{LoadFromStorage(newVideo(id, options...))}}
+	return VideoElement{LoadFromStorage(newVideo(id, options...))}
 }
 
 // SourceElement
 type SourceElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type sourceModifier struct{}
@@ -2641,7 +2643,7 @@ func(s sourceModifier) Type(typ string) func(*ui.Element)*ui.Element{
 
 var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "source"
@@ -2658,16 +2660,16 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Source = sourceConstructor(func () SourceElement {
-	return SourceElement{ui.BasicElement{LoadFromStorage(newSource(Elements.NewID()))}}
+	return SourceElement{LoadFromStorage(newSource(Elements.NewID()))}
 })
 
 type sourceConstructor func() SourceElement
 func(c sourceConstructor) WithID(id string, options ...string)SourceElement{
-	return SourceElement{ui.BasicElement{LoadFromStorage(newSource(id, options...))}}
+	return SourceElement{LoadFromStorage(newSource(id, options...))}
 }
 
 type UlElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (l UlElement) FromValues(values ...ui.Value) UlElement {
@@ -2689,7 +2691,7 @@ func (l UlElement) Values() ui.List {
 
 var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "ul"
@@ -2703,16 +2705,16 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Ul = ulConstructor(func () UlElement {
-	return UlElement{ui.BasicElement{LoadFromStorage(newUl(Elements.NewID()))}}
+	return UlElement{LoadFromStorage(newUl(Elements.NewID()))}
 })
 
 type ulConstructor func() UlElement
 func(c ulConstructor) WithID(id string, options ...string)UlElement{
-	return UlElement{ui.BasicElement{LoadFromStorage(newUl(id, options...))}}
+	return UlElement{LoadFromStorage(newUl(id, options...))}
 }
 
 type OlElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (l OlElement) SetValue(lobjs ui.List) OlElement {
@@ -2722,7 +2724,7 @@ func (l OlElement) SetValue(lobjs ui.List) OlElement {
 
 var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "ol"
@@ -2740,7 +2742,7 @@ var Ol = olConstructor(func (typ string, offset int, options ...string) OlElemen
 	e:= newOl(Elements.NewID())
 	SetAttribute(e, "type", typ)
 	SetAttribute(e, "start", strconv.Itoa(offset))
-	return OlElement{ui.BasicElement{LoadFromStorage(e)}}
+	return OlElement{LoadFromStorage(e)}
 })
 
 type olConstructor func(typ string, offset int, options ...string) OlElement
@@ -2749,12 +2751,12 @@ func(c olConstructor) WithID(id string) func(typ string, offset int, options ...
 		e:= newOl(id, options...)
 		SetAttribute(e, "type", typ)
 		SetAttribute(e, "start", strconv.Itoa(offset))
-		return OlElement{ui.BasicElement{LoadFromStorage(e)}}
+		return OlElement{LoadFromStorage(e)}
 	}
 }
 
 type LiElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 
@@ -2765,7 +2767,7 @@ func(li LiElement) SetElement(e *ui.Element) LiElement{ // TODO Might be unneces
 
 var newLi= Elements.NewConstructor("li", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "li"
@@ -2779,51 +2781,51 @@ var newLi= Elements.NewConstructor("li", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Li = liConstructor(func () LiElement {
-	return LiElement{ui.BasicElement{LoadFromStorage(newLi(Elements.NewID()))}}
+	return LiElement{LoadFromStorage(newLi(Elements.NewID()))}
 })
 
 type liConstructor func() LiElement
 func(c liConstructor) WithID(id string, options ...string)LiElement{
-	return LiElement{ui.BasicElement{LoadFromStorage(newLi(id, options...))}}
+	return LiElement{LoadFromStorage(newLi(id, options...))}
 }
 
 // Table Elements
 
 // TableElement
 type TableElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 // TheadElement
 type TheadElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 // TbodyElement
 type TbodyElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 // TrElement
 type TrElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 
 // TdElement
 type TdElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 
 // ThElement
 type ThElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 // ColElement
 type ColElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func(c ColElement) SetSpan(n int) ColElement{
@@ -2833,7 +2835,7 @@ func(c ColElement) SetSpan(n int) ColElement{
 
 // ColGroupElement
 type ColGroupElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func(c ColGroupElement) SetSpan(n int) ColGroupElement{
@@ -2843,12 +2845,12 @@ func(c ColGroupElement) SetSpan(n int) ColGroupElement{
 
 // TfootElement
 type TfootElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "thead"
@@ -2862,18 +2864,18 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Thead = theadConstructor(func () TheadElement {
-	return TheadElement{ui.BasicElement{LoadFromStorage(newThead(Elements.NewID()))}}
+	return TheadElement{LoadFromStorage(newThead(Elements.NewID()))}
 })
 
 type theadConstructor func() TheadElement
 func(c theadConstructor) WithID(id string, options ...string)TheadElement{
-	return TheadElement{ui.BasicElement{LoadFromStorage(newThead(id, options...))}}
+	return TheadElement{LoadFromStorage(newThead(id, options...))}
 }
 
 
 var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "tr"
@@ -2887,17 +2889,17 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tr = trConstructor(func () TrElement {
-	return TrElement{ui.BasicElement{LoadFromStorage(newTr(Elements.NewID()))}}
+	return TrElement{LoadFromStorage(newTr(Elements.NewID()))}
 })
 
 type trConstructor func() TrElement
 func(c trConstructor) WithID(id string, options ...string)TrElement{
-	return TrElement{ui.BasicElement{LoadFromStorage(newTr(id, options...))}}
+	return TrElement{LoadFromStorage(newTr(id, options...))}
 }
 
 var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "td"
@@ -2911,17 +2913,17 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Td = tdConstructor(func () TdElement {
-	return TdElement{ui.BasicElement{LoadFromStorage(newTd(Elements.NewID()))}}
+	return TdElement{LoadFromStorage(newTd(Elements.NewID()))}
 })
 
 type tdConstructor func() TdElement
 func(c tdConstructor) WithID(id string, options ...string)TdElement{
-	return TdElement{ui.BasicElement{LoadFromStorage(newTd(id, options...))}}
+	return TdElement{LoadFromStorage(newTd(id, options...))}
 }
 
 var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "th"
@@ -2935,17 +2937,17 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Th = thConstructor(func () ThElement {
-	return ThElement{ui.BasicElement{LoadFromStorage(newTh(Elements.NewID()))}}
+	return ThElement{LoadFromStorage(newTh(Elements.NewID()))}
 })
 
 type thConstructor func() ThElement
 func(c thConstructor) WithID(id string, options ...string)ThElement{
-	return ThElement{ui.BasicElement{LoadFromStorage(newTh(id, options...))}}
+	return ThElement{LoadFromStorage(newTh(id, options...))}
 }
 
 var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "tbody"
@@ -2959,17 +2961,17 @@ var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tbody = tbodyConstructor(func () TbodyElement {
-	return TbodyElement{ui.BasicElement{LoadFromStorage(newTbody(Elements.NewID()))}}
+	return TbodyElement{LoadFromStorage(newTbody(Elements.NewID()))}
 })
 
 type tbodyConstructor func() TbodyElement
 func(c tbodyConstructor) WithID(id string, options ...string)TbodyElement{
-	return TbodyElement{ui.BasicElement{LoadFromStorage(newTbody(id, options...))}}
+	return TbodyElement{LoadFromStorage(newTbody(id, options...))}
 }
 
 var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "tfoot"
@@ -2983,17 +2985,17 @@ var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Tfoot = tfootConstructor(func () TfootElement {
-	return TfootElement{ui.BasicElement{LoadFromStorage(newTfoot(Elements.NewID()))}}
+	return TfootElement{LoadFromStorage(newTfoot(Elements.NewID()))}
 })
 
 type tfootConstructor func() TfootElement
 func(c tfootConstructor) WithID(id string, options ...string)TfootElement{
-	return TfootElement{ui.BasicElement{LoadFromStorage(newTfoot(id, options...))}}
+	return TfootElement{LoadFromStorage(newTfoot(id, options...))}
 }
 
 var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "col"
@@ -3009,17 +3011,17 @@ var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Col = colConstructor(func () ColElement {
-	return ColElement{ui.BasicElement{LoadFromStorage(newCol(Elements.NewID()))}}
+	return ColElement{LoadFromStorage(newCol(Elements.NewID()))}
 })
 
 type colConstructor func() ColElement
 func(c colConstructor) WithID(id string, options ...string)ColElement{
-	return ColElement{ui.BasicElement{LoadFromStorage(newCol(id, options...))}}
+	return ColElement{LoadFromStorage(newCol(id, options...))}
 }
 
 var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "colgroup"
@@ -3035,17 +3037,17 @@ var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var ColGroup = colgroupConstructor(func () ColGroupElement {
-	return ColGroupElement{ui.BasicElement{LoadFromStorage(newColGroup(Elements.NewID()))}}
+	return ColGroupElement{LoadFromStorage(newColGroup(Elements.NewID()))}
 })
 
 type colgroupConstructor func() ColGroupElement
 func(c colgroupConstructor) WithID(id string, options ...string)ColGroupElement{
-	return ColGroupElement{ui.BasicElement{LoadFromStorage(newColGroup(id, options...))}}
+	return ColGroupElement{LoadFromStorage(newColGroup(id, options...))}
 }
 
 var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "table"
@@ -3059,17 +3061,17 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Table = tableConstructor(func () TableElement {
-	return TableElement{ui.BasicElement{LoadFromStorage(newTable(Elements.NewID()))}}
+	return TableElement{LoadFromStorage(newTable(Elements.NewID()))}
 })
 
 type tableConstructor func() TableElement
 func(c tableConstructor) WithID(id string, options ...string)TableElement{
-	return TableElement{ui.BasicElement{LoadFromStorage(newTable(id, options...))}}
+	return TableElement{LoadFromStorage(newTable(id, options...))}
 }
 
 
 type CanvasElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type canvasModifier struct{}
@@ -3092,7 +3094,7 @@ func(c canvasModifier) Width(w int) func(*ui.Element)*ui.Element{
 
 var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "canvas"
@@ -3109,16 +3111,16 @@ var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Canvas = canvasConstructor(func () CanvasElement {
-	return CanvasElement{ui.BasicElement{LoadFromStorage(newCanvas(Elements.NewID()))}}
+	return CanvasElement{LoadFromStorage(newCanvas(Elements.NewID()))}
 })
 
 type canvasConstructor func() CanvasElement
 func(c canvasConstructor) WithID(id string, options ...string)CanvasElement{
-	return CanvasElement{ui.BasicElement{LoadFromStorage(newCanvas(id, options...))}}
+	return CanvasElement{LoadFromStorage(newCanvas(id, options...))}
 }
 
 type SvgElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type svgModifier struct{}
@@ -3163,7 +3165,7 @@ func(s svgModifier) Y(y string) func(*ui.Element)*ui.Element{
 
 var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "svg"
@@ -3183,16 +3185,16 @@ var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Svg = svgConstructor(func () SvgElement {
-	return SvgElement{ui.BasicElement{LoadFromStorage(newSvg(Elements.NewID()))}}
+	return SvgElement{LoadFromStorage(newSvg(Elements.NewID()))}
 })
 
 type svgConstructor func() SvgElement
 func(c svgConstructor) WithID(id string, options ...string)SvgElement{
-	return SvgElement{ui.BasicElement{LoadFromStorage(newSvg(id, options...))}}
+	return SvgElement{LoadFromStorage(newSvg(id, options...))}
 }
 
 type SummaryElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func (s SummaryElement) SetText(str string) SummaryElement {
@@ -3202,7 +3204,7 @@ func (s SummaryElement) SetText(str string) SummaryElement {
 
 var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "summary"
@@ -3218,16 +3220,16 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Summary = summaryConstructor(func () SummaryElement {
-	return SummaryElement{ui.BasicElement{LoadFromStorage(newSummary(Elements.NewID()))}}
+	return SummaryElement{LoadFromStorage(newSummary(Elements.NewID()))}
 })
 
 type summaryConstructor func() SummaryElement
 func(c summaryConstructor) WithID(id string, options ...string)SummaryElement{
-	return SummaryElement{ui.BasicElement{LoadFromStorage(newSummary(id, options...))}}
+	return SummaryElement{LoadFromStorage(newSummary(id, options...))}
 }
 
 type DetailsElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func (d DetailsElement) SetText(str string) DetailsElement {
@@ -3259,7 +3261,7 @@ func(d DetailsElement) IsOpened() bool{
 
 var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "details"
@@ -3276,17 +3278,17 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Details = detailsConstructor(func () DetailsElement {
-	return DetailsElement{ui.BasicElement{LoadFromStorage(newDetails(Elements.NewID()))}}
+	return DetailsElement{LoadFromStorage(newDetails(Elements.NewID()))}
 })
 
 type detailsConstructor func() DetailsElement
 func(c detailsConstructor) WithID(id string, options ...string)DetailsElement{
-	return DetailsElement{ui.BasicElement{LoadFromStorage(newDetails(id, options...))}}
+	return DetailsElement{LoadFromStorage(newDetails(id, options...))}
 }
 
 // Dialog
 type DialogElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 
@@ -3314,7 +3316,7 @@ func(d DialogElement) IsOpened() bool{
 
 var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "dialog"
@@ -3330,12 +3332,12 @@ var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Dialog = dialogConstructor(func () DialogElement {
-	return DialogElement{ui.BasicElement{LoadFromStorage(newDialog(Elements.NewID()))}}
+	return DialogElement{LoadFromStorage(newDialog(Elements.NewID()))}
 })
 
 type dialogConstructor func() DialogElement
 func(c dialogConstructor) WithID(id string, options ...string)DialogElement{
-	return DialogElement{ui.BasicElement{LoadFromStorage(newDialog(id, options...))}}
+	return DialogElement{LoadFromStorage(newDialog(id, options...))}
 }
 
 // CodeElement is typically used to indicate that the text it contains is computer code and may therefore be 
@@ -3343,7 +3345,7 @@ func(c dialogConstructor) WithID(id string, options ...string)DialogElement{
 // To represent multiple lines of code, wrap the <code> element within a <pre> element. 
 // The <code> element by itself only represents a single phrase of code or line of code.
 type CodeElement struct {
-	ui.BasicElement
+	*ui.Element
 }
 
 func (c CodeElement) SetText(str string) CodeElement {
@@ -3353,7 +3355,7 @@ func (c CodeElement) SetText(str string) CodeElement {
 
 var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "code"
@@ -3369,17 +3371,17 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Code = codeConstructor(func () CodeElement {
-	return CodeElement{ui.BasicElement{LoadFromStorage(newCode(Elements.NewID()))}}
+	return CodeElement{LoadFromStorage(newCode(Elements.NewID()))}
 })
 
 type codeConstructor func() CodeElement
 func(c codeConstructor) WithID(id string, options ...string)CodeElement{
-	return CodeElement{ui.BasicElement{LoadFromStorage(newCode(id, options...))}}
+	return CodeElement{LoadFromStorage(newCode(id, options...))}
 }
 
 // Embed
 type EmbedElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(e EmbedElement) SetHeight(h int) EmbedElement{
@@ -3405,7 +3407,7 @@ func(e EmbedElement) SetSrc(src string) EmbedElement{
 
 var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "embed"
@@ -3424,17 +3426,17 @@ var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Embed = embedConstructor(func () EmbedElement {
-	return EmbedElement{ui.BasicElement{LoadFromStorage(newEmbed(Elements.NewID()))}}
+	return EmbedElement{LoadFromStorage(newEmbed(Elements.NewID()))}
 })
 
 type embedConstructor func() EmbedElement
 func(c embedConstructor) WithID(id string, options ...string)EmbedElement{
-	return EmbedElement{ui.BasicElement{LoadFromStorage(newEmbed(id, options...))}}
+	return EmbedElement{LoadFromStorage(newEmbed(id, options...))}
 }
 
 // Object
 type ObjectElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type objectModifier struct{}
@@ -3489,7 +3491,7 @@ func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 
 var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "object"
@@ -3509,22 +3511,22 @@ var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Object = objectConstructor(func () ObjectElement {
-	return ObjectElement{ui.BasicElement{LoadFromStorage(newObject(Elements.NewID()))}}
+	return ObjectElement{LoadFromStorage(newObject(Elements.NewID()))}
 })
 
 type objectConstructor func() ObjectElement
 func(c objectConstructor) WithID(id string, options ...string)ObjectElement{
-	return ObjectElement{ui.BasicElement{LoadFromStorage(newObject(id, options...))}}
+	return ObjectElement{LoadFromStorage(newObject(id, options...))}
 }
 
 // Datalist
 type DatalistElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "datalist"
@@ -3538,17 +3540,17 @@ var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Elemen
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Datalist = datalistConstructor(func () DatalistElement {
-	return DatalistElement{ui.BasicElement{LoadFromStorage(newDatalist(Elements.NewID()))}}
+	return DatalistElement{LoadFromStorage(newDatalist(Elements.NewID()))}
 })
 
 type datalistConstructor func() DatalistElement
 func(c datalistConstructor) WithID(id string, options ...string)DatalistElement{
-	return DatalistElement{ui.BasicElement{LoadFromStorage(newDatalist(id, options...))}}
+	return DatalistElement{LoadFromStorage(newDatalist(id, options...))}
 }
 
 // OptionElement
 type OptionElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type optionModifier struct{}
@@ -3589,7 +3591,7 @@ func(o OptionElement) SetValue(opt string) OptionElement{
 
 var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "option"
@@ -3608,17 +3610,17 @@ var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Option = optionConstructor(func () OptionElement {
-	return OptionElement{ui.BasicElement{LoadFromStorage(newOption(Elements.NewID()))}}
+	return OptionElement{LoadFromStorage(newOption(Elements.NewID()))}
 })
 
 type optionConstructor func() OptionElement
 func(c optionConstructor) WithID(id string, options ...string)OptionElement{
-	return OptionElement{ui.BasicElement{LoadFromStorage(newOption(id, options...))}}
+	return OptionElement{LoadFromStorage(newOption(id, options...))}
 }
 
 // OptgroupElement
 type OptgroupElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type optgroupModifier struct{}
@@ -3652,7 +3654,7 @@ func(o OptgroupElement) SetDisabled(b bool) OptgroupElement{
 
 var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "optgroup"
@@ -3669,17 +3671,17 @@ var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Elemen
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Optgroup = optgroupConstructor(func () OptgroupElement {
-	return OptgroupElement{ui.BasicElement{LoadFromStorage(newOptgroup(Elements.NewID()))}}
+	return OptgroupElement{LoadFromStorage(newOptgroup(Elements.NewID()))}
 })
 
 type optgroupConstructor func() OptgroupElement
 func(c optgroupConstructor) WithID(id string, options ...string)OptgroupElement{
-	return OptgroupElement{ui.BasicElement{LoadFromStorage(newOptgroup(id, options...))}}
+	return OptgroupElement{LoadFromStorage(newOptgroup(id, options...))}
 }
 
 // FieldsetElement
 type FieldsetElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type fieldsetModifier struct{}
@@ -3719,7 +3721,7 @@ func(m fieldsetModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 
 var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "fieldset"
@@ -3737,17 +3739,17 @@ var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Elemen
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Fieldset = fieldsetConstructor(func () FieldsetElement {
-	return FieldsetElement{ui.BasicElement{LoadFromStorage(newFieldset(Elements.NewID()))}}
+	return FieldsetElement{LoadFromStorage(newFieldset(Elements.NewID()))}
 })
 
 type fieldsetConstructor func() FieldsetElement
 func(c fieldsetConstructor) WithID(id string, options ...string)FieldsetElement{
-	return FieldsetElement{ui.BasicElement{LoadFromStorage(newFieldset(id, options...))}}
+	return FieldsetElement{LoadFromStorage(newFieldset(id, options...))}
 }
 
 // LegendElement
 type LegendElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(l LegendElement) SetText(s string) LegendElement{
@@ -3757,7 +3759,7 @@ func(l LegendElement) SetText(s string) LegendElement{
 
 var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "legend"
@@ -3773,17 +3775,17 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Legend = legendConstructor(func () LegendElement {
-	return LegendElement{ui.BasicElement{LoadFromStorage(newLegend(Elements.NewID()))}}
+	return LegendElement{LoadFromStorage(newLegend(Elements.NewID()))}
 })
 
 type legendConstructor func() LegendElement
 func(c legendConstructor) WithID(id string, options ...string)LegendElement{
-	return LegendElement{ui.BasicElement{LoadFromStorage(newLegend(id, options...))}}
+	return LegendElement{LoadFromStorage(newLegend(id, options...))}
 }
 
 // ProgressElement
 type ProgressElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 func(p ProgressElement) SetMax(m float64) ProgressElement{
@@ -3804,7 +3806,7 @@ func(p ProgressElement) SetValue(v float64) ProgressElement{
 
 var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "progress"
@@ -3821,17 +3823,17 @@ var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Elemen
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Progress = progressConstructor(func () ProgressElement {
-	return ProgressElement{ui.BasicElement{LoadFromStorage(newProgress(Elements.NewID()))}}
+	return ProgressElement{LoadFromStorage(newProgress(Elements.NewID()))}
 })
 
 type progressConstructor func() ProgressElement
 func(c progressConstructor) WithID(id string, options ...string)ProgressElement{
-	return ProgressElement{ui.BasicElement{LoadFromStorage(newProgress(id, options...))}}
+	return ProgressElement{LoadFromStorage(newProgress(id, options...))}
 }
 
 // SelectElement
 type SelectElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type selectModifier struct{}
@@ -3892,7 +3894,7 @@ func(m selectModifier) Name(name string) func(*ui.Element)*ui.Element{
 
 var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "select"
@@ -3915,18 +3917,18 @@ var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Select = selectConstructor(func () SelectElement {
-	return SelectElement{ui.BasicElement{LoadFromStorage(newSelect(Elements.NewID()))}}
+	return SelectElement{LoadFromStorage(newSelect(Elements.NewID()))}
 })
 
 type selectConstructor func() SelectElement
 func(c selectConstructor) WithID(id string, options ...string)SelectElement{
-	return SelectElement{ui.BasicElement{LoadFromStorage(newSelect(id, options...))}}
+	return SelectElement{LoadFromStorage(newSelect(id, options...))}
 }
 
 
 // FormElement
 type FormElement struct{
-	ui.BasicElement
+	*ui.Element
 }
 
 type formModifier struct{}
@@ -4005,7 +4007,7 @@ func(f formModifier) Charset(charset string) func(*ui.Element) *ui.Element{
 
 var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	
-	e := ui.NewElement(id, Elements.DocType)
+	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
 	tag:= "form"
@@ -4037,12 +4039,12 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 var Form = formConstructor(func () FormElement {
-	return FormElement{ui.BasicElement{LoadFromStorage(newForm(Elements.NewID()))}}
+	return FormElement{LoadFromStorage(newForm(Elements.NewID()))}
 })
 
 type formConstructor func() FormElement
 func(c formConstructor) WithID(id string, options ...string)FormElement{
-	return FormElement{ui.BasicElement{LoadFromStorage(newForm(id, options...))}}
+	return FormElement{LoadFromStorage(newForm(id, options...))}
 }
 
 
