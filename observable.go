@@ -43,15 +43,7 @@ func newObservable(id string) Observable {
 		nil,
 		nil,
 		nil,
-		nil,
-		nil,
 	}
-
-	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
-		registerElement(evt.Origin().Root(),evt.Origin())
-		evt.Origin().BindValue("internals","documentstate",evt.Origin().Root()) // normal vs replaying vs ...
-		return false
-	}).RunOnce())
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
 		unregisterElement(evt.Origin().Root(),e)
@@ -60,7 +52,7 @@ func newObservable(id string) Observable {
 
 	
 
-	e = withFetchSupport(e)
+	e.enablefetching()
 
 	return Observable{e}
 }

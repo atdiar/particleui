@@ -98,7 +98,10 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}))
 
 	r.Outlet.AsElement().Root().WatchEvent("navigation_start",r.Outlet.AsElement().Root(),NewMutationHandler(func(evt MutationEvent)bool{
-		r.NavCancel()
+		if r.NavCancel != nil{
+			r.NavCancel()
+		}
+		
 		NavContext,CancelNav := newCancelableNavContext()
 		r.NavContext = NavContext
 		r.NavCancel = CancelNav
@@ -117,6 +120,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}
 
 	router = r
+	rootview.AsElement().Root().router = r
 	r.Outlet.AsElement().Root().TriggerEvent("initrouter")
 	return r
 }
@@ -491,7 +495,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	root.AsElement().Root().WatchEvent("navigation-routechangerequest", root.AsElement().Root(), r.handler())
-	root.AsElement().Root().WatchEvent("navigation-outeredirectrequest", root.AsElement().Root(), r.redirecthandler())
+	root.AsElement().Root().WatchEvent("navigation-routeredirectrequest", root.AsElement().Root(), r.redirecthandler())
 	r.Outlet.AsElement().Root().TriggerEvent("document-loaded", Bool(true))
 	
 	eventnames:= strings.Split(events," ")
@@ -860,7 +864,6 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	}
 	
 	l,ok:= r.Links["/"+viewname]
-	DEBUG(l,ok)
 	if !ok{
 		// Let's retrieve the link constructor
 		c,ok:= r.Outlet.AsElement().ElementStore.Constructors["pui_link"]
@@ -1082,7 +1085,7 @@ func NewNavigationHistory(approot *Element) *NavHistory {
 	n.State = make([]Observable, 0, 1024)
 	n.Cursor = -1
 	n.NewState = func(id string) Observable{
-		o:= newObservable(id)
+		o:= approot.ElementStore.NewObservable(id)
 		RegisterElement(approot,o.AsElement())
 		return o
 	}
@@ -1137,7 +1140,13 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 
 			stentry:= state[i]
 			stateObjid:= stentry.(String).String()
-			n.State = append(n.State, n.RecoverState(Observable{GetById(n.AppRoot,stateObjid)}))
+			DEBUG(state)
+			
+			stobj:= GetById(n.AppRoot,stateObjid)
+			if stobj==nil{
+				panic(stateObjid) // DEBUG
+			}
+			n.State = append(n.State, n.RecoverState(Observable{stobj}))
 		}
 	}
 	

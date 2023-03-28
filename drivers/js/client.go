@@ -264,10 +264,8 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 				// let's retrieve the propname (it is suffixed by the proptype)
 				// then we can retrieve the value
 				// log.Print("debug...", category, property) // DEBUG
-				proptypename := strings.Split(property, "/")
-				//proptype := proptypename[0]
-				propname := proptypename[1]
-				store.Delete(id + "/" + category + "/" + propname)
+
+				store.Delete(id + "/" + category + "/" + property)
 			}
 			store.Delete(id + "/" + category)
 		}
@@ -623,14 +621,14 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // abstractjs
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	//n:= JSValue(e) TODO delete this line
-	
-	
+	if e == nil {
+		panic("loadinbg a nil element")
+	}
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
 		if isSynced:=lb.(ui.Bool); isSynced{
 			return e
 		}
-		
 	}
 	pmode := ui.PersistenceMode(e)
 	storage, ok := e.ElementStore.PersistentStorer[pmode]

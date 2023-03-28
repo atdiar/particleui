@@ -3,7 +3,6 @@ package ui
 
 import (
 	//"encoding/base32"
-	"context"
 	"errors"
 	"log"
 	"math/rand"
@@ -102,11 +101,15 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
+	es.ApplyGlobalOption(AllowDataFetching)
+
 	es.NewConstructor("observable",func(id string)*Element{ // TODO check if this shouldn't be done at the coument level rather
 		o:= newObservable(id)
+		o.AsElement().TriggerEvent("mountable")
+		o.AsElement().TriggerEvent("mounted")
 		return o.AsElement()
 	})
-	es.ApplyGlobalOption(AllowDataFetching)
+	
 	return es
 }
 
@@ -190,7 +193,8 @@ func registerElement(root,e *Element) {
 
 func unregisterElement(root,e *Element) {
 	if root.registry == nil{
-		panic("internal err: root element should have an element registry.")
+		DEBUG("internal err: root element should have an element registry.")
+		return
 	}
 
 	delete(root.registry,e.ID)
@@ -301,6 +305,7 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 func(e *ElementStore) NewObservable(id string, options ...string) Observable{
 	c:= e.Constructors["observable"]
 	o:= c(id, options...)
+	o.ElementStore = e
 	return Observable{o}
 }
 
@@ -348,10 +353,6 @@ type Element struct {
 	// The top level Element is the root node that represents a document: it should control navigation i.e. 
 	// document state.
 	router *Router
-	navCtx context.Context
-	navCancelFunc context.CancelFunc
-
-
 }
 
 func (e *Element) AsElement() *Element { return e }
@@ -392,8 +393,6 @@ func NewElement(id string, doctype string) *Element {
 		nil,
 		nil,
 		nil,
-		nil,
-		nil,
 	}
 
 	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
@@ -402,20 +401,7 @@ func NewElement(id string, doctype string) *Element {
 		return false
 	}).RunOnce())
 	
-
-	e = withFetchSupport(e)
-	return e
-}
-
-var AllowDataFetching = NewConstructorOption("allowdatafetching", func(e *Element) *Element {
-	if e.DocType!=e.ElementStore.DocType{
-		return e
-	}
-	
-	return withFetchSupport(e)
-})
-
-func withFetchSupport(e *Element)*Element{
+		// fetch support
 	e.enablefetching()
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
@@ -423,9 +409,18 @@ func withFetchSupport(e *Element)*Element{
 		return false
 	}))
 
-	
 	return e
 }
+
+var AllowDataFetching = NewConstructorOption("allowdatafetching", func(e *Element) *Element {
+	if e.DocType!=e.ElementStore.DocType{
+		return e
+	}
+	e.enablefetching()
+	return e
+})
+
+
 
 // Root returns the top-most element in the *Element tree.
 // All navigation properties are registered on it.
@@ -1136,7 +1131,7 @@ func(e *Element) bound(category string, propname string, source *Element) bool{
 		return false
 	}
 
-	for i:=len(mh.list)-1;i>=0;i--{
+	for i:=0;i<len(mh.list);i++{
 		h:=mh.list[i]
 		if h.binding{
 			return true
@@ -1165,7 +1160,7 @@ func(e *Element) fetching(propname string) bool{
 		return false
 	}
 
-	for i:=len(mh.list)-1;i>=0;i--{
+	for i:=0;i<len(mh.list);i++{
 		h:=mh.list[i]
 		if h.fetching{
 			return true
@@ -1175,10 +1170,10 @@ func(e *Element) fetching(propname string) bool{
 	return false
 }
 
-// Watch is simply a shorthand for calling  BindValue followed by OnMutation.
-// One should be careful about property collisions when using this method.
-// Also note that even if the Mutation Handler is set to run once, the binding will remain.
-//Once a binding is created between ELements, it remains part of the API.
+// Watch allows to observe a property of an element. Properties are classified into categories
+// (aka namespaces). As soon as the property changes, the mutation handler is executed.
+// a *MutationHandler is sinmply a wrapper around a function that handles the MutationEvent triggered
+// when setting(mutationg) a property.
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	if owner.AsElement() == nil{
 		panic("unable to watch element properties as it is nil")
@@ -1423,11 +1418,11 @@ func(e *Element) TriggerEvent(name string, value ...Value){
 	n:= len(value)
 	switch {
 	case n == 0:
-		e.TriggerEvent( name,newEventValue(Bool(true)))
+		e.Set("event", name,newEventValue(Bool(true)))
 	case n==1:
-		e.TriggerEvent(name,newEventValue(value[0]))
+		e.Set("event", name,newEventValue(value[0]))
 	default:
-		e.TriggerEvent(name,newEventValue(NewList(value...)))
+		e.Set("event", name,newEventValue(NewList(value...)))
 	}
 }
 

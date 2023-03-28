@@ -241,6 +241,9 @@ func (m Mutation) NewValue() Value     {
 }
 func (m Mutation) OldValue() Value     { 
 	if m.typ == "event"{
+		if m.OldVal == nil{
+			return nil
+		}
 		e,ok:= m.OldVal.(Object).Get("value")
 		if !ok{
 			panic("event value not found")

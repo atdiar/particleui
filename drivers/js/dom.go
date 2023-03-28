@@ -171,13 +171,13 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	ns:= func(id string) ui.Observable{
 		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
-		//PutInStorage(o.AsElement()) DEBUG
+		// PutInStorage(ClearFromStorage(o.AsElement()))
 		return o
 	}
 
 	rs:= func(o ui.Observable) ui.Observable{
-		e:= LoadFromStorage(o.AsElement())
-		return ui.Observable{e}
+		LoadFromStorage(o.AsElement())
+		return o
 	}
 
 	r.History.NewState = ns
@@ -237,14 +237,15 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	return r
 }
 
-
+/*
 var newObservable = Elements.NewConstructor("observable", func(id string) *ui.Element {
-	e := ui.NewElement("observable", "observable")
+	e := ui.NewElement("observable", id)
 
 	e.ElementStore = Elements
 
 	return e
 },AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
+*/
 
 
 type Document struct {
@@ -272,11 +273,11 @@ func(d Document) NewObservable(id string, options ...string) ui.Observable{
 	if e:=d.GetElementById(id); e != nil{
 		ui.Delete(e)
 	}
-	o:= newObservable(id,options...)
+	o:= d.AsElement().ElementStore.NewObservable(id,options...).AsElement()
 	
 	ui.RegisterElement(d.AsElement(),o)
-	o.AsElement().TriggerEvent("mountable")
-	o.AsElement().TriggerEvent("mounted")
+	o.TriggerEvent("mountable")
+	o.TriggerEvent("mounted")
 
 	return ui.Observable{LoadFromStorage(o)}
 }	
