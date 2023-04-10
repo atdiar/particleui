@@ -217,6 +217,9 @@ func (e *Element) addView(v View) *Element {
 
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
+			if child.Parent != nil{
+				child.Parent.RemoveChild(child)
+			}
 			child.ViewAccessNode = newViewAccessNode(child, v.Name())
 			attach(e, child, false)
 		}
@@ -245,12 +248,29 @@ func (e *Element) activateView(name string) error {
 		panic("this is likely to be a programmer error. View name inputs can not lead with a colon.")
 	}
 	if e.ActiveView == name {
+		n,ok:=e.Get("ui", "activeview")
+		if !ok || n.(String).String() != name{
+			panic("active view is not set correctly")
+		}
+		e.TriggerEvent("viewactivated", String(name)) // DEBUG ??? not needed nmormally
 		return nil
+	}
+
+	if e.ActiveView == ""{
+		v,ok:= e.Get("ui", "activeview")
+		if ok{
+			if v.(String).String() == name{
+				e.ActiveView = name
+				delete(e.InactiveViews, name)
+				return nil
+			}
+		}
 	}
 
 	wasmounted:= e.Mounted()
 
 	newview, ok := e.InactiveViews[name]
+	DEBUG(e.ActiveView," to be replaced by inactive view ", newview.elements.List)
 	if !ok {
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
@@ -259,12 +279,14 @@ func (e *Element) activateView(name string) error {
 				panic("FAILURE: parameterized view is activated but no activeview name exists in state")
 			}
 			if nm := string(n.(String)); nm == name {
+				DEBUG("parameterized view is already active")
 				return nil
 			}
 
 			e.Set("ui", "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
 			e.Set("ui", "activeview", String(name))
 			e.TriggerEvent("viewactivated", String(name))
+			DEBUG(name)
 			return nil
 		}
 		// Support for parameterized views
@@ -303,31 +325,19 @@ func (e *Element) activateView(name string) error {
 	}
 
 	// 1. replace the current view into e.InactiveViews
-	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), e.Children.List...)
+	cccl := make([]*Element, len(e.Children.List))
+	copy(cccl, e.Children.List)
 	for _, child := range e.Children.List {
-		/*e.removeChild(BasicElement{child})
+		e.removeChild(child)
 		attach(e, child, false)
-		finalize(child,true,false)*/
-	
-		detach(child)
-
-		if e.Native != nil {
-			e.Native.RemoveChild(child)
-		}
-
-		attach(e, child, false)
-		finalize(child,true,wasmounted)
-
 	}
-	e.Children.RemoveAll()
+	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), cccl...)
 
 	// 2. mount the target view
 	e.ActiveView = name
-	/*for _, child := range newview.Elements().List {
-		e.appendChild(BasicElement{child})
-	}*/ // TODO check this as it does not seem previopus elements were deleted
-
-	e.SetChildrenElements(newview.elements.List...)
+	for _, child := range newview.Elements().List {
+		e.appendChild(child)
+	}
 
 	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name))

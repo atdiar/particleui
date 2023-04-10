@@ -171,7 +171,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	ns:= func(id string) ui.Observable{
 		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
-		// PutInStorage(ClearFromStorage(o.AsElement()))
+		PutInStorage(ClearFromStorage(o.AsElement()))
 		return o
 	}
 
@@ -276,8 +276,6 @@ func(d Document) NewObservable(id string, options ...string) ui.Observable{
 	o:= d.AsElement().ElementStore.NewObservable(id,options...).AsElement()
 	
 	ui.RegisterElement(d.AsElement(),o)
-	o.TriggerEvent("mountable")
-	o.TriggerEvent("mounted")
 
 	return ui.Observable{LoadFromStorage(o)}
 }	
@@ -406,6 +404,7 @@ func mutationreplay(root *ui.Element) {
 	if !e.ElementStore.MutationReplay{
 		return
 	}
+
 	rh,ok:= e.Get("internals","mutationtrace")
 	if !ok{
 		panic("somehow recovering state failed. Unexpected error")
@@ -414,6 +413,8 @@ func mutationreplay(root *ui.Element) {
 	if !ok{
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
+
+
 	for _,rawop:= range mutationtrace{
 		op:= rawop.(ui.Object)
 		elementid:= string(op.MustGetString("id"))
@@ -429,7 +430,6 @@ func mutationreplay(root *ui.Element) {
 	}
 
 	e.TriggerEvent("mutationreplayed")
-	e.TriggerEvent("")
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
@@ -1871,6 +1871,13 @@ var InputModifier inputModifier
 func(i inputModifier) Step(step int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.SetDataSetUI("step",ui.Number(step))
+		return e
+	}
+}
+
+func(i inputModifier) Checked(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.SetDataSetUI("checked",ui.Bool(b))
 		return e
 	}
 }

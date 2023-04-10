@@ -1,11 +1,8 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
-import (
-	"strings"
-)
 
-var newEventID = newIDgenerator(11,3137396425)
+var newEventID = newIDgenerator(21,3137396425)
 
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers
@@ -48,18 +45,6 @@ func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
 }
 
 func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
-	key := evt.ObservedKey()
-	shards := strings.Split(strings.TrimPrefix(key, "/"), "/")
-	if len(shards) == 2 {
-		observableID := shards[0]
-		category := shards[1]
-		grouphandlerAdress := observableID + "/" + category + "/" + "existifallpropertieswatched"
-		gmhs, ok := m.list[grouphandlerAdress]
-		if ok {
-			gmhs.Handle(evt)
-		}
-	}
-
 	mhs, ok := m.list[evt.ObservedKey()]
 	if !ok {
 		return

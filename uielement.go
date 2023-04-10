@@ -504,22 +504,16 @@ func (e *Elements) AtIndex(index int) *Element {
 }
 
 func (e *Elements) Remove(el *Element) *Elements {
-	var index int
-	nl:= e.List[:0]
-	//for _, element := range e.List {
-	for i:=0;i<len(e.List);i++{
-		element:=e.List[i]
+	index := -1
+	for k, element := range e.List {
 		if element.ID == el.ID {
-			continue
+			index = k
+			break
 		}
-		nl=append(nl, element)
-		index++
 	}
-	for i:= index;i<len(e.List);i++{
-		e.List[i]=nil
+	if index >= 0 {
+		e.List = append(e.List[:index], e.List[index+1:]...)
 	}
-	
-	e.List = nl[:index]
 	return e
 }
 
@@ -912,24 +906,37 @@ func (e *Element) RemoveChildren() *Element {
 	return e.removeChildren()
 }
 
-func (e *Element) removeChildren() *Element {
-	/*l := make([]*Element, len(e.Children.List))
+func (e *Element) removeChildren() *Element { // TODO verifyu
+	l := make([]*Element, len(e.Children.List))
 	copy(l, e.Children.List)
 	for _, child := range l {
 		e.removeChild(child)
-	}*/
-	m:= e.Mounted()
-	for _,child:= range e.Children.List{
+	}
+
+	/*
+	for i:= 0; i < len(e.Children.List); i++{
+		child := e.Children.List[i]
+		_, ok := e.hasChild(child)
+		if !ok {
+			return e
+		}
+		wasmounted:= child.Mounted()
 		detach(child)
-		if e.Native != nil{
+
+		if e.Native != nil {
 			e.Native.RemoveChild(child)
 		}
-		defer finalize(child, false,m)
-	}
-	e.Children.RemoveAll()
+		//child.TriggerEvent( "attached", Bool(false))
+		 defer func() {finalize(child, false,wasmounted)}()
+		}
+		e.Children.RemoveAll()
+
+		*/
 
 	return e
 }
+
+
 
 func (e *Element) DeleteChild(childEl AnyElement) *Element {
 	child := childEl.AsElement()
@@ -1050,9 +1057,11 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	m:= e.Mounted()
+	//m:= e.Mounted()
 	
 	e.RemoveChildren()
+	
+	/*
 	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
 		for _, el := range any {
 			if e.DocType != el.DocType {
@@ -1066,19 +1075,27 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 			attach(e, el, true)
 			e.Children.InsertLast(el)
 		}
+
+		n.SetChildren(any...)		
 		
 		for _, child := range any {
 			//child.TriggerEvent( "attached", Bool(true))
 			finalize(child, true,m)
 		}
 		
-		n.SetChildren(any...)
 		return e
 	} else{
 		for _, el := range any {
 			e.AppendChild(el)
 			// el.ActiveView = e.ActiveView // TODO verify this is correct
 		}
+	}
+	*/
+
+	// DEBUG
+	for _, el := range any {
+		e.AppendChild(el)
+		// el.ActiveView = e.ActiveView // TODO verify this is correct
 	}
 	
 	return e
@@ -1335,6 +1352,9 @@ func (e *Element) Mounted() bool {
 	if !e.Mountable() {
 		return false
 	}
+	if e.path == nil{
+		return false
+	}
 	l := e.path.List
 	if len(l) == 0 {
 		return false
@@ -1537,6 +1557,8 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 }
 
+// mutationReplay basically replays the trrace of the program stored as a list of prop mutations of 
+// the UI tree. 
 func mutationReplay(root *Element){
 	l,ok:= root.Get("internals","mutationtrace")
 	if ok{
@@ -1603,6 +1625,7 @@ func (e *Element) GetData(propname string) (Value, bool) {
 func (e *Element) SetData(propname string, value Value) {
 	e.Set("data", propname, value)
 }
+
 
 // SetDataSetUI will set a "data" property and update the same-name property value
 // located in the "ui namespace/category and used to update the the User Interface, for instance, for rendering..
@@ -1807,9 +1830,9 @@ func (v View) ApplyParameter(paramvalue string) (*View, error) {
 // A parameterized view can be created by using a naming scheme such as ":parameter" (string with a leading colon)
 // In the case, the parameter can be retrieve by the router.
 func NewView(name string, elements ...*Element) View {
-	for _, el := range elements {
+	/*for _, el := range elements {
 		el.ActiveView = name
-	}
+	}*/
 	return View{name, NewElements(elements...), nil}
 }
 

@@ -1140,11 +1140,10 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 
 			stentry:= state[i]
 			stateObjid:= stentry.(String).String()
-			DEBUG(state)
 			
 			stobj:= GetById(n.AppRoot,stateObjid)
 			if stobj==nil{
-				panic(stateObjid) // DEBUG
+				stobj=n.NewState("hstate"+strconv.Itoa(i)).AsElement()
 			}
 			n.State = append(n.State, n.RecoverState(Observable{stobj}))
 		}

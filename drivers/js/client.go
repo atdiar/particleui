@@ -217,12 +217,10 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				}
 			}
 		}
-		/*e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			ui.Rerender(e)
 			return false
-		}).RunOnce())*/
-		
-		ui.Rerender(e)
+		}).RunOnce())
 		
 		return nil
 	}
@@ -621,8 +619,9 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // abstractjs
 func LoadFromStorage(e *ui.Element) *ui.Element {
 	//n:= JSValue(e) TODO delete this line
+
 	if e == nil {
-		panic("loadinbg a nil element")
+		panic("loading a nil element")
 	}
 	lb,ok:=e.Get("event","storesynced")
 	if ok{
@@ -888,11 +887,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 			el:= GetDocument(evt.Origin()).GetElementById(elid)
 
 			if el != nil && el.Mounted(){
-				j,ok:= JSValue(el)
-				if !ok{
-					panic("element does nto seem to have been connected to its native DOM element")
-				}
-				focus(j)
+				Focus(el,false)
 				if newpageaccess{
 					if !partiallyVisible(el){
 						DEBUG("focused element not in view...scrolling")
@@ -906,11 +901,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 			el:= GetDocument(evt.Origin()).GetElementById(elid)
 
 			if el != nil && el.Mounted(){
-				j,ok:= JSValue(el)
-				if !ok{
-					panic("element does nto seem to have been connected to its native DOM element")
-				}
-				focus(j)
+				Focus(el,false)
 				if newpageaccess{
 					if !partiallyVisible(el){
 						DEBUG("focused element not in view...scrolling")
@@ -928,20 +919,24 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 	return e
 }
 
+// FOcus triggers the focus event asynchronously on the JS side.
 func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 	if !e.AsElement().Mounted(){
 		return
 	}
-	n,ok:= JSValue(e.AsElement())
-	if !ok{
-		return
-	}
-	focus(n)
-	if scrollintoview{
-		if !partiallyVisible(e.AsElement()){
-			n.Call("scrollIntoView")
+
+	ui.DoAsync(e.AsElement().Root(), func() {
+		n,ok:= JSValue(e.AsElement())
+		if !ok{
+			return
 		}
-	}
+		focus(n)
+		if scrollintoview{
+			if !partiallyVisible(e.AsElement()){
+				n.Call("scrollIntoView")
+			}
+		}
+	})
 }
 
 func focus(e js.Value){ // abstractjs
@@ -1117,7 +1112,9 @@ func (i InputElement) Blur() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	native.Value.Call("blur")
+	ui.DoAsync(i.Root(), func(){
+		native.Value.Call("blur")
+	})
 }
 
 func (i InputElement) Focus() {
@@ -1125,7 +1122,9 @@ func (i InputElement) Focus() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	native.Value.Call("focus")
+	ui.DoAsync(i.Root(), func(){
+		native.Value.Call("focus")
+	})
 }
 
 func (i InputElement) Clear() {

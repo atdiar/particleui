@@ -128,8 +128,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		currtargetid := jscurrtarget.Get("id")
 
 		rv:= ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
-	
-
+		
 		ui.DoSync(func(){
 			if currtargetid.Truthy() {
 				currentTarget= GetDocument(listener).GetElementById(currtargetid.String())
@@ -210,12 +209,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				}
 			}
 	
-			/*if typ == "click"{
-				button:= ui.Number(evt.Get("button").Float()) // TODO add other click event properties
-				ctrlKey:= ui.Bool(evt.Get("ctrlKey").Bool())
-				rv.Set("button",button)
-				rv.Set("ctrlKey",ctrlKey)
-			}*/
 
 			if v:=jstarget.Get("value"); v.Truthy(){
 				rv.Set("value",ui.String(v.String()))
@@ -437,7 +430,9 @@ func mouseEventSerialized(o ui.Object,e MouseEvent){
 	o.Set("screenX",ui.Number(e.screenX))
 	o.Set("screenY",ui.Number(e.screenY))
 
-	o.Set("relatedTarget",ui.String(e.relatedTarget.ID))
+	if e.relatedTarget != nil{
+		o.Set("relatedTarget",ui.String(e.relatedTarget.ID))
+	}
 
 }
 
