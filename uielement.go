@@ -1057,11 +1057,11 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	//m:= e.Mounted()
+	m:= e.Mounted()
 	
 	e.RemoveChildren()
 	
-	/*
+	
 	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
 		for _, el := range any {
 			if e.DocType != el.DocType {
@@ -1090,7 +1090,7 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 			// el.ActiveView = e.ActiveView // TODO verify this is correct
 		}
 	}
-	*/
+	
 
 	// DEBUG
 	for _, el := range any {

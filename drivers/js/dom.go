@@ -4158,6 +4158,8 @@ func withStringAttributeWatcher(e *ui.Element,attr string){
 		SetAttribute(evt.Origin(),attr,string(evt.NewValue().(ui.String)))
 		return false
 	}))
+
+	withStringPropertyWatcher(e,attr) // IDL attribute support
 }
 
 
@@ -4167,6 +4169,7 @@ func withNumberAttributeWatcher(e *ui.Element,attr string){
 		SetAttribute(evt.Origin(),attr,strconv.Itoa(int(evt.NewValue().(ui.Number))))
 		return false
 	}))
+	withNumberPropertyWatcher(e,attr) // IDL attribute support
 }
 
 // watches ("ui",attr) for a ui.Bool value.
@@ -4179,6 +4182,7 @@ func withBoolAttributeWatcher(e *ui.Element, attr string){
 		RemoveAttribute(evt.Origin(), attr)
 		return false
 	}))
+	withBoolPropertyWatcher(e,attr) // IDL attribute support
 }
 
 func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element{

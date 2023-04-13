@@ -1377,56 +1377,23 @@ func enableClasses(e *ui.Element) *ui.Element {
 
 
 func GetAttribute(target *ui.Element, name string) string {
-	_,ok:= JSValue(target)
-	if !ok{
-		// returns the value potentially stored in the attreibute map
-		m, ok := target.Get("data", "attrs")
-		if !ok {
-			return ""
-		}
-		attrmap, ok := m.(ui.Object)
-		if !ok {
-			return ""
-		}
-		v, ok := attrmap.Get(name)
-		if !ok {
-			return ""
-		}
-		s, ok := v.(ui.String)
-		if !ok {
-			panic("bad type for attribute value")
-		}
-		return string(s)
-	}
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot retrieve Attribute on non-expected wrapper type")
 		return ""
 	}
-	return native.Value.Call("getAttribute", "name").String()
+	res:= native.Value.Call("getAttribute", name)
+	DEBUG(res, res.IsNull())
+	dEBUGJS(res, true)
+	if  res.IsNull(){
+		return "null"
+	}
+	return res.String()
 }
 
 // abstractjs
 func SetAttribute(target *ui.Element, name string, value string) {
-	_,ok:= JSValue(target)
-	if !ok{
-		return 
-	}
-	var attrmap ui.Object
-	m, ok := target.Get("data", "attrs")
-	if !ok {
-		attrmap = ui.NewObject()
-	} else {
-		attrmap, ok = m.(ui.Object)
-		if !ok {
-			panic("data/attrs should be stored as a ui.Object")
-			//log.Print(m,attrmap) // SEBUG
-		}
-	}
-
-	attrmap.Set(name, ui.String(value))
-	target.SetData("attrs", attrmap)
-
+	
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot set Attribute on non-expected wrapper type")
@@ -1437,22 +1404,6 @@ func SetAttribute(target *ui.Element, name string, value string) {
 
 // abstractjs
 func RemoveAttribute(target *ui.Element, name string) {
-	_,ok:= JSValue(target)
-	if !ok{
-		return 
-	}
-
-	m, ok := target.Get("data", "attrs")
-	if !ok {
-		return
-	}
-	attrmap, ok := m.(ui.Object)
-	if !ok {
-		panic("data/attrs should be stored as a ui.Object")
-	}
-	delete(attrmap, name)
-	target.SetData("attrs", attrmap)
-
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot delete Attribute using non-expected wrapper type ", target.ID)
@@ -1530,3 +1481,4 @@ func stringPropertyWatcher(propname string) *ui.MutationHandler{
 		return false
 	})
 }
+

@@ -325,19 +325,19 @@ func (e *Element) activateView(name string) error {
 	}
 
 	// 1. replace the current view into e.InactiveViews
-	cccl := make([]*Element, len(e.Children.List))
-	copy(cccl, e.Children.List)
-	for _, child := range e.Children.List {
-		e.removeChild(child)
-		attach(e, child, false)
-	}
-	e.InactiveViews[e.ActiveView] = NewView(string(e.ActiveView), cccl...)
+	oldview := NewView(e.ActiveView, e.Children.List...)
+	
+	e.RemoveChildren()
+	ViewElement{e}.AddView(oldview)
+	
 
 	// 2. mount the target view
 	e.ActiveView = name
-	for _, child := range newview.Elements().List {
-		e.appendChild(child)
-	}
+	/*for _, child := range newview.Elements().List {
+		e.appendChild(BasicElement{child})
+	}*/ // TODO check this as it does not seem previopus elements were deleted
+
+	e.SetChildrenElements(newview.elements.List...)
 
 	delete(e.InactiveViews, name)
 	e.Set("ui", "activeview", String(name))
