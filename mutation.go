@@ -1,8 +1,12 @@
 // Package ui is a library of functions for simple, generic gui development.
 package ui
 
+import(
+	"strings"
+)
 
-var newEventID = newIDgenerator(21,3137396425)
+
+var newEventID = newIDgenerator(5,3137)
 
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers
@@ -50,6 +54,7 @@ func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
 		return
 	}
 	mhs.Handle(evt)
+	// TODO put event Valkue in a pool
 }
 
 type mutationHandlers struct {
@@ -112,7 +117,8 @@ func (m *mutationHandlers) Handle(evt MutationEvent) {
 	}
 
 	if needcleanup{
-		for i:= index;i<len(m.list);i++{
+		l:= len(m.list)
+		for i:= index;i<l;i++{
 			m.list[i]= nil
 		}
 		m.list = list[:index]
@@ -220,9 +226,9 @@ func (m Mutation) NewValue() Value     {
 		if !ok{
 			panic("event value not found")
 		}
-		return e
+		return Copy(e)
 	}
-	return m.NewVal 
+	return Copy(m.NewVal)
 }
 func (m Mutation) OldValue() Value     { 
 	if m.typ == "event"{
@@ -233,13 +239,13 @@ func (m Mutation) OldValue() Value     {
 		if !ok{
 			panic("event value not found")
 		}
-		return e
+		return Copy(e)
 	}
-	return m.OldVal 
+	return Copy(m.OldVal)
 }
 
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
-	return Mutation{e.ID + "/" + category + "/" + propname, category, newvalue, oldvalue, e}
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category, Copy(newvalue), Copy(oldvalue), e}
 }
 
 

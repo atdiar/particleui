@@ -8,7 +8,8 @@ package doc
 
 import (
 	"context"
-	"encoding/json"
+	//"encoding/json"
+	"github.com/goccy/go-json"
 	//"errors"
 	"log"
 	"strings"
@@ -139,7 +140,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			if !ok {
 				props = append(props, propname)
 				v := js.ValueOf(props)
-				store.Set(element.ID+"/"+category, v)
+				store.Set(strings.Join([]string{element.ID, category}, "/"), v)
 			} else {
 				for k := range c.Local {
 					props = append(props, k)
@@ -148,12 +149,12 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				props = append(props, propname)
 				// log.Print("all props stored...", props) // DEBUG
 				v := js.ValueOf(props)
-				store.Set(element.ID+"/"+category, v)
+				store.Set(strings.Join([]string{element.ID, category}, "/"), v) 
 			}
 		}
 		item := value.RawValue()
 		v := stringify(item)
-		store.Set(element.ID+"/"+category+"/"+propname, js.ValueOf(v))
+		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),js.ValueOf(v))
 		element.TriggerEvent("storesynced",ui.Bool(false))
 		return
 	}
@@ -198,7 +199,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				// then we can retrieve the value
 				// log.Print("debug...", category, property) // DEBUG
 				propname := property
-				jsonvalue, ok := store.Get(e.ID + "/" + category + "/" + propname)
+				jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
 				if ok {					
 					var rawvaluemapstring string
 					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
@@ -212,7 +213,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 						return err
 					}
 					
-					ui.LoadProperty(e, category, propname, ui.Object(rawvalue).Value())
+					ui.LoadProperty(e, category, propname, ui.Object(rawvalue).MarkedRaw().Value())
 					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
@@ -263,9 +264,9 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 				// then we can retrieve the value
 				// log.Print("debug...", category, property) // DEBUG
 
-				store.Delete(id + "/" + category + "/" + property)
+				store.Delete(strings.Join([]string{id, category, property}, "/")) 
 			}
-			store.Delete(id + "/" + category)
+			store.Delete(strings.Join([]string{id, category}, "/")) 
 		}
 		store.Delete(id)
 		element.Set("event","storesynced",ui.Bool(false))
@@ -830,7 +831,7 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	hstate := js.Global().Get("history").Get("state")
 	
 	if hstate.Truthy() {
-		hstateobj := ui.NewObject()
+		hstateobj := ui.NewObject().MarkedRaw()
 		err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 		if err == nil {
 			evt.Origin().SyncUISetData("history", hstateobj.Value())
@@ -919,7 +920,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 	return e
 }
 
-// FOcus triggers the focus event asynchronously on the JS side.
+// Focus triggers the focus event asynchronously on the JS side.
 func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 	if !e.AsElement().Mounted(){
 		return
@@ -1132,7 +1133,9 @@ func (i InputElement) Clear() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	native.Value.Set("value", "")
+	ui.DoAsync(i.Root(), func(){
+		native.Value.Set("value", "")
+	})
 }
 
 func newTimeRanges(v js.Value) jsTimeRanges{
@@ -1383,8 +1386,6 @@ func GetAttribute(target *ui.Element, name string) string {
 		return ""
 	}
 	res:= native.Value.Call("getAttribute", name)
-	DEBUG(res, res.IsNull())
-	dEBUGJS(res, true)
 	if  res.IsNull(){
 		return "null"
 	}
@@ -1393,7 +1394,19 @@ func GetAttribute(target *ui.Element, name string) string {
 
 // abstractjs
 func SetAttribute(target *ui.Element, name string, value string) {
-	
+	var attrmap ui.Object
+	m, ok := target.Get("data", "attrs")
+	if !ok {
+		attrmap = ui.NewObject()
+	} else {
+		attrmap, ok = m.(ui.Object)
+		if !ok {
+			panic("data/attrs should be stored as a ui.Object")
+		}
+	}
+
+	attrmap.Set(name, ui.String(value))
+	target.SetData("attrs", attrmap)
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot set Attribute on non-expected wrapper type")
@@ -1404,6 +1417,17 @@ func SetAttribute(target *ui.Element, name string, value string) {
 
 // abstractjs
 func RemoveAttribute(target *ui.Element, name string) {
+	m, ok := target.Get("data", "attrs")
+	if !ok {
+		return
+	}
+	attrmap, ok := m.(ui.Object)
+	if !ok {
+		panic("data/attrs should be stored as a ui.Object")
+	}
+	delete(attrmap, name)
+	target.SetData("attrs", attrmap)
+	
 	native, ok := target.Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot delete Attribute using non-expected wrapper type ", target.ID)

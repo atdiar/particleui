@@ -4,7 +4,8 @@ package doc
 
 import (
 	"context"
-	"encoding/json"
+	//"encoding/json"
+	"github.com/goccy/go-json"
 	"strconv"
 	"strings"
 	"net/url"
@@ -2197,7 +2198,7 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 				
 				for _,input:= range inputs{
 					if input.Mounted(){
-						inputlist += " "+input.ID
+						inputlist = strings.Join([]string{inputlist, input.ID}, " ")
 					} else{
 						panic("input missing for output element "+ e.ID)
 					}

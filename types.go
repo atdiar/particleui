@@ -18,7 +18,6 @@ type Value interface {
 type Bool bool
 
 func (b Bool) discriminant() discriminant { return "particleui" }
-func(b Bool) notNil(){}
 func (b Bool) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "Bool"
@@ -34,7 +33,6 @@ func(b Bool) Bool() bool{
 type String string
 
 func (s String) discriminant() discriminant { return "particleui" }
-func(s String)notNil(){}
 func (s String) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "String"
@@ -48,7 +46,6 @@ func(s String) String() string{return string(s)}
 type Number float64
 
 func (n Number) discriminant() discriminant { return "particleui" }
-func(n Number)notNil(){}
 func (n Number) RawValue() Object {
 	o := NewObject()
 	o["pui_object_typ"] = "Number"
@@ -64,7 +61,6 @@ func(n Number) Int64() int64{return int64(n)}
 type Object map[string]interface{}
 
 func (o Object) discriminant() discriminant { return "particleui" }
-func(o Object)notNil(){}
 
 func (o Object) RawValue() Object {
 	p := NewObject()
@@ -79,6 +75,7 @@ func (o Object) RawValue() Object {
 		// pui_object_value is also not tranformed allowing for idempotence of successive calls to RawValue.
 		continue
 	}
+	p["pui_object_raw"] = true
 	return p
 }
 
@@ -183,12 +180,26 @@ func(o Object) MustGetObject(key string) Object{
 
 func (o Object) Set(key string, value Value) Object {
 	o[key] = value
+	/*if v,ok:= value.(Object);ok{
+		if v["pui_object_raw"] == true{
+			o["pui_object_raw"] = true
+		}
+	}*/ // could be needed to distinguish objects storing raw encoded ones. Although on removal 
+	// would not be updated. In any case, we consider for now that a raw encoded object is fully raw and 
+	// vice cersa, a non raw encoded object does not store raw object values
 	return o
 }
 func (o Object) SetType(typ string) Object {
 	o["pui_object_typ"] = typ
 	return o
 }
+
+func (o Object) MarkedRaw() Object {
+	o["pui_object_raw"] = true
+	return o
+}
+
+
 func (o Object) Value() Value {
 	switch o.ValueType() {
 	case "Bool":
@@ -217,6 +228,10 @@ func (o Object) Value() Value {
 		}
 		return v
 	case "Object":
+		if r,ok:= o["pui_object_raw"]; !ok || !r.(bool){
+			return o
+		}
+
 		p := NewObject()
 		for k, val := range o {
 			v, ok := val.(Value)
@@ -227,7 +242,9 @@ func (o Object) Value() Value {
 					p.Set(k, obj.Value())
 					continue
 				}
-				p[k] = val
+				if k != "pui_object_raw" {
+					p[k] = val
+				}
 				continue
 			}
 			u, ok := v.(Object)
@@ -237,6 +254,7 @@ func (o Object) Value() Value {
 			}
 			p.Set(k, u.Value())
 		}
+		
 		return p		
 	default:
 		return o
@@ -252,7 +270,6 @@ func NewObject() Object {
 type List []Value
 
 func (l List) discriminant() discriminant { return "particleui" }
-func(l List) notNil(){}
 func (l List) RawValue() Object {
 	o := NewObject().SetType("List")
 
@@ -286,68 +303,13 @@ func NewList(val ...Value) List {
 	return List(l)
 }
 
-/* type ListofObjects List
-
-func (l ListofObjects) discriminant() discriminant { return "particleui" }
-func (l ListofObjects) RawValue() Object {
-	o := NewObject().SetType("List")
-
-	raw := make([]interface{}, 0)
-	for _, v := range List(l) {
-		raw = append(raw, v.RawValue())
-	}
-	o["pui_object_value"] = raw
-	return o.RawValue()
-}
-func (l ListofObjects) ValueType() string { return "List" }
-
-func NewListofObjects() ListofObjects {
-	l := make([]Value, 0)
-
-	return ListofObjects(l)
-}
-
-func (l ListofObjects) Push(objs ...Object) ListofObjects {
-	for _, v := range objs {
-		l = append(l, v)
-	}
-	return l
-}
-
-func (l ListofObjects) Pop(index int) ListofObjects {
-	i := len(l)
-	if i == 0 {
-		return l
-	}
-	if index < 0 || index >= i {
-		return l
-	}
-	m := make([]Value, i-1)
-	m = append(l[:index], l[index+1:]...)
-	return m
-}
-
-func (l ListofObjects) Get(index int) Object {
-	i := len(l)
-	if i == 0 {
-		return nil
-	}
-	if index < 0 || index >= i {
-		return nil
-	}
-	v := l[index]
-	o, ok := v.(Object)
-	if !ok {
-		panic("this should be a list of objects. it should contain objects only")
-	}
-	return o
-}
-
-*/
 
 // Copy creates a deep-copy of a Value unless it is an *Element in which case it returns the
 // *Element as an objecvt of type Value.
 func Copy(v Value) Value {
+	if v == nil{
+		return v
+	}
 	switch t:= v.(type){
 	case Bool:
 		return t
@@ -372,41 +334,23 @@ func Copy(v Value) Value {
 			o[k]=Copy(vv)
 		}
 		return o
+	default:
+		panic("unsupported Value type")
 	}
-	o := NewObject()
-	w := v.RawValue()
-	for k, mv := range w {
-		o[k] = mv
-	}
-	p:= o.Value()
-	/*if !Equal(p,v){
-		panic("unequal copies")
-	}*/ // TODO leave it for debug mode or test the function and remove it
-	return p
 }
 
 func Equal(v Value, w Value) bool {
 	// first, let's deal with nil
-	_,nvok:= v.(interface{notNil()})
-	_,nwok:= w.(interface{notNil()})
+	nilv := v == nil
+	nilw := w == nil
 
-	if !nvok || !nwok{
-		if !nvok && !nwok{
-			return true
-		}
+	if nilv != nilw{
 		return false
 	}
 
-	// proper values
+	// should be same value types
 	if v.ValueType() != w.ValueType() {
 		return false
-	}
-	if vo,ok:= v.(Object);ok{
-		v= vo.Value()
-	}
-
-	if wo,ok:= w.(Object);ok{
-		w= wo.Value()
 	}
 
 	switch v.ValueType() {
@@ -429,37 +373,29 @@ func Equal(v Value, w Value) bool {
 		}
 		return true
 	case "Object":
-		vo := v.(Object).Value().(Object)
-		wo := w.(Object).Value().(Object)
+		// Let's not compare rawvalues as an otpimization
+		// RawValues should be strictly used for serialization requirements
+		vo := v.(Object)
+		wo := w.(Object)
 		if len(vo) != len(wo) {
 			return false
 		}
 		for k, rval := range vo {
-			if k == "pui_object_typ" {
+			if k == "pui_object_typ"  {
 				continue
 			}
-			val, ok := rval.(Value)
-			if !ok {
-				return false
-			}
+			val := rval.(Value)
 			rwal, ok := wo[k]
 			if !ok {
 				return false
 			}
-			wal, ok := rwal.(Value)
-			if !ok {
-				return false
-			}
+			wal := rwal.(Value)
+
 			if !Equal(val, wal) {
 				return false
 			}
 		}
 		return true
 	}
-	return true
-}
-
-
-func IsNilValue(v Value)bool{
-	return Equal(v, Value(nil))
+	panic("Equality is not specified for this Value type")
 }

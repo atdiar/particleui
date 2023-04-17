@@ -129,6 +129,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		currtargetid := jscurrtarget.Get("id")
 
 		rv:= ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
+
 		
 		ui.DoSync(func(){
 			if currtargetid.Truthy() {
@@ -220,33 +221,30 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			jsHashChangeEvent:= js.Global().Get("HashChangeEvent")
 			jsKeyboardEvent := js.Global().Get("KeyboardEvent")
 			jsMouseEvent:= js.Global().Get("MouseEvent")
+
+			if evt.InstanceOf(jsUIEvent){
+				rv.Set("detail",ui.Number(evt.Get("detail").Float()))
+				rv.Set("which",ui.Number(evt.Get("which").Float()))
+			}
 			
 			if evt.InstanceOf(jsInputEvent){
 				rv.Set("data",ui.String(evt.Get("data").String()))
 				rv.Set("inputType", ui.String(evt.Get("inputType").String()))
-			}
 
-			if evt.InstanceOf(jsHashChangeEvent){
-				rv.Set("newURL",ui.String(evt.Get("newURL").String()))
-				rv.Set("oldURL",ui.String(evt.Get("oldURL").String()))
-			}
-
-			if evt.InstanceOf(jsUIEvent){
-				rv.Set("detail",ui.Number(evt.Get("detail").Float()))
-			}
-
-			if evt.InstanceOf(jsKeyboardEvent){
+			} else if evt.InstanceOf(jsKeyboardEvent){
 				event:= newKeyboardEvent(goevt)
 				keyboardEventSerialized(rv,event)
 				goevt = event
-			}
 
-			if evt.InstanceOf(jsMouseEvent){
+			} else if evt.InstanceOf(jsMouseEvent){
 				event:= newMouseEvent(goevt)
 				mouseEventSerialized(rv,event)
 				goevt = event
+
+			}else if evt.InstanceOf(jsHashChangeEvent){
+				rv.Set("newURL",ui.String(evt.Get("newURL").String()))
+				rv.Set("oldURL",ui.String(evt.Get("oldURL").String()))
 			}
-	
 			
 			currentTarget.Handle(goevt)
 

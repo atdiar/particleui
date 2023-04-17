@@ -101,7 +101,6 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
-	es.ApplyGlobalOption(AllowDataFetching)
 
 	es.NewConstructor("observable",func(id string)*Element{ // TODO check if this shouldn't be done at the coument level rather
 		o:= newObservable(id)
@@ -400,25 +399,9 @@ func NewElement(id string, doctype string) *Element {
 		e.TriggerEvent("registered")
 		return false
 	}).RunOnce())
-	
-		// fetch support
-	e.enablefetching()
-
-	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().Fetch()
-		return false
-	}))
 
 	return e
 }
-
-var AllowDataFetching = NewConstructorOption("allowdatafetching", func(e *Element) *Element {
-	if e.DocType!=e.ElementStore.DocType{
-		return e
-	}
-	e.enablefetching()
-	return e
-})
 
 
 
@@ -577,8 +560,7 @@ func (e *Element) DispatchEvent(evt Event) bool {
 	}
 
 	if e.path == nil {
-		log.Print("Error: Element path does not exist (yet).")
-		return true
+		panic("Error: Element path does not exist (yet).")
 	}
 
 	// First we apply the capturing event handlers PHASE 1
@@ -608,8 +590,7 @@ func (e *Element) DispatchEvent(evt Event) bool {
 		return true
 	}
 	evt.SetPhase(3)
-	for k := len(e.path.List) - 1; k >= 0; k-- {
-		ancestor := e.path.List[k]
+	for _,ancestor:= range e.path.List {
 		if evt.Stopped() {
 			return true
 		}
@@ -667,12 +648,12 @@ func attach(parent *Element, child *Element, activeview bool) {
 func finalize(child *Element, attaching bool, wasmounted bool) {
 	if attaching {
 		if child.Mounted() {
-			child.TriggerEvent("mounted", Bool(true))
+			child.TriggerEvent("mounted")
 		}
 
 	} else { // detaching
 		if wasmounted{
-			child.TriggerEvent("unmounted",Bool(true))
+			child.TriggerEvent("unmounted")
 		}
 	}
 
@@ -1143,7 +1124,7 @@ func(e *Element) bound(category string, propname string, source *Element) bool{
 		return false
 	}
 
-	mh,ok:= e.PropMutationHandlers.list[source.ID+"/"+category+"/"+propname]
+	mh,ok:= e.PropMutationHandlers.list[strings.Join([]string{source.ID, category, propname},"/")] 
 	if !ok{
 		return false
 	}
@@ -1172,7 +1153,7 @@ func(e *Element) fetching(propname string) bool{
 		return false
 	}
 
-	mh,ok:= e.PropMutationHandlers.list[e.ID+"/"+"data"+"/"+propname]
+	mh,ok:= e.PropMutationHandlers.list[strings.Join([]string{e.ID,"data",propname},"/")] 
 	if !ok{
 		return false
 	}
@@ -1213,7 +1194,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		p.NewWatcher(propname, e)
 	}
 
-	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+category+"/"+propname, h)
+	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, category, propname},"/"), h) 
 
 	eventcat, ok := owner.AsElement().Properties.Categories["internals"]
 	if !ok {
@@ -1226,7 +1207,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		eventcat.NewWatcher("deleted", e)
 	}
 
-	e.PropMutationHandlers.Add(owner.AsElement().ID+"/"+"internals"+"/"+"deleted", NewMutationHandler(func(evt MutationEvent) bool {
+	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, "internals", "deleted"},"/"), NewMutationHandler(func(evt MutationEvent) bool {
 		if e.ID != owner.AsElement().ID{
 			e.Unwatch(category, propname, owner)
 		}
@@ -1253,13 +1234,13 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 	if h.ASAP{
 		g= NewMutationHandler(func(evt MutationEvent)bool{
 			b:= h.Handle(evt)
-			evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
+			evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{owner.AsElement().ID, category, propname},"/"), g)
 			return b
 		}).RunASAP()
 	} else{
 		g= NewMutationHandler(func(evt MutationEvent)bool{
 			b:= h.Handle(evt)
-			evt.Origin().PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, g)
+			evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{owner.AsElement().ID, category, propname},"/"), g)
 			return b
 		})
 	}
@@ -1274,7 +1255,7 @@ func (e *Element) RemoveMutationHandler(category string, propname string, owner 
 	if !ok {
 		return e
 	}
-	e.PropMutationHandlers.Remove(owner.AsElement().ID+"/"+category+"/"+propname, h)
+	e.PropMutationHandlers.Remove(strings.Join([]string{owner.AsElement().ID, category, propname},"/"), h)
 	return e
 }
 
@@ -1286,7 +1267,7 @@ func (e *Element) Unwatch(category string, propname string, owner Watchable) *El
 		return e
 	}
 	p.RemoveWatcher(propname, e)
-	e.PropMutationHandlers.RemoveAll(owner.AsElement().ID + "/" + category + "/" + propname)
+	e.PropMutationHandlers.RemoveAll(strings.Join([]string{owner.AsElement().ID, category, propname},"/"))
 	return e
 }
 
@@ -1412,12 +1393,12 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	g= NewMutationHandler(func(evt MutationEvent)bool{
 		e.CancelAllTransitions()
 		b:= h.Handle(evt)
-		evt.Origin().PropMutationHandlers.Remove(evt.Origin().ID+"/"+"internals"+"/"+"deleted", g)
+		evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{evt.Origin().ID, "internals", "deleted"},"/"), g)
 		return b
 	})
 
 
-	e.PropMutationHandlers.Add(e.ID+"/"+"internals"+"/"+"deleted",g )
+	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, "internals", "deleted"},"/"),g )
 }
 
 func isRuntimeCategory(e *ElementStore, category string) bool{
@@ -1429,7 +1410,6 @@ func newEventValue(v Value) Object{
 	o:= NewObject()
 	o.Set("value",v)
 	o.Set("id",String(newEventID()))
-	// todo add uuid value sincve events are unique
 
 	return o
 }
@@ -1485,7 +1465,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 	oldvalue, ok := e.Get(category, propname)
 
 	if ok {
-		if Equal(value, oldvalue) { // idempotence		TODO nake sure that deepequality is optimized	
+		if Equal(value, oldvalue) { // idempotence			
 			return
 		}
 	}
@@ -1768,10 +1748,10 @@ func (e *Element) computeRoute() string {
 			}
 			view = string(v.(String))
 		}
-		path := "/" + n.Element.ID + "/" + view
+		path := strings.Join([]string{"", n.Element.ID, view},"/")
 		if k == 0 {
 			if e.Mountable() {
-				path = "/" + view
+				path = strings.Join([]string{"", view},"/")
 			}
 		}
 		uri = uri + path
@@ -1797,10 +1777,10 @@ func(e *Element) Route() string{
 			}
 			view = string(v.(String))
 		}
-		path := "/" + n.Element.ID + "/" + view
+		path := strings.Join([]string{"", n.Element.ID, view},"/")
 		if k == 0 {
 			if e.Mountable() {
-				path = "/" + view
+				path = strings.Join([]string{"", view},"/")
 			}
 		}
 		uri = uri + path

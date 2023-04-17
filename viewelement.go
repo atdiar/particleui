@@ -39,7 +39,10 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	if e.InactiveViews == nil {
 		e.InactiveViews = make(map[string]View) // Important to put that on top... it creates
 		// effectively a ViewElement out of an Elmeent. attach below depends on that
+	} else{
+		panic("FAILURE: cannot create a ViewElement out of an Element which already has views")
 	}
+
 	v := ViewElement{e}
 	for _, view := range views {
 		v.AddView(view)
@@ -78,6 +81,42 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 		}
 		return false
 	}))
+
+	// onstart MutationHandler
+	onstart:= NewMutationHandler(func(evt MutationEvent) bool {
+		val, ok := v.AsElement().Get("authorized", evt.NewValue().(String).String())
+		if !ok {
+			panic(errors.New("authorization error " + evt.NewValue().(String).String() + " " + v.AsElement().ID)) // it's ok to panic here. the client can send the stacktrace. Should not happen.
+		}
+		auth := val.(Bool)
+
+		if auth != Bool(true) {
+			v.AsElement().ErrorTransition("activateview", String("Unauthorized"))
+			return false
+		}
+		evt.Origin().activateView(evt.NewValue().(String).String())
+		return false
+	})
+
+	// onerror MutationHandler
+	onerror:= NewMutationHandler(func(evt MutationEvent) bool {
+		evt.Origin().Set("internals","viewactivation",evt.NewValue())
+		return false
+	})
+
+	// oncancel MutationHandler
+
+	// onend MutationHandler
+	onend := NewMutationHandler(func(evt MutationEvent) bool {
+		if TransitionCancelled(evt.Origin(), "activateview") || TransitionError(evt.Origin(), "activateview") {
+			// TODO store transition state error, cancellation cause
+			return false
+		}
+		evt.Origin().SetDataSetUI("activeview", evt.NewValue())
+		return false
+	})
+
+	e.DefineTransition("activateview",onstart,onerror,nil,onend)
 
 	return v
 }
@@ -161,9 +200,9 @@ func (v ViewElement) ActivateView(name string) error {
 	auth := val.(Bool)
 
 	if auth != Bool(true) {
+		v.AsElement().ErrorTransition("activateview", String("Unauthorized"))
 		return errors.New("Unauthorized")
 	}
-
 	return v.AsElement().activateView(name)
 }
 
@@ -252,7 +291,6 @@ func (e *Element) activateView(name string) error {
 		if !ok || n.(String).String() != name{
 			panic("active view is not set correctly")
 		}
-		e.TriggerEvent("viewactivated", String(name)) // DEBUG ??? not needed nmormally
 		return nil
 	}
 
@@ -267,10 +305,15 @@ func (e *Element) activateView(name string) error {
 		}
 	}
 
+	e.Watch("ui", "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
+		evt.Origin().TriggerEvent("viewactivated", evt.NewValue())
+		return false
+	}).RunOnce())
+
 	wasmounted:= e.Mounted()
 
 	newview, ok := e.InactiveViews[name]
-	DEBUG(e.ActiveView," to be replaced by inactive view ", newview.elements.List)
+	
 	if !ok {
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
@@ -284,9 +327,8 @@ func (e *Element) activateView(name string) error {
 			}
 
 			e.Set("ui", "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
-			e.Set("ui", "activeview", String(name))
-			e.TriggerEvent("viewactivated", String(name))
-			DEBUG(name)
+			//e.Set("ui", "activeview", String(name))
+			e.EndTransition("activateview", String(name))
 			return nil
 		}
 		// Support for parameterized views
@@ -319,8 +361,8 @@ func (e *Element) activateView(name string) error {
 		e.SetChildrenElements(view.elements.List...)
 
 		e.Set("ui", "viewparameter", String(name))
-		e.Set("ui", "activeview", String(name))
-		e.TriggerEvent("viewactivated", String(name))
+		//e.Set("ui", "activeview", String(name))
+		e.EndTransition("activateview", String(name))
 		return nil
 	}
 
@@ -340,8 +382,8 @@ func (e *Element) activateView(name string) error {
 	e.SetChildrenElements(newview.elements.List...)
 
 	delete(e.InactiveViews, name)
-	e.Set("ui", "activeview", String(name))
-	e.TriggerEvent("viewactivated", String(name))
+	//e.Set("ui", "activeview", String(name))
+	e.EndTransition("activateview", String(name))
 	return nil
 }
 

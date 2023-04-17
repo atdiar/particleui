@@ -1,4 +1,6 @@
 github.com/atdiar/particleui v0.0.0-20230122214250-bce6d7aa4109 h1:x7cM45X0Y8IRsAFL6wdewPP98K+wPyvmBplyYaQR6h0=
 github.com/atdiar/particleui v0.0.0-20230122214250-bce6d7aa4109/go.mod h1:exOkQ0uHKrLBBL+hgLFAHgQadYqjkW0XPv7C815RTfY=
+github.com/goccy/go-json v0.10.2 h1:CrxCmQqYDkv1z7lO7Wbh2HN93uovUHgrECaO5ZrCXAU=
+github.com/goccy/go-json v0.10.2/go.mod h1:6MelG93GURQebXPDq3khkgXZkazVtN9CRI+MGFi0w8I=
 golang.org/x/net v0.5.0 h1:GyT4nK/YDHSqa1c4753ouYCDajOYKTja9Xb/OHtgvSw=
 golang.org/x/net v0.5.0/go.mod h1:DivGGAXEgPSlEBzxGzZI+ZLohi+xUj054jfeKui00ws=

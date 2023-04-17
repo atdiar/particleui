@@ -137,6 +137,11 @@ func(e *Element) setDataPrefetcher(propname string, reqfunc func(e*Element) *htt
 // The fetching occurs during the "fetch" event ("event","fetch") that is triggered each time an element
 // is mounted.
 func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.Request, responsehandler func(*http.Response)(Value,error), prefetchable bool) {
+	_,ok:= e.Get("internals","fetching")
+	if !ok{
+		e.enablefetching()
+		e.Set("internals","fetching",Bool(true))
+	}
 	// TODO panic if data fetcher already exists for this propname
 	if e.fetching(fetchTxName(propname,"start")){ // todo this is not the right propname to check. should use the fetching transition prop name
 		panic("a data fetcher has already been set for this element and property")
@@ -377,7 +382,7 @@ func(e *Element) enablefetching() *Element{
 		}
 		for _,v:= range fetchlist{
 			propname:= v.(String).String()
-			e.OnTransitionError("fetch-"+propname,NewMutationHandler(func(evt MutationEvent)bool{
+			e.OnTransitionError(strings.Join([]string{"fetch",propname},"-"),NewMutationHandler(func(evt MutationEvent)bool{
 				e.errorfetchTransition(propname)
 				return false
 			}))
@@ -398,6 +403,10 @@ func(e *Element) enablefetching() *Element{
 	e.DefineTransition("prefetch", prefetch,nil, nil,nil)
 	e.DefineTransition("fetch", fetch,nil, cancel,nil)
 
+	e.OnMounted(NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().Fetch()
+		return false
+	}))
 
 	return e
 }
@@ -710,51 +719,51 @@ func(e *Element) isFetchedDataValid(propname string) bool{
 	return !bool(stale.(Bool))
 }
 
-// Fetch transition helpers
+// Fetch transition helpers  
 
 func (e *Element) newFetchTransition(propname string, onstart, onerror, oncancel,onend *MutationHandler){
-	e.DefineTransition("fetch-"+propname,onstart,onerror, oncancel,onend)
+	e.DefineTransition(strings.Join([]string{"fetch",propname},"-"),onstart,onerror, oncancel,onend)
 }
 
 func (e *Element) newPrefetchTransition(propname string, onstart, onerror, oncancel,onend *MutationHandler){
-	e.DefineTransition("prefetch-"+propname,onstart,onerror,oncancel,onend)
+	e.DefineTransition(strings.Join([]string{"prefetch",propname},"-"),onstart,onerror,oncancel,onend)
 }
 
 func(e *Element) startfetchTransition(propname string){
-	e.StartTransition("fetch-"+propname)
+	e.StartTransition(strings.Join([]string{"fetch",propname},"-"))
 }
 
 func(e *Element) startprefetchTransition(propname string){
-	e.StartTransition("prefetch-"+propname)
+	e.StartTransition(strings.Join([]string{"prefetch",propname},"-"))
 }
 
 func(e *Element) errorfetchTransition(propname string){
-	e.ErrorTransition("fetch-"+propname)
+	e.ErrorTransition(strings.Join([]string{"fetch",propname},"-"))
 }
 
 func(e *Element) cancelfetchTransition(propname string){
-	e.CancelTransition("fetch-"+propname)
+	e.CancelTransition(strings.Join([]string{"fetch",propname},"-"))
 }
 
 func(e *Element) cancelprefetchTransition(propname string){
-	e.CancelTransition("prefetch-"+propname)
+	e.CancelTransition(strings.Join([]string{"prefetch",propname},"-"))
 }
 
 func(e *Element) endprefetchTransition(propname string, values ...Value){
-	e.EndTransition("prefetch-"+propname, values...)
+	e.EndTransition(strings.Join([]string{"prefetch",propname},"-"), values...)
 }
 
 func(e *Element) endfetchTransition(propname string, values ...Value){
-	e.EndTransition("fetch-"+propname, values...)
+	e.EndTransition(strings.Join([]string{"fetch",propname},"-"), values...)
 }
 
 
 func fetchTxName(propname, phase string) string {
-	return transition("fetch-"+propname, phase)
+	return transition(strings.Join([]string{"fetch",propname},"-"), phase)
 }
 
 func prefetchTxName(propname, phase string) string{
-	return transition("prefetch-"+propname, phase)
+	return transition(strings.Join([]string{"prefetch",propname},"-"), phase)
 }
 
 
