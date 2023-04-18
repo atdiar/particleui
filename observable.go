@@ -50,9 +50,6 @@ func newObservable(id string) Observable {
 		return false
 	}).RunOnce())
 
-	
-
-	e.enablefetching()
 
 	return Observable{e}
 }

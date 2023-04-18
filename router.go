@@ -155,7 +155,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 	}
 	err = a()
 	if err != nil {
-		log.Print("activation failure", err) // DEBUG
+		log.Print("activation failure ", err) // DEBUG
 		r.Outlet.AsElement().Root().TriggerEvent("navigation-unauthorized", String(newroute))
 		return false
 	}
@@ -656,7 +656,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 		// Let's see if the ViewElement has a parameterizable view
 		param, ok = r.ViewElement.hasParameterizedView()
 		if ok {
-			if !r.ViewElement.isViewAuthorized(param) {
+			if !r.ViewElement.IsViewAuthorized(param) {
 				return targetview,nil, nil, ErrUnauthorized
 			}
 			if ls != 1 { // we get the next rnodes mapped by viewname
@@ -674,7 +674,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 	if ls >= 1 && ls%2 == 1 {
 		// check authorization
 		if param != "" {
-			if r.ViewElement.isViewAuthorized(param) {
+			if r.ViewElement.IsViewAuthorized(param) {
 				a := func() error {
 					return r.ViewElement.ActivateView(segments[0])
 				}
@@ -689,7 +689,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 				return targetview,nil,nil, ErrUnauthorized
 			}
 		} else {
-			if r.ViewElement.isViewAuthorized(segments[0]) {
+			if r.ViewElement.IsViewAuthorized(segments[0]) {
 				a := func() error {
 					return r.ViewElement.ActivateView(segments[0])
 				}
@@ -736,7 +736,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 				// Let's see if the ViewElement has a parameterizable view
 				param, ok = r.ViewElement.hasParameterizedView()
 				if ok {
-					if !r.ViewElement.isViewAuthorized(param) {
+					if !r.ViewElement.IsViewAuthorized(param) {
 						return targetview,nil, nil, ErrUnauthorized
 					}
 
@@ -749,7 +749,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 					return targetview,nil,nil, ErrNotFound
 				}
 			}
-			if !r.ViewElement.isViewAuthorized(nextroutesegment) {
+			if !r.ViewElement.IsViewAuthorized(nextroutesegment) {
 				return targetview,nil, nil, ErrUnauthorized
 			}
 			a := func() error {
@@ -922,6 +922,8 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 		}
 		return nh.Handle(evt)
 	}).RunASAP())
+
+	// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable
 	e.Watch("data", "currentroute", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
 		lnk,_:= e.GetData("uri")
@@ -938,6 +940,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 
 	r.Links[l.URI()] = l
 
+	// TODO do we need to be able to disable navigation if link points to current route?
 	r.Outlet.AsElement().WatchEvent("activate",e,NewMutationHandler(func(evt MutationEvent)bool{
 		var hash string
 		if s,ok:= evt.NewValue().(String);ok{
@@ -1048,7 +1051,7 @@ func hasView(v ViewElement, vname string)bool{
 	if _,ok:=v.hasParameterizedView();ok{
 		return true
 	}
-	return  v.hasStaticView(vname)
+	return  v.HasStaticView(vname)
 }
 
 /*

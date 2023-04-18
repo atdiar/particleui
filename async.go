@@ -424,7 +424,8 @@ func(e *Element) Prefetch(){
 
 func(e *Element) Fetch(props ...string){
 	if !e.Registered(){
-		panic("Fetch can only be called on registered elements. Error for "+ e.ID)
+		//panic("Fetch can only be called on registered elements. Error for "+ e.ID)
+		return // eventually registration is going to be unnecessary
 	}
 	if len(props) == 0{
 		e.Properties.Delete("runtime","fetcherrors")

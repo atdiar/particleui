@@ -1743,10 +1743,9 @@ func (e *Element) computeRoute() string {
 		view := n.Name
 		if n.Element.Mounted(){
 			v,ok:= n.Element.Get("ui","activeview")
-			if!ok{
-				panic("couldn't find current view name")
+			if ok{
+				view = string(v.(String))
 			}
-			view = string(v.(String))
 		}
 		path := strings.Join([]string{"", n.Element.ID, view},"/")
 		if k == 0 {

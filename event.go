@@ -2,6 +2,7 @@
 package ui
 
 import(
+	"errors"
 	"strings"
 )
 
@@ -311,7 +312,9 @@ func(e *EventHandler) NoBubble() *EventHandler{
 // DefineTransition defines a long-form even that can go through different phases (from a start to an end,
 // the end possibly caused by an error or a cancellation).
 func(e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend *MutationHandler){
-	e.OnTransitionStart(name, NewMutationHandler(func(evt MutationEvent)bool{
+
+	e.WatchEvent(transition(name, "start"), e, NewMutationHandler(func(evt MutationEvent)bool{
+		evt.Origin().CancelTransition(name,String("transition restarted"))
 		evt.Origin().resetTransition(name)
 		return false
 	}))
@@ -324,7 +327,6 @@ func(e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend
 		}
 		*/
 		
-		evt.Origin().CancelTransition(name)
 
 		if onerror != nil{
 			onerror = onerror.RunOnce()
@@ -340,7 +342,7 @@ func(e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend
 		
 		if onend != nil{
 			onend = onend.RunOnce()
-			evt.Origin().OnTransitionError(name, onend)
+			evt.Origin().OnTransitionEnd(name, onend)
 		}
 	
 
@@ -355,8 +357,8 @@ func(e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend
 			ev.Origin().Set("transition",name,String("error"))
 			//ev.Origin().TriggerEvent(transition(name, "end"))
 			ev.Origin().WatchEvent(transition(name, "error"), ev.Origin(), NewMutationHandler(func(event MutationEvent)bool{
-				event.Origin().TriggerEvent(transition(name, "end"))
-				return true
+				event.Origin().TriggerEvent(transition(name, "end"), event.NewValue())
+				return false
 			}).RunOnce())
 			return false
 		}).RunOnce())
@@ -366,8 +368,8 @@ func(e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend
 			ev.Origin().Set("transition",name, String("cancelled"))
 			// ev.Origin().TriggerEvent(transition(name, "end"))
 			ev.Origin().WatchEvent(transition(name, "cancel"), ev.Origin(), NewMutationHandler(func(event MutationEvent)bool{
-				event.Origin().TriggerEvent(transition(name, "end"))
-				return true
+				event.Origin().TriggerEvent(transition(name, "end"), event.NewValue())
+				return false
 			}).RunOnce())
 			return false
 		}).RunOnce())
@@ -419,6 +421,7 @@ func(e *Element) OnTransitionEnd(name string, h *MutationHandler){
 
 func(e *Element) resetTransition(name string){
 	e.Properties.Delete("transition",name)
+	e.Properties.Delete("event",transition(name,"end"))
 }
 
 func(e *Element) StartTransition(name string,values ...Value){
@@ -441,6 +444,12 @@ func(e *Element) EndTransition(name string, values ...Value){
 	e.TriggerEvent(transition(name,"end"),values...)
 }
 
+// TransitionCancelled returns true if the transition was cancelled.
+//
+// Note: Transition cancellation is not an error. It should still go thorugh the end process which 
+// also deals with cleaning up the transition state.
+// The onend handler should take into account that it has to deal with faile or cancelled transitions.
+// But it is always called as we need to arrive to a known state, whichever way.
 func TransitionCancelled(e *Element, transitionname string) bool{
 	v,ok:= e.Get("transition",transitionname)
 	if !ok{
@@ -465,9 +474,21 @@ func TransitionError(e *Element, transitionname string) bool{
 	return vv.String() == "error"
 }
 
+func TransitionEndValue(e *Element, transitionname string) (Value,error){
+	v,ok:= e.Get("event",transition(transitionname,"end"))
+	if !ok{
+		return nil, errors.New("transition doesn't seem to have completed yet")
+	}
+	o,ok:= v.(Object).Get("value")
+	if !ok{
+		panic("unexpected event object format for transition end event")
+	}
+	return o,nil
+}
+
 
 // NewTransitionChain creates a new transition chain. The transition chain is a sequence of 
-// transitions that are triggered synchronously.
+// transitions that are triggered synchronously.These transitions belongs to a same element by construction.
 func(e *Element) NewTransitionChain(name string, transitionevents ...string) func(onstart, onerror, oncancel, onend *MutationHandler){
 
 
