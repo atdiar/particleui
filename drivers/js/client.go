@@ -182,6 +182,8 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 		if err != nil {
 			return err
 		}
+
+		uiloaders:= make([]func(),0,50)
 		//log.Print(categories, properties) //DEBUG
 		for _, category := range categories {
 			jsonproperties, ok := store.Get(e.ID + "/" + category)
@@ -212,14 +214,21 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 					if err != nil {
 						return err
 					}
-					
-					ui.LoadProperty(e, category, propname, ui.Object(rawvalue).MarkedRaw().Value())
+					val:= ui.Object(rawvalue).MarkedRaw().Value()
+					ui.LoadProperty(e, category, propname, val)
+					if category == "data"{
+						uiloaders = append(uiloaders, func(){
+							e.SetDataSetUI(propname, val)
+						})
+					}
 					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 				}
 			}
 		}
 		e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			ui.Rerender(e)
+			for _,load:= range uiloaders{
+				load()
+			}
 			return false
 		}).RunOnce())
 		
@@ -733,7 +742,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 				if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 					js.Global().Get("history").Set("scrollRestoration", "manual")
 				}
-				e.SetDataSetUI("scrollrestore", ui.Bool(true))
+				e.SetUI("scrollrestore", ui.Bool(true)) // DEBUG SetUI instead of SetDataSetUI, as this is no business logic but UI logic
 				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
@@ -772,7 +781,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 				})
 				e.WatchEvent("navigation-end", e.Root(), h)
 			} else {
-				e.SetDataSetUI("scrollrestore", ui.Bool(false))
+				e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
 			}
 			return false
 		}))
@@ -781,7 +790,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
 
-		sc, ok := e.Get("ui", "scrollrestore")
+		sc, ok := e.GetUI("scrollrestore")
 		if !ok {
 			return false
 		}
@@ -850,7 +859,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 
 	ejs := js.Global().Get("document").Get("scrollingElement")
 
-	e.SetDataSetUI("scrollrestore", ui.Bool(true))
+	e.SetUI("scrollrestore", ui.Bool(true)) // DEBUG SetUI instead of SetDataSetUI, as this is no business logic but UI logic
 
 	GetDocument(e).Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 		scrolltop := ui.Number(ejs.Get("scrollTop").Float())

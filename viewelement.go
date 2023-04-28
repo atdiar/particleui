@@ -87,14 +87,14 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	}))
 
 	e.Watch("ui","activeview",e,NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("new active view: ",evt.NewValue())
+		DEBUG("New active view: ",evt.NewValue())
+		// TODO sync e.ActiveView with evt.NewValue()
 		evt.Origin().TriggerEvent("viewactivated",evt.NewValue())
 		return false
 	}))
 
 	// onstart MutationHandler
 	onstart:= NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("start")
 		vname := evt.NewValue().(String).String()
 		auth:= ViewElement{evt.Origin()}.IsViewAuthorized(vname)
 
@@ -103,7 +103,6 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 			v.AsElement().ErrorTransition("activateview", String("Unauthorized"))
 			return false
 		}
-
 		evt.Origin().activateView(vname)
 		
 		return false
@@ -124,12 +123,15 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	// onend MutationHandler
 	onend := NewMutationHandler(func(evt MutationEvent) bool {
 		// If no transition Error, then the transition was successful
-		DEBUG("this should be the transition end =====")
-
+		DEBUG("-- TRANSITION END HAS BEEN CALLED ! --", evt.NewValue(),"----------------------------------------------")
 		if !TransitionError(evt.Origin(), "activateview") && !TransitionCancelled(evt.Origin(), "activateview") {
 			DEBUG("setting ui/activeview to ", evt.NewValue())
-			evt.Origin().SetDataSetUI("activeview", evt.NewValue())
+			v,ok:= evt.Origin().Get("ui","activeview")
+			DEBUG("Former value was ", v,ok)
+			evt.Origin().SetUI("activeview", evt.NewValue())
 		}
+		
+		DEBUG("END ======================================================================================")
 		return false
 	})
 
@@ -140,10 +142,21 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	e:=evt.Origin()
-	e.Properties.Delete("ui", "activeview")
-	_,ok:= e.Get("internals","mountdefaultview")
+	var ok bool
+	//v:= ViewElement{e}
+	//e.Properties.Delete("ui", "activeview")
+	/*av,ok:= e.Get("ui","activeview")
 	if ok{
-		// evt.Origin().activateView("")
+		avs:= av.(String).String()
+		if v.HasStaticView(avs){
+			oldview := NewView(avs, e.Children.List...)
+			e.RemoveChildren()
+			v.AddView(oldview)
+		}
+		e.Properties.Delete("ui", "activeview")
+	}*/
+	_,ok= e.Get("internals","mountdefaultview")
+	if ok{
 		v:= e.retrieveView("")
 		if v == nil{
 			if e.ActiveView == "" {
@@ -247,69 +260,6 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 	v.AsElement().Watch("ui", "viewparameter", v, h)
 }
 
-/*  This could allow to customize the activation of specific views
-
-// OnActivationStart registers a MutationHandler that will be triggered when a view is about to be activated.
-func (v ViewElement) OnActivationStart(viewname string, h *MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		view := evt.NewValue().(String)
-		if string(view) != viewname {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	if h.Once {
-		nh = nh.RunOnce()
-	}
-	
-	if h.ASAP {
-		nh = nh.RunASAP()
-	}
-	v.AsElement().OnTransitionStart("activateview", nh)
-}
-
-// OnActivationCancel registers a MutationHandler that will be triggered when a view activation is cancelled.
-func (v ViewElement) OnActivationCancel(viewname string, h *MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		view := evt.NewValue().(String)
-		if string(view) != viewname {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	if h.Once {
-		nh = nh.RunOnce()
-	}
-	
-	if h.ASAP {
-		nh = nh.RunASAP()
-	}
-	v.AsElement().OnTransitionCancel("activateview", nh)
-}
-
-//OnActivationError registers a MutationHandler that will be triggered when a view activation fails.
-func (v ViewElement) OnActivationError(viewname string, h *MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
-		view := evt.NewValue().(String)
-		if string(view) != viewname {
-			return false
-		}
-		return h.Handle(evt)
-	})
-	if h.Once {
-		nh = nh.RunOnce()
-	}
-	
-	if h.ASAP {
-		nh = nh.RunASAP()
-	}
-	v.AsElement().OnTransitionError("activateview", nh)
-}
-
-// OnActivationEnd registers a MutationHandler that will be triggered when a view activation is completed. (TODO?)
-
-*/
-
 // OnActivated registers a MutationHandler that will be triggered each time a view has been activated.
 func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
@@ -397,11 +347,12 @@ func (e *Element) activateView(name string) {
 
 	// TODO should actiation cancellation be considered an error state?
 		
-
+	DEBUG("START ====================================================================================")
 	DEBUG("Current e.ActiveView vs View to activate| ",e.ActiveView, name)
 	DEBUG("ui/activeview (below):")
 	DEBUG(e.Get("ui", "activeview"))
 	DEBUG(e.InactiveViews)
+	DEBUG("-----------------------------------------------------------------------------------------")
 
 	wasmounted:= e.Mounted()
 
@@ -479,9 +430,7 @@ func (e *Element) activateView(name string) {
 
 	delete(e.InactiveViews, name)
 	
-	e.EndTransition("activateview", String(name))
-	DEBUG("view should have been activated by now... has it rendered?")
-	return
+	e.EndTransition("activateview", String(name))	
 }
 
 // AddView is an *Element modifier that is used to add an activable named view to an element.

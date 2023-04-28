@@ -54,7 +54,6 @@ func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
 		return
 	}
 	mhs.Handle(evt)
-	// TODO put event Valkue in a pool
 }
 
 type mutationHandlers struct {
@@ -202,7 +201,8 @@ func (m *MutationHandler) Handle(evt MutationEvent) bool {
 // MutationEvent defines a common interface for mutation notifying events.
 type MutationEvent interface {
 	ObservedKey() string
-	Type() string
+	Category() string
+	Property() string
 	Origin() *Element
 	NewValue() Value
 	OldValue() Value
@@ -211,7 +211,8 @@ type MutationEvent interface {
 // Mutation defines a basic implementation for Mutation Events.
 type Mutation struct {
 	KeyName string
-	typ     string
+	category string
+	propname string
 	NewVal  Value
 	OldVal  Value
 	Src     *Element
@@ -219,19 +220,22 @@ type Mutation struct {
 
 func (m Mutation) ObservedKey() string { return m.KeyName }
 func (m Mutation) Origin() *Element    { return m.Src }
-func (m Mutation) Type() string        { return m.typ }
+func (m Mutation) Category() string        { return m.category}
+func (m Mutation) Property() string        { return m.propname }
 func (m Mutation) NewValue() Value     { 
-	if m.typ == "event"{
+	if m.category == "event"{
 		e,ok:= m.NewVal.(Object).Get("value")
 		if !ok{
 			panic("event value not found")
 		}
 		return Copy(e)
 	}
+
 	return Copy(m.NewVal)
 }
+
 func (m Mutation) OldValue() Value     { 
-	if m.typ == "event"{
+	if m.category == "event"{
 		if m.OldVal == nil{
 			return nil
 		}
@@ -241,11 +245,12 @@ func (m Mutation) OldValue() Value     {
 		}
 		return Copy(e)
 	}
+
 	return Copy(m.OldVal)
 }
 
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
-	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category, Copy(newvalue), Copy(oldvalue), e}
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e}
 }
 
 

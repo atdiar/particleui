@@ -17,11 +17,11 @@ type Value interface {
 
 type Bool bool
 
-func (b Bool) discriminant() discriminant { return "particleui" }
+func (b Bool) discriminant() discriminant { return "zui" }
 func (b Bool) RawValue() Object {
 	o := NewObject()
-	o["pui_object_typ"] = "Bool"
-	o["pui_object_value"] = bool(b)
+	o["zui_object_typ"] = "Bool"
+	o["zui_object_value"] = bool(b)
 	return o.RawValue()
 }
 func (b Bool) ValueType() string { return "Bool" }
@@ -32,11 +32,11 @@ func(b Bool) Bool() bool{
 
 type String string
 
-func (s String) discriminant() discriminant { return "particleui" }
+func (s String) discriminant() discriminant { return "zui" }
 func (s String) RawValue() Object {
 	o := NewObject()
-	o["pui_object_typ"] = "String"
-	o["pui_object_value"] = string(s)
+	o["zui_object_typ"] = "String"
+	o["zui_object_value"] = string(s)
 	return o.RawValue()
 }
 func (s String) ValueType() string { return "String" }
@@ -45,11 +45,11 @@ func(s String) String() string{return string(s)}
 
 type Number float64
 
-func (n Number) discriminant() discriminant { return "particleui" }
+func (n Number) discriminant() discriminant { return "zui" }
 func (n Number) RawValue() Object {
 	o := NewObject()
-	o["pui_object_typ"] = "Number"
-	o["pui_object_value"] = float64(n)
+	o["zui_object_typ"] = "Number"
+	o["zui_object_value"] = float64(n)
 	return o.RawValue()
 }
 func (n Number) ValueType() string { return "Number" }
@@ -60,7 +60,7 @@ func(n Number) Int64() int64{return int64(n)}
 
 type Object map[string]interface{}
 
-func (o Object) discriminant() discriminant { return "particleui" }
+func (o Object) discriminant() discriminant { return "zui" }
 
 func (o Object) RawValue() Object {
 	p := NewObject()
@@ -71,27 +71,27 @@ func (o Object) RawValue() Object {
 			continue
 		}
 		p[k] = val 
-		// pui_object_typ should still be a plain string, calling RawValue twice in a row should be idempotent
-		// pui_object_value is also not tranformed allowing for idempotence of successive calls to RawValue.
+		// zui_object_typ should still be a plain string, calling RawValue twice in a row should be idempotent
+		// zui_object_value is also not tranformed allowing for idempotence of successive calls to RawValue.
 		continue
 	}
-	p["pui_object_raw"] = true
+	p["zui_object_raw"] = true
 	return p
 }
 
 func (o Object) ValueType() string {
-	t, ok := o.Get("pui_object_typ")
+	t, ok := o.Get("zui_object_typ")
 	if !ok {
-		return "undefined"
+		panic("zui error: object does not have a type")
 	}
 	return string(t.(String))
 }
 
 func (o Object) Get(key string) (Value, bool) {
-	if key == "pui_object_typ"{
+	if key == "zui_object_typ"{
 		return String(o[key].(string)),true
 	}
-	if key == "pui_object_value"{
+	if key == "zui_object_value"{
 		val,ok:= o[key]
 		if !ok{
 			return nil, ok
@@ -124,11 +124,11 @@ func (o Object) Get(key string) (Value, bool) {
 					continue
 				}
 				DEBUG(i,val)
-				panic("pui error: bad list rawencoding. Unable to decode.")
+				panic("zui error: bad list rawencoding. Unable to decode.")
 			}
 			return m,ok
 		default:
-			panic("pui error: unknown raw value type")
+			panic("zui error: unknown raw value type")
 		}
 	}
 	v, ok := o[key]
@@ -181,21 +181,21 @@ func(o Object) MustGetObject(key string) Object{
 func (o Object) Set(key string, value Value) Object {
 	o[key] = value
 	/*if v,ok:= value.(Object);ok{
-		if v["pui_object_raw"] == true{
-			o["pui_object_raw"] = true
+		if v["zui_object_raw"] == true{
+			o["zui_object_raw"] = true
 		}
 	}*/ // could be needed to distinguish objects storing raw encoded ones. Although on removal 
 	// would not be updated. In any case, we consider for now that a raw encoded object is fully raw and 
 	// vice cersa, a non raw encoded object does not store raw object values
 	return o
 }
-func (o Object) SetType(typ string) Object {
-	o["pui_object_typ"] = typ
+func (o Object) setType(typ string) Object {
+	o["zui_object_typ"] = typ
 	return o
 }
 
 func (o Object) MarkedRaw() Object {
-	o["pui_object_raw"] = true
+	o["zui_object_raw"] = true
 	return o
 }
 
@@ -203,32 +203,32 @@ func (o Object) MarkedRaw() Object {
 func (o Object) Value() Value {
 	switch o.ValueType() {
 	case "Bool":
-		v, ok := o.Get("pui_object_value")
+		v, ok := o.Get("zui_object_value")
 		if !ok {
-			panic("pui error: raw bool value can't be found.")
+			panic("zui error: raw bool value can't be found.")
 		}
 		return v
 	case "String":
-		v, ok := o.Get("pui_object_value")
+		v, ok := o.Get("zui_object_value")
 		if !ok {
-			panic("pui error: raw string value can't be found.")
+			panic("zui error: raw string value can't be found.")
 		}
 		return v
 	case "Number":
-		v, ok := o.Get("pui_object_value")
+		v, ok := o.Get("zui_object_value")
 		if !ok {
-			panic("pui error: raw number value can't be found.")
+			panic("zui error: raw number value can't be found.")
 		}
 		return v
 	case "List":
-		v, ok := o.Get("pui_object_value")
+		v, ok := o.Get("zui_object_value")
 		if !ok {
 			DEBUG(o)
-			panic("pui error: raw List value can't be found.")
+			panic("zui error: raw List value can't be found.")
 		}
 		return v
 	case "Object":
-		if r,ok:= o["pui_object_raw"]; !ok || !r.(bool){
+		if r,ok:= o["zui_object_raw"]; !ok || !r.(bool){
 			return o
 		}
 
@@ -242,7 +242,7 @@ func (o Object) Value() Value {
 					p.Set(k, obj.Value())
 					continue
 				}
-				if k != "pui_object_raw" {
+				if k != "zui_object_raw" {
 					p[k] = val
 				}
 				continue
@@ -263,21 +263,21 @@ func (o Object) Value() Value {
 
 func NewObject() Object {
 	o := Object(make(map[string]interface{}))
-	o["pui_object_typ"] = "Object"
+	o["zui_object_typ"] = "Object"
 	return o
 }
 
 type List []Value
 
-func (l List) discriminant() discriminant { return "particleui" }
+func (l List) discriminant() discriminant { return "zui" }
 func (l List) RawValue() Object {
-	o := NewObject().SetType("List")
+	o := NewObject().setType("List")
 
 	raw := make([]interface{}, 0,len(l))
 	for _, v := range l {
 		raw = append(raw, v.RawValue())
 	}
-	o["pui_object_value"] = raw
+	o["zui_object_value"] = raw
 	return o.RawValue()
 }
 func (l List) ValueType() string { return "List" }
@@ -381,7 +381,7 @@ func Equal(v Value, w Value) bool {
 			return false
 		}
 		for k, rval := range vo {
-			if k == "pui_object_typ"  {
+			if k == "zui_object_typ"  {
 				continue
 			}
 			val := rval.(Value)
@@ -399,3 +399,4 @@ func Equal(v Value, w Value) bool {
 	}
 	panic("Equality is not specified for this Value type")
 }
+

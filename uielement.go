@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrNoTemplate = errors.New("Element template missing")
-	DEBUG         = log.Print // DEBUG
+	DEBUG         = log.Println // DEBUG
 )
 
 // newIDgenerator returns a function used to create new IDs. It uses
@@ -101,6 +101,7 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
+	es.RuntimePropTypes["ui"]=true
 
 	es.NewConstructor("observable",func(id string)*Element{ // TODO check if this shouldn't be done at the coument level rather
 		o:= newObservable(id)
@@ -1447,7 +1448,20 @@ func Canonicalize(s string) string{
 // The "global" namespace is a local copy of the data that resides in the global
 // shared scope common to all Element objects of an ElementStore.
 func (e *Element) Get(category, propname string) (Value, bool) {
-	return e.Properties.Get(category, propname)
+	v,ok:= e.Properties.Get(category, propname)
+	if o,ok:= v.(Object);ok{
+		_,ok= o.Get("zui_ref_id")
+			if ok{
+				oid:= o.MustGetString("elementid").String()
+				if e.ID != oid{
+					panic("valueref cannot point at a value stored on anoher element")
+				}
+				ocat:= o.MustGetString("category").String()
+				oprop:= o.MustGetString("propname").String()
+				return e.Get(ocat,oprop)
+			}
+	}
+	return v,ok
 }
 
 // Set inserts a key/value pair under a given category in the element property store.
@@ -1470,6 +1484,8 @@ func (e *Element) Set(category string, propname string, value Value) {
 		}
 	}
 
+	// Store property in persistent storage if persistence mode has been set at Element constrcution
+	// reminder that runtime properties such as those in the "event" or "ui"categories are never persisted.
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
 		if ok && !isRuntimeCategory(e.ElementStore,category) {
@@ -1602,8 +1618,69 @@ func (e *Element) GetData(propname string) (Value, bool) {
 // SetData inserts a key/value pair under the "data" category in the element property store.
 // It does not automatically update any potential property representation stored
 // for rendering use in the "ui" category/namespace.
-func (e *Element) SetData(propname string, value Value) {
+func (e *Element) SetData(propname string, value Value) *Element{
 	e.Set("data", propname, value)
+	return e
+}
+
+// GetUI returns the value of a property stored under the "ui" category in the element property store.
+func(e *Element) GetUI(propname string) (Value, bool) {
+	return e.Get("ui", propname)
+}
+
+// SetUI inserts a key/value pair under the "ui" category in the element property store.
+// A category is synonymous with a namespace.
+// A UI property is a a runtime kind of property. As such, it is not persisted.
+// A modification of such a property mirrors changes in  the representation of raw data that traditionally
+// sits in the "data"category (aka namespace).
+//
+// SetUI strictly handles UI data as opposed to SetDataSetUI which handles representable business/model data.
+func(e *Element) SetUI(propname string, value Value) *Element{
+	e.Set("ui", propname, value)
+	return e
+}
+
+// SyncUI is used to synchronize an event driven UI change in the backend (GUI for instance) with 
+// the state of the document tree on the Go side.
+// It is typically used in reaction to native events (e.g. toggling a button)
+// It does not trigger any mutation event as we are not modifying the UI as it hhs already been modified.
+//
+// It is different from SyncUISetData in that it can be used when the data is not owned by the 
+// element in charge of its representation. (allows fordecoupling of data ownership and data representation)
+// For instance, all the data ;ay be stored in a global observable Element.
+// The UI elements would then only be responsible for rendering the data but not storing it.
+//
+// It also handles multi-parametered representations (e.g. a table may have different filters, a filter
+// does not filter the data, it filters the representation of the data and as such, is purely a UI props.
+// In that case, we would use SyncUI without setting a data property, wwhich would be a mistake especially
+// if it gets persisted somehow.
+func(e *Element) SyncUI(propname string, value Value) *Element{
+	if strings.Contains(propname, "/") {
+		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + propname + ")")
+	}
+	e.Properties.Set("ui", propname, value)
+
+	
+	if e.ElementStore.MutationCapture{
+		if e.Registered(){
+			m:= NewObject()
+			m.Set("id",String(e.ID))
+			m.Set("cat",String("ui"))
+			m.Set("prop",String(propname))
+			m.Set("val",Copy(value))
+			m.Set("sync",Bool(true))
+			l,ok:= e.Get("internals","mutationtrace")
+			if !ok{
+				l=NewList(m)
+				e.Root().Set("internals","mutationtrace",l)
+			} else{
+				list:= l.(List)
+				list = append(list,m)
+				e.Root().Set("internals","mutationtrace",list)
+			}
+		}
+	}
+	return e
 }
 
 
@@ -1625,8 +1702,6 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 	}
 	e.Properties.Set("data", propname, value)
 
-	// e.Set("ui", propname, value, flags...) // Initial position but let's put that after data change propagation DEBUG
-
 	evt := e.NewMutationEvent("data", propname, value, oldvalue)
 
 	props, ok := e.Properties.Categories["data"]
@@ -1641,6 +1716,8 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 		}
 	}
 
+	// Update UI representation, it shouldn't have any side-effects on the data so it's safe to do it 
+	// before the mutation event is triggered.
 	e.Set("ui", propname, value)
 }
 
@@ -1652,18 +1729,9 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 //
 func (e *Element) SyncUISetData(propname string, value Value) {
 
-	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
-
-
 	e.Properties.Set("ui", propname, value)
 
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok {
-			storage.Store(e, "ui", propname, value)
-		}
-	}
+	
 	if e.ElementStore.MutationCapture{
 		if e.Registered(){
 			m:= NewObject()
@@ -1755,6 +1823,7 @@ func (e *Element) computeRoute() string {
 		}
 		uri = uri + path
 	}
+
 	return uri
 }
 

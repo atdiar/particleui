@@ -109,7 +109,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 		return false
 	}))
 
-	r.Outlet.AsElement().ElementStore.NewConstructor("pui_link", func(id string)*Element{
+	r.Outlet.AsElement().ElementStore.NewConstructor("zui_link", func(id string)*Element{
 		e:= NewElement(id,"ROUTER")
 		RegisterElement(r.Outlet.AsElement().Root(),e)
 		return e
@@ -173,8 +173,8 @@ func (r *Router) GoTo(route string) {
 	}
 
 	r.History.Push(route)
-	r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(route))
-	r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+	r.Outlet.AsElement().Root().SetUI("currentroute", String(route))
+	r.Outlet.AsElement().Root().SetUI("history", r.History.Value())
 
 	
 	r.Outlet.AsElement().Root().TriggerEvent("navigation_start", String(route))
@@ -326,8 +326,8 @@ func (r *Router) handler() *MutationHandler {
 
 			
 		}
-		r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
-		r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+		r.Outlet.AsElement().Root().SetUI("currentroute", String(newroute))
+		r.Outlet.AsElement().Root().SetUI("history", r.History.Value())
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		v,_,a, err := r.Routes.match(newroute)
@@ -390,8 +390,8 @@ func (r *Router) redirecthandler() *MutationHandler {
 		}
 
 		r.History.Replace(newroute)
-		r.Outlet.AsElement().Root().SetDataSetUI("currentroute", String(newroute))
-		r.Outlet.AsElement().Root().SetDataSetUI("history", r.History.Value())
+		r.Outlet.AsElement().Root().SetUI("currentroute", String(newroute))
+		r.Outlet.AsElement().Root().SetUI("history", r.History.Value())
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v,_, a, err := r.Routes.match(newroute)
@@ -866,9 +866,9 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	l,ok:= r.Links["/"+viewname]
 	if !ok{
 		// Let's retrieve the link constructor
-		c,ok:= r.Outlet.AsElement().ElementStore.Constructors["pui_link"]
+		c,ok:= r.Outlet.AsElement().ElementStore.Constructors["zui_link"]
 		if !ok{
-			panic("pui_ERROR: somehow the link constructor has not been registered.")
+			panic("zui_ERROR: somehow the link constructor has not been registered.")
 		}
 		e := c(r.Outlet.AsElement().ID+"-"+viewname)
 		e.SetData("viewelements",NewList(String(r.Outlet.AsElement().ID)))
@@ -923,16 +923,16 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 		return nh.Handle(evt)
 	}).RunASAP())
 
-	// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable
-	e.Watch("data", "currentroute", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
+	// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable DEBUG trying data instead of ui layer
+	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root(), NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String)
 		lnk,_:= e.GetData("uri")
 		link:= strings.TrimPrefix(string(lnk.(String)),"/")
 		
 		if string(route) == link {
-			e.SyncUISetData("active", Bool(true))
+			e.SetUI("active", Bool(true))
 		} else {
-			e.SyncUISetData("active", Bool(false))
+			e.SetUI("active", Bool(false))
 		}
 
 		return false
