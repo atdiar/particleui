@@ -95,7 +95,7 @@ func (w Window) AsElement() *ui.Element {
 }
 
 func (w Window) SetTitle(title string) {
-	w.AsElement().Set("ui", "title", ui.String(title))
+	w.AsElement().SetUI("title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -115,7 +115,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 
 func newWindow(title string, options ...string) Window {
 	e:= newWindowConstructor("window", options...)
-	e.Set("ui", "title", ui.String(title))
+	e.SetUI("title", ui.String(title))
 	return Window{LoadFromStorage(e)}
 }
 
@@ -258,7 +258,7 @@ func (d Document) Window() Window {
 	if w != nil{
 		return Window{w}
 	}
-	wd:= newWindow("zui - window")
+	wd:= newWindow("zui-window")
 	ui.RegisterElement(d.AsElement(),wd.Raw)
 	wd.Raw.TriggerEvent("mounted", ui.Bool(true))
 	wd.Raw.TriggerEvent("mountable", ui.Bool(true))
@@ -393,12 +393,17 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
 	d:= Document{evt.Origin()}
-	t:= Title.WithID("documenttitle")
-	t.Set(string(evt.NewValue().(ui.String)))
-	d.Head().AppendChild(t)
+	ot:= d.GetElementById("document-title")
+	if ot == nil{
+		t:= Title.WithID("document-title")
+		t.Set(string(evt.NewValue().(ui.String)))
+		d.Head().AppendChild(t)
+		return false
+	}
+	TitleElement{ot}.Set(string(evt.NewValue().(ui.String)))
 
 	return false
-})
+}).RunASAP()
 
 func mutationreplay(root *ui.Element) {
 	e:= root

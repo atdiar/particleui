@@ -496,7 +496,8 @@ func (e *Elements) Remove(el *Element) *Elements {
 		}
 	}
 	if index >= 0 {
-		e.List = append(e.List[:index], e.List[index+1:]...)
+		copy(e.List[index:], e.List[index+1:])
+        e.List = e.List[:len(e.List)-1]
 	}
 	return e
 }
@@ -794,6 +795,7 @@ func (e *Element) InsertChild(childEl AnyElement, index int) *Element {
 }
 
 func (e *Element) insertChild(childEl AnyElement, index int) *Element {
+
 	child := childEl.AsElement()
 	if e.DocType != child.DocType {
 		log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, child.DocType)
@@ -826,6 +828,7 @@ func (e *Element) ReplaceChild(old AnyElement, new AnyElement) *Element {
 // The addition or removal of change observing objects is left at the discretion
 // of the user.
 func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
+
 	old := oldEl.AsElement()
 	new := newEl.AsElement()
 	if e.DocType != new.DocType {
@@ -865,6 +868,10 @@ func (e *Element) RemoveChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) removeChild(childEl AnyElement) *Element {
+	if e == nil{
+		DEBUG("trying to remove "+childEl.AsElement().ID+ " from a nil element...")
+		return e
+	}
 	child := childEl.AsElement()
 	_, ok := e.hasChild(child)
 	if !ok {
@@ -888,32 +895,18 @@ func (e *Element) RemoveChildren() *Element {
 	return e.removeChildren()
 }
 
-func (e *Element) removeChildren() *Element { // TODO verifyu
+func (e *Element) removeChildren() *Element {
+	/*
 	l := make([]*Element, len(e.Children.List))
 	copy(l, e.Children.List)
 	for _, child := range l {
 		e.removeChild(child)
 	}
-
-	/*
-	for i:= 0; i < len(e.Children.List); i++{
-		child := e.Children.List[i]
-		_, ok := e.hasChild(child)
-		if !ok {
-			return e
-		}
-		wasmounted:= child.Mounted()
-		detach(child)
-
-		if e.Native != nil {
-			e.Native.RemoveChild(child)
-		}
-		//child.TriggerEvent( "attached", Bool(false))
-		 defer func() {finalize(child, false,wasmounted)}()
-		}
-		e.Children.RemoveAll()
-
-		*/
+	*/
+	for _, child := range e.Children.List {
+        e.removeChild(child)
+    }
+	
 
 	return e
 }
@@ -921,6 +914,10 @@ func (e *Element) removeChildren() *Element { // TODO verifyu
 
 
 func (e *Element) DeleteChild(childEl AnyElement) *Element {
+	if e == nil{
+		DEBUG(e.ID + " is nil")
+		return e
+	}
 	child := childEl.AsElement()
 	child.TriggerEvent( "deleting", Bool(true))
 	child.DeleteChildren()
@@ -940,6 +937,10 @@ func (e *Element) DeleteChild(childEl AnyElement) *Element {
 }
 
 func (e *Element) DeleteChildren() *Element {
+	if e == nil{
+		DEBUG(e.ID + " is nil")
+		return e
+	}
 	m:= e.Mounted()
 	if e.Children != nil{
 		for _, child := range e.Children.List {
@@ -995,6 +996,7 @@ func Delete(e *Element){
 }
 
 func (e *Element) hasChild(any *Element) (int, bool) {
+	if e == nil{return -1, false}
 	if e.Children == nil {
 		return -1, false
 	}

@@ -87,7 +87,6 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	}))
 
 	e.Watch("ui","activeview",e,NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("New active view: ",evt.NewValue())
 		// TODO sync e.ActiveView with evt.NewValue()
 		evt.Origin().TriggerEvent("viewactivated",evt.NewValue())
 		return false
@@ -123,15 +122,10 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	// onend MutationHandler
 	onend := NewMutationHandler(func(evt MutationEvent) bool {
 		// If no transition Error, then the transition was successful
-		DEBUG("-- TRANSITION END HAS BEEN CALLED ! --", evt.NewValue(),"----------------------------------------------")
 		if !TransitionError(evt.Origin(), "activateview") && !TransitionCancelled(evt.Origin(), "activateview") {
-			DEBUG("setting ui/activeview to ", evt.NewValue())
-			v,ok:= evt.Origin().Get("ui","activeview")
-			DEBUG("Former value was ", v,ok)
 			evt.Origin().SetUI("activeview", evt.NewValue())
 		}
 		
-		DEBUG("END ======================================================================================")
 		return false
 	})
 
@@ -143,18 +137,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	e:=evt.Origin()
 	var ok bool
-	//v:= ViewElement{e}
-	//e.Properties.Delete("ui", "activeview")
-	/*av,ok:= e.Get("ui","activeview")
-	if ok{
-		avs:= av.(String).String()
-		if v.HasStaticView(avs){
-			oldview := NewView(avs, e.Children.List...)
-			e.RemoveChildren()
-			v.AddView(oldview)
-		}
-		e.Properties.Delete("ui", "activeview")
-	}*/
+	
 	_,ok= e.Get("internals","mountdefaultview")
 	if ok{
 		v:= e.retrieveView("")
@@ -181,7 +164,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 
 // SetDefaultView sets the default view of a ViewElement. It is the view that will be displayed when
 // a ViewElement mounts.
-func (v ViewElement) SetDefaultView(elements ...*Element) ViewElement { // TODO DEBUG OnUnmount vs OnUnmounted
+func (v ViewElement) SetDefaultView(elements ...*Element) ViewElement {
 	e:= v.AsElement()
 	e.Set("internals","mountdefaultview",Bool(true))
 	if e.ActiveView == ""{
@@ -346,19 +329,10 @@ func (e *Element) activateView(name string) {
 	}
 
 	// TODO should actiation cancellation be considered an error state?
-		
-	DEBUG("START ====================================================================================")
-	DEBUG("Current e.ActiveView vs View to activate| ",e.ActiveView, name)
-	DEBUG("ui/activeview (below):")
-	DEBUG(e.Get("ui", "activeview"))
-	DEBUG(e.InactiveViews)
-	DEBUG("-----------------------------------------------------------------------------------------")
 
 	wasmounted:= e.Mounted()
 
 	newview, ok := e.InactiveViews[name]
-	DEBUG("view exists ", ok)
-	
 	if !ok {
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
