@@ -91,8 +91,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		defer func() {
 			if r := recover(); r != nil {
-				body:= GetDocument(listener).Body().AsElement()
-				msg:= Div.WithID("appfailure")
+				doc:= GetDocument(listener)
+				body:= doc.Body().AsElement()
+				msg:= doc.Div.WithID("appfailure")
 				SetInlineCSS(msg.AsElement(),`all: initial;`)
 
 				switch txt:= r.(type){

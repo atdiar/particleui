@@ -50,18 +50,18 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	v.SetAuthorization("",true)
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
-		l, ok := evt.Origin().Root().Get("internals", "views")
+		l, ok := evt.Origin().Root.Get("internals", "views")
 		if !ok {
 			list := NewList(String((evt.Origin().ID)))
-			evt.Origin().Root().Set("internals", "views", list)
+			evt.Origin().Root.Set("internals", "views", list)
 		} else {
 			list, ok := l.(List)
 			if !ok {
 				list = NewList(String(evt.Origin().ID))
-				evt.Origin().Root().Set("internals", "views", list)
+				evt.Origin().Root.Set("internals", "views", list)
 			} else {
 				list = append(list, String(evt.Origin().ID))
-				evt.Origin().Root().Set("internals", "views", list)
+				evt.Origin().Root.Set("internals", "views", list)
 			}
 		}
 		return false

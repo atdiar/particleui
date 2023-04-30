@@ -185,8 +185,8 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the r.URL
 		evt.Origin().OnRegistered(NewMutationHandler(func(event MutationEvent)bool{
-			event.Origin().RemoveMutationHandler("event","request-"+requestID(r),event.Origin().Root(),reqmonitor)
-			event.Origin().WatchEvent("request-"+requestID(r),event.Origin().Root(),reqmonitor)
+			event.Origin().RemoveMutationHandler("event","request-"+requestID(r),event.Origin().Root,reqmonitor)
+			event.Origin().WatchEvent("request-"+requestID(r),event.Origin().Root,reqmonitor)
 			return false
 		}).RunOnce().RunASAP())
 
@@ -223,7 +223,7 @@ func(e *Element) SetDataFetcher(propname string, reqfunc func(e*Element) *http.R
 }
 
 func(e *Element) SetURLDataFetcher(propname string, url string, responsehandler func(*http.Response)(Value,error), prefetchable bool){
-	router:= GetRouter(e.Root())
+	router:= GetRouter(e.Root)
 	r,err:= http.NewRequestWithContext(router.NavContext,"GET",url,nil)
 	if err!= nil{
 		panic(url + " might be malformed. Unable to create new request")
@@ -289,7 +289,7 @@ func(e *Element) fetchData(propname string, r *http.Request, responsehandler fun
 	}
 
 	
-	DoAsync(e.Root(),func(){
+	DoAsync(e.Root,func(){
 
 		res, err:= HttpClient.Do(r)
 		if err!= nil{
@@ -789,7 +789,7 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 		ctx,cancelFn= context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
 
-		DoAsync(e.Root(),func() {
+		DoAsync(e.Root,func() {
 			res, err:= HttpClient.Do(r)
 			if err!= nil{
 				DoSync(func(){
@@ -830,7 +830,7 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 		// but in fact it doesn't matter because a request in flight may still have mutated data on 
 		// the serveer
 		// the clien only controls the request.
-		evt.Origin().Root().TriggerEvent("request-"+requestID(r),String(r.Method))
+		evt.Origin().Root.TriggerEvent("request-"+requestID(r),String(r.Method))
 		return false
 	}).RunOnce()
 

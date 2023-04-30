@@ -714,7 +714,7 @@ func isScrollable(property string) bool {
 }
 // abstractjs
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	if e.ID == GetDocument(e).AsElement().ID{
+	if e.ID == e.Root.ID{
 		if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 			js.Global().Get("history").Set("scrollRestoration", "manual")
 		}
@@ -722,7 +722,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.WatchEvent("document-loaded", e.Root(), ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.WatchEvent("document-loaded", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			router := ui.GetRouter(evt.Origin())
 
 			ejs,ok := JSValue(e)
@@ -773,13 +773,13 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						left := l.(ui.Number)
 						ejs.Set("scrollTop", float64(top))
 						ejs.Set("scrollLeft", float64(left))
-						if e.ID != e.Root().ID {
+						if e.ID != e.Root.ID {
 							e.TriggerEvent("shouldscroll", ui.Bool(false)) //always scroll root
 						}
 					}
 					return false
 				})
-				e.WatchEvent("navigation-end", e.Root(), h)
+				e.WatchEvent("navigation-end", e.Root, h)
 			} else {
 				e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
 			}
@@ -861,7 +861,8 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 
 	e.SetUI("scrollrestore", ui.Bool(true)) // DEBUG SetUI instead of SetDataSetUI, as this is no business logic but UI logic
 
-	GetDocument(e).Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+	d:= getDocumentRef(e)
+	d.Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 		scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 		scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
 		router.History.Set(e.ID, "scrollTop", scrolltop)
@@ -894,7 +895,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 				return false
 			}
 			elid:=v.(ui.String).String()
-			el:= GetDocument(evt.Origin()).GetElementById(elid)
+			el:= getDocumentRef(e).GetElementById(elid)
 
 			if el != nil && el.Mounted(){
 				Focus(el,false)
@@ -908,7 +909,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 			}
 		} else{
 			elid:=v.(ui.String).String()
-			el:= GetDocument(evt.Origin()).GetElementById(elid)
+			el:= getDocumentRef(e).GetElementById(elid)
 
 			if el != nil && el.Mounted(){
 				Focus(el,false)
@@ -935,7 +936,7 @@ func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 		return
 	}
 
-	ui.DoAsync(e.AsElement().Root(), func() {
+	ui.DoAsync(e.AsElement().Root, func() {
 		n,ok:= JSValue(e.AsElement())
 		if !ok{
 			return
@@ -995,7 +996,7 @@ func partiallyVisible(e *ui.Element) bool{
 	left:= int(bounding.Get("left").Float())
 	//right:= int(bounding.Get("right").Float())
 
-	w,ok:= JSValue(GetDocument(e).Window().AsElement())
+	w,ok:= JSValue(getDocumentRef(e).Window().AsElement())
 	if !ok{
 		panic("seems that the window is not connected to its native DOM element")
 	}
@@ -1051,10 +1052,10 @@ func TrapFocus(e *ui.Element) *ui.Element{ // TODO what to do if no eleemnt is f
 			}
 			return false
 		})
-		evt.Origin().Root().AddEventListener("keydown",h)
+		evt.Origin().Root.AddEventListener("keydown",h)
 		// Watches unmounted once
 		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			evt.Origin().Root().RemoveEventListener("keydown",h)
+			evt.Origin().Root.RemoveEventListener("keydown",h)
 			return false
 		}).RunOnce())
 		
@@ -1122,7 +1123,7 @@ func (i InputElement) Blur() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root(), func(){
+	ui.DoAsync(i.Root, func(){
 		native.Value.Call("blur")
 	})
 }
@@ -1132,7 +1133,7 @@ func (i InputElement) Focus() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root(), func(){
+	ui.DoAsync(i.Root, func(){
 		native.Value.Call("focus")
 	})
 }
@@ -1142,7 +1143,7 @@ func (i InputElement) Clear() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root(), func(){
+	ui.DoAsync(i.Root, func(){
 		native.Value.Set("value", "")
 	})
 }

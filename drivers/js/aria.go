@@ -7,10 +7,21 @@ import (
 
 )
 
-var AriaChangeAnnouncer =  defaultAnnouncer()
+type AriaChangeAnnoucerElement struct{
+	DivElement
+}
 
-func defaultAnnouncer() DivElement{
-	a:=Div.WithID("announcer")
+func(a AriaChangeAnnoucerElement) MakeAnnouncement(message string) AriaChangeAnnoucerElement{
+	a.DivElement.SetText(message)
+	return a
+}
+
+func AriaChangeAnnouncerFor(d Document) AriaChangeAnnoucerElement{
+	return AriaChangeAnnoucerElement{defaultAnnouncer(d)}
+}
+
+func defaultAnnouncer(d Document) DivElement{
+	a:=d.Div.WithID("announcer")
 	SetAttribute(a.AsElement(),"aria-live","polite")
 	SetAttribute(a.AsElement(),"aria-atomic","true")
 	SetInlineCSS(a.AsElement(),"clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; overflow:hidden; position:absolute;white-space:nowrap;width:1px;")
@@ -25,9 +36,4 @@ func defaultAnnouncer() DivElement{
 		return false
 	}))
 	return a
-}
-
-
-func AriaMakeAnnouncement(message string){
-	AriaChangeAnnouncer.SetText(message)
 }

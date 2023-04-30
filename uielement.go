@@ -153,7 +153,7 @@ func(e *ElementStore) EnableMutationReplay() *ElementStore{	e.MutationReplay = t
 func (e *ElementStore) NewAppRoot(id string) *Element {
 	el := NewElement(id, e.DocType)
 	el.registry = make(map[string]*Element,4096)
-	el.root = el
+	el.Root = el
 	el.Parent = el // initially nil DEBUG
 	el.subtreeRoot = el
 	el.ElementStore = e
@@ -170,12 +170,12 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 }
 
 func RegisterElement(approot *Element, e *Element){
-	e.root = approot.AsElement()
+	e.Root = approot.AsElement()
 	registerElement(approot,e)
 
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		unregisterElement(evt.Origin().Root(),evt.Origin())
+		unregisterElement(evt.Origin().Root,evt.Origin())
 		return false
 	}).RunOnce())
 }
@@ -324,7 +324,7 @@ type Element struct {
 	ElementStore *ElementStore
 	registry map[string]*Element
 	Global       *Element // holds ownership of the global state
-	root         *Element
+	Root         *Element
 	subtreeRoot  *Element // detached if subtree root has no parent unless subtreeroot == root
 	path         *Elements
 
@@ -396,7 +396,7 @@ func NewElement(id string, doctype string) *Element {
 	}
 
 	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
-		RegisterElement(evt.Origin().Root(),evt.Origin())
+		RegisterElement(evt.Origin().Root,evt.Origin())
 		e.TriggerEvent("registered")
 		return false
 	}).RunOnce())
@@ -406,11 +406,7 @@ func NewElement(id string, doctype string) *Element {
 
 
 
-// Root returns the top-most element in the *Element tree.
-// All navigation properties are registered on it.
-func (e *Element) Root() *Element {
-	return e.root
-}
+
 
 // AnyElement is an interface type implemented by *Element :
 // Notably BasicElement and ViewElement.
@@ -615,7 +611,7 @@ func attach(parent *Element, child *Element, activeview bool) {
 		child.Parent = parent
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
-	child.root = parent.root
+	child.Root = parent.Root
 	child.Global = parent.Global
 	child.subtreeRoot = parent.subtreeRoot
 
@@ -1319,10 +1315,10 @@ func (e *Element) Mountable() bool {
 		return true
 	}
 
-	if e.Root() == nil {
+	if e.Root == nil {
 		return false
 	}
-	_, isroot := e.Root().Get("internals", "root")
+	_, isroot := e.Root.Get("internals", "root")
 	return isroot
 }
 
@@ -1544,11 +1540,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
 				l=NewList(m)
-				e.Root().Set("internals","mutationtrace",l)
+				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
 				list = append(list,m)
-				e.Root().Set("internals","mutationtrace",list)
+				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
 	}
@@ -1674,11 +1670,11 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
 				l=NewList(m)
-				e.Root().Set("internals","mutationtrace",l)
+				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
 				list = append(list,m)
-				e.Root().Set("internals","mutationtrace",list)
+				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
 	}
@@ -1745,11 +1741,11 @@ func (e *Element) SyncUISetData(propname string, value Value) {
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
 				l=NewList(m)
-				e.Root().Set("internals","mutationtrace",l)
+				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
 				list = append(list,m)
-				e.Root().Set("internals","mutationtrace",list)
+				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
 	}

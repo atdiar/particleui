@@ -46,7 +46,7 @@ func newObservable(id string) Observable {
 	}
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		unregisterElement(evt.Origin().Root(),e)
+		unregisterElement(evt.Origin().Root,e)
 		return false
 	}).RunOnce())
 

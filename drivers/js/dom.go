@@ -22,8 +22,6 @@ func init(){
 }
 
 var (
-	
-	mainDocument *Document
 
 	// DocumentInitializer is a Document specific modifier that is called on creation of a 
 	// new document. By assigning a new value to this global function, we can hook new behaviors
@@ -56,7 +54,7 @@ func inBrowser() bool{
 
 
 func SerializeStateHistory(e *ui.Element) string{ // TODO review mutationcapture state handling
-	d:= GetDocument(e).AsElement()
+	d:= getDocumentRef(e).AsElement()
 	sth,ok:= d.Get("internals","mutationtrace")
 	if !ok{
 		return ""
@@ -170,7 +168,7 @@ func EnableScrollRestoration() string {
 var RouterConfig = func(r *ui.Router) *ui.Router{
 
 	ns:= func(id string) ui.Observable{
-		d:= GetDocument(r.Outlet.AsElement())
+		d:= getDocumentRef(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
 		PutInStorage(ClearFromStorage(o.AsElement()))
 		return o
@@ -184,18 +182,18 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	r.History.NewState = ns
 	r.History.RecoverState = rs
 	
-
+	doc:= GetDocument(r.Outlet.AsElement())
 	// Add default navigation error handlers
 	// notfound:
-	pnf:= Div.WithID(r.Outlet.AsElement().Root().ID+"-notfound").SetText("Page Not Found.")
+	pnf:= doc.Div.WithID(r.Outlet.AsElement().Root.ID+"-notfound").SetText("Page Not Found.")
 	SetAttribute(pnf.AsElement(),"role","alert")
 	SetInlineCSS(pnf.AsElement(),`all: initial;`)
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetviewid")
+		v,ok:= r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+		tv:= ui.ViewElement{getDocumentRef(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("notfound"){
 			tv.ActivateView("notfound")
 			return false
@@ -204,7 +202,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		document:=  GetDocument(r.Outlet.AsElement())
+		document:=  getDocumentRef(r.Outlet.AsElement())
 		body:= document.Body().AsElement()
 		body.SetChildren(pnf)
 		document.Window().SetTitle("Page Not Found")
@@ -213,13 +211,13 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	}))
 
 	// unauthorized
-	ui.AddView("unauthorized",Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
+	ui.AddView("unauthorized",doc.Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
 	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		v,ok:= r.Outlet.AsElement().Root().Get("navigation", "targetviewid")
+		v,ok:= r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+		tv:= ui.ViewElement{getDocumentRef(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("unauthorized"){
 			tv.ActivateView("unauthorized")
 			return false // DEBUG TODO return true?
@@ -229,9 +227,9 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	}))
 
 	// appfailure
-	afd:= Div.WithID("ParticleUI-appfailure").SetText("App Failure")
+	afd:= doc.Div.WithID("ParticleUI-appfailure").SetText("App Failure")
 	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		r.Outlet.AsElement().Root().SetChildren(afd)
+		r.Outlet.AsElement().Root.SetChildren(afd)
 		return false
 	}))
 
@@ -251,6 +249,66 @@ var newObservable = Elements.NewConstructor("observable", func(id string) *ui.El
 
 type Document struct {
 	*ui.Element
+	// Document should hold the list of all element constructors such as Meta, Title, Div, San etc.
+	Meta metaConstructor
+	Title titleConstructor
+	Script scriptConstructor
+	Base baseConstructor
+	NoScript noscriptConstructor
+	Link linkConstructor
+	Div divConstructor
+	TextArea textareaConstructor
+	Header headerConstructor
+	Footer footerConstructor
+	Section sectionConstructor
+	H1 h1Constructor
+	H2 h2Constructor
+	H3 h3Constructor
+	H4 h4Constructor
+	H5 h5Constructor
+	H6 h6Constructor
+	Span spanConstructor
+	Article articleConstructor
+	Aside asideConstructor
+	Main mainConstructor
+	Paragraph paragraphConstructor
+	Nav navConstructor
+	Anchor anchorConstructor
+	Button buttonConstructor
+	Label labelConstructor
+	Input inputConstructor
+	Output outputConstructor
+	Img imgConstructor
+	Audio audioConstructor
+	Video videoConstructor
+	Source sourceConstructor
+	Ul ulConstructor
+	Ol olConstructor
+	Li liConstructor
+	Table tableConstructor
+	Thead theadConstructor
+	Tbody tbodyConstructor
+	Tr trConstructor
+	Td tdConstructor
+	Th thConstructor
+	Col colConstructor
+	ColGroup colgroupConstructor
+	Canvas canvasConstructor
+	Svg svgConstructor
+	Summary summaryConstructor
+	Details detailsConstructor
+	Dialog dialogConstructor
+	Code codeConstructor
+	Embed embedConstructor
+	Object objectConstructor
+	Datalist datalistConstructor
+	Option optionConstructor
+	Optgroup optgroupConstructor
+	Fieldset fieldsetConstructor
+	Legend legendConstructor
+	Progress progressConstructor
+	Select selectConstructor
+	Form formConstructor
 }
 
 func (d Document) Window() Window {
@@ -268,6 +326,10 @@ func (d Document) Window() Window {
 
 func (d Document)GetElementById(id string) *ui.Element{
 	return ui.GetById(d.AsElement(),id)
+}
+
+func(d Document) newID() string{
+	return "TODO" // TODO to implement this in a way that the state can be serialized and restored.
 }
 
 func(d Document) NewObservable(id string, options ...string) ui.Observable{
@@ -328,17 +390,32 @@ func(d Document) SetTitle(title string){
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
 func(d Document) ListenAndServe(ctx context.Context){
-	if mainDocument ==nil{
+	if d.Element ==nil{
 		panic("document is missing")
 	}
 	ui.GetRouter(d.AsElement()).ListenAndServe(ctx,"popstate", d.Window())
 }
 
-func GetDocument(e *ui.Element) *Document{
-	if e.Root() == nil{
-		return nil
+
+func GetDocument(e *ui.Element) Document{
+	if e.Root == nil{
+		panic("this element does not belong to any document. Root is nil")
 	}
-	return &Document{e.Root()}
+	return withStdConstructors(Document{Element:e.Root}) // TODO initialize document *Element constructors
+}
+
+
+// getDocumentRef is useful to reference the document when defining the standard constructors.
+// Indeed, since the document is not completely defined yet (from the constructor pov, it doesn't hold
+// the full set of constructors properly assigned yet), it is not possible to use it.
+// More importantly, if defining the document means defining the standard constructors, but definign the
+// standard constructors means defining the document, we have a circular dependency that needs to be broken.
+// FOrtunately, defining a standard constructor doesn't rely on theother standard constructors so 
+// we just need a partiallly initialized document, without the *Element constructors.
+// getDocumentRef provides us with a pointer to such a partially initialized document.
+// It is not made available to user code whihc won't need it.
+func getDocumentRef(e *ui.Element) *Document{
+	return &Document{Element:e}
 }
 
 var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
@@ -370,7 +447,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		return false
 	}))
 
-	ui.UseRouter(e,func(r *ui.Router){
+	e.OnRouterInit(func(r *ui.Router){
 		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
 			r.History.Set("ui","focus",ui.String(evt.Target().ID))
 			return false
@@ -379,8 +456,8 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	})	
 	
 
-	e.AppendChild(Head.WithID("head")) 
-	e.AppendChild(Body.WithID("body"))
+	e.AppendChild(head.WithID("head")) 
+	e.AppendChild(body.WithID("body"))
 
 
 	e.WatchEvent("document-loaded", e,navinitHandler)
@@ -392,10 +469,11 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
-	d:= Document{evt.Origin()}
+	d:= Document{Element:evt.Origin().Root}
 	ot:= d.GetElementById("document-title")
 	if ot == nil{
-		t:= Title.WithID("document-title")
+		t:= title.WithID("document-title")
+		t.AsElement().Root = evt.Origin()
 		t.Set(string(evt.NewValue().(ui.String)))
 		d.Head().AppendChild(t)
 		return false
@@ -427,7 +505,7 @@ func mutationreplay(root *ui.Element) {
 		category:= string(op.MustGetString("cat"))
 		propname:= string(op.MustGetString("prop"))
 		value,_:= op.Get("val")
-		el:= GetDocument(e).GetElementById(elementid)
+		el:= getDocumentRef(e).GetElementById(elementid)
 		if el == nil{
 			panic("Unable to recover state for this element id. Element  doesn't exist")
 		}
@@ -440,7 +518,7 @@ func mutationreplay(root *ui.Element) {
 
 func Autofocus(e *ui.Element) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().WatchEvent("navigation-end",evt.Origin().Root(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+		evt.Origin().WatchEvent("navigation-end",evt.Origin().Root,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
 			r:= ui.GetRouter(event.Origin())
 			if !r.History.CurrentEntryIsNew(){
 				return false
@@ -459,9 +537,231 @@ func Autofocus(e *ui.Element) *ui.Element{
 // in the tree of Elements that consitute the full document.
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
-	d:= Document{LoadFromStorage(newDocument(id, options...))}
+	d:= Document{Element:LoadFromStorage(newDocument(id, options...))}
 	d = DocumentInitializer(d)
-	mainDocument = &d
+	// A document also defines a set of *Element constructor as its fields, whcih should be initialized
+	// as the document is created. These constructors create *Element such as DIv, Form for a specific document.
+	// The root ofd each of such created User Interface *Element is the document *Element.
+	return withStdConstructors(d)
+}
+
+func withStdConstructors(d Document) Document{
+	d.Meta = metaConstructor(func() MetaElement {
+		e:=  MetaElement{LoadFromStorage(newMeta(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Title = titleConstructor(func() TitleElement {
+		e:=  TitleElement{LoadFromStorage(newTitle(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Script = scriptConstructor(func() ScriptElement {
+		e := ScriptElement{LoadFromStorage(newScript(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Base = baseConstructor(func() BaseElement {
+		e := BaseElement{LoadFromStorage(newBase(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.NoScript = noscriptConstructor(func() NoScriptElement {
+		e := NoScriptElement{LoadFromStorage(newNoScript(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Link = linkConstructor(func() LinkElement {
+		e := LinkElement{LoadFromStorage(newLink(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Div = divConstructor(func() DivElement {
+		e := DivElement{LoadFromStorage(newDiv(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.TextArea = textareaConstructor(func() TextAreaElement {
+		e := TextAreaElement{LoadFromStorage(newTextArea(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Header = headerConstructor(func() HeaderElement {
+		e := HeaderElement{LoadFromStorage(newHeader(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Footer = footerConstructor(func() FooterElement {
+		e := FooterElement{LoadFromStorage(newFooter(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Section = sectionConstructor(func() SectionElement {
+		e := SectionElement{LoadFromStorage(newSection(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H1 = h1Constructor(func() H1Element {
+		e := H1Element{LoadFromStorage(newH1(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H2 = h2Constructor(func() H2Element {
+		e := H2Element{LoadFromStorage(newH2(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H3 = h3Constructor(func() H3Element {
+		e := H3Element{LoadFromStorage(newH3(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H4 = h4Constructor(func() H4Element {
+		e := H4Element{LoadFromStorage(newH4(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H5 = h5Constructor(func() H5Element {
+		e := H5Element{LoadFromStorage(newH5(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.H6 = h6Constructor(func() H6Element {
+		e := H6Element{LoadFromStorage(newH6(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
+	d.Span = spanConstructor(func() SpanElement {
+		e := SpanElement{LoadFromStorage(newSpan(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Article = articleConstructor(func() ArticleElement {
+		e := ArticleElement{LoadFromStorage(newArticle(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Aside = asideConstructor(func() AsideElement {
+		e := AsideElement{LoadFromStorage(newAside(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Main = mainConstructor(func() MainElement {
+		e := MainElement{LoadFromStorage(newMain(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Paragraph = paragraphConstructor(func() ParagraphElement {
+		e := ParagraphElement{LoadFromStorage(newParagraph(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Nav = navConstructor(func() NavElement {
+		e := NavElement{LoadFromStorage(newNav(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Anchor = anchorConstructor(func() AnchorElement {
+		e := AnchorElement{LoadFromStorage(newAnchor(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Button = buttonConstructor(func(typ ...string) ButtonElement {
+		e := ButtonElement{LoadFromStorage(newButton(d.newID(), typ...))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Label = labelConstructor(func() LabelElement {
+		e := LabelElement{LoadFromStorage(newLabel(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Input = inputConstructor(func(typ string) InputElement {
+		e := InputElement{LoadFromStorage(newInput(d.newID(), typ))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Output = outputConstructor(func() OutputElement {
+		e := OutputElement{LoadFromStorage(newOutput(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Img = imgConstructor(func() ImgElement {
+		e := ImgElement{LoadFromStorage(newImg(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Audio = audioConstructor(func() AudioElement {
+		e := AudioElement{LoadFromStorage(newAudio(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Video = videoConstructor(func() VideoElement {
+		e := VideoElement{LoadFromStorage(newVideo(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Source = sourceConstructor(func() SourceElement {
+		e := SourceElement{LoadFromStorage(newSource(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Ul = ulConstructor(func() UlElement {
+		e := UlElement{LoadFromStorage(newUl(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Ol = olConstructor(func(typ string, offset int) OlElement {
+		e := OlElement{LoadFromStorage(newOl(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Li = liConstructor(func() LiElement {
+		e := LiElement{LoadFromStorage(newLi(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+	
+	d.Table = tableConstructor(func() TableElement {
+		e := TableElement{LoadFromStorage(newTable(d.newID()))}
+		e.Root = d.Element
+		return e
+	})
+
 	return d
 }
 
@@ -482,7 +782,7 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Root().Set("ui","body",ui.String(evt.Origin().ID))
+		evt.Origin().Root.Set("ui","body",ui.String(evt.Origin().ID))
 		return false
 	}))
 
@@ -490,7 +790,7 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 
-var Body = bodyConstructor(func () BodyElement {
+var body = bodyConstructor(func () BodyElement  {
 	return BodyElement{LoadFromStorage(newHead(Elements.NewID()))}
 })
 
@@ -520,7 +820,7 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	}
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Root().Set("ui","head",ui.String(evt.Origin().ID))
+		evt.Origin().Root.Set("ui","head",ui.String(evt.Origin().ID))
 		return false
 	}))
 
@@ -528,7 +828,7 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 })
 
 
-var Head = headConstructor(func () HeadElement {
+var head = headConstructor(func () HeadElement  {
 	return HeadElement{LoadFromStorage(newHead(Elements.NewID()))}
 })
 
@@ -563,10 +863,6 @@ var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 })
 
 
-var Meta = metaConstructor(func () MetaElement {
-	return MetaElement{LoadFromStorage(newMeta(Elements.NewID()))}
-})
-
 type metaConstructor func() MetaElement
 func(c metaConstructor) WithID(id string, options ...string)MetaElement{
 	return MetaElement{LoadFromStorage(newMeta(id, options...))}
@@ -598,8 +894,7 @@ var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
 	return e
 })
 
-
-var Title = titleConstructor(func () TitleElement {
+var title = titleConstructor(func () TitleElement  {
 	return TitleElement{LoadFromStorage(newTitle(Elements.NewID()))}
 })
 
@@ -655,10 +950,6 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 })
 
 
-var Script = scriptConstructor(func () ScriptElement {
-	return ScriptElement{LoadFromStorage(newScript(Elements.NewID()))}
-})
-
 type scriptConstructor func() ScriptElement
 func(c scriptConstructor) WithID(id string, options ...string)ScriptElement{
 	return ScriptElement{LoadFromStorage(newScript(id, options...))}
@@ -697,9 +988,6 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	return e
 })
 
-var Base = baseConstructor(func () BaseElement {
-	return BaseElement{LoadFromStorage(newBase(Elements.NewID()))}
-})
 
 type baseConstructor func() BaseElement
 func(c baseConstructor) WithID(id string, options ...string)BaseElement{
@@ -736,9 +1024,7 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	return e
 })
 
-var NoScript = noscriptConstructor(func () NoScriptElement {
-	return NoScriptElement{LoadFromStorage(newNoScript(Elements.NewID()))}
-})
+
 
 type noscriptConstructor func() NoScriptElement
 func(c noscriptConstructor) WithID(id string, options ...string)NoScriptElement{
@@ -771,9 +1057,6 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	return e
 })
 
-var Link = linkConstructor(func () LinkElement {
-	return LinkElement{LoadFromStorage(newLink(Elements.NewID()))}
-})
 
 type linkConstructor func() LinkElement
 func(c linkConstructor) WithID(id string, options ...string) LinkElement{
@@ -828,18 +1111,12 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
-// Div is a constructor for html div elements.
-// The name constructor argument is used by the framework for automatic route
-// and automatic link generation.
-var Div = divConstructor(func () DivElement {
-	return DivElement{LoadFromStorage(newDiv(Elements.NewID()))}
-})
+
 
 type divConstructor func() DivElement
 func(d divConstructor) WithID(id string, options ...string)DivElement{
 	return DivElement{LoadFromStorage(newDiv(id, options...))}
 }
-// var test = Div.WithID("test")(EnableLocalPersistence())
 
 const SSRStateSuffix = "-ssr-state"
 const HydrationAttrName = "data-needh2o"
@@ -910,7 +1187,7 @@ func(t textAreaModifer) Required(b bool) func(*ui.Element)*ui.Element{
 func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -1007,9 +1284,7 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 
 
 // TextArea is a constructor for a textarea html element.
-var TextArea = textareaConstructor(func () TextAreaElement {
-	return TextAreaElement{LoadFromStorage(newTextArea(Elements.NewID()))}
-})
+
 
 type textareaConstructor func() TextAreaElement
 func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
@@ -1064,9 +1339,7 @@ var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Header is a constructor for a html header element.
-var Header = headerConstructor(func () HeaderElement {
-	return HeaderElement{LoadFromStorage(newHeader(Elements.NewID()))}
-})
+
 
 type headerConstructor func() HeaderElement
 func(c headerConstructor) WithID(id string, options ...string)HeaderElement{
@@ -1093,9 +1366,7 @@ var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Footer is a constructor for an html footer element.
-var Footer = footerConstructor(func () FooterElement {
-	return FooterElement{LoadFromStorage(newFooter(Elements.NewID()))}
-})
+
 
 type footerConstructor func() FooterElement
 func(c footerConstructor) WithID(id string, options ...string)FooterElement{
@@ -1123,9 +1394,7 @@ var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Section is a constructor for html section elements.
-var Section = sectionConstructor(func () SectionElement {
-	return SectionElement{LoadFromStorage(newSection(Elements.NewID()))}
-})
+
 
 type sectionConstructor func() SectionElement
 func(c sectionConstructor) WithID(id string, options ...string)SectionElement{
@@ -1369,9 +1638,7 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Span is a constructor for html span elements.
-var Span = spanConstructor(func () SpanElement {
-	return SpanElement{LoadFromStorage(newSpan(Elements.NewID()))}
-})
+
 
 type spanConstructor func() SpanElement
 func(c spanConstructor) WithID(id string, options ...string)SpanElement{
@@ -1399,9 +1666,7 @@ var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Article = articleConstructor(func () ArticleElement {
-	return ArticleElement{LoadFromStorage(newArticle(Elements.NewID()))}
-})
+
 
 type articleConstructor func() ArticleElement
 func(c articleConstructor) WithID(id string, options ...string)ArticleElement{
@@ -1428,9 +1693,7 @@ var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Aside = asideConstructor(func () AsideElement {
-	return AsideElement{LoadFromStorage(newAside(Elements.NewID()))}
-})
+
 
 type asideConstructor func() AsideElement
 func(c asideConstructor) WithID(id string, options ...string)AsideElement{
@@ -1456,9 +1719,7 @@ var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Main = mainConstructor(func () MainElement {
-	return MainElement{LoadFromStorage(newMain(Elements.NewID()))}
-})
+
 
 type mainConstructor func() MainElement
 func(c mainConstructor) WithID(id string, options ...string)MainElement{
@@ -1492,9 +1753,7 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Paragraph is a constructor for html paragraph elements.
-var Paragraph = paragraphConstructor(func () ParagraphElement {
-	return ParagraphElement{LoadFromStorage(newParagraph(Elements.NewID()))}
-})
+
 
 type paragraphConstructor func() ParagraphElement
 func(c paragraphConstructor) WithID(id string, options ...string)ParagraphElement{
@@ -1520,9 +1779,7 @@ var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 	},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 // Nav is a constructor for a html nav element.
-var Nav = navConstructor(func () NavElement {
-	return NavElement{LoadFromStorage(newNav(Elements.NewID()))}
-})
+
 
 type navConstructor func() NavElement
 func(c navConstructor) WithID(id string, options ...string)NavElement{
@@ -1648,9 +1905,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowPrefetchOnIntent, AllowPrefetchOnRender)
 
 // Anchor creates an html anchor element.
-var Anchor = anchorConstructor(func () AnchorElement {
-	return AnchorElement{LoadFromStorage(newAnchor(Elements.NewID()))}
-})
+
 
 type anchorConstructor func() AnchorElement
 func(c anchorConstructor) WithID(id string, options ...string)AnchorElement{
@@ -1715,7 +1970,7 @@ func(m buttonModifer) Text(str string) func(*ui.Element)*ui.Element{
 func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -1805,7 +2060,7 @@ func(m labelModifier) Text(str string) func(*ui.Element)*ui.Element{
 func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if e.Mounted(){
@@ -1828,7 +2083,7 @@ func (l LabelElement) SetText(s string) LabelElement {
 
 func (l LabelElement) For(e *ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		d:= GetDocument(evt.Origin())
+		d:= evt.Origin().Root
 		
 		evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			if e.Mounted(){
@@ -1858,9 +2113,7 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Label = labelConstructor(func () LabelElement {
-	return LabelElement{LoadFromStorage(newLabel(Elements.NewID()))}
-})
+
 
 type labelConstructor func() LabelElement
 func(c labelConstructor) WithID(id string, options ...string)LabelElement{
@@ -2172,7 +2425,7 @@ var OutputModifer outputModifier
 func(m outputModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -2197,7 +2450,7 @@ func(m outputModifier) For(inputs ...*ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		var inputlist string
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				
@@ -2239,9 +2492,7 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Output = outputConstructor(func () OutputElement {
-	return OutputElement{LoadFromStorage(newOutput(Elements.NewID()))}
-})
+
 
 type outputConstructor func() OutputElement
 func(c outputConstructor) WithID(id string, options ...string)OutputElement{
@@ -2289,9 +2540,7 @@ var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Img = imgConstructor(func () ImgElement {
-	return ImgElement{LoadFromStorage(newImg(Elements.NewID()))}
-})
+
 
 type imgConstructor func() ImgElement
 func(c imgConstructor) WithID(id string, options ...string)ImgElement{
@@ -2466,9 +2715,7 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Audio = audioConstructor(func () AudioElement {
-	return AudioElement{LoadFromStorage(newAudio(Elements.NewID()))}
-})
+
 
 type audioConstructor func() AudioElement
 func(c audioConstructor) WithID(id string, options ...string)AudioElement{
@@ -2632,9 +2879,7 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Video = videoConstructor(func () VideoElement {
-	return VideoElement{LoadFromStorage(newVideo(Elements.NewID()))}
-})
+
 
 type videoConstructor func() VideoElement
 func(c videoConstructor) WithID(id string, options ...string)VideoElement{
@@ -2683,9 +2928,7 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Source = sourceConstructor(func () SourceElement {
-	return SourceElement{LoadFromStorage(newSource(Elements.NewID()))}
-})
+
 
 type sourceConstructor func() SourceElement
 func(c sourceConstructor) WithID(id string, options ...string)SourceElement{
@@ -2728,9 +2971,7 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Ul = ulConstructor(func () UlElement {
-	return UlElement{LoadFromStorage(newUl(Elements.NewID()))}
-})
+
 
 type ulConstructor func() UlElement
 func(c ulConstructor) WithID(id string, options ...string)UlElement{
@@ -2762,14 +3003,14 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 
-var Ol = olConstructor(func (typ string, offset int, options ...string) OlElement {
+var Ol = olConstructor(func (typ string, offset int) OlElement {
 	e:= newOl(Elements.NewID())
 	SetAttribute(e, "type", typ)
 	SetAttribute(e, "start", strconv.Itoa(offset))
 	return OlElement{LoadFromStorage(e)}
 })
 
-type olConstructor func(typ string, offset int, options ...string) OlElement
+type olConstructor func(typ string, offset int) OlElement
 func(c olConstructor) WithID(id string) func(typ string, offset int, options ...string)OlElement{
 	return func(typ string, offset int, options ...string) OlElement {
 		e:= newOl(id, options...)
@@ -2804,9 +3045,7 @@ var newLi= Elements.NewConstructor("li", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Li = liConstructor(func () LiElement {
-	return LiElement{LoadFromStorage(newLi(Elements.NewID()))}
-})
+
 
 type liConstructor func() LiElement
 func(c liConstructor) WithID(id string, options ...string)LiElement{
@@ -2887,9 +3126,7 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Thead = theadConstructor(func () TheadElement {
-	return TheadElement{LoadFromStorage(newThead(Elements.NewID()))}
-})
+
 
 type theadConstructor func() TheadElement
 func(c theadConstructor) WithID(id string, options ...string)TheadElement{
@@ -2912,9 +3149,7 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Tr = trConstructor(func () TrElement {
-	return TrElement{LoadFromStorage(newTr(Elements.NewID()))}
-})
+
 
 type trConstructor func() TrElement
 func(c trConstructor) WithID(id string, options ...string)TrElement{
@@ -2936,9 +3171,7 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Td = tdConstructor(func () TdElement {
-	return TdElement{LoadFromStorage(newTd(Elements.NewID()))}
-})
+
 
 type tdConstructor func() TdElement
 func(c tdConstructor) WithID(id string, options ...string)TdElement{
@@ -2960,9 +3193,7 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Th = thConstructor(func () ThElement {
-	return ThElement{LoadFromStorage(newTh(Elements.NewID()))}
-})
+
 
 type thConstructor func() ThElement
 func(c thConstructor) WithID(id string, options ...string)ThElement{
@@ -2984,9 +3215,7 @@ var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Tbody = tbodyConstructor(func () TbodyElement {
-	return TbodyElement{LoadFromStorage(newTbody(Elements.NewID()))}
-})
+
 
 type tbodyConstructor func() TbodyElement
 func(c tbodyConstructor) WithID(id string, options ...string)TbodyElement{
@@ -3008,9 +3237,7 @@ var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Tfoot = tfootConstructor(func () TfootElement {
-	return TfootElement{LoadFromStorage(newTfoot(Elements.NewID()))}
-})
+
 
 type tfootConstructor func() TfootElement
 func(c tfootConstructor) WithID(id string, options ...string)TfootElement{
@@ -3034,9 +3261,7 @@ var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Col = colConstructor(func () ColElement {
-	return ColElement{LoadFromStorage(newCol(Elements.NewID()))}
-})
+
 
 type colConstructor func() ColElement
 func(c colConstructor) WithID(id string, options ...string)ColElement{
@@ -3060,9 +3285,7 @@ var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var ColGroup = colgroupConstructor(func () ColGroupElement {
-	return ColGroupElement{LoadFromStorage(newColGroup(Elements.NewID()))}
-})
+
 
 type colgroupConstructor func() ColGroupElement
 func(c colgroupConstructor) WithID(id string, options ...string)ColGroupElement{
@@ -3084,9 +3307,7 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Table = tableConstructor(func () TableElement {
-	return TableElement{LoadFromStorage(newTable(Elements.NewID()))}
-})
+
 
 type tableConstructor func() TableElement
 func(c tableConstructor) WithID(id string, options ...string)TableElement{
@@ -3134,9 +3355,7 @@ var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Canvas = canvasConstructor(func () CanvasElement {
-	return CanvasElement{LoadFromStorage(newCanvas(Elements.NewID()))}
-})
+
 
 type canvasConstructor func() CanvasElement
 func(c canvasConstructor) WithID(id string, options ...string)CanvasElement{
@@ -3208,9 +3427,7 @@ var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Svg = svgConstructor(func () SvgElement {
-	return SvgElement{LoadFromStorage(newSvg(Elements.NewID()))}
-})
+
 
 type svgConstructor func() SvgElement
 func(c svgConstructor) WithID(id string, options ...string)SvgElement{
@@ -3243,9 +3460,7 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Summary = summaryConstructor(func () SummaryElement {
-	return SummaryElement{LoadFromStorage(newSummary(Elements.NewID()))}
-})
+
 
 type summaryConstructor func() SummaryElement
 func(c summaryConstructor) WithID(id string, options ...string)SummaryElement{
@@ -3301,9 +3516,7 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Details = detailsConstructor(func () DetailsElement {
-	return DetailsElement{LoadFromStorage(newDetails(Elements.NewID()))}
-})
+
 
 type detailsConstructor func() DetailsElement
 func(c detailsConstructor) WithID(id string, options ...string)DetailsElement{
@@ -3355,9 +3568,7 @@ var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Dialog = dialogConstructor(func () DialogElement {
-	return DialogElement{LoadFromStorage(newDialog(Elements.NewID()))}
-})
+
 
 type dialogConstructor func() DialogElement
 func(c dialogConstructor) WithID(id string, options ...string)DialogElement{
@@ -3394,9 +3605,7 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Code = codeConstructor(func () CodeElement {
-	return CodeElement{LoadFromStorage(newCode(Elements.NewID()))}
-})
+
 
 type codeConstructor func() CodeElement
 func(c codeConstructor) WithID(id string, options ...string)CodeElement{
@@ -3449,9 +3658,7 @@ var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Embed = embedConstructor(func () EmbedElement {
-	return EmbedElement{LoadFromStorage(newEmbed(Elements.NewID()))}
-})
+
 
 type embedConstructor func() EmbedElement
 func(c embedConstructor) WithID(id string, options ...string)EmbedElement{
@@ -3498,7 +3705,7 @@ func(o objectModifier) Data(u url.URL)func(*ui.Element)*ui.Element{
 func (o objectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -3534,9 +3741,7 @@ var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Object = objectConstructor(func () ObjectElement {
-	return ObjectElement{LoadFromStorage(newObject(Elements.NewID()))}
-})
+
 
 type objectConstructor func() ObjectElement
 func(c objectConstructor) WithID(id string, options ...string)ObjectElement{
@@ -3563,9 +3768,7 @@ var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Elemen
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Datalist = datalistConstructor(func () DatalistElement {
-	return DatalistElement{LoadFromStorage(newDatalist(Elements.NewID()))}
-})
+
 
 type datalistConstructor func() DatalistElement
 func(c datalistConstructor) WithID(id string, options ...string)DatalistElement{
@@ -3633,9 +3836,7 @@ var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Option = optionConstructor(func () OptionElement {
-	return OptionElement{LoadFromStorage(newOption(Elements.NewID()))}
-})
+
 
 type optionConstructor func() OptionElement
 func(c optionConstructor) WithID(id string, options ...string)OptionElement{
@@ -3694,9 +3895,7 @@ var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Elemen
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Optgroup = optgroupConstructor(func () OptgroupElement {
-	return OptgroupElement{LoadFromStorage(newOptgroup(Elements.NewID()))}
-})
+
 
 type optgroupConstructor func() OptgroupElement
 func(c optgroupConstructor) WithID(id string, options ...string)OptgroupElement{
@@ -3714,7 +3913,7 @@ var FieldsetModifer fieldsetModifier
 func(m fieldsetModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -3762,9 +3961,7 @@ var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Elemen
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Fieldset = fieldsetConstructor(func () FieldsetElement {
-	return FieldsetElement{LoadFromStorage(newFieldset(Elements.NewID()))}
-})
+
 
 type fieldsetConstructor func() FieldsetElement
 func(c fieldsetConstructor) WithID(id string, options ...string)FieldsetElement{
@@ -3798,9 +3995,7 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Legend = legendConstructor(func () LegendElement {
-	return LegendElement{LoadFromStorage(newLegend(Elements.NewID()))}
-})
+
 
 type legendConstructor func() LegendElement
 func(c legendConstructor) WithID(id string, options ...string)LegendElement{
@@ -3846,9 +4041,7 @@ var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Elemen
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Progress = progressConstructor(func () ProgressElement {
-	return ProgressElement{LoadFromStorage(newProgress(Elements.NewID()))}
-})
+
 
 type progressConstructor func() ProgressElement
 func(c progressConstructor) WithID(id string, options ...string)ProgressElement{
@@ -3887,7 +4080,7 @@ func(m selectModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 func (m selectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			d:= GetDocument(evt.Origin())
+			d:= evt.Origin().Root
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
@@ -3940,9 +4133,7 @@ var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Select = selectConstructor(func () SelectElement {
-	return SelectElement{LoadFromStorage(newSelect(Elements.NewID()))}
-})
+
 
 type selectConstructor func() SelectElement
 func(c selectConstructor) WithID(id string, options ...string)SelectElement{
@@ -4062,9 +4253,6 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-var Form = formConstructor(func () FormElement {
-	return FormElement{LoadFromStorage(newForm(Elements.NewID()))}
-})
 
 type formConstructor func() FormElement
 func(c formConstructor) WithID(id string, options ...string)FormElement{
