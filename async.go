@@ -785,9 +785,11 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 	var ctx context.Context
 	var cancelFn context.CancelFunc
 
-	request := NewMutationHandler(func(evt MutationEvent)bool{
+	onstart := NewMutationHandler(func(evt MutationEvent)bool{
 		ctx,cancelFn= context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
+
+		e.Properties.Delete("event","request-error-"+requestID(r))
 
 		DoAsync(e.Root,func() {
 			res, err:= HttpClient.Do(r)
@@ -834,7 +836,7 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 		return false
 	}).RunOnce()
 
-	e.newRequestTransition(requestID(r),request,onerror,oncancel,onend)
+	e.newRequestTransition(requestID(r),onstart,onerror,oncancel,onend)
 
 	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
 		evt.Origin().OnRequestError(r,NewMutationHandler(func(event MutationEvent)bool{
@@ -892,7 +894,7 @@ func(e *Element) OnRequestError(r *http.Request,h *MutationHandler){
 
 
 //RetrieveResponse returns the response received for a request if it exists.
-// Otherwise it retuyrns nil.
+// Otherwise it returns nil.
 // It is typically used when handling OnRequestEnd.
 func RetrieveResponse(e *Element, r *http.Request) (Value,error){
 	v,ok:= e.Get("event",transition("request-"+requestID(r),"end"))
@@ -918,6 +920,48 @@ func newResponseObject(u Value) (Value,error){
 	}
 	err:= errors.New(string(es.(String)))
 	return rv,err
+}
+
+// SyncUISetDataOptimistically sets a data property optimistically on transition start.
+// If the transition doesn't end successfully (it was cancelled or errored out) the property is reverted
+// t its former value.
+// TODO: perhaps implement this as 
+func(e *Element) SyncUISetDataOptimistically(propname string, value Value, r *http.Request, responsehandler ...func(*http.Response)(Value,error)){
+	oldv,_:= e.GetData(propname)
+	if Equal(oldv,value){
+		return
+	}
+	e.SyncUISetData(propname,value)
+
+	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
+		e.SetDataSetUI(propname,oldv)
+		return false
+	}).RunOnce())
+
+	e.OnRequestCancel(r,NewMutationHandler(func(evt MutationEvent)bool{
+		e.SetDataSetUI(propname,oldv)
+		return false
+	}).RunOnce())
+
+	
+	e.OnRequestEnd(r,NewMutationHandler(func(evt MutationEvent)bool{
+		// TODO: modify this so that only representaed data (there is a mutation handler for the same propname
+		// on the "ui" namespace, is assigned?)
+		truev,_:= e.GetData(propname)
+		e.SetDataSetUI(propname,truev)
+		// Somehow, check if the value is the same as the one we set optimistically
+		// If it is reverted, we should trigger an event to indicate that the value was reverted. (TODO)
+		// An alternative (not sure it is ergonomic) is for the value to hold its state (optimistic, reverted, etc)
+		// SO that the UI can react to this.
+		// Or mybe hold the state of the prop somewhere else but it requires a lot of bookkeeping. (reinitialiwzing state etc)
+		return false
+	}).RunOnce())
+
+	if responsehandler != nil{
+		e.NewRequest(r, responsehandler[0])
+	} else{
+		e.NewRequest(r, nil)
+	}
 }
 
 

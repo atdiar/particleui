@@ -891,7 +891,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 		return ll
 	}
 	e:= l.AsElement()
-	registerElement(r.Outlet.AsElement().Root,e)
+	RegisterElement(r.Outlet.AsElement().Root,e)
 
 	// Let's retrieve the target viewElement and corresponding view name
 	v,ok:= e.GetData("viewelements")

@@ -309,6 +309,20 @@ type Document struct {
 	Progress progressConstructor
 	Select selectConstructor
 	Form formConstructor
+
+}
+
+
+func(d Document) Create(constructor func(d Document, id string, options ...string)*ui.Element) *ui.Element{
+	e:= LoadFromStorage(constructor(d,d.newID()))
+	ui.RegisterElement(d.AsElement(),e)
+	return e
+}
+
+func(d Document) CreateWithID(constructor func(d Document, id string, options ...string)*ui.Element, id string, options ...string) *ui.Element{
+	e:= LoadFromStorage(constructor(d,id, options...))
+	ui.RegisterElement(d.AsElement(),e)
+	return e
 }
 
 func (d Document) Window() Window {
@@ -549,221 +563,259 @@ func withStdConstructors(d Document) Document{
 	d.Meta = metaConstructor(func() MetaElement {
 		e:=  MetaElement{LoadFromStorage(newMeta(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Title = titleConstructor(func() TitleElement {
 		e:=  TitleElement{LoadFromStorage(newTitle(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Script = scriptConstructor(func() ScriptElement {
 		e := ScriptElement{LoadFromStorage(newScript(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Base = baseConstructor(func() BaseElement {
 		e := BaseElement{LoadFromStorage(newBase(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.NoScript = noscriptConstructor(func() NoScriptElement {
 		e := NoScriptElement{LoadFromStorage(newNoScript(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Link = linkConstructor(func() LinkElement {
 		e := LinkElement{LoadFromStorage(newLink(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Div = divConstructor(func() DivElement {
 		e := DivElement{LoadFromStorage(newDiv(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.TextArea = textareaConstructor(func() TextAreaElement {
 		e := TextAreaElement{LoadFromStorage(newTextArea(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Header = headerConstructor(func() HeaderElement {
 		e := HeaderElement{LoadFromStorage(newHeader(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Footer = footerConstructor(func() FooterElement {
 		e := FooterElement{LoadFromStorage(newFooter(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Section = sectionConstructor(func() SectionElement {
 		e := SectionElement{LoadFromStorage(newSection(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H1 = h1Constructor(func() H1Element {
 		e := H1Element{LoadFromStorage(newH1(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H2 = h2Constructor(func() H2Element {
 		e := H2Element{LoadFromStorage(newH2(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H3 = h3Constructor(func() H3Element {
 		e := H3Element{LoadFromStorage(newH3(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H4 = h4Constructor(func() H4Element {
 		e := H4Element{LoadFromStorage(newH4(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H5 = h5Constructor(func() H5Element {
 		e := H5Element{LoadFromStorage(newH5(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.H6 = h6Constructor(func() H6Element {
 		e := H6Element{LoadFromStorage(newH6(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	d.Span = spanConstructor(func() SpanElement {
 		e := SpanElement{LoadFromStorage(newSpan(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Article = articleConstructor(func() ArticleElement {
 		e := ArticleElement{LoadFromStorage(newArticle(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Aside = asideConstructor(func() AsideElement {
 		e := AsideElement{LoadFromStorage(newAside(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Main = mainConstructor(func() MainElement {
 		e := MainElement{LoadFromStorage(newMain(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Paragraph = paragraphConstructor(func() ParagraphElement {
 		e := ParagraphElement{LoadFromStorage(newParagraph(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Nav = navConstructor(func() NavElement {
 		e := NavElement{LoadFromStorage(newNav(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Anchor = anchorConstructor(func() AnchorElement {
 		e := AnchorElement{LoadFromStorage(newAnchor(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Button = buttonConstructor(func(typ ...string) ButtonElement {
 		e := ButtonElement{LoadFromStorage(newButton(d.newID(), typ...))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Label = labelConstructor(func() LabelElement {
 		e := LabelElement{LoadFromStorage(newLabel(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Input = inputConstructor(func(typ string) InputElement {
 		e := InputElement{LoadFromStorage(newInput(d.newID(), typ))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Output = outputConstructor(func() OutputElement {
 		e := OutputElement{LoadFromStorage(newOutput(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Img = imgConstructor(func() ImgElement {
 		e := ImgElement{LoadFromStorage(newImg(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Audio = audioConstructor(func() AudioElement {
 		e := AudioElement{LoadFromStorage(newAudio(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Video = videoConstructor(func() VideoElement {
 		e := VideoElement{LoadFromStorage(newVideo(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Source = sourceConstructor(func() SourceElement {
 		e := SourceElement{LoadFromStorage(newSource(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Ul = ulConstructor(func() UlElement {
 		e := UlElement{LoadFromStorage(newUl(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Ol = olConstructor(func(typ string, offset int) OlElement {
 		e := OlElement{LoadFromStorage(newOl(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Li = liConstructor(func() LiElement {
 		e := LiElement{LoadFromStorage(newLi(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 	
 	d.Table = tableConstructor(func() TableElement {
 		e := TableElement{LoadFromStorage(newTable(d.newID()))}
 		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
 
 	return d
 }
+
+func(d *Document) NewElement(constructor func(Document, id string, options ...string)*ui.Element)
 
 type BodyElement struct{
 	*ui.Element

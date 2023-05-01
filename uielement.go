@@ -159,7 +159,7 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.ElementStore = e
 	el.Global = NewElement(id+"-globalstate", e.DocType)
 	// DEBUG el.path isn't set
-	registerElement(el,el)
+	RegisterElement(el,el)
 
 	el.Set("internals", "root", Bool(true))
 	el.TriggerEvent( "mounted", Bool(true))
@@ -171,7 +171,7 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 
 func RegisterElement(approot *Element, e *Element){
 	e.Root = approot.AsElement()
-	registerElement(approot,e)
+	registerElementfn(approot,e)
 
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
@@ -180,7 +180,7 @@ func RegisterElement(approot *Element, e *Element){
 	}).RunOnce())
 }
 
-func registerElement(root,e *Element) {
+func registerElementfn(root,e *Element) {
 	t:= GetById(root,e.ID)
 	if t != nil{
 		*e = *t
