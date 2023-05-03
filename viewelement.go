@@ -73,14 +73,14 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		l, ok := evt.Origin().Global.Get("internals", "views")
+		l, ok := evt.Origin().Root.Get("internals", "views")
 		if ok{
 			list, ok := l.(List)
 			if ok{
 				list = list.Filter(func(v Value)bool{
 					return !Equal(v,String(evt.Origin().ID))
 				})
-				evt.Origin().Global.Set("internals", "views", list)
+				evt.Origin().Root.Set("internals", "views", list)
 			}
 		}
 		return false

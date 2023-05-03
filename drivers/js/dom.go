@@ -4,13 +4,18 @@ package doc
 
 import (
 	"context"
-	//"encoding/json"
-	"github.com/goccy/go-json"
+	crand "crypto/rand"
+	"encoding/binary"
+	"encoding/base64"
+	"encoding/json"
+	//"github.com/goccy/go-json"
 	"strconv"
 	"strings"
+	//"math/rand"
 	"net/url"
 	"time"
 	"runtime"
+	"golang.org/x/exp/rand"
 
 	"github.com/atdiar/particleui"
 )
@@ -20,16 +25,6 @@ func init(){
 	ui.NativeEventBridge = NativeEventBridge
 	ui.NativeDispatch = NativeDispatch
 }
-
-var (
-
-	// DocumentInitializer is a Document specific modifier that is called on creation of a 
-	// new document. By assigning a new value to this global function, we can hook new behaviors
-	// into a NewDocument call.
-	// That can be useful to pass specific properties to a new document object that will specialize 
-	// construction of the document.
-	DocumentInitializer func(Document) Document = func(d Document) Document{return d}
-)
 
 
 // mutationCaptureMode describes how a Go App may capture textarea value changes
@@ -53,8 +48,29 @@ func inBrowser() bool{
 
 
 
+
+// newIDgenerator returns a function used to create new IDs. It uses
+// a Pseudo-Random Number Generator (PRNG) as it is desirable to generate deterministic sequences.
+// Evidently, as users navigate the app differently and may create new Elements
+func newIDgenerator(charlen int, seed uint64) func() string {
+	source := rand.NewSource(seed)
+	r := rand.New(source)
+	return func() string {
+		var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+		l:= len(charset)
+		b := make([]rune, charlen)
+		for i := range b {
+			b[i] = charset[r.Intn(l)]
+		}
+		return string(b)
+	}
+}
+
+var newID = newIDgenerator(16, uint64(time.Now().UnixNano()))
+
+
 func SerializeStateHistory(e *ui.Element) string{ // TODO review mutationcapture state handling
-	d:= getDocumentRef(e).AsElement()
+	d:= GetDocument(e).AsElement()
 	sth,ok:= d.Get("internals","mutationtrace")
 	if !ok{
 		return ""
@@ -193,7 +209,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{getDocumentRef(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("notfound"){
 			tv.ActivateView("notfound")
 			return false
@@ -202,7 +218,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		document:=  getDocumentRef(r.Outlet.AsElement())
+		document:=  GetDocument(r.Outlet.AsElement())
 		body:= document.Body().AsElement()
 		body.SetChildren(pnf)
 		document.Window().SetTitle("Page Not Found")
@@ -217,7 +233,7 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{getDocumentRef(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("unauthorized"){
 			tv.ActivateView("unauthorized")
 			return false // DEBUG TODO return true?
@@ -236,20 +252,19 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 	return r
 }
 
-/*
-var newObservable = Elements.NewConstructor("observable", func(id string) *ui.Element {
-	e := ui.NewElement("observable", id)
-
-	e.ElementStore = Elements
-
-	return e
-},AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
-*/
 
 
 type Document struct {
 	*ui.Element
+	
+	// id generator with serializable state
+	// used to generate unique ids for elements
+	rng   *rand.Rand
+	src *rand.PCGSource
+
 	// Document should hold the list of all element constructors such as Meta, Title, Div, San etc.
+	body bodyConstructor
+	head headConstructor
 	Meta metaConstructor
 	Title titleConstructor
 	Script scriptConstructor
@@ -312,18 +327,39 @@ type Document struct {
 
 }
 
-
-func(d Document) Create(constructor func(d Document, id string, options ...string)*ui.Element) *ui.Element{
-	e:= LoadFromStorage(constructor(d,d.newID()))
-	ui.RegisterElement(d.AsElement(),e)
-	return e
+func(d *Document) initializeIDgenerator() {
+	pcgstate,ok:= d.Get("internals","PCGSate")
+	if !ok{
+		var seed uint64
+		err := binary.Read(crand.Reader, binary.LittleEndian, &seed)
+		if err != nil {
+			panic(err)
+		}
+		d.src= &rand.PCGSource{}
+		d.src.Seed(seed)
+		d.rng = rand.New(d.src)
+		return
+	}
+	// pcgstate should be a ui.String. We should recover the PCGSOurce from it by using UnmarshalBinary.
+	pcgstr:= pcgstate.(ui.String).String()
+	pcg,err:= base64.StdEncoding.DecodeString(pcgstr)
+	if err != nil{
+		panic(err)
+	}
+	d.src = &rand.PCGSource{}
+	d.src.UnmarshalBinary(pcg)
+	d.rng = rand.New(d.src)
 }
 
-func(d Document) CreateWithID(constructor func(d Document, id string, options ...string)*ui.Element, id string, options ...string) *ui.Element{
-	e:= LoadFromStorage(constructor(d,id, options...))
-	ui.RegisterElement(d.AsElement(),e)
-	return e
+func(d *Document) saveIDgeneratorState(){
+	pcg,err:= d.src.MarshalBinary()
+	if err!= nil{
+		panic(err)
+	}
+	pcgstr:= base64.StdEncoding.EncodeToString(pcg)
+	d.Set("internals","PCGSate",ui.String(pcgstr))
 }
+
 
 func (d Document) Window() Window {
 	w:= d.GetElementById("window")
@@ -343,7 +379,14 @@ func (d Document)GetElementById(id string) *ui.Element{
 }
 
 func(d Document) newID() string{
-	return "TODO" // TODO to implement this in a way that the state can be serialized and restored.
+	var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	l:= len(charset)
+	b := make([]rune, 32)
+	for i := range b {
+		b[i] = charset[d.rng.Intn(l)]
+	}
+	d.saveIDgeneratorState()
+	return string(b) // TODO to implement this in a way that the state can be serialized and restored.
 }
 
 func(d Document) NewObservable(id string, options ...string) ui.Observable{
@@ -419,15 +462,8 @@ func GetDocument(e *ui.Element) Document{
 }
 
 
-// getDocumentRef is useful to reference the document when defining the standard constructors.
-// Indeed, since the document is not completely defined yet (from the constructor pov, it doesn't hold
-// the full set of constructors properly assigned yet), it is not possible to use it.
-// More importantly, if defining the document means defining the standard constructors, but definign the
-// standard constructors means defining the document, we have a circular dependency that needs to be broken.
-// FOrtunately, defining a standard constructor doesn't rely on theother standard constructors so 
-// we just need a partiallly initialized document, without the *Element constructors.
-// getDocumentRef provides us with a pointer to such a partially initialized document.
-// It is not made available to user code whihc won't need it.
+// getDocumentRef is needed for the definition of constructors wich need to refer to the document 
+// such as body, head or title. Indeed, since they 
 func getDocumentRef(e *ui.Element) *Document{
 	return &Document{Element:e}
 }
@@ -449,7 +485,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
     e.Watch("ui","history",e,historyMutationHandler)
 
 	// makes ViewElements focusable (focus management support)
-	e.Watch("internals", "views",e.Global,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	e.Watch("internals", "views",e.Root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		l:= evt.NewValue().(ui.List)
 		viewstr:= l[len(l)-1].(ui.String)
 		view := ui.GetById(e, string(viewstr))
@@ -469,24 +505,14 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		
 	})	
 	
-
-	e.AppendChild(head.WithID("head")) 
-	e.AppendChild(body.WithID("body"))
-
-
-	e.WatchEvent("document-loaded", e,navinitHandler)
-	e.Watch("ui", "title", e, documentTitleHandler)
-
-	mutationreplay(e)
-	
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
 var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool { 
-	d:= Document{Element:evt.Origin().Root}
+	d:= GetDocument(evt.Origin())
 	ot:= d.GetElementById("document-title")
 	if ot == nil{
-		t:= title.WithID("document-title")
+		t:= d.Title.WithID("document-title")
 		t.AsElement().Root = evt.Origin()
 		t.Set(string(evt.NewValue().(ui.String)))
 		d.Head().AppendChild(t)
@@ -519,7 +545,7 @@ func mutationreplay(root *ui.Element) {
 		category:= string(op.MustGetString("cat"))
 		propname:= string(op.MustGetString("prop"))
 		value,_:= op.Get("val")
-		el:= getDocumentRef(e).GetElementById(elementid)
+		el:= GetDocument(e).GetElementById(elementid)
 		if el == nil{
 			panic("Unable to recover state for this element id. Element  doesn't exist")
 		}
@@ -552,14 +578,39 @@ func Autofocus(e *ui.Element) *ui.Element{
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
 	d:= Document{Element:LoadFromStorage(newDocument(id, options...))}
-	d = DocumentInitializer(d)
-	// A document also defines a set of *Element constructor as its fields, whcih should be initialized
-	// as the document is created. These constructors create *Element such as DIv, Form for a specific document.
-	// The root ofd each of such created User Interface *Element is the document *Element.
-	return withStdConstructors(d)
+	
+	withStdConstructors(d)
+
+	e:= d.Element
+
+	e.AppendChild(d.head.WithID("head")) 
+	e.AppendChild(d.body.WithID("body"))
+
+
+	e.WatchEvent("document-loaded", e,navinitHandler)
+	e.Watch("ui", "title", e, documentTitleHandler)
+
+	mutationreplay(e)
+	d.initializeIDgenerator()
+
+	return d
 }
 
 func withStdConstructors(d Document) Document{
+	d.body = bodyConstructor(func() BodyElement {
+		e:=  BodyElement{LoadFromStorage(newBody(d.newID()))}
+		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+
+	d.head = headConstructor(func() HeadElement {
+		e:=  HeadElement{LoadFromStorage(newHead(d.newID()))}
+		e.Root = d.Element
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+
 	d.Meta = metaConstructor(func() MetaElement {
 		e:=  MetaElement{LoadFromStorage(newMeta(d.newID()))}
 		e.Root = d.Element
@@ -815,7 +866,6 @@ func withStdConstructors(d Document) Document{
 	return d
 }
 
-func(d *Document) NewElement(constructor func(Document, id string, options ...string)*ui.Element)
 
 type BodyElement struct{
 	*ui.Element
@@ -841,10 +891,6 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
-
-var body = bodyConstructor(func () BodyElement  {
-	return BodyElement{LoadFromStorage(newHead(Elements.NewID()))}
-})
 
 type bodyConstructor func() BodyElement
 func(c bodyConstructor) WithID(id string, options ...string)BodyElement{
@@ -880,9 +926,6 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 })
 
 
-var head = headConstructor(func () HeadElement  {
-	return HeadElement{LoadFromStorage(newHead(Elements.NewID()))}
-})
 
 type headConstructor func() HeadElement
 func(c headConstructor) WithID(id string, options ...string)HeadElement{
@@ -946,9 +989,6 @@ var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
 	return e
 })
 
-var title = titleConstructor(func () TitleElement  {
-	return TitleElement{LoadFromStorage(newTitle(Elements.NewID()))}
-})
 
 type titleConstructor func() TitleElement
 func(c titleConstructor) WithID(id string,options ...string)TitleElement{
@@ -1478,10 +1518,7 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// H1 is a constructor for html heading H1 elements.
-var H1 = h1Constructor(func () H1Element {
-	return H1Element{LoadFromStorage(newH1(Elements.NewID()))}
-})
+
 
 type h1Constructor func() H1Element
 func(c h1Constructor) WithID(id string, options ...string)H1Element{
@@ -1513,10 +1550,6 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// H2 is a constructor for html heading H2 elements.
-var H2 = h2Constructor(func () H2Element {
-	return H2Element{LoadFromStorage(newH2(Elements.NewID()))}
-})
 
 type h2Constructor func() H2Element
 func(c h2Constructor) WithID(id string, options ...string)H2Element{
@@ -1548,10 +1581,6 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// H3 is a constructor for html heading H3 elements.
-var H3 = h3Constructor(func () H3Element {
-	return H3Element{LoadFromStorage(newH3(Elements.NewID()))}
-})
 
 type h3Constructor func() H3Element
 func(c h3Constructor) WithID(id string, options ...string)H3Element{
@@ -1582,10 +1611,6 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// H4 is a constructor for html heading H4 elements.
-var H4 = h4Constructor(func () H4Element {
-	return H4Element{LoadFromStorage(newH4(Elements.NewID()))}
-})
 
 type h4Constructor func() H4Element
 func(c h4Constructor) WithID(id string, options ...string)H4Element{
@@ -1617,10 +1642,6 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-// H5 is a constructor for html heading H5 elements.
-var H5 = h5Constructor(func () H5Element {
-	return H5Element{LoadFromStorage(newH5(Elements.NewID()))}
-})
 
 type h5Constructor func() H5Element
 func(c h5Constructor) WithID(id string, options ...string)H5Element{
@@ -1652,11 +1673,6 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
-
-// H6 is a constructor for html heading H6 elements.
-var H6 = h6Constructor(func () H6Element {
-	return H6Element{LoadFromStorage(newH6(Elements.NewID()))}
-})
 
 type h6Constructor func() H6Element
 func(c h6Constructor) WithID(id string, options ...string)H6Element{
@@ -2075,10 +2091,6 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	buttonOption("reset"),
 )
 
-// Button returns a button ui.BasicElement.
-var Button = buttonConstructor(func (typ ...string) ButtonElement {
-	return ButtonElement{LoadFromStorage(newButton(Elements.NewID(), typ...))}
-})
 
 type buttonConstructor func(typ ...string) ButtonElement
 func(c buttonConstructor) WithID(id string, typ string, options ...string)ButtonElement{
@@ -2450,13 +2462,6 @@ func inputOption(name string) ui.ConstructorOption{
 	})
 }
 
-
-var Input = inputConstructor(func (typ string) InputElement {
-	if typ != ""{
-		typ = "input"
-	}
-	return InputElement{LoadFromStorage(newInput(Elements.NewID(),typ))}
-})
 
 type inputConstructor func(typ string) InputElement
 func(c inputConstructor) WithID(id string, typ string, options ...string) InputElement{
@@ -3055,13 +3060,6 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
 
-var Ol = olConstructor(func (typ string, offset int) OlElement {
-	e:= newOl(Elements.NewID())
-	SetAttribute(e, "type", typ)
-	SetAttribute(e, "start", strconv.Itoa(offset))
-	return OlElement{LoadFromStorage(e)}
-})
-
 type olConstructor func(typ string, offset int) OlElement
 func(c olConstructor) WithID(id string) func(typ string, offset int, options ...string)OlElement{
 	return func(typ string, offset int, options ...string) OlElement {
@@ -3075,7 +3073,6 @@ func(c olConstructor) WithID(id string) func(typ string, offset int, options ...
 type LiElement struct {
 	*ui.Element
 }
-
 
 func(li LiElement) SetElement(e *ui.Element) LiElement{ // TODO Might be unnecessary in which case remove
 	li.AsElement().SetChildren(e)

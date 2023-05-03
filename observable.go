@@ -28,7 +28,6 @@ func newObservable(id string) Observable {
 		nil,
 		nil,
 		nil,
-		nil,
 		"",
 		id,
 		"observable",

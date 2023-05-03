@@ -32,9 +32,9 @@ func newIDgenerator(charlen int, seed int64) func() string {
 
 
 
-// ElementStore defines a namespace for a list of Element constructors. // TODO Make immutable
+// ElementStore defines a global context, constiting of properties. methods for
+// Elemnts constructors of User Interfaces.
 type ElementStore struct {
-	ID  string
 	DocType                  string
 	Constructors             map[string]func(id string, optionNames ...string) *Element
 	GlobalConstructorOptions map[string]func(*Element) *Element
@@ -45,14 +45,6 @@ type ElementStore struct {
 
 	MutationCapture bool
 	MutationReplay bool
-
-	Seed int64
-	IDCharLength int
-	genID func() string
-
-	// Registry is a map of all the document roots created from an ElementStore.
-	//Registry map[string]*Element
-	// TODO  use mutex for concurrent modifications of the registry
 }
 
 type storageFunctions struct {
@@ -97,7 +89,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
-	es := &ElementStore{storeid,doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]storageFunctions, 5), make(map[string]bool,8),false,false,8,21, newIDgenerator(8,21)}
+	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]storageFunctions, 5), make(map[string]bool,8),false,false}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -157,7 +149,6 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.Parent = el // initially nil DEBUG
 	el.subtreeRoot = el
 	el.ElementStore = e
-	el.Global = NewElement(id+"-globalstate", e.DocType)
 	// DEBUG el.path isn't set
 	RegisterElement(el,el)
 
@@ -230,34 +221,6 @@ func(e *ElementStore) AddConstructorOptions(elementtype string, options ...Const
 	return e
 }
 
-// SeedIDgenerator sets a new seed for the NewID method which generates IDs using a PRNG.
-func(e *ElementStore) SeedIDgenerator(seed int64) *ElementStore{
-	e.Seed = seed
-	e.genID = newIDgenerator(e.IDCharLength,seed)
-	return e
-}
-
-func(e *ElementStore) IDLength(l int) *ElementStore{
-	e.IDCharLength = l
-	e.genID = newIDgenerator(l,e.Seed)
-	return e
-}
-
-// NewID returns a  new PRNG generated ID used to provide unique IDs to Elements.
-// If tge generation needs to be deterministic over the duration of the APP, don't use this method
-// in conditional statements, goroutines, etc.
-// It means that dynamically created elements should specify their own IDs instead of relying on 
-// anything that uses this. (Element contructors may indirectly expose the usage of this method for instance)
-func(e *ElementStore) NewID() string{
-	id:= e.genID()
-	/*v:= e.GetByID(id)
-	if v != nil{
-		return e.NewID()
-	}*/ 
-
-	// TODO check for id conflicts ?
-	return id
-}
 
 // NewConstructor registers and returns a new Element construcor function.
 func (e *ElementStore) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
@@ -323,7 +286,6 @@ func(e *ElementStore) NewElement(id string) *Element{
 type Element struct {
 	ElementStore *ElementStore
 	registry map[string]*Element
-	Global       *Element // holds ownership of the global state
 	Root         *Element
 	subtreeRoot  *Element // detached if subtree root has no parent unless subtreeroot == root
 	path         *Elements
@@ -372,7 +334,6 @@ func NewElement(id string, doctype string) *Element {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
 	e := &Element{
-		nil,
 		nil,
 		nil,
 		nil,
@@ -612,7 +573,6 @@ func attach(parent *Element, child *Element, activeview bool) {
 		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
 	}
 	child.Root = parent.Root
-	child.Global = parent.Global
 	child.subtreeRoot = parent.subtreeRoot
 
 	child.link(parent)
