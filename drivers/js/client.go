@@ -25,7 +25,6 @@ var (
 	Elements                      = ui.NewElementStore("default", DOCTYPE).
 		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
 		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
-		ApplyGlobalOption(cleanStorageOnDelete).
 		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
 )
 
@@ -77,81 +76,36 @@ func(s jsStore) Delete(key string){
 // abstractjs
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
+		if category != "data"{
+			return 
+		}
 		store := jsStore{js.Global().Get(s)}
-		categoryExists := element.Properties.HasCategory(category)
-		propertyExists := element.Properties.HasProperty(category, propname)
 
-		// log.Print("CALL TO STORE: ", category, categoryExists, propname, propertyExists) // DEBUG
+		
 
-		// Let's check whether the element exists in store. In the negative case,
-		// we can act as if no category has been registered.
-		// Every indices need to be generated and stored.
-		var indexed bool
 
-		storedcategories, ok := element.Get("index", "categories")
-		if ok {
-			sc, ok := storedcategories.(ui.List)
-			if ok {
-				for _, cat := range sc {
-					catstr, ok := cat.(ui.String)
-					if !ok {
-						indexed = false
-						break
-					}
-					if string(catstr) != category {
-						continue
-					}
-					indexed = true
-					break
-				}
-			}
-		}
-		if !(category == "index" && propname == "categories") {
-			if !indexed {
-				catlist := ui.NewList()
-				for k := range element.Properties.Categories {
-					catlist = append(catlist, ui.String(k))
-				}
-				if !categoryExists {
-					catlist = append(catlist, ui.String(category))
-				}
-				catlist = append(catlist, ui.String("index"))
-				// log.Print("indexed catlist", catlist) // DEBUG
-				element.Set("index", "categories", catlist)
-			}
-		}
-
-		if !categoryExists || !indexed {
-			categories := make([]interface{}, 0, len(element.Properties.Categories)+1)
-
-			for k := range element.Properties.Categories {
-				categories = append(categories, k)
-			}
-			if !categoryExists {
-				categories = append(categories, category)
-			}
-			v := js.ValueOf(categories)
-			store.Set(element.ID, v)
-		}
-
-		if !propertyExists || !indexed {
-			props := make([]interface{}, 0, 4)
-			c, ok := element.Properties.Categories[category]
-			if !ok {
-				props = append(props, propname)
-				v := js.ValueOf(props)
-				store.Set(strings.Join([]string{element.ID, category}, "/"), v)
-			} else {
+		props := make([]interface{}, 0, 32)
+		c,ok:= element.Properties.Categories[category]
+		if !ok{
+			props = append(props, propname)
+			// log.Print("all props stored...", props) // DEBUG
+			v := js.ValueOf(props)
+			store.Set(element.ID, v) 
+		} else{
+			// We need to store and ndex listing all the propnames opf the "data" category
+			// it is only updated if the propname is not already in the list
+			_,ok:= c.Local[propname]
+			if !ok{
 				for k := range c.Local {
 					props = append(props, k)
 				}
-
 				props = append(props, propname)
 				// log.Print("all props stored...", props) // DEBUG
 				v := js.ValueOf(props)
-				store.Set(strings.Join([]string{element.ID, category}, "/"), v) 
+				store.Set(element.ID, v) 
 			}
 		}
+	
 		item := value.RawValue()
 		v := stringify(item)
 		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),js.ValueOf(v))
@@ -167,64 +121,60 @@ var localstoragefn = storer("localStorage")
 
 func loader(s string) func(e *ui.Element) error { // abstractjs
 	return func(e *ui.Element) error {
+		
 		store := jsStore{js.Global().Get(s)}
 		id := e.ID
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsoncategories, ok := store.Get(id)
+		jsonprops, ok := store.Get(id)
 		if !ok {
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
-		categories := make([]string, 0, 50)
-		properties := make([]string, 0, 50)
-		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
+		properties := make([]string, 0, 32)
+		err := json.Unmarshal([]byte(jsonprops.String()), &properties)
 		if err != nil {
 			return err
 		}
 
-		uiloaders:= make([]func(),0,50)
-		//log.Print(categories, properties) //DEBUG
-		for _, category := range categories {
-			jsonproperties, ok := store.Get(e.ID + "/" + category)
-			if !ok {
-				continue
-			}
-			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
-			if err != nil {
-				log.Print(err)
-				return err
-			}
+		category:= "data"
+		uiloaders:= make([]func(),0,32)
 
-			for _, property := range properties {
-				// let's retrieve the propname (it is suffixed by the proptype)
-				// then we can retrieve the value
-				// log.Print("debug...", category, property) // DEBUG
-				propname := property
-				jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
-				if ok {					
-					var rawvaluemapstring string
-					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
-					if err != nil {
-						return err
-					}
-					
-					rawvalue := make(map[string]interface{})
-					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
-					if err != nil {
-						return err
-					}
-					val:= ui.Object(rawvalue).MarkedRaw().Value()
-					ui.LoadProperty(e, category, propname, val)
-					if category == "data"{
-						uiloaders = append(uiloaders, func(){
-							e.SetDataSetUI(propname, val)
-						})
-					}
-					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
+		for _, property := range properties {
+			// let's retrieve the propname (it is suffixed by the proptype)
+			// then we can retrieve the value
+			// log.Print("debug...", category, property) // DEBUG
+			propname := property
+			jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
+			if ok {					
+				var rawvaluemapstring string
+				err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
+				if err != nil {
+					return err
 				}
+				
+				rawvalue := make(map[string]interface{})
+				err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
+				if err != nil {
+					return err
+				}
+				val:= ui.Object(rawvalue).MarkedRaw().Value()
+				ui.LoadProperty(e, category, propname, val)
+				if category == "data"{
+					uiloaders = append(uiloaders, func(){
+						if ui.DataWillRender(e,propname){
+							e.SetUI(propname, val)
+						}
+						
+					})
+				}
+				//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
 			}
 		}
+
+		
+		//log.Print(categories, properties) //DEBUG
+		
 		e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			for _,load:= range uiloaders{
 				load()
@@ -243,40 +193,30 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 	return func(element *ui.Element){
 		store := jsStore{js.Global().Get(s)}
 		id := element.ID
+		category:= "data"
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsoncategories, ok := store.Get(id)
+		jsonproperties, ok := store.Get(id)
 		if !ok {
 			return
 		}
 
-		categories := make([]string, 0, 20)
 		properties := make([]string, 0, 50)
-		err := json.Unmarshal([]byte(jsoncategories.String()), &categories)
-		if err != nil {
-			return 
-		}
 		
-		for _, category := range categories {
-			jsonproperties, ok := store.Get(id + "/" + category)
-			if !ok {
-				continue
-			}
-			err = json.Unmarshal([]byte(jsonproperties.String()), &properties)
-			if err != nil {
-				store.Delete(id)
-				panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
-			}
-
-			for _, property := range properties {
-				// let's retrieve the propname (it is suffixed by the proptype)
-				// then we can retrieve the value
-				// log.Print("debug...", category, property) // DEBUG
-
-				store.Delete(strings.Join([]string{id, category, property}, "/")) 
-			}
-			store.Delete(strings.Join([]string{id, category}, "/")) 
+		err := json.Unmarshal([]byte(jsonproperties.String()), &properties)
+		if err != nil {
+			store.Delete(id)
+			panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
 		}
+
+		for _, property := range properties {
+			// let's retrieve the propname (it is suffixed by the proptype)
+			// then we can retrieve the value
+			// log.Print("debug...", category, property) // DEBUG
+
+			store.Delete(strings.Join([]string{id, category, property}, "/")) 
+		}
+
 		store.Delete(id)
 		element.Set("event","storesynced",ui.Bool(false))
 	}
@@ -459,6 +399,7 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			return false
 
 		}).RunOnce())
+
 		return nil,false
 	}
 	if tag == "window"{
@@ -628,7 +569,6 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // atribute, the props are loaded from this attribute instead.
 // abstractjs
 func LoadFromStorage(e *ui.Element) *ui.Element {
-	//n:= JSValue(e) TODO delete this line
 
 	if e == nil {
 		panic("loading a nil element")
@@ -647,7 +587,7 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 			log.Print(err)
 			return e
 		}
-		e.Set("event","storesynced",ui.Bool(true))
+		e.TriggerEvent("storesynced",ui.Bool(true))
 	}
 	return e
 }
@@ -676,12 +616,6 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if ok{
 		storage.Clear(e)
-		// reset the categories index/list for the element
-		idx,ok:= e.Get("index","categories")
-		if ok{
-			index:=idx.(ui.List)[:0]
-			e.Set("index","categories",index)
-		}
 	}
 	return e
 }

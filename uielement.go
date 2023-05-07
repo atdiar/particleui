@@ -1207,6 +1207,18 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 	return e.Watch(category,propname,owner,g)
 }
 
+// DataWilRender indicates whether some data stored as a property of an element has its representation used
+// to create the User Interface.
+// It simply checks that he representation of the data that is stored in the "ui" category/namespace 
+// under the same property name is being watched for mutations
+func DataWillRender(e *Element, propname string) bool{
+	p,ok:= e.Properties.Categories["ui"]
+	if !ok{
+		return ok
+	}
+	return p.Watched(propname)
+}
+
 // removeHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of 
 func (e *Element) RemoveMutationHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
@@ -1407,17 +1419,8 @@ func Canonicalize(s string) string{
 // shared scope common to all Element objects of an ElementStore.
 func (e *Element) Get(category, propname string) (Value, bool) {
 	v,ok:= e.Properties.Get(category, propname)
-	if o,ok:= v.(Object);ok{
-		_,ok= o.Get("zui_ref_id")
-			if ok{
-				oid:= o.MustGetString("elementid").String()
-				if e.ID != oid{
-					panic("valueref cannot point at a value stored on anoher element")
-				}
-				ocat:= o.MustGetString("category").String()
-				oprop:= o.MustGetString("propname").String()
-				return e.Get(ocat,oprop)
-			}
+	if ok && category == "event"{
+		return v.(Object).Get("value")
 	}
 	return v,ok
 }
@@ -1446,7 +1449,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 	// reminder that runtime properties such as those in the "event" or "ui"categories are never persisted.
 	if e.ElementStore != nil {
 		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && !isRuntimeCategory(e.ElementStore,category) {
+		if ok && category == "data" {
 			storage.Store(e, category, propname, value)
 		}
 	}
@@ -1540,28 +1543,11 @@ func mutationReplay(root *Element){
 				panic("mutation record should have a value")
 			}
 
-			if category:=cat.(String).String(); category == "ui"{
-				_,ok= obj.Get("sync")
-				if ok{
-					e:= GetById(root,id.(String).String())
-					if e==nil{
-						panic("FWERR: element " + id.(String).String() + " does not exist. Unable to recover Pre-rendered state")	
-					}
-					LoadProperty(e,"ui",prop.(String).String(),val)
-				}
-
-				e:= GetById(root,id.(String).String())
-				if e==nil{
-					panic("FWERR: element " + id.(String).String() + " does not exist. Unable to recover Pre-rendered state")	
-				}
-				e.Set("ui",prop.(String).String(),val)
-			} else{
-				e:= GetById(root,id.(String).String())
-					if e==nil{
-						panic("FWERR: element " + id.(String).String() + " does not exist. Unable to recover Pre-rendered state")	
-					}
-					LoadProperty(e,category,prop.(String).String(),val)
-			}	
+			e:= GetById(root,id.(String).String())
+			if e==nil{
+				panic("FWERR: element " + id.(String).String() + " does not exist. Unable to recover Pre-rendered state")	
+			}
+			e.Set(cat.(String).String(),prop.(String).String(),val)	
 		}
 		root.Set("internals","mutationtrace",nil)
 		root.TriggerEvent("documentstaterecovered")
@@ -1729,7 +1715,7 @@ func LoadProperty(e *Element, category string, propname string, value Value) {
 // rendering of an element should not have side-effects, notably should not mutate another element's UI.
 func Rerender(e *Element) *Element{
 	category:= "ui"
-	p,ok:= e.Properties.Categories["ui"]
+	p,ok:= e.Properties.Categories[category]
 	if !ok{
 		return e
 	}
@@ -1755,6 +1741,7 @@ func Rerender(e *Element) *Element{
 // In effect, the id acts as a namespace.
 // In order for links using the routes to these views to not be breaking between refresh/reruns of an app (hard requirement for online link-sharing), the ID of the parent element
 // should be generated so as to not change. Using a PRNG-based ID generator is very unlikely to be a good-fit here.
+// Indeed, n UI beig event friven, concurrecny of event triggers introduce non-determinism.
 //
 // For instance, if we were to create a dynamic view composed of retrieved tweets, we would not use an ID generator but probably reuse the tweet ID gotten via http call for each Element.
 // Building a shareable link toward any of these elements still require that every ID generated in the path is stable across app refresh/re-runs.
@@ -2023,7 +2010,7 @@ type Properties struct {
 }
 
 func newProperties() Properties {
-	return Properties{make(map[string]Value), make(map[string]*Elements)}
+	return Properties{make(map[string]Value), make(map[string]*Elements,64)}
 }
 
 func (p Properties) NewWatcher(propName string, watcher *Element) {
@@ -2066,6 +2053,11 @@ func (p Properties) Get(propName string) (Value, bool) {
 		return Copy(v), ok
 	}
 	return nil, false
+}
+
+func(p Properties) Watched(propname string) bool{
+	_, ok := p.Watchers[propname]
+	return ok
 }
 
 func (p Properties) Set(propName string, value Value) {
