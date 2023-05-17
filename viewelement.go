@@ -162,9 +162,9 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	return false
 })
 
-// SetDefaultView sets the default view of a ViewElement. It is the view that will be displayed when
+// ChangeDefaultView sets the default view of a ViewElement. It is the view that will be displayed when
 // a ViewElement mounts.
-func (v ViewElement) SetDefaultView(elements ...*Element) ViewElement {
+func (v ViewElement) ChangeDefaultView(elements ...*Element) ViewElement {
 	e:= v.AsElement()
 	e.Set("internals","mountdefaultview",Bool(true))
 	if e.ActiveView == ""{
@@ -287,16 +287,28 @@ func (e *Element) addView(v View) *Element {
 		e.InactiveViews = make(map[string]View)
 	}
 
+	defer func(){
+		e.InactiveViews[v.Name()] = v
+	}()
+
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
+			var detachFn func()
 			if child.Parent != nil{
-				child.Parent.RemoveChild(child)
+				detachFn = detach(child)
+				
 			}
 			child.ViewAccessNode = newViewAccessNode(child, v.Name())
-			attach(e, child, false)
+			attachFn := attach(e, child)
+			
+			if detachFn != nil{
+				defer detachFn() // Execute the detach function
+			}
+			
+			defer attachFn() // Execute the attach function
 		}
 	}
-	e.InactiveViews[v.Name()] = v
+	
 	return e
 }
 
@@ -330,8 +342,6 @@ func (e *Element) activateView(name string) {
 
 	// TODO should actiation cancellation be considered an error state?
 
-	wasmounted:= e.Mounted()
-
 	newview, ok := e.InactiveViews[name]
 	if !ok {
 		if isParameter(e.ActiveView) {
@@ -359,18 +369,21 @@ func (e *Element) activateView(name string) {
 		view := e.InactiveViews[":"+p]
 		oldviewname := e.ActiveView
 		if oldviewname != "" {
-			e.InactiveViews[oldviewname] = NewView(oldviewname, e.Children.List...)
-			for _, child := range e.Children.List {
-				detach(child)
+			oldview := NewView(oldviewname, e.Children.List...)
+			e.RemoveChildren()
+			e.AsElement().addView(oldview)
+			/*for _, child := range e.Children.List {
+				finalize := detach(child)
 
 				if e.Native != nil {
 					e.Native.RemoveChild(child)
 				}
 
-				attach(e, child, false)
-				finalize(child,true,wasmounted)
+				//attach(e, child, false)
+				finalize()
 			}
 			e.Children.RemoveAll()
+			*/
 		}
 		e.ActiveView = ":" + p
 
@@ -389,12 +402,12 @@ func (e *Element) activateView(name string) {
 		if ok{
 			oldview = NewView(e.ActiveView, e.Children.List...)		
 			e.RemoveChildren()
-			ViewElement{e}.AddView(oldview)
+			e.addView(oldview)
 		}
 	}else{
 		oldview = NewView(e.ActiveView, e.Children.List...)
 		e.RemoveChildren()
-		ViewElement{e}.AddView(oldview)
+		e.addView(oldview)
 	}
 
 
@@ -423,7 +436,7 @@ func AddView(name string, elements ...AnyElement) func(*Element) *Element {
 // DefaultView is an *Element modifier that defines a default View for an *Element.
 func DefaultView(elements ...*Element) func(*Element) *Element {
 	return func(e *Element) *Element {
-		ViewElement{e}.SetDefaultView(elements...)
+		ViewElement{e}.ChangeDefaultView(elements...)
 		return e
 	}
 }

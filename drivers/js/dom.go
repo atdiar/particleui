@@ -153,18 +153,12 @@ func newWindow(title string, options ...string) Window {
 //  session storage of the properties of an Element  created with said constructor.
 var AllowSessionStoragePersistence = ui.NewConstructorOption("sessionstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("sessionstorage"))
-	if isPersisted(e){
-		return LoadFromStorage(e)
-	}
-	return PutInStorage(e)
+	return e
 })
 
 var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", func(e *ui.Element) *ui.Element {
 	e.Set("internals", "persistence", ui.String("localstorage"))
-	if isPersisted(e){
-		return LoadFromStorage(e)
-	}
-	return PutInStorage(e)
+	return e
 })
 
 func EnableSessionPersistence() string {
@@ -175,8 +169,9 @@ func EnableLocalPersistence() string {
 	return "localstorage"
 }
 
-var allowdataloading = ui.NewConstructorOption("storeddataloading", func(e *ui.Element) *ui.Element {
+var allowdataloading = ui.NewConstructorOption("dataloading", func(e *ui.Element) *ui.Element {
 	d:= getDocumentRef(e)
+
 	d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		LoadFromStorage(e)
 		return false
@@ -188,10 +183,10 @@ func EnableScrollRestoration() string {
 	return "scrollrestoration"
 }
 
-var RouterConfig = func(r *ui.Router) *ui.Router{
+var routerConfig = func(r *ui.Router){
 
 	ns:= func(id string) ui.Observable{
-		d:= getDocumentRef(r.Outlet.AsElement())
+		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
 		PutInStorage(ClearFromStorage(o.AsElement())) // Note: oldsttate is cleared.
 		return o
@@ -256,7 +251,6 @@ var RouterConfig = func(r *ui.Router) *ui.Router{
 		return false
 	}))
 
-	return r
 }
 
 
@@ -404,6 +398,8 @@ func (d Document)GetElementById(id string) *ui.Element{
 }
 
 func(d Document) newID() string{
+	/*
+
 	var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	l:= len(charset)
 	b := make([]rune, 32)
@@ -411,6 +407,9 @@ func(d Document) newID() string{
 		b[i] = charset[d.rng.Intn(l)]
 	}
 	return string(b)
+
+	*/
+	return newID() // DEBUG
 }
 
 func(d Document) NewObservable(id string, options ...string) ui.Observable{
@@ -426,15 +425,15 @@ func(d Document) NewObservable(id string, options ...string) ui.Observable{
 
 
 func(d Document) Head() *ui.Element{
-	b,ok:= d.AsElement().Get("ui","head")
-	if !ok{ return nil}
-	return d.GetElementById(b.(ui.String).String())
+	e:= d.GetElementById("head")
+	if e ==nil{ panic("document HEAD seems tobe missing for some odd reason...")}
+	return e
 }
 
 func(d Document) Body() *ui.Element{
-	b,ok:= d.AsElement().Get("ui","body")
-	if !ok{ return nil}
-	return d.GetElementById(b.(ui.String).String())
+	e:= d.GetElementById("body")
+	if e ==nil{ panic("document BODY seems tobe missing for some odd reason...")}
+	return e
 }
 
 func(d Document) SetLang(lang string) Document{
@@ -450,7 +449,11 @@ func(d Document) OnLoaded(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("document-loaded",d,h)
 }
 
-// ROuter returns the router associated with the document. It is nil if no router has been created.
+func(d Document) OnRouterMounted(h *ui.MutationHandler){
+	d.AsElement().WatchEvent("router-mounted",d,h)
+}
+
+// Router returns the router associated with the document. It is nil if no router has been created.
 func(d Document) Router() *ui.Router{
 	return ui.GetRouter(d.AsElement())
 }
@@ -489,7 +492,7 @@ func GetDocument(e *ui.Element) Document{
 // getDocumentRef is needed for the definition of constructors wich need to refer to the document 
 // such as body, head or title. Indeed, since they 
 func getDocumentRef(e *ui.Element) *Document{
-	return &Document{Element:e}
+	return &Document{Element:e.Root}
 }
 
 var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
@@ -523,7 +526,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.OnRouterInit(func(r *ui.Router){
+	e.OnRouterMounted(func(r *ui.Router){
 		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
 			r.History.Set("ui","focus",ui.String(evt.Target().ID))
 			return false
@@ -598,13 +601,61 @@ func Autofocus(e *ui.Element) *ui.Element{
 	return e
 }
 
+// withNativejshelpers returns a modifier that appends a scriptin which naive js functions to be called
+// from Go are defined
+func withNativejshelpers(d *Document) *Document{
+	s:= d.Script.WithID("nativehelpers").
+		SetInnerHTML(
+			`
+			window.focusElement = function(element) {
+				if(element) {
+					element.focus({preventScroll: true});
+				} else {
+					console.error('Element is not defined');
+				}
+			}
+			
+			window.queueFocus = function(element) {
+				queueMicrotask(() => focusElement(element));
+			}
 
+			window.blurElement = function(element) {
+				if(element) {
+					element.blur();
+				} else {
+					console.error('Element is not defined');
+				}
+			}
+
+			window.queueBlur = function(element) {
+				queueMicrotask(() => blurElement(element));
+			}
+			
+			window.clearFieldValue = function(element) {
+				if(element) {
+					element.value = "";
+				} else {
+					console.error('Element is not defined');
+				}
+			}
+
+			window.queueClear = function(element) {
+				queueMicrotask(() => clearFieldValue(element));
+			}
+
+			`,
+		)
+	h:= d.Head()
+	h.AppendChild(s)
+
+	return d
+}
 
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
-	d:= Document{Element:LoadFromStorage(newDocument(id, options...))}
+	d:= Document{Element:newDocument(id, options...)}
 	
 	d = withStdConstructors(d)
 
@@ -613,7 +664,7 @@ func NewDocument(id string, options ...string) Document {
 	e.AppendChild(d.head.WithID("head")) 
 	e.AppendChild(d.body.WithID("body"))
 
-
+	e.OnRouterMounted(routerConfig)
 	e.WatchEvent("document-loaded", e,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
@@ -913,7 +964,7 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().Root.Set("ui","body",ui.String(evt.Origin().ID))
 		return false
-	}))
+	}).RunOnce().RunASAP())
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
@@ -947,7 +998,7 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().Root.Set("ui","head",ui.String(evt.Origin().ID))
 		return false
-	}))
+	}).RunOnce().RunASAP())
 
 	return e
 })
@@ -1904,7 +1955,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}).RunASAP())
 
-	a.AsElement().Watch("data", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.AsElement().SetUI("active", evt.NewValue())
 		return false
 	}).RunASAP())
@@ -1925,7 +1976,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}))
 
-	a.AsElement().SetData("link", ui.String(link.AsElement().ID))
+	a.AsElement().SetUI("link", ui.String(link.AsElement().ID))
 
 	
 
@@ -4314,7 +4365,7 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 			evt.Origin().SetUI("action",ui.String(evt.Origin().Route()))
 		}
 		return false
-	}))
+	}).RunOnce().RunASAP())
 
 
 	withStringAttributeWatcher(e,"accept-charset")

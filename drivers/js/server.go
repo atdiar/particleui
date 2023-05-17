@@ -232,6 +232,7 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 		}
 
 		document:= f()
+		withNativejshelpers(&document)
 		
 		go func(){
 			document.ListenAndServe(r.Context())	// launches a new UI thread

@@ -225,7 +225,11 @@ func (m Mutation) Category() string        { return m.category}
 func (m Mutation) Property() string        { return m.propname }
 func (m Mutation) NewValue() Value     { 
 	if m.category == "event"{
-		e,ok:= m.NewVal.(Object).Get("value")
+		v,ok:= m.NewVal.(Object)
+		if !ok{
+			panic("event of unexpected type")
+		}
+		e,ok:= v.Get("value")
 		if !ok{
 			panic("event value not found")
 		}
@@ -240,14 +244,19 @@ func (m Mutation) OldValue() Value     {
 		if m.OldVal == nil{
 			return nil
 		}
-		e,ok:= m.OldVal.(Object).Get("value")
+		v,ok:= m.OldVal.(Object)
+		if !ok{
+			DEBUG(m)
+			panic("event of unexpected type")
+		}
+		e,ok:= v.Get("value")
 		if !ok{
 			panic("event value not found")
 		}
 		return Copy(e)
 	}
 
-	return Copy(m.OldVal)
+	return m.OldVal // TODO check as we don't copy the value anymore. Not expected to be modified.
 }
 
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {

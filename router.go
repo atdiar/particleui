@@ -19,20 +19,18 @@ func newCancelableNavContext()(context.Context, context.CancelFunc){
 	return  context.WithCancel(context.Background())
 }
 
-// router is a singleton as only one router can be created at a time.
-// It can be retrieved by a call to GetRouter
-var router *Router
+
 
 // GetRouter returns the document router if it has been created.
 // If it has not yet, it panics.
 func GetRouter(root *Element) *Router {
-	if router == nil {
+	if root.router == nil {
 		panic("FAILURE: trying to retrieve router before it has been created.")
 	}
 	return root.router
 }
 
-func(e *Element) OnRouterInit(fn func(*Router)) {
+func(e *Element) OnRouterMounted(fn func(*Router)) {
 	useRouter(e,fn)
 }
 
@@ -41,7 +39,7 @@ func(e *Element) OnRouterInit(fn func(*Router)) {
 // router-using function when mounted.
 func useRouter(user AnyElement, fn func(*Router)) {
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().WatchEvent("initrouter",evt.Origin().AsElement().Root,NewMutationHandler(func(event MutationEvent)bool{
+		evt.Origin().WatchEvent("router-mounted",evt.Origin().AsElement().Root,NewMutationHandler(func(event MutationEvent)bool{
 			fn(GetRouter(event.Origin()))
 			return false
 		}).RunASAP().RunOnce())
@@ -71,7 +69,7 @@ type Router struct {
 // NewRouter takes an Element object which should be the entry point of the router.
 // By default, the router basepath is initialized to "/".
 func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
-	if router != nil {
+	if rootview.AsElement().Root.router != nil {
 		panic("A router has already been created")
 	}
 	if !rootview.AsElement().Mountable() {
@@ -123,9 +121,8 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 		r = option(r)
 	}
 
-	router = r
 	rootview.AsElement().Root.router = r
-	r.Outlet.AsElement().Root.TriggerEvent("initrouter")
+	r.Outlet.AsElement().Root.TriggerEvent("router-mounted")
 	return r
 }
 
@@ -396,6 +393,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 		r.History.Replace(newroute)
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
+		DEBUG(r.History.Value())
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v,_, a, err := r.Routes.match(newroute)
@@ -808,7 +806,7 @@ type Link struct {
 }
 
 func (l Link) URI() string {
-	u,_:= l.Raw.GetData("uri")
+	u,_:= l.Raw.GetUI("uri")
 	uri:= string(u.(String))
 	return uri
 }
@@ -824,7 +822,7 @@ func (l Link) Activate(targetid ...string) {
 }
 
 func (l Link) IsActive() bool {
-	status, ok := l.Raw.GetData("active")
+	status, ok := l.Raw.GetUI("active")
 	if !ok {
 		return false
 	}
@@ -875,9 +873,9 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 			panic("zui_ERROR: somehow the link constructor has not been registered.")
 		}
 		e := c(r.Outlet.AsElement().ID+"-"+viewname)
-		e.SetData("viewelements",NewList(String(r.Outlet.AsElement().ID)))
-		e.SetData("viewnames", NewList(String(viewname)))
-		e.SetData("uri", String("/"+viewname))
+		e.SetUI("viewelements",NewList(String(r.Outlet.AsElement().ID)))
+		e.SetUI("viewnames", NewList(String(viewname)))
+		e.SetUI("uri", String("/"+viewname))
 		l= Link{e}
 	}
 	
@@ -894,7 +892,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	RegisterElement(r.Outlet.AsElement().Root,e)
 
 	// Let's retrieve the target viewElement and corresponding view name
-	v,ok:= e.GetData("viewelements")
+	v,ok:= e.GetUI("viewelements")
 	if !ok{
 		panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
 	}
@@ -929,10 +927,10 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 
 	// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable DEBUG trying data instead of ui layer
 	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
-		route := evt.NewValue().(String)
-		lnk,_:= e.GetData("uri")
-		link:= strings.TrimPrefix(string(lnk.(String)),"/")
-		
+		route := evt.NewValue().(String).String()
+		lnk,_:= e.GetUI("uri")
+		link:= lnk.(String).String()
+
 		if string(route) == link {
 			e.SetUI("active", Bool(true))
 		} else {
@@ -994,8 +992,8 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 		nl:= n.(List)
 		vl = append(vl,String(ve.AsElement().ID))
 		nl = append(nl,String(viewname))
-		ne.SetData("viewelements",vl)
-		ne.SetData("viewnames",nl)
+		ne.SetUI("viewelements",vl)
+		ne.SetUI("viewnames",nl)
 		uri:="/" + string(nl[0].(String))
 		for i,velem:= range vl{
 			if i==0{
@@ -1005,7 +1003,7 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 			vname:= string(nl[i].(String))
 			uri = "/" + id + "/" + vname
 		}
-		ne.SetData("uri",String(uri))
+		ne.SetUI("uri",String(uri))
 		return Link{ne}
 	}
 }
@@ -1019,11 +1017,11 @@ func(r *Router) RetrieveLink(URI string) (Link,bool){
 
 func isValidLink(l Link) bool{
 	e:= l.AsElement()
-	v,ok:=e.GetData("viewelements")
+	v,ok:=e.GetUI("viewelements")
 	if !ok{
 		return false
 	}
-	n,ok:= e.GetData("viewnames")
+	n,ok:= e.GetUI("viewnames")
 	if !ok{
 		return false
 	}

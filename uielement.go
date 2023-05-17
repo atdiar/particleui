@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"sync"
 )
 
 var (
@@ -146,16 +147,17 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el := NewElement(id, e.DocType)
 	el.registry = make(map[string]*Element,4096)
 	el.Root = el
-	el.Parent = el // initially nil DEBUG
+	el.Parent = nil // initially nil DEBUG
 	el.subtreeRoot = el
 	el.ElementStore = e
-	// DEBUG el.path isn't set
 	RegisterElement(el,el)
+	el.path = &Elements{make([]*Element,0)}
+	el.pathvalid = true
 
 	el.Set("internals", "root", Bool(true))
 	el.TriggerEvent( "mounted", Bool(true))
 	el.TriggerEvent( "mountable", Bool(true))
-
+	el.isroot = true
 	
 	return el
 }
@@ -193,7 +195,7 @@ func unregisterElement(root,e *Element) {
 
 // Registered indicates whether an Element is currently registered for any (unspecified) User Interface tree.
 func(e *Element) Registered() bool{
-	_,ok:= e.Get("event","registered")
+	_,ok:= e.GetEventValue("registered")
 	return ok
 }
 
@@ -201,13 +203,14 @@ func(e *Element) Registered() bool{
 // GetByID finds any element that has been part of the UI tree at least once by its ID.
 func GetById(root *Element, id string) *Element {
 	if root.registry == nil{
+		DEBUG(root, id)
 		panic("internal err: root element should have an element registry.")
 	}
 
 	return root.registry[id]
 }
 
-func(e *ElementStore) AddConstructorOptions(elementtype string, options ...ConstructorOption) *ElementStore{
+func(e *ElementStore) AddConstructorOptionsTo(elementtype string, options ...ConstructorOption) *ElementStore{
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
 		optlist = make(map[string]func(*Element) *Element)
@@ -241,22 +244,26 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 		element.Set("internals", "constructor", String(elementtype))
 		element.ElementStore = e
 
-		// Let's apply the global constructor options
-		for _, fn := range e.GlobalConstructorOptions {
-			element = fn(element)
-		}
-		// Let's apply the remaining options
-		for _, opt := range optionNames {
-			r, ok := e.ConstructorsOptions[elementtype]
-			if ok {
-				config, ok := r[opt]
+		element.WatchEvent("registered",element, NewMutationHandler(func(evt MutationEvent) bool {
+			// Let's apply the global constructor options
+			for _, fn := range e.GlobalConstructorOptions {
+				fn(evt.Origin())
+			}
+			// Let's apply the remaining options
+			for _, opt := range optionNames {
+				r, ok := e.ConstructorsOptions[elementtype]
 				if ok {
-					element = config(element)
-				} else{
-					DEBUG(opt," is not an available option for ",elementtype)
+					config, ok := r[opt]
+					if ok {
+						config(evt.Origin())
+					} else{
+						DEBUG(opt," is not an available option for ",elementtype)
+					}
 				}
 			}
-		}
+			return false
+		}).RunOnce().RunASAP())
+		
 
 		return element
 	}
@@ -289,8 +296,10 @@ type Element struct {
 	Root         *Element
 	subtreeRoot  *Element // detached if subtree root has no parent unless subtreeroot == root
 	path         *Elements
+	pathvalid bool
 
 	Parent *Element
+	isroot bool
 
 	Alias    string
 	ID      string
@@ -339,7 +348,9 @@ func NewElement(id string, doctype string) *Element {
 		nil,
 		nil,
 		NewElements(),
+		false,
 		nil,
+		false,
 		"",
 		id,
 		doctype,
@@ -379,7 +390,7 @@ func (e *Element) IsRoot() bool {
 	if e == nil {
 		return false
 	}
-	return e == e.Parent
+	return e.isroot
 }
 
 func PersistenceMode(e *Element) string {
@@ -415,14 +426,14 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 	le := len(elements)
 	if c > (l + le) {
 		e.List = e.List[:l+le]
-		copy(e.List[le:], e.List)
-		copy(e.List,elements)
-		return e
+		copy(e.List[le:], e.List[:l])
+		copy(e.List[:le], elements)
+	} else {
+		nl := make([]*Element, len(elements)+l, len(elements)+l+512)
+		copy(nl, elements)
+		copy(nl[le:], e.List[:l])
+		e.List = nl
 	}
-	nl := make([]*Element,len(elements)+len(e.List),len(elements)+len(e.List)+512 )
-	nl = append(nl,elements...)
-	nl = append(nl, e.List...)
-	e.List = nl
 	return e
 }
 
@@ -562,114 +573,234 @@ func (e *Element) DispatchEvent(evt Event) bool {
 	return done
 }
 
-
+// TODO implement sync pool for finalizers and for inactive elements map
 
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
-func attach(parent *Element, child *Element, activeview bool) {
-	if activeview {
-		child.Parent = parent
-		child.path.InsertFirst(parent).InsertFirst(parent.path.List...)
-	}
-	child.Root = parent.Root
-	child.subtreeRoot = parent.subtreeRoot
+func attach(parent *Element, child *Element) func() {
+    finalizers := make([]func(), 0,512)
+    stack := stackPool.Get().([]*Element)
+    stack = append(stack, child)
 
-	child.link(parent)
-	//child.ViewAccessPath = computePath(child.ViewAccessPath,child.ViewAccessNode)
+	mounting:= parent.Mounted()
+	mountable := parent.Mountable()
 
-	for _, descendant := range child.Children.List {
-		detach(descendant)
-		attach(child, descendant, true)
-	}
+	inactive:= make(map[*Element]bool,512) // TODO use sync.Pool ?
 
-	for _, descendants := range child.InactiveViews {
-		for _, descendant := range descendants.Elements().List {
-			detach(descendant)
-			attach(child, descendant, false)
+    for len(stack) > 0 {
+        lastIndex := len(stack) - 1
+        curr := stack[lastIndex]
+        stack = stack[:lastIndex]
+
+		if curr.ID == child.ID{
+			curr.Parent = parent
 		}
-	}
+		
+        curr.Root = curr.Parent.Root
+        curr.subtreeRoot = curr.Parent.subtreeRoot
+        curr.link(curr.Parent)
+		
+		if !inactive[curr] {
+            curr.computePath()
+        }
+		
+    
+        stack = append(stack, curr.Children.List...)
 
-	//child.TriggerEvent( "attach", Bool(true))
-	if child.Mountable() {
-		child.TriggerEvent( "mountable", Bool(true))
-		// we can set mountable without checking if it was already set because we
-		// know that attach is only called for detached subtrees, i.e. they are also
-		// not mountable nor mounted.
 
-		if child.Mounted() {
-			child.TriggerEvent("mount", Bool(true))
+        for _, descendants := range curr.InactiveViews {
+            //stack = append(stack, descendants.Elements().List...)
+			for _, element := range descendants.Elements().List {
+				stack = append(stack, element)
+				inactive[element] = true
+			}
+        }
+
+        // Generate finalizer for this element
+        finalizers = append(finalizers, func() {
+			
+			curr.computeRoute()
+
+            if mountable {
+				curr.TriggerEvent( "mountable")
+
+				if mounting {
+					if curr.Mounted(){
+						curr.TriggerEvent("mounted")
+					}
+				}
+			}			
+        })
+
+		if mounting {
+			if !inactive[curr]{
+				curr.TriggerEvent("mount")
+			}
 		}
-	}
+    }
+
+	defer func(){
+		for i := range stack {
+			stack[i] = nil
+		}
+		stack = stack[:0]
+		stackPool.Put(stack)
+	}()
+    
+
+    // Return a single function that calls all the finalizers
+    return func() {
+        for _, finalizer := range finalizers {
+            finalizer()
+        }
+    }
 }
 
-func finalize(child *Element, attaching bool, wasmounted bool) {
-	if attaching {
-		if child.Mounted() {
-			child.TriggerEvent("mounted")
-		}
-
-	} else { // detaching
-		if wasmounted{
-			child.TriggerEvent("unmounted")
-		}
-	}
-
-	for _, descendant := range child.Children.List {
-		finalize(descendant, attaching, wasmounted)
-	}
-	child.computeRoute() // called for its side-effect i.e. computing the ViewAccessPath
+var stackPool = sync.Pool{
+    New: func() interface{} {
+        return make([]*Element, 0, 64)
+    },
 }
+
+
 
 // detach will unlink an Element from its parent. If the element was in a view,
 // the element is still being rendered until it is removed. However, it should
 // not be able to react to events or mutations. TODO review the latter part.
-func detach(e *Element) {
+func detach(e *Element) func() {
 	if e.Parent == nil {
-		return
+		panic("attempting to detach an element who is not attached")
 	}
 
 	if e.IsRoot() {
 		panic("FAILURE: attempt to detach the root element.")
 	}
 
-	e.subtreeRoot = e
+	
+	stack := stackPool.Get().([]*Element)
+	
+	stack = append(stack, e)
+	finalizers := make([]func(), 0, 512)
 
-	// reset e.path to start with the top-most element i.e. "e" in the current case
-	index := -1
-	for k, ancestor := range e.path.List {
-		if ancestor == e.Parent {
-			index = k
-			break
+	wasmounted := e.Mounted()
+	inactive:= make(map[*Element]bool,512) // TODO use sync.Pool ?
+	
+
+	for len(stack) > 0 {
+		// Pop the top element from the stack.
+		lastIndex := len(stack) - 1
+		curr := stack[lastIndex]
+		stack = stack[:lastIndex]
+	
+		// Set the subtree root to the current element.
+		curr.subtreeRoot = curr
+
+	
+		if curr.ID == e.ID{
+			curr.Parent = nil
+			curr.ViewAccessNode.previous = nil // DEBUG not sure it is even necessary
+		}
+		// Invalidate the path
+		curr.pathvalid = false
+
+		
+		if !inactive[curr]{
+			// Create a finalizer for this element
+			finalizer := func() {
+				if wasmounted{
+					curr.TriggerEvent("unmounted")
+				}
+			}
+			finalizers = append(finalizers, finalizer)
+		}
+		
+		
+	
+		// Append children of curr onto the stack.
+		stack = append(stack, curr.Children.List...)
+
+		// Append descendants of curr onto the stack.
+		for _, descendants := range curr.InactiveViews {
+            //stack = append(stack, descendants.Elements().List...)
+			for _, element := range descendants.Elements().List {
+				stack = append(stack, element)
+				inactive[element] = true
+			}
+        }
+
+		if wasmounted{
+			if !inactive[curr]{
+				curr.TriggerEvent("unmount")
+			}
 		}
 	}
-	if index >= 0 {
-		e.path.List = e.path.List[index+1:]
+	
+	for i := range stack {
+		stack[i] = nil
 	}
+	stack = stack[:0]
+	stackPool.Put(stack)
+	
 
-	e.Parent = nil
-
-	// ViewAccessPath handling:
-	e.ViewAccessNode.previous = nil
-	//e.ViewAccessPath = computePath(newViewNodes(), e.ViewAccessNode)
-
-	//e.TriggerEvent( "attach", Bool(false))
-	//e.TriggerEvent( "mountable", Bool(false))
-	e.TriggerEvent( "unmount", Bool(false)) // i.e. unmount
-
-	// got to update the subtree with the new subtree root and path
-	for _, descendant := range e.Children.List {
-		detach(descendant)
-		attach(e, descendant, true)
-	}
-
-	for _, descendants := range e.InactiveViews {
-		for _, descendant := range descendants.Elements().List {
-			detach(descendant)
-			attach(e, descendant, false)
+	return func() {
+		for _, fn := range finalizers {
+			fn()
 		}
 	}
 }
+
+
+
+func (e *Element) calculatePath() {
+    // Reset the slice while keeping the underlying array
+    oldLength := len(e.path.List)
+    e.path.List = e.path.List[:0] 
+
+    // Traverse from e up to the root or the first element with a valid path.
+    for current := e; current != nil; current = current.Parent {
+        e.path.List = append(e.path.List, current)
+    }
+
+    // Clear unused pointers
+    for i := len(e.path.List); i < oldLength; i++ {
+        e.path.List[i] = nil
+    }
+
+    // Reverse e.path.List
+    for i, j := 0, len(e.path.List)-1; i < j; i, j = i+1, j-1 {
+        e.path.List[i], e.path.List[j] = e.path.List[j], e.path.List[i]
+    }
+}
+
+
+
+func (e *Element) computePath() {
+    if e.Parent == nil {
+        // If the parent is nil, the element is either root or detached
+        if e.IsRoot() {
+            // If the element is the root, its path is always valid
+            e.pathvalid = true
+        } else {
+            // If the element is detached, its path is invalid
+            e.pathvalid = false
+        }
+    } else {
+        // If the parent is not nil, try to compute its path
+        e.Parent.computePath()
+
+        if e.Parent.pathvalid {
+            // If the parent's path is valid, calculate and validate the child's path.
+            e.calculatePath()
+            e.pathvalid = true
+        } else {
+            // If the parent's path is not valid, the child's path is also invalid.
+            e.pathvalid = false
+        }
+    }
+}
+
+
 
 func (e *Element) hasParent(any AnyElement) bool {
 	anye := any.AsElement()
@@ -704,15 +835,14 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	attach(e, child, true)
+	finalize := attach(e, child)
+	defer finalize()
 	e.Children.InsertLast(child)
 
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
 	//child.TriggerEvent( "attached", Bool(true))
-
-	finalize(child, true, e.Mounted())
 
 	return e
 }
@@ -732,7 +862,8 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	attach(e, child, true)
+	finalize:= attach(e, child)
+	defer finalize()
 	e.Children.InsertFirst(child)
 
 	if e.Native != nil {
@@ -740,8 +871,6 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 	}
 
 	//child.TriggerEvent( "attached", Bool(true))
-
-	finalize(child, true, e.Mounted())
 
 	return e
 }
@@ -761,7 +890,8 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	attach(e, child, true)
+	finalize:= attach(e, child)
+	defer finalize()
 	e.Children.Insert(child, index)
 
 	if e.Native != nil {
@@ -769,8 +899,6 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 	}
 
 	//child.TriggerEvent( "attached", Bool(true))
-
-	finalize(child, true, e.Mounted())
 
 	return e
 }
@@ -791,7 +919,6 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		log.Panicf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, new.DocType)
 		return e
 	}
-	oldwasmounted:= old.Mounted()
 
 	_, ok := e.hasChild(old)
 	if !ok {
@@ -802,8 +929,10 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		new.Parent.removeChild(new)
 	}
 
-	detach(old.AsElement())
-	attach(e, new.AsElement(), true)
+	fd := detach(old.AsElement())
+	defer fd()
+	finalize := attach(e, new.AsElement())
+	defer finalize()
 	e.Children.Replace(old.AsElement(), new.AsElement())
 
 	if e.Native != nil {
@@ -813,8 +942,6 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	//old.TriggerEvent( "attached", Bool(false))
 	//new.TriggerEvent( "attached", Bool(true))
 
-	finalize(old, false, oldwasmounted)
-	finalize(new, true, e.Mounted())
 
 	return e
 }
@@ -833,8 +960,9 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	if !ok {
 		return e
 	}
-	wasmounted:= child.Mounted()
-	detach(child)
+
+	finalize := detach(child)
+	defer finalize()
 	e.Children.Remove(child)
 
 	if e.Native != nil {
@@ -842,7 +970,6 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	}
 
 	//child.TriggerEvent( "attached", Bool(false))
-	finalize(child, false,wasmounted)
 
 	return e
 }
@@ -859,12 +986,10 @@ func (e *Element) removeChildren() *Element {
 		e.removeChild(child)
 	}
 	*/
-	for _, child := range e.Children.List {
-        e.removeChild(child)
-    }
-	
-
-	return e
+	for i := len(e.Children.List) - 1; i >= 0; i-- {
+        e.removeChild(e.Children.List[i])
+    } 
+    return e
 }
 
 
@@ -897,7 +1022,7 @@ func (e *Element) DeleteChildren() *Element {
 		DEBUG(e.ID + " is nil")
 		return e
 	}
-	m:= e.Mounted()
+
 	if e.Children != nil{
 		for _, child := range e.Children.List {
 			child.TriggerEvent( "deleting", Bool(true))
@@ -910,24 +1035,25 @@ func (e *Element) DeleteChildren() *Element {
 				}
 			}
 
-			detach(child)
+			finalize := detach(child)
 			if e.Native != nil{
 				e.Native.RemoveChild(child)
 			}
-			defer finalize(child, false,m)
+			defer finalize()
 			defer child.Set("internals", "deleted", Bool(true))
 		}
-		e.Children.RemoveAll()
+		defer e.Children.RemoveAll()
 	}
 	
 	return e
 }
 
 func(e *Element) BindDeletion(source *Element) *Element{
-	return e.Watch("event","deleted",source, NewMutationHandler(func(evt MutationEvent)bool{
+	e.WatchEvent("deleted",source, NewMutationHandler(func(evt MutationEvent)bool{
 		Delete(evt.Origin())
 		return false
 	}).RunASAP().RunOnce())
+	return e
 }
 
 // Delete allows for the deletion of an element regardless of whether it has a parent.
@@ -978,15 +1104,12 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 			if ele.Parent != nil {
 				ele.Parent.removeChild(ele)
 			}
-			attach(e, ele, true)
+			finalize := attach(e, ele)
+			defer finalize()
 			e.Children.InsertLast(ele)
 			children = append(children, ele)
 		}
 		n.SetChildren(children...)
-		for _, child := range children {
-			//child.TriggerEvent( "attached", Bool(true))
-			finalize(child, true,false)
-		}
 		return e
 	}
 	for _, el := range any {
@@ -997,7 +1120,6 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	m:= e.Mounted()
 	
 	e.RemoveChildren()
 	
@@ -1012,16 +1134,12 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 				el.Parent.removeChild(el)
 			}
 
-			attach(e, el, true)
+			finalize := attach(e, el)
+			defer finalize()
 			e.Children.InsertLast(el)
 		}
 
 		n.SetChildren(any...)		
-		
-		for _, child := range any {
-			//child.TriggerEvent( "attached", Bool(true))
-			finalize(child, true,m)
-		}
 		
 		return e
 	} else{
@@ -1174,7 +1292,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	}))
 
 	if h.ASAP{
-		val, ok := owner.AsElement().Get(category, propname)
+		val, ok := owner.AsElement().Properties.Get(category, propname)
 		if ok {
 			h.Handle(owner.AsElement().NewMutationEvent(category, propname, val, nil))
 		}
@@ -1207,11 +1325,11 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 	return e.Watch(category,propname,owner,g)
 }
 
-// DataWilRender indicates whether some data stored as a property of an element has its representation used
+// IsRenderData indicates whether some data stored as a property of an element has its representation used
 // to create the User Interface.
 // It simply checks that he representation of the data that is stored in the "ui" category/namespace 
 // under the same property name is being watched for mutations
-func DataWillRender(e *Element, propname string) bool{
+func (e *Element) IsRenderData(propname string) bool{
 	p,ok:= e.Properties.Categories["ui"]
 	if !ok{
 		return ok
@@ -1297,22 +1415,29 @@ func (e *Element) Mountable() bool {
 // Mounted returns true if an Element is directly reachable from the root of an app tree.
 // This does not include elements existing on inactivated view paths.
 func (e *Element) Mounted() bool {
-	if e.IsRoot() {
-		return true
+    current := e
+    for current != nil {
+        if current.IsRoot() {
+            return true
+        }
+        current = current.Parent
+    }
+    return false
+}
+/* 
+	// Essentially equivalent to:
+	func (e *Element) Mounted() bool {
+		if e.IsRoot() {
+			return true
+		}
+
+		if e.Parent == nil{
+			return false
+		}
+		return e.Parent.Mounted()
 	}
 
-	if !e.Mountable() {
-		return false
-	}
-	if e.path == nil{
-		return false
-	}
-	l := e.path.List
-	if len(l) == 0 {
-		return false
-	}
-	return l[0].IsRoot()
-}
+*/
 
 func (e *Element) OnMount(h *MutationHandler) {
 	e.WatchEvent("mount", e, h)
@@ -1323,7 +1448,7 @@ func (e *Element) OnMounted(h *MutationHandler) {
 }
 
 func (e *Element) OnMountable(h *MutationHandler) {
-	e.Watch("event","mountable", e, h)
+	e.WatchEvent("mountable", e, h)
 }
 
 func(e *Element) OnRegistered(h *MutationHandler){
@@ -1372,10 +1497,12 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, "internals", "deleted"},"/"),g )
 }
 
+/*//DELETE
 func isRuntimeCategory(e *ElementStore, category string) bool{
 	_,ok:= e.RuntimePropTypes[category]
 	return ok
 }
+*/
 
 func newEventValue(v Value) Object{
 	o:= NewObject()
@@ -1391,9 +1518,13 @@ func(e *Element) TriggerEvent(name string, value ...Value){
 	case n == 0:
 		e.Set("event", name,newEventValue(Bool(true)))
 	case n==1:
-		e.Set("event", name,newEventValue(value[0]))
+		e.Set("event", name,newEventValue(Copy(value[0])))
 	default:
-		e.Set("event", name,newEventValue(NewList(value...)))
+		l:= NewList()
+		for _,v:= range value{
+			l = append(l, Copy(v))
+		}
+		e.Set("event", name,newEventValue(l))
 	}
 }
 
@@ -1402,6 +1533,17 @@ func(e *Element) WatchEvent(name string, target Watchable, h *MutationHandler){
 	e.Watch("event",name,target,h)
 }
 
+func(e *Element) GetEventValue(name string) (Value, bool){
+	v,ok:= e.Properties.Get("event",name)
+	if !ok{
+		return nil,false
+	}
+	w,ok:= v.(Object).Get("value")
+	if !ok{
+		panic("event object is always expected to have a value even if it is nil")
+	}
+	return Copy(w), true
+}
 /*
 // Canonicalize returns the base32 encoding of a string if it contains the delimmiter "/"
 // It can be used 
@@ -1418,11 +1560,7 @@ func Canonicalize(s string) string{
 // The "global" namespace is a local copy of the data that resides in the global
 // shared scope common to all Element objects of an ElementStore.
 func (e *Element) Get(category, propname string) (Value, bool) {
-	v,ok:= e.Properties.Get(category, propname)
-	if ok && category == "event"{
-		return v.(Object).Get("value")
-	}
-	return v,ok
+	return  e.Properties.Get(category, propname)
 }
 
 // Set inserts a key/value pair under a given category in the element property store.
@@ -1433,11 +1571,10 @@ func (e *Element) Set(category string, propname string, value Value) {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
 
-
 	// Persist property if persistence mode has been set at Element creation
 	pmode := PersistenceMode(e)
 
-	oldvalue, ok := e.Get(category, propname)
+	oldvalue, ok := e.Properties.Get(category, propname)
 
 	if ok {
 		if Equal(value, oldvalue) { // idempotence			
@@ -1772,7 +1909,7 @@ func (e *Element) computeRoute() string {
 	return uri
 }
 
-// Route returns the string that reporesents the URL path that allows for the elemnt to be displayed.
+// Route returns the string that represents the URL path that allows for the element to be displayed.
 // This string may be parameteriwed if the element is contained in an unmounted parametered view.
 // if the element is not mountable, an empty string is returned.
 func(e *Element) Route() string{
@@ -1967,7 +2104,11 @@ func (p PropertyStore) Get(category string, propname string) (Value, bool) {
 	if !ok {
 		return nil, false
 	}
-	return ps.Get(propname)
+	v,ok:= ps.Get(propname)
+	if category != "event"{
+		v = Copy(v)
+	}
+	return v,ok
 }
 
 func (p PropertyStore) Set(category string, propname string, value Value) {
@@ -1975,6 +2116,9 @@ func (p PropertyStore) Set(category string, propname string, value Value) {
 	if !ok {
 		ps = newProperties()
 		p.Categories[category] = ps
+	}
+	if category != "event"{
+		value = Copy(value)
 	}
 	ps.Set(propname, value)
 }
@@ -2050,7 +2194,7 @@ func (p Properties) IsWatching(propname string, e *Element) bool {
 func (p Properties) Get(propName string) (Value, bool) {
 	v, ok := p.Local[propName]
 	if ok {
-		return Copy(v), ok
+		return v, ok
 	}
 	return nil, false
 }
@@ -2061,7 +2205,7 @@ func(p Properties) Watched(propname string) bool{
 }
 
 func (p Properties) Set(propName string, value Value) {
-	p.Local[propName] = Copy(value)
+	p.Local[propName] = value
 }
 
 func (p Properties) Delete(propname string) {

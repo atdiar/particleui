@@ -8,8 +8,8 @@ package doc
 
 import (
 	"context"
-	//"encoding/json"
-	"github.com/goccy/go-json"
+	"encoding/json"
+	//"github.com/goccy/go-json"
 	//"errors"
 	"log"
 	"strings"
@@ -25,14 +25,17 @@ var (
 	Elements                      = ui.NewElementStore("default", DOCTYPE).
 		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
 		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
-		AddConstructorOptions("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence)
+		AddConstructorOptionsTo("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence).
+		ApplyGlobalOption(allowdataloading)
 )
 
 
 // NewBuilder registers a new document building function.
 func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 	return  func(ctx context.Context){
-		f().ListenAndServe(ctx)
+		d:=f()
+		withNativejshelpers(&d)
+		d.ListenAndServe(ctx)
 	}
 }
 
@@ -160,12 +163,11 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				}
 				val:= ui.Object(rawvalue).MarkedRaw().Value()
 				ui.LoadProperty(e, category, propname, val)
-				if category == "data"{
+				if category == "data" && e.DocType == e.ElementStore.DocType{
 					uiloaders = append(uiloaders, func(){
-						if ui.DataWillRender(e,propname){
+						if e.IsRenderData(propname){
 							e.SetUI(propname, val)
 						}
-						
 					})
 				}
 				//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
@@ -218,7 +220,7 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 		}
 
 		store.Delete(id)
-		element.Set("event","storesynced",ui.Bool(false))
+		element.TriggerEvent("storesynced",ui.Bool(false))
 	}
 }
 
@@ -573,7 +575,7 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 	if e == nil {
 		panic("loading a nil element")
 	}
-	lb,ok:=e.Get("event","storesynced")
+	lb,ok:=e.GetEventValue("storesynced")
 	if ok{
 		if isSynced:=lb.(ui.Bool); isSynced{
 			return e
@@ -606,7 +608,7 @@ func PutInStorage(e *ui.Element) *ui.Element{
 			}
 		}		
 	}
-	e.Set("event","storesynced",ui.Bool(true))
+	e.TriggerEvent("storesynced",ui.Bool(true))
 	return e
 }
 
@@ -619,7 +621,6 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 	}
 	return e
 }
-
 
 
 /*
@@ -647,93 +648,104 @@ func isScrollable(property string) bool {
 	}
 }
 // abstractjs
-var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	if e.ID == e.Root.ID{
-		if js.Global().Get("history").Get("scrollRestoration").Truthy() {
-			js.Global().Get("history").Set("scrollRestoration", "manual")
+var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(el *ui.Element) *ui.Element {
+	el.WatchEvent("registered", el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+		e:=event.Origin()
+		if e.IsRoot(){
+			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
+				js.Global().Get("history").Set("scrollRestoration", "manual")
+			}
+			e.WatchEvent("document-loaded",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+				rootScrollRestorationSupport(evt.Origin())
+				return false
+			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
+			
+			return false
 		}
-		return rootScrollRestorationSupport(e)
-	}
-
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		e.WatchEvent("document-loaded", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			router := ui.GetRouter(evt.Origin())
-
-			ejs,ok := JSValue(e)
-			if !ok{
+	
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("document-loaded", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				router := ui.GetRouter(evt.Origin())
+	
+				ejs,ok := JSValue(e)
+				if !ok{
+					return false
+				}
+				wjs := js.Global().Get("document").Get("defaultView")
+	
+				stylesjs := wjs.Call("getComputedStyle", ejs)
+				overflow := stylesjs.Call("getPropertyValue", "overflow").String()
+				overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
+				overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
+	
+				scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
+	
+				if scrollable {
+					if js.Global().Get("history").Get("scrollRestoration").Truthy() {
+						js.Global().Get("history").Set("scrollRestoration", "manual")
+					}
+					e.SetUI("scrollrestore", ui.Bool(true)) // DEBUG SetUI instead of SetDataSetUI, as this is no business logic but UI logic
+					e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
+						scrolltop := ui.Number(ejs.Get("scrollTop").Float())
+						scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
+						router.History.Set(e.ID, "scrollTop", scrolltop)
+						router.History.Set(e.ID, "scrollLeft", scrollleft)
+						return false
+					}))
+	
+					h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+						b, ok := e.GetEventValue("shouldscroll")
+						if !ok {
+							return false
+						}
+						if scroll := b.(ui.Bool); scroll {
+							t, ok := router.History.Get(e.ID, "scrollTop")
+							if !ok {
+								ejs.Set("scrollTop", 0)
+								ejs.Set("scrollLeft", 0)
+								return false
+							}
+							l, ok := router.History.Get(e.ID, "scrollLeft")
+							if !ok {
+								ejs.Set("scrollTop", 0)
+								ejs.Set("scrollLeft", 0)
+								return false
+							}
+							top := t.(ui.Number)
+							left := l.(ui.Number)
+							ejs.Set("scrollTop", float64(top))
+							ejs.Set("scrollLeft", float64(left))
+							if e.ID != e.Root.ID {
+								e.TriggerEvent("shouldscroll", ui.Bool(false)) //always scroll root
+							}
+						}
+						return false
+					})
+					e.WatchEvent("navigation-end", e.Root, h)
+				} else {
+					e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
+				}
+				return false
+			}))
+			return false
+		}).RunASAP().RunOnce())
+	
+		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
+	
+			sc, ok := e.GetUI("scrollrestore")
+			if !ok {
 				return false
 			}
-			wjs := js.Global().Get("document").Get("defaultView")
-
-			stylesjs := wjs.Call("getComputedStyle", ejs)
-			overflow := stylesjs.Call("getPropertyValue", "overflow").String()
-			overflowx := stylesjs.Call("getPropertyValue", "overflowX").String()
-			overflowy := stylesjs.Call("getPropertyValue", "overflowY").String()
-
-			scrollable := isScrollable(overflow) || isScrollable(overflowx) || isScrollable(overflowy)
-
-			if scrollable {
-				if js.Global().Get("history").Get("scrollRestoration").Truthy() {
-					js.Global().Get("history").Set("scrollRestoration", "manual")
-				}
-				e.SetUI("scrollrestore", ui.Bool(true)) // DEBUG SetUI instead of SetDataSetUI, as this is no business logic but UI logic
-				e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
-					scrolltop := ui.Number(ejs.Get("scrollTop").Float())
-					scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-					router.History.Set(e.ID, "scrollTop", scrolltop)
-					router.History.Set(e.ID, "scrollLeft", scrollleft)
-					return false
-				}))
-
-				h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-					b, ok := e.Get("event", "shouldscroll")
-					if !ok {
-						return false
-					}
-					if scroll := b.(ui.Bool); scroll {
-						t, ok := router.History.Get(e.ID, "scrollTop")
-						if !ok {
-							ejs.Set("scrollTop", 0)
-							ejs.Set("scrollLeft", 0)
-							return false
-						}
-						l, ok := router.History.Get(e.ID, "scrollLeft")
-						if !ok {
-							ejs.Set("scrollTop", 0)
-							ejs.Set("scrollLeft", 0)
-							return false
-						}
-						top := t.(ui.Number)
-						left := l.(ui.Number)
-						ejs.Set("scrollTop", float64(top))
-						ejs.Set("scrollLeft", float64(left))
-						if e.ID != e.Root.ID {
-							e.TriggerEvent("shouldscroll", ui.Bool(false)) //always scroll root
-						}
-					}
-					return false
-				})
-				e.WatchEvent("navigation-end", e.Root, h)
-			} else {
-				e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
+			if scrollrestore := sc.(ui.Bool); scrollrestore {
+				e.TriggerEvent("shouldscroll", ui.Bool(true))
 			}
 			return false
 		}))
-		return false
-	}).RunASAP().RunOnce())
 
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
-
-		sc, ok := e.GetUI("scrollrestore")
-		if !ok {
-			return false
-		}
-		if scrollrestore := sc.(ui.Bool); scrollrestore {
-			e.TriggerEvent("shouldscroll", ui.Bool(true))
-		}
 		return false
-	}))
-	return e
+	}).RunASAP())
+	return el
+	
 })
 
 
@@ -778,6 +790,7 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 		if err == nil {
 			evt.Origin().SyncUISetData("history", hstateobj.Value())
+			// DEBUG
 		}
 	}
 
@@ -870,22 +883,22 @@ func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 		return
 	}
 
-	ui.DoAsync(e.AsElement().Root, func() {
-		n,ok:= JSValue(e.AsElement())
-		if !ok{
-			return
+	n,ok:= JSValue(e.AsElement())
+	if !ok{
+		return
+	}
+
+	focus(n)
+	
+	if scrollintoview{
+		if !partiallyVisible(e.AsElement()){
+			n.Call("scrollIntoView")
 		}
-		focus(n)
-		if scrollintoview{
-			if !partiallyVisible(e.AsElement()){
-				n.Call("scrollIntoView")
-			}
-		}
-	})
+	}
 }
 
 func focus(e js.Value){ // abstractjs
-	e.Call("focus",map[string]interface{}{"preventScroll": true})
+	js.Global().Call("queueFocus", e)
 }
 
 
@@ -1057,9 +1070,7 @@ func (i InputElement) Blur() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root, func(){
-		native.Value.Call("blur")
-	})
+	js.Global().Call("queueBlur", native.Value)
 }
 
 func (i InputElement) Focus() {
@@ -1067,9 +1078,8 @@ func (i InputElement) Focus() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root, func(){
-		native.Value.Call("focus")
-	})
+	js.Global().Call("queueFocus", native.Value)
+	
 }
 
 func (i InputElement) Clear() {
@@ -1077,9 +1087,8 @@ func (i InputElement) Clear() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	ui.DoAsync(i.Root, func(){
-		native.Value.Set("value", "")
-	})
+	js.Global().Call("queueClear", native.Value)
+	
 }
 
 func newTimeRanges(v js.Value) jsTimeRanges{

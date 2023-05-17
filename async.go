@@ -54,8 +54,8 @@ func newwork(f func(), signalDone chan struct{}) func(){
 // DoAsync pushes a function onto a goroutine for execution, as long as navigation is still valid. 
 // Instead of launching raw goroutines, one should use this wrapper for any concurrent processing that 
 // is tied to navigation. For example, when triggering  http.Requests to fetch data for a given route.
-// Elements must not be accessed in a DoAsync unless a DoSync is used to push changes back to the main
-// goroutine.
+// Elements must not be accessed in a DoAsync without calling DoSync, which  is used to push 
+// changes back to the main goroutine.
 func DoAsync(root *Element,f func()){
 	go func(){
 		select{
