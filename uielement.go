@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"sync"
 )
 
 var (
@@ -76,12 +75,12 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 			a := NewList(String(name))
 			e.Set("internals", "constructoroptions", a)
 		}
-		for _, copt := range l {
+		for _, copt := range l.Unwrap() {
 			if copt == String(name) {
 				return configuratorFn(e)
 			}
 		}
-		e.Set("internals", "constructoroptions", append(l, String(name)))
+		e.Set("internals", "constructoroptions", l.Append(String(name)))
 
 		return configuratorFn(e)
 	}
@@ -162,15 +161,16 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	return el
 }
 
+var unregisterHandler =  NewMutationHandler(func(evt MutationEvent)bool{
+	unregisterElement(evt.Origin())
+	return false
+}).RunOnce()
+
 func RegisterElement(approot *Element, e *Element){
 	e.Root = approot.AsElement()
 	registerElementfn(approot,e)
 
-
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		unregisterElement(evt.Origin().Root,evt.Origin())
-		return false
-	}).RunOnce())
+	e.OnDeleted(unregisterHandler)
 }
 
 func registerElementfn(root,e *Element) {
@@ -180,23 +180,25 @@ func registerElementfn(root,e *Element) {
 		return 
 	}
 	root.registry[e.ID]=e
+	e.registry = root.registry
 	e.BindValue("internals","documentstate",root)
 	e.TriggerEvent("registered")
 }
 
-func unregisterElement(root,e *Element) {
-	if root.registry == nil{
+func unregisterElement(e *Element) {
+	if e.Root.registry == nil{
 		DEBUG("internal err: root element should have an element registry.")
 		return
 	}
 
-	delete(root.registry,e.ID)
+	delete(e.Root.registry,e.ID)
+	e.registry = nil
+
 }
 
 // Registered indicates whether an Element is currently registered for any (unspecified) User Interface tree.
 func(e *Element) Registered() bool{
-	_,ok:= e.GetEventValue("registered")
-	return ok
+	return e.registry != nil
 }
 
 
@@ -245,6 +247,7 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 		element.ElementStore = e
 
 		element.WatchEvent("registered",element, NewMutationHandler(func(evt MutationEvent) bool {
+			e:= evt.Origin().ElementStore
 			// Let's apply the global constructor options
 			for _, fn := range e.GlobalConstructorOptions {
 				fn(evt.Origin())
@@ -367,17 +370,31 @@ func NewElement(id string, doctype string) *Element {
 		nil,
 	}
 
+	
+	// DEBUG TODO check that it's not needed...
 	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
 		RegisterElement(evt.Origin().Root,evt.Origin())
-		e.TriggerEvent("registered")
+		evt.Origin().TriggerEvent("registered")
 		return false
 	}).RunOnce())
 
+	
+
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{"internals", "deleted"}, "/"), NewMutationHandler(func(event MutationEvent) bool {
+			d:= event.Origin()
+		
+			d.path.free()
+			d.Children.free()
+
+			return false
+		}).RunOnce())
+		return false
+	}).RunOnce())
+	
+
 	return e
 }
-
-
-
 
 
 // AnyElement is an interface type implemented by *Element :
@@ -410,7 +427,7 @@ type Elements struct {
 }
 
 func NewElements(elements ...*Element) *Elements {
-	res := &Elements{make([]*Element, 0, 512)}
+	res := &Elements{StackPool.Get()}
 	res.List = append(res.List, elements...)
 	return res
 }
@@ -429,7 +446,7 @@ func (e *Elements) InsertFirst(elements ...*Element) *Elements {
 		copy(e.List[le:], e.List[:l])
 		copy(e.List[:le], elements)
 	} else {
-		nl := make([]*Element, len(elements)+l, len(elements)+l+512)
+		nl := make([]*Element, len(elements)+l, len(elements)+l+64)
 		copy(nl, elements)
 		copy(nl[le:], e.List[:l])
 		e.List = nl
@@ -478,6 +495,13 @@ func (e *Elements) RemoveAll() *Elements {
 	e.List = e.List[:0]
 	return e
 }
+
+func(e *Elements) free(){
+	e.RemoveAll()
+	StackPool.Put(e.List)
+	e.List = nil
+}
+
 
 func (e *Elements) Replace(old *Element, new *Element) *Elements {
 	for i:=0;i<len(e.List);i++{
@@ -573,32 +597,76 @@ func (e *Element) DispatchEvent(evt Event) bool {
 	return done
 }
 
+func computeSubtreeRoot(e *Element) *Element {
+	if e.Parent == nil{
+		return e
+	}
+
+	if e.Root != nil{
+		if e.Root.isroot{
+			return e.Root
+		}
+	}
+
+	return computeSubtreeRoot(e.Parent)
+}
+
 // TODO implement sync pool for finalizers and for inactive elements map
 
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
 // the Element can not be rendered as part of the view.
 func attach(parent *Element, child *Element) func() {
-    finalizers := make([]func(), 0,512)
-    stack := stackPool.Get().([]*Element)
+    finalizers := finalizersPool.Get()
+    stack := StackPool.Get()
     stack = append(stack, child)
 
 	mounting:= parent.Mounted()
 	mountable := parent.Mountable()
 
-	inactive:= make(map[*Element]bool,512) // TODO use sync.Pool ?
+	inactive:= make(map[*Element]bool,64) // TODO use sync.Pool ?
+
 
     for len(stack) > 0 {
         lastIndex := len(stack) - 1
         curr := stack[lastIndex]
+		stack[lastIndex] = nil
         stack = stack[:lastIndex]
 
 		if curr.ID == child.ID{
 			curr.Parent = parent
 		}
+
+		if curr.Root == nil{
+			curr.Root= parent.Root
+		} else if parent.Root == nil{
+			RegisterElement(curr.Root,parent)
+		}
 		
-        curr.Root = curr.Parent.Root
-        curr.subtreeRoot = curr.Parent.subtreeRoot
+		
+		if curr.Root == nil{
+			curr.Root = parent.Root
+			curr.WatchEvent("registered",parent, NewMutationHandler(func(evt MutationEvent)bool{
+				RegisterElement(evt.Origin().Root,curr)
+				return false
+			}).RunOnce().RunASAP())
+
+			parent.WatchEvent("registered",curr, NewMutationHandler(func(evt MutationEvent)bool{
+				RegisterElement(evt.Origin().Root,parent)
+				return false
+			}).RunOnce().RunASAP())
+
+		} else{
+			if parent.Root == nil{
+				parent.Root = curr.Root
+				RegisterElement(parent.Root,parent)
+			}
+		}
+		
+        
+		
+		// the subtreeroot can change as opposed to the root which is nil until attached to a document root
+        curr.subtreeRoot = computeSubtreeRoot(parent)
         curr.link(curr.Parent)
 		
 		if !inactive[curr] {
@@ -639,28 +707,17 @@ func attach(parent *Element, child *Element) func() {
 			}
 		}
     }
-
-	defer func(){
-		for i := range stack {
-			stack[i] = nil
-		}
-		stack = stack[:0]
-		stackPool.Put(stack)
-	}()
-    
+   StackPool.Put(stack)
 
     // Return a single function that calls all the finalizers
     return func() {
-        for _, finalizer := range finalizers {
+        for i, finalizer := range finalizers {
             finalizer()
+			finalizers[i] = nil
         }
+		finalizers= finalizers[:0]
+		finalizersPool.Put(finalizers)
     }
-}
-
-var stackPool = sync.Pool{
-    New: func() interface{} {
-        return make([]*Element, 0, 64)
-    },
 }
 
 
@@ -678,23 +735,24 @@ func detach(e *Element) func() {
 	}
 
 	
-	stack := stackPool.Get().([]*Element)
+	stack := StackPool.Get()
 	
 	stack = append(stack, e)
-	finalizers := make([]func(), 0, 512)
+	finalizers := finalizersPool.Get()
 
 	wasmounted := e.Mounted()
-	inactive:= make(map[*Element]bool,512) // TODO use sync.Pool ?
+	inactive:= make(map[*Element]bool,64) 
 	
 
 	for len(stack) > 0 {
 		// Pop the top element from the stack.
 		lastIndex := len(stack) - 1
 		curr := stack[lastIndex]
+		stack[lastIndex] = nil
 		stack = stack[:lastIndex]
 	
-		// Set the subtree root to the current element.
-		curr.subtreeRoot = curr
+		// reset the subtree root
+		curr.subtreeRoot = nil
 
 	
 		if curr.ID == e.ID{
@@ -736,17 +794,16 @@ func detach(e *Element) func() {
 		}
 	}
 	
-	for i := range stack {
-		stack[i] = nil
-	}
-	stack = stack[:0]
-	stackPool.Put(stack)
+	StackPool.Put(stack)
 	
 
 	return func() {
-		for _, fn := range finalizers {
+		for i, fn := range finalizers {
 			fn()
+			finalizers[i] = nil
 		}
+		finalizers = finalizers[:0]
+		finalizersPool.Put(finalizers)
 	}
 }
 
@@ -836,13 +893,14 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 	}
 
 	finalize := attach(e, child)
-	defer finalize()
+	
 	e.Children.InsertLast(child)
 
 	if e.Native != nil {
 		e.Native.AppendChild(child)
 	}
 	//child.TriggerEvent( "attached", Bool(true))
+	finalize()
 
 	return e
 }
@@ -863,12 +921,13 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 	}
 
 	finalize:= attach(e, child)
-	defer finalize()
+
 	e.Children.InsertFirst(child)
 
 	if e.Native != nil {
 		e.Native.PrependChild(child)
 	}
+	finalize()
 
 	//child.TriggerEvent( "attached", Bool(true))
 
@@ -891,12 +950,13 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 	}
 
 	finalize:= attach(e, child)
-	defer finalize()
 	e.Children.Insert(child, index)
 
 	if e.Native != nil {
 		e.Native.InsertChild(child, index)
 	}
+
+	finalize()
 
 	//child.TriggerEvent( "attached", Bool(true))
 
@@ -929,10 +989,9 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		new.Parent.removeChild(new)
 	}
 
-	fd := detach(old.AsElement())
-	defer fd()
-	finalize := attach(e, new.AsElement())
-	defer finalize()
+	finalizeold := detach(old.AsElement())
+	finalizenew := attach(e, new.AsElement())
+
 	e.Children.Replace(old.AsElement(), new.AsElement())
 
 	if e.Native != nil {
@@ -941,7 +1000,8 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 
 	//old.TriggerEvent( "attached", Bool(false))
 	//new.TriggerEvent( "attached", Bool(true))
-
+	finalizeold()
+	finalizenew()
 
 	return e
 }
@@ -962,12 +1022,13 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 	}
 
 	finalize := detach(child)
-	defer finalize()
 	e.Children.Remove(child)
 
 	if e.Native != nil {
 		e.Native.RemoveChild(child)
 	}
+
+	finalize()
 
 	//child.TriggerEvent( "attached", Bool(false))
 
@@ -1024,6 +1085,7 @@ func (e *Element) DeleteChildren() *Element {
 	}
 
 	if e.Children != nil{
+
 		for _, child := range e.Children.List {
 			child.TriggerEvent( "deleting", Bool(true))
 			child.DeleteChildren()
@@ -1039,20 +1101,23 @@ func (e *Element) DeleteChildren() *Element {
 			if e.Native != nil{
 				e.Native.RemoveChild(child)
 			}
+			
 			defer finalize()
 			defer child.Set("internals", "deleted", Bool(true))
 		}
-		defer e.Children.RemoveAll()
+		e.Children.RemoveAll()
 	}
 	
 	return e
 }
 
+var binddeleteahndler = NewMutationHandler(func(evt MutationEvent)bool{
+	Delete(evt.Origin())
+	return false
+}).RunASAP().RunOnce()
+
 func(e *Element) BindDeletion(source *Element) *Element{
-	e.WatchEvent("deleted",source, NewMutationHandler(func(evt MutationEvent)bool{
-		Delete(evt.Origin())
-		return false
-	}).RunASAP().RunOnce())
+	e.WatchEvent("deleted",source, binddeleteahndler)
 	return e
 }
 
@@ -1093,7 +1158,7 @@ func (e *Element) hasChild(any *Element) (int, bool) {
 
 func (e *Element) SetChildren(any ...AnyElement) *Element {
 	e.RemoveChildren()
-	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
+	/*if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
 		children := make([]*Element, 0, len(any))
 		for _, el := range any {
 			ele := el.AsElement()
@@ -1112,6 +1177,7 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 		n.SetChildren(children...)
 		return e
 	}
+	*/
 	for _, el := range any {
 		e.AppendChild(el)
 		// el.ActiveView = e.ActiveView // TODO verify this is correct
@@ -1166,8 +1232,9 @@ func(e *Element) OnMutation(category string, propname string, h *MutationHandler
 }
 
 // BindValue allows for the binding of a property to another element's property.
-// This only allows for one way binding which is sufficient for all purposes and has the benefit
-// of not creating a circular dependency and allowing Elements to be independently designed.
+// When two elements both bind each other's properties, this is ttwo way-binding.
+// Indeed, property mutations are idempotent.
+// Otherwise, this is one-way binding.
 func(e *Element) BindValue(category string, propname string, source *Element) *Element{
 	if source == nil{
 		panic("unable to bind to a nil *Element")
@@ -1253,6 +1320,11 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	if owner.AsElement() == nil{
 		panic("unable to watch element properties as it is nil")
 	}
+
+	if h.sync{
+		h =  syncMutationHandler(e,h)
+	}
+
 	if h.Once{
 		return e.watchOnce(category,propname,owner,h)
 	}
@@ -1381,9 +1453,9 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Elem
 func (e *Element) AddEventListener(event string, handler *EventHandler) *Element {
 	nativebinding:= NativeEventBridge
 	h := NewMutationHandler(func(evt MutationEvent) bool {
-		e.EventHandlers.AddEventHandler(event, handler)
+		evt.Origin().EventHandlers.AddEventHandler(event, handler)
 		if nativebinding != nil {
-			nativebinding(event, e, handler.Capture)
+			nativebinding(event, evt.Origin(), handler.Capture)
 		}
 		return false
 	})
@@ -1391,7 +1463,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		e.RemoveEventListener(event, handler)
+		evt.Origin().RemoveEventListener(event, handler)
 		return false
 	}))
 
@@ -1497,17 +1569,10 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, "internals", "deleted"},"/"),g )
 }
 
-/*//DELETE
-func isRuntimeCategory(e *ElementStore, category string) bool{
-	_,ok:= e.RuntimePropTypes[category]
-	return ok
-}
-*/
-
 func newEventValue(v Value) Object{
 	o:= NewObject()
-	o.Set("value",v)
-	o.Set("id",String(newEventID()))
+	o.o.Set("value",v)
+	o.o.Set("id",String(newEventID()))
 
 	return o
 }
@@ -1518,11 +1583,11 @@ func(e *Element) TriggerEvent(name string, value ...Value){
 	case n == 0:
 		e.Set("event", name,newEventValue(Bool(true)))
 	case n==1:
-		e.Set("event", name,newEventValue(Copy(value[0])))
+		e.Set("event", name,newEventValue(value[0]))
 	default:
 		l:= NewList()
 		for _,v:= range value{
-			l = append(l, Copy(v))
+			l = l.Append(v)
 		}
 		e.Set("event", name,newEventValue(l))
 	}
@@ -1542,18 +1607,9 @@ func(e *Element) GetEventValue(name string) (Value, bool){
 	if !ok{
 		panic("event object is always expected to have a value even if it is nil")
 	}
-	return Copy(w), true
+	return w, true
 }
-/*
-// Canonicalize returns the base32 encoding of a string if it contains the delimmiter "/"
-// It can be used 
-func Canonicalize(s string) string{
-	if strings.Contains(s,"/"){
-		return base32.StdEncoding.EncodeToString([]byte(s))
-	}
-	return s
-}
-*/
+
 
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
@@ -1576,7 +1632,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok {
+	if ok && category != "event" {
 		if Equal(value, oldvalue) { // idempotence			
 			return
 		}
@@ -1643,7 +1699,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = append(list,m)
+				list = list.Append(m)
 				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
@@ -1657,7 +1713,7 @@ func mutationReplay(root *Element){
 	l,ok:= root.Get("internals","mutationtrace")
 	if ok{
 		list:= l.(List)
-		for _,m:= range list{
+		for _,m:= range list.Unwrap(){
 			obj:= m.(Object)
 
 			id,ok:= obj.Get("id")
@@ -1726,7 +1782,7 @@ func(e *Element) SetUI(propname string, value Value) *Element{
 // It is typically used in reaction to native events (e.g. toggling a button)
 // It does not trigger any mutation event as we are not modifying the UI as it hhs already been modified.
 //
-// It is different from SyncUISetData in that it can be used when the data is not owned by the 
+// It is different from SyncUISyncData in that it can be used when the data is not owned by the 
 // element in charge of its representation. (allows fordecoupling of data ownership and data representation)
 // For instance, all the data ;ay be stored in a global observable Element.
 // The UI elements would then only be responsible for rendering the data but not storing it.
@@ -1748,7 +1804,7 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 			m.Set("id",String(e.ID))
 			m.Set("cat",String("ui"))
 			m.Set("prop",String(propname))
-			m.Set("val",Copy(value))
+			m.Set("val",value)
 			m.Set("sync",Bool(true))
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
@@ -1756,9 +1812,42 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = append(list,m)
+				list = list.Append(m)
 				e.Root.Set("internals","mutationtrace",list)
 			}
+		}
+	}
+	return e
+}
+
+func(e *Element) SyncData(propname string, value Value) *Element{
+	if strings.Contains(propname, "/") {
+		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + propname + ")")
+	}
+	
+	oldvalue, _ := e.GetData(propname)
+	// Persist property if persistence mode has been set at Element creation
+	pmode := PersistenceMode(e)
+
+	if e.ElementStore != nil {
+		storage, ok := e.ElementStore.PersistentStorer[pmode]
+		if ok {
+			storage.Store(e, "data", propname, value)
+		}
+	}
+	e.Properties.Set("data", propname, value)
+
+	evt := e.newSyncMutationEvent("data", propname, value, oldvalue)
+
+	props, ok := e.Properties.Categories["data"]
+	if !ok {
+		panic("category should exist since property should have been stored")
+	}
+	watchers, ok := props.Watchers[propname]
+	if ok && watchers != nil {
+		for i:= 0; i<len(watchers.List);i++{
+			w := watchers.List[i]
+			w.PropMutationHandlers.DispatchEvent(evt)
 		}
 	}
 	return e
@@ -1802,13 +1891,13 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 	e.Set("ui", propname, value)
 }
 
-// SyncUISetData is used in event handlers when a user changed a value accessible
+// SyncUISyncData is used in event handlers when a user changed a value accessible
 // via the User Interface, typically.
 // It does not trigger mutationahdnler of the "ui" namespace
 // (to avoid rerendering an already up-to-date User Interface)
 //
 //
-func (e *Element) SyncUISetData(propname string, value Value) {
+func (e *Element) SyncUISyncData(propname string, value Value) {
 
 	e.Properties.Set("ui", propname, value)
 
@@ -1819,7 +1908,7 @@ func (e *Element) SyncUISetData(propname string, value Value) {
 			m.Set("id",String(e.ID))
 			m.Set("cat",String("ui"))
 			m.Set("prop",String(propname))
-			m.Set("val",Copy(value))
+			m.Set("val",value)
 			m.Set("sync",Bool(true))
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
@@ -1827,13 +1916,13 @@ func (e *Element) SyncUISetData(propname string, value Value) {
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = append(list,m)
+				list = list.Append(m)
 				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
-	}
+	} 
 
-	e.Set("data", propname, value)
+	e.SyncData(propname, value)
 }
 
 // LoadProperty is a function typically used to restore a UI Element properties.
@@ -1960,9 +2049,6 @@ func (v View) ApplyParameter(paramvalue string) (*View, error) {
 // A parameterized view can be created by using a naming scheme such as ":parameter" (string with a leading colon)
 // In the case, the parameter can be retrieve by the router.
 func NewView(name string, elements ...*Element) View {
-	/*for _, el := range elements {
-		el.ActiveView = name
-	}*/
 	return View{name, NewElements(elements...), nil}
 }
 
@@ -2097,6 +2183,8 @@ func(p PropertyStore) NewWatcher(category string, propname string, watcher *Elem
 	ps.NewWatcher(propname,watcher)
 }
 
+
+
 // Get retrieves the value of a property stored within a given category.
 // A category acts as a namespace for property keys.
 func (p PropertyStore) Get(category string, propname string) (Value, bool) {
@@ -2105,9 +2193,7 @@ func (p PropertyStore) Get(category string, propname string) (Value, bool) {
 		return nil, false
 	}
 	v,ok:= ps.Get(propname)
-	if category != "event"{
-		v = Copy(v)
-	}
+	
 	return v,ok
 }
 
@@ -2117,10 +2203,8 @@ func (p PropertyStore) Set(category string, propname string, value Value) {
 		ps = newProperties()
 		p.Categories[category] = ps
 	}
-	if category != "event"{
-		value = Copy(value)
-	}
-	ps.Set(propname, value)
+	
+	ps.Set(propname, CopyIfWritten(value))
 }
 
 func (p PropertyStore) Delete(category string, propname string) {

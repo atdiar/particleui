@@ -206,12 +206,17 @@ var routerConfig = func(r *ui.Router){
 	pnf:= doc.Div.WithID(r.Outlet.AsElement().Root.ID+"-notfound").SetText("Page Not Found.")
 	SetAttribute(pnf.AsElement(),"role","alert")
 	SetInlineCSS(pnf.AsElement(),`all: initial;`)
+	
+
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		v,ok:= r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
 		if !ok{
 			panic("targetview should have been set")
 		}
-		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+		document:=  GetDocument(r.Outlet.AsElement())
+		document.Window().SetTitle("Page Not Found")
+
+		tv:= ui.ViewElement{document.GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("notfound"){
 			tv.ActivateView("notfound")
 			return false
@@ -220,10 +225,11 @@ var routerConfig = func(r *ui.Router){
 			r.Outlet.ActivateView("notfound")
 			return false
 		}
-		document:=  GetDocument(r.Outlet.AsElement())
+		
+
 		body:= document.Body().AsElement()
 		body.SetChildren(pnf)
-		document.Window().SetTitle("Page Not Found")
+		
 
 		return false
 	}))
@@ -235,6 +241,10 @@ var routerConfig = func(r *ui.Router){
 		if !ok{
 			panic("targetview should have been set")
 		}
+
+		document:=  GetDocument(r.Outlet.AsElement())
+		document.Window().SetTitle("Unauthorized")
+
 		tv:= ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
 		if tv.HasStaticView("unauthorized"){
 			tv.ActivateView("unauthorized")
@@ -246,7 +256,9 @@ var routerConfig = func(r *ui.Router){
 
 	// appfailure
 	afd:= doc.Div.WithID("ParticleUI-appfailure").SetText("App Failure")
-	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	r.OnAppfailure(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		document:=  GetDocument(r.Outlet.AsElement())
+		document.Window().SetTitle("App Failure")
 		r.Outlet.AsElement().Root.SetChildren(afd)
 		return false
 	}))
@@ -436,6 +448,22 @@ func(d Document) Body() *ui.Element{
 	return e
 }
 
+
+// NewComponent ensures the registration of a component. A component is a part of an UI that is composed
+// of at least one Element.
+// Typicvally, component are returned by functions. These functions should integrate a call to NewComponent 
+// to ensure its registration with the document.
+func (d Document) NewComponent(root ui.AnyElement) *ui.Element{
+	el:= root.AsElement()
+	if el.Registered(){
+		return el
+	}
+	
+	ui.RegisterElement(d.AsElement(),el)
+
+	return el
+}
+
 func(d Document) SetLang(lang string) Document{
 	d.AsElement().SetUI("lang", ui.String(lang))
 	return d
@@ -483,7 +511,7 @@ func(d Document) ListenAndServe(ctx context.Context){
 
 func GetDocument(e *ui.Element) Document{
 	if e.Root == nil{
-		panic("this element does not belong to any document. Root is nil")
+		panic("This element does not belong to any registered subtree of the Document. Root is nil. If root of a component, it should be declared as such by callling the NewComponent method of the document Element.")
 	}
 	return withStdConstructors(Document{Element:e.Root}) // TODO initialize document *Element constructors
 }
@@ -516,7 +544,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	// makes ViewElements focusable (focus management support)
 	e.Watch("internals", "views",e.Root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		l:= evt.NewValue().(ui.List)
-		viewstr:= l[len(l)-1].(ui.String)
+		viewstr:= l.Get(len(l.Unwrap())-1).(ui.String)
 		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view,"tabindex","-1")
 		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -569,7 +597,7 @@ func mutationreplay(d *Document) {
 	}
 
 
-	for _,rawop:= range mutationtrace{
+	for _,rawop:= range mutationtrace.Unwrap(){
 		op:= rawop.(ui.Object)
 		elementid:= string(op.MustGetString("id"))
 		category:= string(op.MustGetString("cat"))
@@ -643,6 +671,45 @@ func withNativejshelpers(d *Document) *Document{
 				queueMicrotask(() => clearFieldValue(element));
 			}
 
+
+			window.applyBatchOperations = function(encodedOperations) {
+				const operationsBinary = atob(encodedOperations);
+				const operationsData = new DataView(new ArrayBuffer(operationsBinary.length));
+			  
+				for (let i = 0; i < operationsBinary.length; i++) {
+				  operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+				}
+			  
+				let offset = 0;
+			  
+				while (offset < operationsData.byteLength) {
+				  const operationLen = operationsData.getUint8(offset++);
+				  const operation = operationsBinary.slice(offset, offset + operationLen);
+				  offset += operationLen;
+			  
+				  const idLen = operationsData.getUint8(offset++);
+				  const elementID = operationsBinary.slice(offset, offset + idLen);
+				  offset += idLen;
+			  
+				  const index = operationsData.getUint32(offset);
+				  offset += 4;
+			  
+				  const element = document.getElementById(elementID);
+				  if (!element) continue;
+			  
+				  const parentElement = document.getElementById("parentID"); // replace with correct parent element id
+			  
+				  switch (operation) {
+					case "Insert":
+					  parentElement.insertBefore(element, parentElement.childNodes[index] || null);
+					  break;
+					case "Remove":
+					  element.parentNode.removeChild(element);
+					  break;
+				  }
+				}
+			  }; 
+			  
 			`,
 		)
 	h:= d.Head()
@@ -1956,12 +2023,12 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 	}).RunASAP())
 
 	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		a.AsElement().SetUI("active", evt.NewValue())
+		a.SetUI("active", evt.NewValue())
 		return false
 	}).RunASAP())
 
 
-	a.AsElement().AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
+	a.AddEventListener("click", ui.NewEventHandler(func(evt ui.Event) bool {
 		v:=evt.Value().(ui.Object)
 		rb,ok:= v.Get("ctrlKey")
 		if ok{
@@ -1976,7 +2043,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}))
 
-	a.AsElement().SetUI("link", ui.String(link.AsElement().ID))
+	a.SetUI("link", ui.String(link.AsElement().ID))
 
 	
 
@@ -1984,12 +2051,12 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 	if ok && !prefetchDisabled(){
 		switch t:= string(pm.(ui.String));t{
 		case "intent":
-			a.AsElement().AddEventListener("mouseover",ui.NewEventHandler(func(evt ui.Event)bool{
+			a.AddEventListener("mouseover",ui.NewEventHandler(func(evt ui.Event)bool{
 				link.Prefetch()
 				return false
 			}))
 		case "render":
-			a.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			a.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				link.Prefetch()
 				return false
 			}))
@@ -2692,10 +2759,10 @@ func(j jsTimeRanges) Start(index int) time.Duration{
 		panic("Bad timeRange encoding. No start found")
 	}
 	ranges := ti.(ui.List)
-	if index >= len(ranges){
+	if index >= len(ranges.Unwrap()){
 		panic("no time ramge at index, index out of bounds")
 	}
-	return time.Duration(ranges[index].(ui.Number)) *time.Second
+	return time.Duration(ranges.Get(index).(ui.Number)) *time.Second
 }
 
 func(j jsTimeRanges) End(index int) time.Duration{
@@ -2704,10 +2771,10 @@ func(j jsTimeRanges) End(index int) time.Duration{
 		panic("Bad timeRange encoding. No start found")
 	}
 	ranges := ti.(ui.List)
-	if index >= len(ranges){
+	if index >= len(ranges.Unwrap()){
 		panic("no time ramge at index, index out of bounds")
 	}
-	return time.Duration(ranges[index].(ui.Number)) *time.Second
+	return time.Duration(ranges.Get(index).(ui.Number)) *time.Second
 }
 
 func(j jsTimeRanges) Length() int{
@@ -4472,13 +4539,12 @@ func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 }
 
 
-
 // watches ("ui",attr) for a ui.String value.
 func withStringAttributeWatcher(e *ui.Element,attr string){
 	e.Watch("ui",attr,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		SetAttribute(evt.Origin(),attr,string(evt.NewValue().(ui.String)))
 		return false
-	}))
+	}).RunOnce())
 
 	withStringPropertyWatcher(e,attr) // IDL attribute support
 }
@@ -4489,7 +4555,7 @@ func withNumberAttributeWatcher(e *ui.Element,attr string){
 	e.Watch("ui",attr,e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		SetAttribute(evt.Origin(),attr,strconv.Itoa(int(evt.NewValue().(ui.Number))))
 		return false
-	}))
+	}).RunOnce())
 	withNumberPropertyWatcher(e,attr) // IDL attribute support
 }
 

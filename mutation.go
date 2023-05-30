@@ -62,7 +62,7 @@ type mutationHandlers struct {
 }
 
 func newMutationHandlers() *mutationHandlers {
-	return &mutationHandlers{make([]*MutationHandler, 0,10)}
+	return &mutationHandlers{make([]*MutationHandler, 0,64)}
 }
 
 func (m *mutationHandlers) Add(h *MutationHandler) *mutationHandlers {
@@ -116,14 +116,21 @@ func (m *mutationHandlers) Handle(evt MutationEvent) {
 		
 	}
 
-	if needcleanup{
-		l:= len(m.list)
-		for i:= index;i<l;i++{
-			m.list[i]= nil
-		}
-		m.list = list[:index]
+	if needcleanup{		
+		m.cleanup()
 	}
 	
+}
+
+func (m *mutationHandlers) cleanup() {
+	j := 0
+	for i := 0; i < len(m.list); i++ {
+		if m.list[i] != nil {
+			m.list[j] = m.list[i]
+			j++
+		}
+	}
+	m.list = m.list[:j]
 }
 
 // MutationHandler is a wrapper type around a callback function run after a mutation
@@ -134,10 +141,11 @@ type MutationHandler struct {
 	ASAP bool
 	binding bool
 	fetching bool
+	sync bool
 }
 
 func NewMutationHandler(f func(evt MutationEvent) bool) *MutationHandler {
-	return &MutationHandler{f,false,false,false, false}
+	return &MutationHandler{f,false,false,false, false, false}
 }
 
 // RunOnce indicates that the handler will run only for the next occurence of a mutation event. 
@@ -151,6 +159,7 @@ func(m *MutationHandler) RunOnce() *MutationHandler{
 	n.ASAP = m.ASAP
 	n.binding = m.binding
 	n.fetching = m.fetching
+	n.sync = m.sync
 	n.Once = true
 	return n
 }
@@ -167,6 +176,7 @@ func(m *MutationHandler) RunASAP() *MutationHandler{
 	n.Once = m.Once
 	n.binding = m.binding
 	n.fetching = m.fetching
+	n.sync = m.sync
 	n.ASAP = true
 	return n
 }
@@ -179,6 +189,7 @@ func(m *MutationHandler) binder() *MutationHandler{
 	n.Once = m.Once
 	n.ASAP = m.ASAP
 	n.fetching = m.fetching
+	n.sync = m.sync
 	n.binding = true
 	return n
 }
@@ -191,7 +202,21 @@ func(m *MutationHandler) fetcher() *MutationHandler{
 	n.Once = m.Once
 	n.ASAP = m.ASAP
 	n.binding = m.binding
+	n.sync = m.sync
 	n.fetching = true
+	return n
+}
+
+func(m *MutationHandler) OnSync() *MutationHandler{
+	if m.sync{
+		return m
+	}
+	n:= NewMutationHandler(m.Fn)
+	n.Once = false //m.Once
+	n.ASAP = false // m.ASAP
+	n.binding = false // m.binding
+	n.fetching = false // m.fetching
+	n.sync = true
 	return n
 }
 
@@ -207,6 +232,7 @@ type MutationEvent interface {
 	Origin() *Element
 	NewValue() Value
 	OldValue() Value
+	Sync() bool
 }
 
 // Mutation defines a basic implementation for Mutation Events.
@@ -217,6 +243,7 @@ type Mutation struct {
 	NewVal  Value
 	OldVal  Value
 	Src     *Element
+	sync bool
 }
 
 func (m Mutation) ObservedKey() string { return m.KeyName }
@@ -233,7 +260,7 @@ func (m Mutation) NewValue() Value     {
 		if !ok{
 			panic("event value not found")
 		}
-		return Copy(e)
+		return e
 	}
 
 	return Copy(m.NewVal)
@@ -253,17 +280,39 @@ func (m Mutation) OldValue() Value     {
 		if !ok{
 			panic("event value not found")
 		}
-		return Copy(e)
+		return e
 	}
 
 	return m.OldVal // TODO check as we don't copy the value anymore. Not expected to be modified.
 }
 
-func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
-	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e}
+func(m Mutation) Sync() bool{
+	return m.sync
 }
 
+func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e, false}
+}
+
+
+func (e *Element) newSyncMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e, true}
+}
 
 var NoopMutationHandler = NewMutationHandler(func(evt MutationEvent)bool{
 	return false
 })
+
+func syncMutationHandler(e *Element, h *MutationHandler) *MutationHandler{
+	return NewMutationHandler(func(evt MutationEvent) bool{
+		if !evt.Sync(){
+			return false
+		}
+
+		e.Watch(evt.Category(),evt.Property(),evt.Origin(), NewMutationHandler(func(event MutationEvent)bool{
+			return h.Handle(event)
+		}).RunOnce())
+
+		return false
+	})
+}

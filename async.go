@@ -240,7 +240,7 @@ func(e *Element) CancelAllFetches(){
 		return
 	}
 	fetchlist:= f.(Object).MustGetList("fetch_index")
-	for _,propname:= range fetchlist{
+	for _,propname:= range fetchlist.Raw(){
 		e.CancelFetch(propname.(String).String())
 	}
 }
@@ -356,15 +356,17 @@ func(e *Element) enablefetching() *Element{
 		}
 		prefetchlist,ok:= fl.(Object)
 		if !ok{
-			panic("unexpected preftchlist type")
+			panic("unexpected prefetchlist type")
 		}
 
-		if len(prefetchlist) == 0{
+		if prefetchlist.Size() == 0{
 			e.EndTransition("prefetch")
 		}
-		for propname:= range prefetchlist{
+
+		prefetchlist.Range(func(propname string,v Value)bool{
 			e.startprefetchTransition(propname)
-		}
+			return false
+		})
 		
 		return false
 	})
@@ -377,10 +379,10 @@ func(e *Element) enablefetching() *Element{
 			return false
 		}
 		fetchlist:= fl.(Object).MustGetList("fetch_index")
-		if len(fetchlist) == 0{
+		if len(fetchlist.Raw()) == 0{
 			e.EndTransition("fetch")
 		}
-		for _,v:= range fetchlist{
+		for _,v:= range fetchlist.Raw(){
 			propname:= v.(String).String()
 			e.OnTransitionError(strings.Join([]string{"fetch",propname},"-"),NewMutationHandler(func(evt MutationEvent)bool{
 				e.errorfetchTransition(propname)
@@ -490,12 +492,11 @@ func(e *Element)InvalidateAllFetches(){
 			return
 		}
 		fl:= l.(Object)
-		for _,pname:= range fl{
-			prop,ok:= pname.(string)
-			if ok{
-				e.InvalidateFetch(prop)
-			}
-		}	
+
+		fl.Range(func(propname string,v Value)bool{
+			e.InvalidateFetch(propname)
+			return false
+		})	
 	}
 }
 
@@ -509,20 +510,24 @@ func GetFetchErrors(e *Element) (map[string]error,bool){
 		return nil,ok
 	}
 	m:= make(map[string]error)
-	for k,val:= range v.(Object){
-		m[k]= errors.New(string(val.(String)))
-	}
+	
+	v.(Object).Range(func(propname string,v Value)bool{
+		m[propname]= errors.New(string(v.(String)))
+		return false
+	})
 	return m,ok
+
 }
 
 
 func(e *Element) pushFetchError(propname string, err error){
-	var errlist Object
+	var errlist = NewObject()
 	v,ok:= e.Get("runtime","fetcherrors")
 	if !ok{
-		errlist= NewObject().Set(propname, String(err.Error()))
+		errlist.Set(propname, String(err.Error()))
 	} else{
-		errlist= v.(Object).Set(propname, String(err.Error()))
+		r:= v.(Object)
+		errlist= r.Set(propname, String(err.Error()))
 	}
 	e.Set("runtime","fetcherrors",errlist)
 }
@@ -546,7 +551,7 @@ func(e *Element) registerfetch(propname string ){
 	}
 	f:= NewObject()
 	
-	fetchindex = append(fetchindex,String(propname))
+	fetchindex = fetchindex.Append(String(propname))
 	fetchlist.Set("fetch_index",fetchindex)
 	fetchlist.Set(propname,f)
 	e.Set("runtime","fetchlist",fetchlist)
@@ -569,7 +574,7 @@ func(e *Element) checkFetchCompletion(){
 		panic("Framework error: fetch index missing")
 	}
 	index:= rindex.(List)
-	for _,prop:= range index{
+	for _,prop:= range index.Raw(){
 		propname := string(prop.(String))
 		status,ok:= l.Get(propname)
 		if !ok{
@@ -688,7 +693,7 @@ func(e *Element) fetchCompleted(propname string, successfully bool){
 		} else{
 			s.Set("status", String("successful"))
 		}
-		delete(s,"stale")
+		s.Delete("stale")
 	}
 	e.Set("runtime", "fetchlist",r)
 	e.checkFetchCompletion()

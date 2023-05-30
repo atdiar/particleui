@@ -60,7 +60,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 				list = NewList(String(evt.Origin().ID))
 				evt.Origin().Root.Set("internals", "views", list)
 			} else {
-				list = append(list, String(evt.Origin().ID))
+				list = list.Append(String(evt.Origin().ID))
 				evt.Origin().Root.Set("internals", "views", list)
 			}
 		}
@@ -145,10 +145,11 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 			if e.ActiveView == "" {
 				return false // defaultview is already mounted
 			}
+			panic("FAILURE: default view is not defined")
 		}
 		oldview := NewView(e.ActiveView, e.Children.List...)
 		e.RemoveChildren()
-		ViewElement{e}.AddView(oldview)
+		e.addView(oldview)
 
 		e.ActiveView = ""
 
@@ -167,9 +168,6 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 func (v ViewElement) ChangeDefaultView(elements ...*Element) ViewElement {
 	e:= v.AsElement()
 	e.Set("internals","mountdefaultview",Bool(true))
-	if e.ActiveView == ""{
-		e.SetChildrenElements(elements...)
-	}
 	n:= NewView("", elements...)
 	v.AddView(n)
 	return v
@@ -232,7 +230,7 @@ func (v ViewElement) ActivateView(name string) error {
 			panic(err)
 		}
 		l:= v.(List)
-		return errors.New(l[1].(String).String())
+		return errors.New(l.Get(1).(String).String())
 	}
 	return nil
 }

@@ -8,12 +8,13 @@ package doc
 
 import (
 	"context"
-	"encoding/json"
-	//"github.com/goccy/go-json"
+	//"encoding/json"
+	"github.com/goccy/go-json"
 	//"errors"
 	"log"
 	"strings"
 	"syscall/js"
+	"runtime"
 	"time"
 	"github.com/atdiar/particleui"
 )
@@ -30,11 +31,35 @@ var (
 )
 
 
+
 // NewBuilder registers a new document building function.
 func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 	return  func(ctx context.Context){
 		d:=f()
+		js.Global().Set("triggerGC", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			runtime.GC()
+			return nil
+		}))
 		withNativejshelpers(&d)
+
+		scrIdleGC := d.Script().SetInnerHTML(`
+			function runGCDuringIdlePeriods(deadline) {
+				// If there's a timeout or if there's no more time to perform work, schedule a new callback.
+				if (deadline.didTimeout || !deadline.timeRemaining()) {
+					window.requestIdleCallback(runGCDuringIdlePeriods);
+					return;
+				}
+				
+				triggerGC(); // Trigger GC
+			
+				// Schedule a new callback for the next idle time
+				window.requestIdleCallback(runGCDuringIdlePeriods);
+			}
+			
+			// Start the loop
+			window.requestIdleCallback(runGCDuringIdlePeriods);		
+		`)
+		d.Head().AppendChild(scrIdleGC)
 		d.ListenAndServe(ctx)
 	}
 }
@@ -161,7 +186,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				if err != nil {
 					return err
 				}
-				val:= ui.Object(rawvalue).MarkedRaw().Value()
+				val:= ui.NewObjectFrom(rawvalue).Value()
 				ui.LoadProperty(e, category, propname, val)
 				if category == "data" && e.DocType == e.ElementStore.DocType{
 					uiloaders = append(uiloaders, func(){
@@ -762,14 +787,21 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	history:= evt.NewValue().(ui.Object)
 	browserhistory,ok:= evt.OldValue().(ui.Object)
 	if ok{
-		bhc:= browserhistory["cursor"].(ui.Number)
-		hc:= history["cursor"].(ui.Number)
-		if bhc==hc {
-			s := stringify(history.RawValue())
-			js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
-		} else{
-			s := stringify(history.RawValue())
-			js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+		bcursor,ok:= browserhistory.Get("cursor")
+		if ok{
+			bhc:= bcursor.(ui.Number)
+			hcursor,ok:= history.Get("cursor")
+			if !ok{
+				panic("history cursor is missing")
+			}
+			hc:= hcursor.(ui.Number)
+			if bhc==hc {
+				s := stringify(history.RawValue())
+				js.Global().Get("history").Call("replaceState", js.ValueOf(s), "", route)
+			} else{
+				s := stringify(history.RawValue())
+				js.Global().Get("history").Call("pushState", js.ValueOf(s), "", route)
+			}
 		}
 		return false
 	}
@@ -786,10 +818,11 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	hstate := js.Global().Get("history").Get("state")
 	
 	if hstate.Truthy() {
-		hstateobj := ui.NewObject().MarkedRaw()
+		hstateobj := ui.NewObject().Unwrap()
 		err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 		if err == nil {
-			evt.Origin().SyncUISetData("history", hstateobj.Value())
+			hso:= ui.NewObjectFrom(hstateobj)
+			evt.Origin().SyncUISyncData("history", hso.Value())
 			// DEBUG
 		}
 	}
@@ -1042,7 +1075,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 				return true
 			}
 			s := v.String()
-			e.SyncUISetData("text", ui.String(s))
+			e.SyncUISyncData("text", ui.String(s))
 			return false
 		})
 
@@ -1107,8 +1140,8 @@ func newTimeRanges(v js.Value) jsTimeRanges{
 	for i:= 0; i<length;i++{
 		st:= ui.Number(v.Call("start",i).Float())
 		en:= ui.Number(v.Call("end",i).Float())
-		starts[i]=st
-		ends[i]=en
+		starts.Set(i,st)
+		ends.Set(i,en)
 	}
 	j.Set("start",starts)
 	j.Set("end",ends)
@@ -1378,7 +1411,7 @@ func RemoveAttribute(target *ui.Element, name string) {
 	if !ok {
 		panic("data/attrs should be stored as a ui.Object")
 	}
-	delete(attrmap, name)
+	attrmap.Delete(name)
 	target.SetData("attrs", attrmap)
 	
 	native, ok := target.Native.(NativeElement)
@@ -1404,7 +1437,7 @@ var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	j.Set("textContent", string(str))
 
 	return false
-})
+}).RunASAP() // TODO DEBUG just added RunASAP
 
 
 func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
@@ -1423,7 +1456,7 @@ func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
 		}
 		j.Set(propname,v)
 		return false
-	})
+	}).RunASAP()
 }
 
 func numericPropertyWatcher(propname string) *ui.MutationHandler{
@@ -1434,7 +1467,7 @@ func numericPropertyWatcher(propname string) *ui.MutationHandler{
 		}
 		j.Set(propname,float64(evt.NewValue().(ui.Number)))
 		return false
-	})
+	}).RunASAP()
 }
 
 func boolPropertyWatcher(propname string) *ui.MutationHandler{
@@ -1456,6 +1489,6 @@ func stringPropertyWatcher(propname string) *ui.MutationHandler{
 		}
 		j.Set(propname,string(evt.NewValue().(ui.String)))
 		return false
-	})
+	}).RunASAP()
 }
 

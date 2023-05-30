@@ -85,7 +85,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 			if ok {
 				l, ok := v.(List)
 				if ok {
-					for _, val := range l {
+					for _, val := range l.Unwrap() {
 						viewRef, ok := val.(String)
 						if !ok {
 							panic("expected an Element ID string stored for this ViewElementt")
@@ -471,7 +471,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	if ok {
 		l, ok := v.(List)
 		if ok {
-			for _, val := range l {
+			for _, val := range l.Unwrap() {
 				viewRef, ok := val.(String)
 				if !ok {
 					panic("internals/views does not hold a proper Reference")
@@ -902,7 +902,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	}*/
 	vl:= v.(List)
 	//nl:= n.(List)
-	view:= ViewElement{GetById(r.Outlet.AsElement().Root,vl[len(vl)-1].(String).String())}
+	view:= ViewElement{GetById(r.Outlet.AsElement().Root,vl.Get(len(vl.Unwrap())-1).(String).String())}
 	//viewname = string(nl[len(nl)-1].(String))
 
 
@@ -990,17 +990,17 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 		}
 		vl:= v.(List)
 		nl:= n.(List)
-		vl = append(vl,String(ve.AsElement().ID))
-		nl = append(nl,String(viewname))
+		vl = vl.Append(String(ve.AsElement().ID))
+		nl = nl.Append(String(viewname))
 		ne.SetUI("viewelements",vl)
 		ne.SetUI("viewnames",nl)
-		uri:="/" + string(nl[0].(String))
-		for i,velem:= range vl{
+		uri:="/" + string(nl.Get(0).(String))
+		for i,velem:= range vl.Unwrap(){
 			if i==0{
 				continue
 			}
 			id:= string(velem.(String))
-			vname:= string(nl[i].(String))
+			vname:= string(nl.Get(i).(String))
 			uri = "/" + id + "/" + vname
 		}
 		ne.SetUI("uri",String(uri))
@@ -1028,20 +1028,20 @@ func isValidLink(l Link) bool{
 	vl:= v.(List)
 	nl:= n.(List)
 
-	targetview:= GetById(l.AsElement().Root,string(vl[len(vl)-1].(String)))
-	viewname := string(nl[len(nl)-1].(String))
+	targetview:= GetById(l.AsElement().Root,string(vl.Get(len(vl.Unwrap())-1).(String)))
+	viewname := string(nl.Get(len(nl.Unwrap())-1).(String))
 
 	vap:= targetview.ViewAccessPath.Nodes
-	if len(vap) != len(vl)-1{
+	if len(vap) != len(vl.Unwrap())-1{
 		DEBUG("viewaccespath and link depth do not match. Some view might have been skipped")
 		return false
 	}
 	for i,n:= range vap{
-		vnode:= GetById(l.AsElement().Root,string(vl[i].(String)))
+		vnode:= GetById(l.AsElement().Root,string(vl.Get(i).(String)))
 		if vnode.ID != n.Element.ID{
 			return false
 		}
-		vname:= string(nl[i].(String))
+		vname:= string(nl.Get(i).(String))
 		if !hasView(ViewElement{vnode},vname){
 			return false
 		}
@@ -1107,14 +1107,14 @@ func (n *NavHistory) Value() Value {
 	for i,entry:= range n.Stack{
 		stack[i]= String(entry)
 	}
-	o.Set("stack",List(stack))
+	o.Set("stack",NewList(stack...))
 
 	// Prepare State for serialization
 	state:=make([]Value,len(n.State))
 	for i,entry:= range n.State{
 		state[i]= String(entry.AsElement().ID) // TODO store state objects in navhistory registry and implement recovery
 	}
-	o.Set("state",List(state))
+	o.Set("state",NewList(state...))
 
 	return o
 }
@@ -1130,20 +1130,28 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 		return n
 	
 	}
-	stk:= h["stack"]
+	stk,ok:= h.Get("stack")
+	if !ok{
+		DEBUG("No stack found in history state")
+		return nil
+	}
 	stack:= stk.(List)
-	hlen:= len(stack)
+	hlen:= len(stack.Unwrap())
 
-	stt:= h["state"]
+	stt,ok:= h.Get("state")
+	if !ok{
+		DEBUG("No state found in history state")
+		return nil
+	}
 	state:= stt.(List)
 
 	if hlen>len(n.Stack){
 		for i:=n.Cursor+1; i<hlen;i++{
-			entry:= stack[i]
+			entry:= stack.Get(i)
 			nexturl:= entry.(String)
 			n.Stack=append(n.Stack,string(nexturl))
 
-			stentry:= state[i]
+			stentry:= state.Get(i)
 			stateObjid:= stentry.(String).String()
 			
 			stobj:= GetById(n.AppRoot,stateObjid)
