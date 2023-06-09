@@ -1,6 +1,6 @@
 package ui
 
-// TODO use AnyElement interface
+
 func New(e AnyElement, modifiers ...func(*Element)*Element) *Element{
 	re:= e.AsElement()
 	for _,mod:= range modifiers{
@@ -49,3 +49,4 @@ func Ref(vref **Element) func(*Element) *Element{
 		return e
 	}
 }
+

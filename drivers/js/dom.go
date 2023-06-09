@@ -169,11 +169,16 @@ func EnableLocalPersistence() string {
 	return "localstorage"
 }
 
-var allowdataloading = ui.NewConstructorOption("dataloading", func(e *ui.Element) *ui.Element {
+var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
 	d:= getDocumentRef(e)
 
 	d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		LoadFromStorage(e)
+		return false
+	}))
+
+	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		PutInStorage(e)
 		return false
 	}))
 	return e
@@ -188,7 +193,8 @@ var routerConfig = func(r *ui.Router){
 	ns:= func(id string) ui.Observable{
 		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
-		PutInStorage(ClearFromStorage(o.AsElement())) // Note: oldsttate is cleared.
+		//PutInStorage(ClearFromStorage(o.AsElement())) // Note: oldsttate is cleared.
+		PutInStorage(o.AsElement())
 		return o
 	}
 
@@ -199,6 +205,11 @@ var routerConfig = func(r *ui.Router){
 
 	r.History.NewState = ns
 	r.History.RecoverState = rs
+
+	r.History.AppRoot.WatchEvent("history-change",r.History.AppRoot,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		PutInStorage(r.History.State[r.History.Cursor].AsElement())
+		return false
+	}).RunASAP())
 	
 	doc:= GetDocument(r.Outlet.AsElement())
 	// Add default navigation error handlers
@@ -438,14 +449,14 @@ func(d Document) NewObservable(id string, options ...string) ui.Observable{
 
 func(d Document) Head() *ui.Element{
 	e:= d.GetElementById("head")
-	if e ==nil{ panic("document HEAD seems tobe missing for some odd reason...")}
-	return e
+	if e ==nil{ panic("document HEAD seems to be missing for some odd reason...")}
+	return e //d.NewComponent(e)
 }
 
 func(d Document) Body() *ui.Element{
 	e:= d.GetElementById("body")
 	if e ==nil{ panic("document BODY seems tobe missing for some odd reason...")}
-	return e
+	return d.NewComponent(e)
 }
 
 
@@ -479,6 +490,10 @@ func(d Document) OnLoaded(h *ui.MutationHandler){
 
 func(d Document) OnRouterMounted(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("router-mounted",d,h)
+}
+
+func(d Document) OnBeforeUnactive(h *ui.MutationHandler){
+	d.AsElement().WatchEvent("before-unactive",d,h)
 }
 
 // Router returns the router associated with the document. It is nil if no router has been created.
@@ -556,7 +571,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e.OnRouterMounted(func(r *ui.Router){
 		e.AddEventListener("focusin",ui.NewEventHandler(func(evt ui.Event)bool{
-			r.History.Set("ui","focus",ui.String(evt.Target().ID))
+			r.History.Set("focusedElementId",ui.String(evt.Target().ID))
 			return false
 		}))
 		
@@ -670,46 +685,6 @@ func withNativejshelpers(d *Document) *Document{
 			window.queueClear = function(element) {
 				queueMicrotask(() => clearFieldValue(element));
 			}
-
-
-			window.applyBatchOperations = function(encodedOperations) {
-				const operationsBinary = atob(encodedOperations);
-				const operationsData = new DataView(new ArrayBuffer(operationsBinary.length));
-			  
-				for (let i = 0; i < operationsBinary.length; i++) {
-				  operationsData.setUint8(i, operationsBinary.charCodeAt(i));
-				}
-			  
-				let offset = 0;
-			  
-				while (offset < operationsData.byteLength) {
-				  const operationLen = operationsData.getUint8(offset++);
-				  const operation = operationsBinary.slice(offset, offset + operationLen);
-				  offset += operationLen;
-			  
-				  const idLen = operationsData.getUint8(offset++);
-				  const elementID = operationsBinary.slice(offset, offset + idLen);
-				  offset += idLen;
-			  
-				  const index = operationsData.getUint32(offset);
-				  offset += 4;
-			  
-				  const element = document.getElementById(elementID);
-				  if (!element) continue;
-			  
-				  const parentElement = document.getElementById("parentID"); // replace with correct parent element id
-			  
-				  switch (operation) {
-					case "Insert":
-					  parentElement.insertBefore(element, parentElement.childNodes[index] || null);
-					  break;
-					case "Remove":
-					  element.parentNode.removeChild(element);
-					  break;
-				  }
-				}
-			  }; 
-			  
 			`,
 		)
 	h:= d.Head()
@@ -735,8 +710,9 @@ func NewDocument(id string, options ...string) Document {
 	e.WatchEvent("document-loaded", e,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
+
 	mutationreplay(&d)
-	
+	activityStateSupport(e)
 
 	return d
 }
@@ -3142,14 +3118,14 @@ type UlElement struct {
 }
 
 func (l UlElement) FromValues(values ...ui.Value) UlElement {
-	l.AsElement().SetUI("list", ui.NewList(values...))
+	l.AsElement().SetUI("list", ui.NewList(values...).Commit())
 	return l
 }
 
 func (l UlElement) Values() ui.List {
 	v, ok := l.AsElement().GetData("list")
 	if !ok {
-		return ui.NewList()
+		return ui.NewList().Commit()
 	}
 	list, ok := v.(ui.List)
 	if !ok {

@@ -301,6 +301,7 @@ func (r *Router) handler() *MutationHandler {
 			}
 			v, ok := ho.Get("cursor")
 			if !ok {
+				DEBUG("navigation route request handler history value: ",ho)
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
@@ -393,7 +394,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 		r.History.Replace(newroute)
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
-		DEBUG(r.History.Value())
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v,_, a, err := r.Routes.match(newroute)
@@ -873,8 +873,8 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 			panic("zui_ERROR: somehow the link constructor has not been registered.")
 		}
 		e := c(r.Outlet.AsElement().ID+"-"+viewname)
-		e.SetUI("viewelements",NewList(String(r.Outlet.AsElement().ID)))
-		e.SetUI("viewnames", NewList(String(viewname)))
+		e.SetUI("viewelements",NewList(String(r.Outlet.AsElement().ID)).Commit())
+		e.SetUI("viewnames", NewList(String(viewname)).Commit())
 		e.SetUI("uri", String("/"+viewname))
 		l= Link{e}
 	}
@@ -990,8 +990,8 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 		}
 		vl:= v.(List)
 		nl:= n.(List)
-		vl = vl.Append(String(ve.AsElement().ID))
-		nl = nl.Append(String(viewname))
+		vl = vl.MakeCopy().Append(String(ve.AsElement().ID)).Commit()
+		nl = nl.MakeCopy().Append(String(viewname)).Commit()
 		ne.SetUI("viewelements",vl)
 		ne.SetUI("viewnames",nl)
 		uri:="/" + string(nl.Get(0).(String))
@@ -1074,13 +1074,14 @@ type NavHistory struct {
 }
 
 // Get is used to retrieve a Value from the history state.
-func (n *NavHistory) Get(category, propname string) (Value, bool) {
-	return n.State[n.Cursor].Get(category, propname)
+func (n *NavHistory) Get(propname string) (Value, bool) {
+	return n.State[n.Cursor].Get("data", propname)
 }
 
 // Set is used to insert a value in the history state.
-func (n *NavHistory) Set(category string, propname string, val Value) {
-	n.State[n.Cursor].Set(category, propname, val)
+func (n *NavHistory) Set(propname string, val Value) {
+	n.State[n.Cursor].Set("data", propname, val)
+	n.AppRoot.TriggerEvent("history-change",String(propname)) // TODO more finegrained change persistence using propname event value
 }
 
 func NewNavigationHistory(approot *Element) *NavHistory {
@@ -1107,16 +1108,16 @@ func (n *NavHistory) Value() Value {
 	for i,entry:= range n.Stack{
 		stack[i]= String(entry)
 	}
-	o.Set("stack",NewList(stack...))
+	o.Set("stack",NewList(stack...).Commit())
 
 	// Prepare State for serialization
 	state:=make([]Value,len(n.State))
 	for i,entry:= range n.State{
 		state[i]= String(entry.AsElement().ID) // TODO store state objects in navhistory registry and implement recovery
 	}
-	o.Set("state",NewList(state...))
+	o.Set("state",NewList(state...).Commit())
 
-	return o
+	return o.Commit()
 }
 
 // Note that router state may be synchronized/persisted only on page change at times.
@@ -1170,20 +1171,20 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 		panic("navstack capacity overflow")
 	}
 	if n.Cursor>=0{
-		n.State[n.Cursor].Set("internals","new", Bool(false)) // used to discover whether the current navigation entry is accessed for the first time or not
+		n.State[n.Cursor].Set("data","new", Bool(false)) // used to discover whether the current navigation entry is accessed for the first time or not
 	}
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.State = append(n.State[:n.Cursor], n.NewState("hstate"+strconv.Itoa(n.Cursor)))
-	n.State[n.Cursor].Set("internals","new", Bool(true))
+	n.State[n.Cursor].Set("data","new", Bool(true))
 	
 	return n
 }
 
 func(n *NavHistory) CurrentEntryIsNew() bool{
-	v,ok:= n.State[n.Cursor].Get("internals","new")
+	v,ok:= n.State[n.Cursor].Get("data","new")
 	if !ok{
-		DEBUG("Unable to find (internals, new) cursor is : ",n.Cursor)
+		DEBUG("Unable to find (data, new) cursor is : ",n.Cursor)
 		DEBUG(n.Stack,n.State)
 		return true
 	}
@@ -1192,12 +1193,12 @@ func(n *NavHistory) CurrentEntryIsNew() bool{
 
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
-	v,ok:= n.State[n.Cursor].Get("internals","new")
+	v,ok:= n.State[n.Cursor].Get("data","new")
 	n.State[n.Cursor] = n.NewState("hstate"+strconv.Itoa(n.Cursor))
 	if !ok{
-		n.State[n.Cursor].Set("internals","new", Bool(true))
+		n.State[n.Cursor].Set("data","new", Bool(true))
 	} else{
-		n.State[n.Cursor].Set("internals","new",v)
+		n.State[n.Cursor].Set("data","new",v)
 	}
 	
 	// TODO what to do here? perhaps nothing, perhpas the state should be labeled new or the reverse? 
@@ -1207,7 +1208,7 @@ func (n *NavHistory) Replace(URI string) *NavHistory {
 func (n *NavHistory) Back() string {
 	if n.BackAllowed() {
 		if n.Cursor == len(n.Stack)-1{
-			n.State[n.Cursor].Set("internals","new", Bool(false)) // TODO should we check the value or use memoization to avoid unnecessary ops on forward()?
+			n.State[n.Cursor].Set("data","new", Bool(false)) // TODO should we check the value or use memoization to avoid unnecessary ops on forward()?
 		}
 		n.Cursor--
 	}
@@ -1217,15 +1218,15 @@ func (n *NavHistory) Back() string {
 func (n *NavHistory) Forward() string {
 	if n.ForwardAllowed() {
 		if n.Cursor>=0{
-			n.State[n.Cursor].Set("internals","new", Bool(false))
+			n.State[n.Cursor].Set("data","new", Bool(false))
 		}
 		n.Cursor++
 	}
-	v,ok := n.State[n.Cursor].Get("internals","new")
+	v,ok := n.State[n.Cursor].Get("data","new")
 	if !ok{
-		n.State[n.Cursor].Set("internals","new", Bool(true))
+		n.State[n.Cursor].Set("data","new", Bool(true))
 	} else{
-		n.State[n.Cursor].Set("internals","new", v)
+		n.State[n.Cursor].Set("data","new", v)
 	}
 	return n.Stack[n.Cursor]
 }

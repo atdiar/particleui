@@ -53,14 +53,14 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 		l, ok := evt.Origin().Root.Get("internals", "views")
 		if !ok {
 			list := NewList(String((evt.Origin().ID)))
-			evt.Origin().Root.Set("internals", "views", list)
+			evt.Origin().Root.Set("internals", "views", list.Commit())
 		} else {
 			list, ok := l.(List)
 			if !ok {
-				list = NewList(String(evt.Origin().ID))
+				list = NewList(String(evt.Origin().ID)).Commit()
 				evt.Origin().Root.Set("internals", "views", list)
 			} else {
-				list = list.Append(String(evt.Origin().ID))
+				list = list.MakeCopy().Append(String(evt.Origin().ID)).Commit()
 				evt.Origin().Root.Set("internals", "views", list)
 			}
 		}
@@ -291,18 +291,12 @@ func (e *Element) addView(v View) *Element {
 
 	if v.Elements() != nil {
 		for _, child := range v.Elements().List {
-			var detachFn func()
 			if child.Parent != nil{
-				detachFn = detach(child)
+				child.Parent.RemoveChild(child)
 				
 			}
 			child.ViewAccessNode = newViewAccessNode(child, v.Name())
 			attachFn := attach(e, child)
-			
-			if detachFn != nil{
-				defer detachFn() // Execute the detach function
-			}
-			
 			defer attachFn() // Execute the attach function
 		}
 	}

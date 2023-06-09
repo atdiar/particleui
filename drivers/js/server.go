@@ -474,6 +474,8 @@ func (n NativeElement) SetChildren(children ...*ui.Element) {
 	}
 }
 
+func activityStateSupport (e *ui.Element) *ui.Element{return e}
+
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
 	return e
 })

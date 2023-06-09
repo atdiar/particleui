@@ -721,7 +721,7 @@ func(e InputEvent) Value() ui.Value{
 	v.Set("rune",ui.String(string(e.Key.Rune())))
 	v.Set("modifiers",ui.Number(e.Key.Modifiers()))
 	v.Set("time",ui.String(e.Key.When().UTC().String()))
-	return v
+	return v.Commit()
 }
 
 type NativeDrawEvent struct {
@@ -745,7 +745,7 @@ func(e DropDownSelectedEvent) Value() ui.Value{
 	v:= ui.NewObject()
 	v.Set("text",ui.String(e.Text))
 	v.Set("index",ui.Number(e.Index))
-	return v
+	return v.Commit()
 }
 
 type ListSelectedEvent struct{
@@ -765,7 +765,7 @@ func(e ListSelectedEvent) Value() ui.Value{
 	v.Set("mainText",ui.String(e.MainText))
 	v.Set("secondaryText",ui.String(e.SecondaryText))
 	v.Set("shortcut",ui.String(string(e.Shortcut)))
-	return v
+	return v.Commit()
 }
 
 type ListChangedEvent struct{
@@ -785,7 +785,7 @@ func(e ListChangedEvent) Value() ui.Value{
 	v.Set("mainText",ui.String(e.MainText))
 	v.Set("secondaryText",ui.String(e.SecondaryText))
 	v.Set("shortcut",ui.String(string(e.Shortcut)))
-	return v
+	return v.Commit()
 }
 
 
@@ -811,7 +811,7 @@ func(e TableSelectedEvent) Value() ui.Value{
 	v:= ui.NewObject()
 	v.Set("row",ui.Number(e.Row))
 	v.Set("column",ui.Number(e.Column))
-	return v
+	return v.Commit()
 }
 
 type DoneEvent struct{
@@ -832,7 +832,7 @@ func(e DoneEvent) Value() ui.Value{
 	v.Set("key",ui.Number(e.Key))
 	v.Set("buttonIndex",ui.Number(e.ButtonIndex))
 	v.Set("buttonLabel",ui.String(e.ButtonLabel))
-	return v
+	return v.Commit()
 }
 
 type FinishedEvent struct{
@@ -846,7 +846,7 @@ func newFinishedEvent(key tcell.Key) FinishedEvent{
 func(e FinishedEvent) Value() ui.Value{
 	v:= ui.NewObject()
 	v.Set("key",ui.Number(e.Key))
-	return v
+	return v.Commit()
 }
 
 
@@ -865,7 +865,7 @@ func(e InputFieldAutocompletedEvent) Value() ui.Value{
 	v.Set("text",ui.String(e.Text))
 	v.Set("index",ui.Number(e.Index))
 	v.Set("source",ui.Number(e.Source))
-	return v
+	return v.Commit()
 }
 
 
@@ -882,5 +882,5 @@ func(e TableSelectionChangedEvent) Value() ui.Value{
 	v:= ui.NewObject()
 	v.Set("row",ui.Number(e.Row))
 	v.Set("column",ui.Number(e.Column))
-	return v
+	return v.Commit()
 }

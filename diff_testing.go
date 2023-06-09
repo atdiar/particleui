@@ -1,4 +1,4 @@
-package doc
+package ui
 
 import (
 	"reflect"
@@ -7,32 +7,32 @@ import (
 
 // Rest of the code from above
 
-// TestMyersDiff tests the myersDiff function
+// TestMyersDiff tests the MyersDiff function
 func TestMyersDiff(t *testing.T) {
 	a := []string{"a", "b", "c", "e", "f", "h"}
 	b := []string{"b", "c", "d", "e", "f", "g"}
 
-	expected := []editOp{
+	expected := []EditOp{
 		{Operation: "Remove", ElementID: "a", Index: 0},
 		{Operation: "Insert", ElementID: "d", Index: 2},
 		{Operation: "Remove", ElementID: "h", Index: 5},
 		{Operation: "Insert", ElementID: "g", Index: 5},
 	}
 
-	got := myersDiff(a, b)
+	got := MyersDiff(a, b)
 
 	if !reflect.DeepEqual(expected, got) {
 		t.Errorf("Expected %+v, got %+v", expected, got)
 	}
 }
 
-// BenchmarkMyersDiff benchmarks the myersDiff function
+// BenchmarkMyersDiff benchmarks the MyersDiff function
 func BenchmarkMyersDiff(b *testing.B) {
 	a := []string{"a", "b", "c", "e", "f", "h"}
 	a2 := []string{"b", "c", "d", "e", "f", "g"}
 
 	for i := 0; i < b.N; i++ {
-		myersDiff(a, a2)
+		MyersDiff(a, a2)
 	}
 }
 
@@ -49,3 +49,9 @@ func BenchmarkNaiveDiff(b *testing.B) {
 		}
 	}
 }
+
+/*
+
+Can you give me a one file recap in apackage main that demonstrate the use of this algorithm? I want ot paste it in the go playground and see if it works. By the way I've tried it in a codebase but the list of edits returned by the diffing function is always empty, even when I know it shouldn't so there should be a mistake somewhere..
+
+*/

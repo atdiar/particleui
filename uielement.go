@@ -66,21 +66,21 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 	fn := func(e *Element) *Element {
 		a, ok := e.Get("internals", "constructoroptions")
 		if !ok {
-			a = NewList(String(name))
+			a = NewList(String(name)).Commit()
 			e.Set("internals", "constructoroptions", a)
 		}
 		l, ok := a.(List)
 		if !ok {
 			log.Print("Unexpected error. constructoroptions should be stored as a ui.List")
 			a := NewList(String(name))
-			e.Set("internals", "constructoroptions", a)
+			e.Set("internals", "constructoroptions", a.Commit())
 		}
 		for _, copt := range l.Unwrap() {
 			if copt == String(name) {
 				return configuratorFn(e)
 			}
 		}
-		e.Set("internals", "constructoroptions", l.Append(String(name)))
+		e.Set("internals", "constructoroptions", l.MakeCopy().Append(String(name)).Commit())
 
 		return configuratorFn(e)
 	}
@@ -370,13 +370,16 @@ func NewElement(id string, doctype string) *Element {
 		nil,
 	}
 
+	e.subtreeRoot = e
+
 	
 	// DEBUG TODO check that it's not needed...
-	e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
+	/*e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
 		RegisterElement(evt.Origin().Root,evt.Origin())
 		evt.Origin().TriggerEvent("registered")
 		return false
 	}).RunOnce())
+	*/
 
 	
 
@@ -611,7 +614,6 @@ func computeSubtreeRoot(e *Element) *Element {
 	return computeSubtreeRoot(e.Parent)
 }
 
-// TODO implement sync pool for finalizers and for inactive elements map
 
 // attach will link a child Element to the subtree its target parent belongs to.
 // It does not however position it in any view specifically. At this stage,
@@ -632,37 +634,31 @@ func attach(parent *Element, child *Element) func() {
         curr := stack[lastIndex]
 		stack[lastIndex] = nil
         stack = stack[:lastIndex]
-
+		//DEBUG(curr, child, curr == nil, child == nil)
 		if curr.ID == child.ID{
 			curr.Parent = parent
 		}
-
+		
 		if curr.Root == nil{
-			curr.Root= parent.Root
+			curr.Root = parent.Root
 		} else if parent.Root == nil{
 			RegisterElement(curr.Root,parent)
 		}
 		
-		
-		if curr.Root == nil{
-			curr.Root = parent.Root
+		if curr.registry == nil{
 			curr.WatchEvent("registered",parent, NewMutationHandler(func(evt MutationEvent)bool{
 				RegisterElement(evt.Origin().Root,curr)
 				return false
 			}).RunOnce().RunASAP())
 
+		}
+		
+		if parent.registry == nil{
 			parent.WatchEvent("registered",curr, NewMutationHandler(func(evt MutationEvent)bool{
 				RegisterElement(evt.Origin().Root,parent)
 				return false
 			}).RunOnce().RunASAP())
-
-		} else{
-			if parent.Root == nil{
-				parent.Root = curr.Root
-				RegisterElement(parent.Root,parent)
-			}
-		}
-		
+		}		
         
 		
 		// the subtreeroot can change as opposed to the root which is nil until attached to a document root
@@ -687,7 +683,7 @@ func attach(parent *Element, child *Element) func() {
 
         // Generate finalizer for this element
         finalizers = append(finalizers, func() {
-			
+
 			curr.computeRoute()
 
             if mountable {
@@ -892,9 +888,10 @@ func (e *Element) appendChild(childEl AnyElement) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	finalize := attach(e, child)
+	
 	
 	e.Children.InsertLast(child)
+	finalize := attach(e, child)
 
 	if e.Native != nil {
 		e.Native.AppendChild(child)
@@ -920,9 +917,10 @@ func (e *Element) prependChild(childEl AnyElement) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	finalize:= attach(e, child)
+	
 
 	e.Children.InsertFirst(child)
+	finalize:= attach(e, child)
 
 	if e.Native != nil {
 		e.Native.PrependChild(child)
@@ -949,8 +947,8 @@ func (e *Element) insertChild(childEl AnyElement, index int) *Element {
 		child.Parent.removeChild(child)
 	}
 
-	finalize:= attach(e, child)
 	e.Children.Insert(child, index)
+	finalize:= attach(e, child)
 
 	if e.Native != nil {
 		e.Native.InsertChild(child, index)
@@ -990,9 +988,9 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 	}
 
 	finalizeold := detach(old.AsElement())
-	finalizenew := attach(e, new.AsElement())
 
 	e.Children.Replace(old.AsElement(), new.AsElement())
+	finalizenew := attach(e, new.AsElement())
 
 	if e.Native != nil {
 		e.Native.ReplaceChild(old.AsElement(), new.AsElement())
@@ -1157,75 +1155,72 @@ func (e *Element) hasChild(any *Element) (int, bool) {
 }
 
 func (e *Element) SetChildren(any ...AnyElement) *Element {
-	e.RemoveChildren()
-	/*if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
-		children := make([]*Element, 0, len(any))
-		for _, el := range any {
-			ele := el.AsElement()
-			if e.DocType != ele.DocType {
-				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, ele.DocType)
-				panic("SetChildren failed: wrong doctype")
-			}
-			if ele.Parent != nil {
-				ele.Parent.removeChild(ele)
-			}
-			finalize := attach(e, ele)
-			defer finalize()
-			e.Children.InsertLast(ele)
-			children = append(children, ele)
-		}
-		n.SetChildren(children...)
-		return e
-	}
-	*/
-	for _, el := range any {
-		e.AppendChild(el)
-		// el.ActiveView = e.ActiveView // TODO verify this is correct
-	}
+	e.SetChildrenElements(convertAny(any...)...)
 	return e
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	
-	e.RemoveChildren()
-	
-	
-	if n, ok := e.Native.(interface{ SetChildren(...*Element) }); ok {
+	/*
+	if n, ok := e.Native.(interface{ BatchExecute(string) }); ok {
+		allChildren := make(map[string]*Element,len(any) + len(e.Children.List))
+		oldchildrenIdList := childrenIdList(e,allChildren)
+		newchildrenIdList := make([]string, 0,len(any))
 		for _, el := range any {
 			if e.DocType != el.DocType {
 				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, el.DocType)
 				panic("SetChildren failed: wrong doctype")
 			}
-			if el.Parent != nil {
-				el.Parent.removeChild(el)
-			}
-
-			finalize := attach(e, el)
-			defer finalize()
-			e.Children.InsertLast(el)
+			allChildren[el.ID] = el
+			newchildrenIdList = append(newchildrenIdList, el.ID)
 		}
 
-		n.SetChildren(any...)		
+		// calculate myers-diff that generates the edit trace
+		editscript := MyersDiff(oldchildrenIdList, newchildrenIdList)
+		finalize:= applyEdits(e, editscript, allChildren)
+
+		encEdits := EncodeEditOperations(editscript)
+
+		n.BatchExecute(encEdits)
+		
+		finalize()
 		
 		return e
 	} else{
+		e.RemoveChildren()
 		for _, el := range any {
 			e.AppendChild(el)
 			// el.ActiveView = e.ActiveView // TODO verify this is correct
 		}
 	}
-	
+	*/
 
-	// DEBUG
-	for _, el := range any {
-		e.AppendChild(el)
-		// el.ActiveView = e.ActiveView // TODO verify this is correct
-	}
+	e.RemoveChildren()
+		for _, el := range any {
+			e.AppendChild(el)
+			// el.ActiveView = e.ActiveView // TODO verify this is correct
+		}
 	
 	return e
 }
 
-// OnMutation allows for the registration of a MutationHandler to be called when a property is mutated.
+func childrenIdList(e *Element, m map[string]*Element) []string{
+	if e == nil{
+		return nil
+	}
+	if e.Children == nil{
+		return nil
+	}
+	list := make([]string,0,len(e.Children.List))
+	for _, child := range e.Children.List{
+		m[child.ID] = child
+		list = append(list,child.ID)
+	}
+	return list
+
+}
+
+// OnMutation is a convenience emthod that allows for an ELement to watch one of its own properties
+// for change.
 func(e *Element) OnMutation(category string, propname string, h *MutationHandler) *Element{
 	e.Watch(category,propname,e,h)
 	return e
@@ -1487,14 +1482,10 @@ func (e *Element) Mountable() bool {
 // Mounted returns true if an Element is directly reachable from the root of an app tree.
 // This does not include elements existing on inactivated view paths.
 func (e *Element) Mounted() bool {
-    current := e
-    for current != nil {
-        if current.IsRoot() {
-            return true
-        }
-        current = current.Parent
-    }
-    return false
+	if e.subtreeRoot == nil{
+		return false
+	}
+    return e.subtreeRoot.isroot
 }
 /* 
 	// Essentially equivalent to:
@@ -1571,26 +1562,28 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 
 func newEventValue(v Value) Object{
 	o:= NewObject()
-	o.o.Set("value",v)
-	o.o.Set("id",String(newEventID()))
+	o.o = o.o.Set("value",v)
+	o.o = o.o.Set("id",String(newEventID()))
 
-	return o
+	return o.Commit()
 }
 
 func(e *Element) TriggerEvent(name string, value ...Value){
 	n:= len(value)
+	var val Value
 	switch {
 	case n == 0:
-		e.Set("event", name,newEventValue(Bool(true)))
+		val = newEventValue(Bool(true))
 	case n==1:
-		e.Set("event", name,newEventValue(value[0]))
+		val = newEventValue(value[0])
 	default:
 		l:= NewList()
 		for _,v:= range value{
 			l = l.Append(v)
 		}
-		e.Set("event", name,newEventValue(l))
+		val = newEventValue(l.Commit())
 	}
+	e.Set("event",name,val)
 }
 
 // WatchEventt enables an elements to watch for an event occuring on any Element including itself.
@@ -1627,23 +1620,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
 
-	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
-
 	oldvalue, ok := e.Properties.Get(category, propname)
 
 	if ok && category != "event" {
 		if Equal(value, oldvalue) { // idempotence			
 			return
-		}
-	}
-
-	// Store property in persistent storage if persistence mode has been set at Element constrcution
-	// reminder that runtime properties such as those in the "event" or "ui"categories are never persisted.
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok && category == "data" {
-			storage.Store(e, category, propname, value)
 		}
 	}
 
@@ -1695,11 +1676,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 			m.Set("val",Copy(value))
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
-				l=NewList(m)
+				l=NewList(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = list.Append(m)
+				list = list.MakeCopy().Append(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
@@ -1808,11 +1789,15 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 			m.Set("sync",Bool(true))
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
-				l=NewList(m)
+				l=NewList(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = list.Append(m)
+				list = list.
+					MakeCopy().
+						Append(m.Commit()).
+					Commit()
+
 				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
@@ -1827,14 +1812,7 @@ func(e *Element) SyncData(propname string, value Value) *Element{
 	
 	oldvalue, _ := e.GetData(propname)
 	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
-
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok {
-			storage.Store(e, "data", propname, value)
-		}
-	}
+	
 	e.Properties.Set("data", propname, value)
 
 	evt := e.newSyncMutationEvent("data", propname, value, oldvalue)
@@ -1861,15 +1839,8 @@ func(e *Element) SyncData(propname string, value Value) *Element{
 // needed. (in opposition to automatically updating the UI via data mutation observervation)
 func (e *Element) SetDataSetUI(propname string, value Value) {
 	oldvalue, _ := e.GetData(propname)
-	// Persist property if persistence mode has been set at Element creation
-	pmode := PersistenceMode(e)
 
-	if e.ElementStore != nil {
-		storage, ok := e.ElementStore.PersistentStorer[pmode]
-		if ok {
-			storage.Store(e, "data", propname, value)
-		}
-	}
+	
 	e.Properties.Set("data", propname, value)
 
 	evt := e.NewMutationEvent("data", propname, value, oldvalue)
@@ -1912,11 +1883,11 @@ func (e *Element) SyncUISyncData(propname string, value Value) {
 			m.Set("sync",Bool(true))
 			l,ok:= e.Get("internals","mutationtrace")
 			if !ok{
-				l=NewList(m)
+				l=NewList(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
 				list:= l.(List)
-				list = list.Append(m)
+				list = list.MakeCopy().Append(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",list)
 			}
 		}
@@ -2204,7 +2175,7 @@ func (p PropertyStore) Set(category string, propname string, value Value) {
 		p.Categories[category] = ps
 	}
 	
-	ps.Set(propname, CopyIfWritten(value))
+	ps.Set(propname, value)
 }
 
 func (p PropertyStore) Delete(category string, propname string) {

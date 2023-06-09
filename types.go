@@ -10,7 +10,7 @@ type discriminant string // just here to pin the definition of the Value interfa
 // Value is the type for Element property values.
 type Value interface {
 	discriminant() discriminant
-	RawValue() Object
+	RawValue() object
 	ValueType() string
 }
 
@@ -18,11 +18,12 @@ type Value interface {
 type Bool bool
 
 func (b Bool) discriminant() discriminant { return "zui" }
-func (b Bool) RawValue() Object {
+func (b Bool) RawValue() object {
 	o := newobject()
 	o["zui_object_typ"] = "Bool"
+	o["zui_object_raw"] = true
 	o["zui_object_value"] = bool(b)
-	return o.RawValue()
+	return o
 }
 func (b Bool) ValueType() string { return "Bool" }
 
@@ -33,11 +34,12 @@ func(b Bool) Bool() bool{
 type String string
 
 func (s String) discriminant() discriminant { return "zui" }
-func (s String) RawValue() Object {
+func (s String) RawValue() object {
 	o := newobject()
 	o["zui_object_typ"] = "String"
+	o["zui_object_raw"] = true
 	o["zui_object_value"] = string(s)
-	return o.RawValue()
+	return o
 }
 func (s String) ValueType() string { return "String" }
 
@@ -46,12 +48,14 @@ func(s String) String() string{return string(s)}
 type Number float64
 
 func (n Number) discriminant() discriminant { return "zui" }
-func (n Number) RawValue() Object {
+func (n Number) RawValue() object {
 	o := newobject()
 	o["zui_object_typ"] = "Number"
+	o["zui_object_raw"] = true
 	o["zui_object_value"] = float64(n)
-	return o.RawValue()
+	return o
 }
+
 func (n Number) ValueType() string { return "Number" }
 
 func(n Number) Float64() float64{return float64(n)}
@@ -61,8 +65,11 @@ func(n Number) Int64() int64{return int64(n)}
 
 // Object
 
-func NewObject() Object {
-	return Object{newobject(), false,2}
+// NewObject returns a *TempObject which is a wrapper around an Object with uncommited changes
+// Once values have been inserted if needed, a call to Commit returns the new Object value.
+func NewObject() *TempObject {
+	o:= Object{newobject(),false,2}
+	return &TempObject{o}
 	//return objectsPool.Get()
 }
 
@@ -72,8 +79,71 @@ type Object struct{
 	offset int
 }
 
+// TempObject is a wrapper around an Object that defines a copy that has a Set method.
+// This Set method mutates the copy in place.
+// Once done with the modifications, ta full-fledged Object can be created by "commiting" the changes.
+type TempObject struct{
+	Object
+}
+
+func(o TempObject)  discriminant(){} //TempObject should not be usable as a Value
+
+// Commit commits the changes made to an object copy. 
+func (o *TempObject) Commit() Object{
+	if !o.copied{
+		return o.Object
+	}
+	o.copied = false
+	return o.Object
+}
+
+func (o *TempObject) Set(key string, val Value) *TempObject{
+	if o.copied{
+		o.Object.o.Set(key,val)
+		if obj,ok:= val.(Object);ok{
+			if obj.offset == 3{
+				// means it's a raw object
+				o.Object.offset = 3
+			}	
+		}
+	
+		if obj,ok:= val.(object); ok && obj["zui_object_raw"] == true{
+			o.Object.offset = 3
+		}
+		return o
+	}
+	o.Object = Copy(o.Object).(Object)
+	o.Object.copied = true
+	o.Object.o.Set(key,val)
+
+	if obj,ok:= val.(Object);ok{
+		if obj.offset == 3{
+			// means it's a raw object
+			o.Object.offset = 3
+		}	
+	}
+
+	if obj,ok:= val.(object); ok && obj["zui_object_raw"] == true{
+		o.Object.offset = 3
+	}
+	
+	return o
+}
+
+func (o *TempObject) Delete(key string) *TempObject{
+	if o.copied{
+		delete(o.Object.o,key)
+		return o
+	}
+	o.Object = Copy(o.Object).(Object)
+	o.Object.copied = true
+	delete(o.Object.o,key)
+	return o
+}
+
+
 func (o Object) discriminant() discriminant { return "zui" }
-func(o Object) RawValue() Object{
+func(o Object) RawValue() object{
 	return o.o.RawValue()
 }
 
@@ -117,7 +187,7 @@ func(o Object) MustGetList(key string) List{
 	return v.(List)
 }
 
-func(o *Object) MustGetObject(key string) Object{
+func(o Object) MustGetObject(key string) Object{
 	v,ok:= o.o.Get(key)
 	if !ok{
 		panic("Expected value to be present in object but it was not found")
@@ -129,30 +199,9 @@ func(o Object) Get(key string) (Value,bool){
 	return o.o.Get(key)
 }
 
-func(o *Object) Set(key string, val Value) Object{ // TODO if value is an object and a list, check copied. Only insert copies with copied field set to false then (new copies)
-	if o.copied{
-		o.o.Set(key,Copy(val))
-		return *o
-	}
-	o.o = Copy(o.o).(object)
-	o.o.Set(key,val)
-	o.copied = true
-	if obj,ok:= val.(Object);ok{
-		if obj.offset == 3{
-			// means it's a raw object
-			o.offset = 3
-		}	
-	}
-
-	if obj,ok:= val.(object); ok && obj["zui_object_raw"] == true{
-		o.offset = 3
-	}
-
-	return *o
-}
-
-func(o Object) DeepCopy() Object{
-	return Object{Copy(o.o).(object),false,o.offset}
+func(o Object) MakeCopy() *TempObject{ // TODO if value is an object and a list, check copied. Only insert copies with copied field set to false then (new copies)
+	t:=  &TempObject{Copy(o).(Object)}
+	return t
 }
 
 func(o Object)setType(typ string) Object{
@@ -161,7 +210,7 @@ func(o Object)setType(typ string) Object{
 }
 
 func(o Object) Value() Value{
-	return Object{o.o.Value().(object),o.copied, 2}
+	return o.o.Value()
 }
 
 func (o Object) Size() int{
@@ -172,20 +221,6 @@ func (o Object) Size() int{
 	return s
 }
 
-func(o Object) Delete(key string) Object{
-	_,ok:= o.o.Get(key)
-	if !ok{
-		return o
-	}
-	if o.copied{
-		delete(o.o,key)
-		return o
-	}
-	o.o = Copy(o.o).(object)
-	delete(o.o,key)
-	o.copied = true
-	return o
-}
 
 func (o Object) Range(f func(key string, val Value) (done bool)){
 	for k,v := range o.o{
@@ -197,21 +232,14 @@ func (o Object) Range(f func(key string, val Value) (done bool)){
 // It can be used furing object creation to store values wihtout trigegering a copy.
 // It can be also used after having called RawValue to get a serializable type ffor the object.
 func(o Object) Unwrap() map[string]any{
-	return o.o
+	return o.MakeCopy().o
 }
 
-func NewObjectFrom(m map[string]any) Object{
-	m["zui_object_raw"] = true
-	return Object{object(m),false,3}
+func ValueFrom(m map[string]any) Value{
+	return object(m).Value()
 }
 
-func (o *Object) clear() {
-	o.copied = false
-	o.offset = 2
-	for k,_:= range o.o{
-		delete(o.o,k)
-	}
-}
+
 
 // raw object
 // in general it is the underlying format that is also used before serialization
@@ -226,12 +254,12 @@ type object map[string]interface{}
 
 func (o object) discriminant() discriminant { return "zui" }
 
-func (o object) RawValue() Object {
+func (o object) RawValue() object {
 	p := newobject()
 	for k, val := range o {
 		v, ok := val.(Value)
 		if ok {
-			p[k] = map[string]interface{}(v.RawValue().o)
+			p[k] = map[string]interface{}(v.RawValue())
 			continue
 		}
 		p[k] = val 
@@ -240,7 +268,7 @@ func (o object) RawValue() Object {
 		continue
 	}
 	p["zui_object_raw"] = true
-	return p.AsObject()
+	return p
 }
 
 func (o object) ValueType() string {
@@ -289,7 +317,7 @@ func (o object) Get(key string) (Value, bool) {
 				}
 				panic("zui error: bad list rawencoding. Unable to decode.")
 			}
-			return m,ok
+			return m.Commit(),ok
 		default:
 			panic("zui error: unknown raw value type")
 		}
@@ -349,14 +377,15 @@ func (o object) Set(key string, value Value) object {
 		if v.copied{
 			v = Object{Copy(v.o).(object),false,v.offset}
 		}
-		o[key] = v
+		value  = v
+		
 	}
 
 	if v,ok:= value.(List);ok{
 		if v.copied{
 			v = List{Copy(v.l).(list),false}
 		}
-		o[key] = v
+		value  = v
 	}
 
 
@@ -365,8 +394,10 @@ func (o object) Set(key string, value Value) object {
 		if v["zui_object_raw"] == true{
 			o["zui_object_raw"] = true
 		}
-		o[key] = v
+		value  = v
 	} 
+
+	o[key] = value
 
 	return o
 }
@@ -379,30 +410,39 @@ func (o object) setType(typ string) object {
 func (o object) Value() Value {
 	switch o.ValueType() {
 	case "Bool":
-		v, ok := o.Get("zui_object_value")
+		v, ok := o["zui_object_value"]
 		if !ok {
 			panic("zui error: raw bool value can't be found.")
 		}
-		return v
+		return Bool(v.(bool))
 	case "String":
-		v, ok := o.Get("zui_object_value")
+		v, ok := o["zui_object_value"]
 		if !ok {
 			panic("zui error: raw string value can't be found.")
 		}
-		return v
+		return String(v.(string))
 	case "Number":
-		v, ok := o.Get("zui_object_value")
+		v, ok := o["zui_object_value"]
 		if !ok {
 			panic("zui error: raw number value can't be found.")
 		}
-		return v
+		return Number(v.(float64))
 	case "List":
-		v, ok := o.Get("zui_object_value")
+		v, ok := o["zui_object_value"]
 		if !ok {
-			DEBUG(o)
 			panic("zui error: raw List value can't be found.")
 		}
-		return v
+		l,ok:= v.([]any)
+		if !ok{
+			panic("zui error: raw List value is not a []any.")
+		}
+		nl:= newlist()
+
+		for _, val := range l {
+			nl = append(nl,ValueFrom(val.(map[string]any)))
+		}
+		return NewListFrom(nl)
+
 	case "Object":
 		delete(o, "zui_object_raw")
 
@@ -423,13 +463,17 @@ func (o object) Value() Value {
 			}
 			u, ok := v.(object)
 			if !ok {
+				if  u,ok:= v.(Object);ok{
+					p.Set(k, u.Value())
+					continue
+				}
 				p.Set(k, v)
 				continue
 			}
 			p.Set(k, u.Value())
 		}
 		
-		return p		
+		return p.AsObject()		
 	default:
 		return o
 	}
@@ -451,12 +495,18 @@ type List struct{
 	copied bool
 }
 
-func NewList(val ...Value) List {
-	return List{newlist(val...),false}
+type TempList struct{
+	List
+}
+
+func(t TempList) discriminant(){}
+
+func NewList(val ...Value) *TempList {
+	return &TempList{List{newlist(val...),false}}
 }
 
 func (l List) discriminant() discriminant { return "zui" }
-func (l List) RawValue() Object {
+func (l List) RawValue() object {
 	o := newobject().setType("List")
 
 	raw := make([]interface{}, 0,len(l.l))
@@ -464,7 +514,8 @@ func (l List) RawValue() Object {
 		raw = append(raw, v.RawValue())
 	}
 	o["zui_object_value"] = raw
-	return o.RawValue().o.AsObject()
+	o["zui_object_raw"] = true
+	return o
 }
 func (l List) ValueType() string { return "List" }
 
@@ -472,31 +523,47 @@ func(l List) Filter(validator func(Value)bool) List{
 	return List{l.l.Filter(validator),false}
 }
 
-func(l *List) Append(val ...Value) List{
+func(l *TempList) Append(val ...Value) *TempList{
 	if !l.copied{
 		l.l = Copy(l.l).(list)
 		l.copied = true
 	}
 	l.l = append(l.l, val...)
-	return *l
+	return l
 }
 
 func (l List) Get(index int) Value {
 	return l.l[index]
 }
 
-func(l *List) Set(index int, val Value) List{
+func(l *TempList) Set(index int, val Value) *TempList{
 	if !l.copied{
 		l.l = Copy(l.l).(list)
 		l.copied = true
 	}
 	l.l[index] = Copy(val)
-	return *l
+	return l
+}
+
+func(l List) MakeCopy() *TempList{
+	return &TempList{List{Copy(l.l).(list),true}}
+}
+
+func(l *TempList) Commit() List{
+	if !l.copied{
+		return l.List
+	}
+	l.copied = false
+	return l.List
 }
 
 // Unwrap returns the raw list. Useful for iterating over it.
 func (l List) Unwrap() []Value{
-	return l.l
+	return l.MakeCopy().l
+}
+
+func NewListFrom(s []Value) List{
+	return List{s,false}
 }
 
 
@@ -513,7 +580,7 @@ func newlist(val ...Value) list {
 type list []Value
 
 func (l list) discriminant() discriminant { return "zui" }
-func (l list) RawValue() Object {
+func (l list) RawValue() object {
 	o := newobject().setType("List")
 
 	raw := make([]interface{}, 0,len(l))
@@ -521,8 +588,10 @@ func (l list) RawValue() Object {
 		raw = append(raw, v.RawValue())
 	}
 	o["zui_object_value"] = raw
-	return o.RawValue()
+	o["zui_object_raw"] = true
+	return o
 }
+
 func (l list) ValueType() string { return "List" }
 
 func(l list) Filter(validator func(Value)bool) list{
@@ -539,8 +608,9 @@ func(l list) Filter(validator func(Value)bool) list{
 }
 
 
-// Copy creates a deep-copy of a Value unless it is an *Element in which case it returns the
+// Copy creates a shallow/deep-copy of a Value unless it is an *Element in which case it returns the
 // *Element as an objecvt of type Value.
+// A shallow-deep copy simply relies on Copy-on-Write behavior to avoid copying the underlying data.
 func Copy(v Value) Value {
 	if v == nil{
 		return v
@@ -554,14 +624,14 @@ func Copy(v Value) Value {
 		return t
 	case List:
 		r:= List{make([]Value,0,cap(t.l)),false}
-		for i,v:= range t.l{
-			r.l[i] = v
+		for _,v:= range t.l{
+			r.l= append(r.l, v)
 		}
 		return r
 	case list:
 		r:= list(make([]Value,0,cap(t)))
-		for i,v:= range t{
-			r[i] = v
+		for _,v:= range t{
+			r = append(r, v)
 		}
 		return r
 	case Object: 
@@ -701,21 +771,3 @@ func Equal(v Value, w Value) bool {
 	panic("Equality is not specified for this Value type")
 }
 
-func  CopyIfWritten(value Value) Value{
-	v,ok:= value.(Object)
-	if ok{
-		if v.copied{
-			return v.DeepCopy()
-		}
-		return value
-	}
-
-	vv,ok:= value.(List)
-	if ok{
-		if vv.copied{
-			return Copy(vv)
-		}
-		return value
-	}
-	return value
-}

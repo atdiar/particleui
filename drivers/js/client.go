@@ -8,13 +8,14 @@ package doc
 
 import (
 	"context"
-	//"encoding/json"
-	"github.com/goccy/go-json"
+	"encoding/json"
+	//"github.com/segmentio/encoding/json"
 	//"errors"
 	"log"
 	"strings"
 	"syscall/js"
 	"runtime"
+	"runtime/debug"
 	"time"
 	"github.com/atdiar/particleui"
 )
@@ -27,7 +28,7 @@ var (
 		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
 		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
 		AddConstructorOptionsTo("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence).
-		ApplyGlobalOption(allowdataloading)
+		ApplyGlobalOption(allowdatapersistence)
 )
 
 
@@ -36,6 +37,8 @@ var (
 func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 	return  func(ctx context.Context){
 		d:=f()
+		// GC is triggered only when the browser is idle.
+		debug.SetGCPercent(-1)
 		js.Global().Set("triggerGC", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			runtime.GC()
 			return nil
@@ -43,21 +46,29 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 		withNativejshelpers(&d)
 
 		scrIdleGC := d.Script().SetInnerHTML(`
+			let lastGC = Date.now();
+
 			function runGCDuringIdlePeriods(deadline) {
-				// If there's a timeout or if there's no more time to perform work, schedule a new callback.
+				console.log("runGCDuringIdlePeriods") 
+
 				if (deadline.didTimeout || !deadline.timeRemaining()) {
-					window.requestIdleCallback(runGCDuringIdlePeriods);
+					setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
 					return;
 				}
 				
-				triggerGC(); // Trigger GC
-			
-				// Schedule a new callback for the next idle time
-				window.requestIdleCallback(runGCDuringIdlePeriods);
+				let now = Date.now();
+				if (now - lastGC >= 120000) { // Check if at least 2 minutes passed since last GC
+					window.triggerGC(); // Trigger GC
+					lastGC = now;
+				}
+
+				// Schedule a new callback for the next idle time, but not sooner than 2 minutes from now
+				setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
 			}
-			
+
 			// Start the loop
-			window.requestIdleCallback(runGCDuringIdlePeriods);		
+			window.requestIdleCallback(runGCDuringIdlePeriods);
+	
 		`)
 		d.Head().AppendChild(scrIdleGC)
 		d.ListenAndServe(ctx)
@@ -186,7 +197,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				if err != nil {
 					return err
 				}
-				val:= ui.NewObjectFrom(rawvalue).Value()
+				val:= ui.ValueFrom(rawvalue)
 				ui.LoadProperty(e, category, propname, val)
 				if category == "data" && e.DocType == e.ElementStore.DocType{
 					uiloaders = append(uiloaders, func(){
@@ -363,7 +374,6 @@ func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRState
 func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 	id:= e.ID
 	if e.IsRoot(){
-		//
 		if  nativeDocumentAlreadyRendered(e,js.Global().Get("document"), id + SSRStateSuffix){
 			e.ElementStore.EnableMutationReplay()
 			e.WatchEvent("mutationreplayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
@@ -414,6 +424,7 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 						element= js.Global().Get("document").Call("createElement",tag)
 					}
 				}
+		
 				evt.Origin().Native = NewNativeElementWrapper(element)
 			}
 		
@@ -463,6 +474,58 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 
 	if tag == "head"{
 		element:= js.Global().Get("document").Call("getElementById",id)
+		defer func(){
+			// We should also add the scrip that enables batch execution:
+			batchscript := js.Global().Get("document").Call("createElement","script")
+			batchscript.Set("textContent",`
+				window.applyBatchOperations = function(parentElement, encodedOperations) {
+					const operationsBinary = atob(encodedOperations);
+					const operationsData = new DataView(new ArrayBuffer(operationsBinary.length));
+				
+					for (let i = 0; i < operationsBinary.length; i++) {
+						operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+					}
+				
+					let offset = 0;
+					const fragment = document.createDocumentFragment();
+				
+					while (offset < operationsData.byteLength) {
+						const operationLen = operationsData.getUint8(offset++);
+						const operation = operationsBinary.slice(offset, offset + operationLen);
+						offset += operationLen;
+				
+						const idLen = operationsData.getUint8(offset++);
+						const elementID = operationsBinary.slice(offset, offset + idLen);
+						offset += idLen;
+				
+						const index = operationsData.getUint32(offset);
+						offset += 4;
+				
+						const element = document.getElementById(elementID);
+						if (!element) continue;
+				
+						switch (operation) {
+							case "Insert":
+								if (fragment.children.length > index) {
+									fragment.insertBefore(element, fragment.children[index]);
+								} else {
+									fragment.appendChild(element);
+								}
+								break;
+							case "Remove":
+								if (element.parentNode) {
+									element.parentNode.removeChild(element);
+								}
+								break;
+						}
+					}
+					console.Log(fragment); // DEBUG
+					parentElement.appendChild(fragment);
+				};
+			
+			`)
+			element.Call("append", batchscript)
+		}()
 		if !element.Truthy(){
 			element= js.Global().Get("document").Get(tag)
 			if !element.Truthy(){
@@ -470,6 +533,7 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			}
 			return NewNativeElementWrapper(element), false
 		}
+		
 		return NewNativeElementWrapper(element), true
 	}
 
@@ -557,16 +621,8 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 
 }
 
-func (n NativeElement) SetChildren(children ...*ui.Element) {
-	fragment := js.Global().Get("document").Call("createDocumentFragment")
-	for _, child := range children {
-		v, ok := child.Native.(NativeElement)
-		if !ok {
-			panic("wrong format for native element underlying objects.Cannot append " + child.ID)
-		}
-		fragment.Call("append", v.Value)
-	}
-	n.Value.Call("append", fragment)
+func (n NativeElement) BatchExecute(opslist string) {
+	js.Global().Call("applyBatchOperations",n.Value, opslist)
 }
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as
@@ -619,19 +675,21 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 	return e
 }
 
-// PutInStorage stores an element properties in storage (localstorage or sessionstorage).
+// PutInStorage stores an element data in storage (localstorage or sessionstorage).
 func PutInStorage(e *ui.Element) *ui.Element{
 	pmode := ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if !ok{
 		return e
 	}
+
 	for cat,props:= range e.Properties.Categories{
-		if cat != "event"{
-			for prop,val:= range props.Local{
-				storage.Store(e,cat,prop,val)
-			}
-		}		
+		if cat != "data"{
+			continue
+		}
+		for prop,val:= range props.Local{
+			storage.Store(e,cat,prop,val)
+		}
 	}
 	e.TriggerEvent("storesynced",ui.Bool(true))
 	return e
@@ -713,8 +771,8 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					e.AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 						scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 						scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-						router.History.Set(e.ID, "scrollTop", scrolltop)
-						router.History.Set(e.ID, "scrollLeft", scrollleft)
+						router.History.Set(e.ID+"-"+"scrollTop", scrolltop)
+						router.History.Set(e.ID+"-"+"scrollLeft", scrollleft)
 						return false
 					}))
 	
@@ -724,13 +782,13 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 							return false
 						}
 						if scroll := b.(ui.Bool); scroll {
-							t, ok := router.History.Get(e.ID, "scrollTop")
+							t, ok := router.History.Get(e.ID+"-"+"scrollTop")
 							if !ok {
 								ejs.Set("scrollTop", 0)
 								ejs.Set("scrollLeft", 0)
 								return false
 							}
-							l, ok := router.History.Get(e.ID, "scrollLeft")
+							l, ok := router.History.Get(e.ID+"-"+"scrollLeft")
 							if !ok {
 								ejs.Set("scrollTop", 0)
 								ejs.Set("scrollLeft", 0)
@@ -785,6 +843,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	route = string(r.(ui.String))
 
 	history:= evt.NewValue().(ui.Object)
+
 	browserhistory,ok:= evt.OldValue().(ui.Object)
 	if ok{
 		bcursor,ok:= browserhistory.Get("cursor")
@@ -818,15 +877,20 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	hstate := js.Global().Get("history").Get("state")
 	
 	if hstate.Truthy() {
-		hstateobj := ui.NewObject().Unwrap()
+		hstateobj := make(map[string]interface{})
 		err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 		if err == nil {
-			hso:= ui.NewObjectFrom(hstateobj)
-			evt.Origin().SyncUISyncData("history", hso.Value())
-			// DEBUG
+			hso:= ui.ValueFrom(hstateobj).(ui.Object)
+			// Check that the sate is valid. It is valid if it contains a cursor.
+			_, ok := hso.Get("cursor")
+			if ok{
+				evt.Origin().SyncUISyncData("history", hso)
+			} else{
+				evt.Origin().SyncUI("history", hso.Value())
+			}
 		}
 	}
-
+	
 	route := js.Global().Get("location").Get("pathname").String()
 	e.TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
@@ -845,15 +909,15 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 	d.Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 		scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 		scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-		router.History.Set(e.ID, "scrollTop", scrolltop)
-		router.History.Set(e.ID, "scrollLeft", scrollleft)
+		router.History.Set(e.ID+"-"+"scrollTop", scrolltop)
+		router.History.Set(e.ID+"-"+"scrollLeft", scrollleft)
 		return false
 	}))
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		newpageaccess:= router.History.CurrentEntryIsNew()
-		t, oktop := router.History.Get(e.ID, "scrollTop")
-		l, okleft := router.History.Get(e.ID, "scrollLeft")
+		t, oktop := router.History.Get(e.ID+"-"+"scrollTop")
+		l, okleft := router.History.Get(e.ID+"-"+"scrollLeft")
 
 		if !oktop || !okleft {
 			ejs.Set("scrollTop", 0)
@@ -867,7 +931,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		}
 		
 		// focus restoration if applicable
-		v,ok:= router.History.Get("ui","focus")
+		v,ok:= router.History.Get("focusedElementId")
 		if !ok{
 			v,ok= e.Get("ui","focus")
 			if !ok{
@@ -881,7 +945,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 				Focus(el,false)
 				if newpageaccess{
 					if !partiallyVisible(el){
-						DEBUG("focused element not in view...scrolling")
+						//DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
 				}
@@ -895,7 +959,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 				Focus(el,false)
 				if newpageaccess{
 					if !partiallyVisible(el){
-						DEBUG("focused element not in view...scrolling")
+						//DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
 				}
@@ -906,6 +970,24 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		return false
 	})
 	e.WatchEvent("navigation-end", e, h)
+
+	return e
+}
+
+func activityStateSupport(e *ui.Element)*ui.Element{
+	GetDocument(e).Window().AsElement().AddEventListener("pagehide", ui.NewEventHandler(func(evt ui.Event) bool {
+		e.TriggerEvent("before-unactive")
+		return false
+	}))
+
+		// visibilitychange
+	e.AddEventListener("visibilitychange", ui.NewEventHandler(func(evt ui.Event) bool {
+		visibilityState := js.Global().Get("document").Get("visibilityState").String()
+		if visibilityState == "hidden"{
+			e.TriggerEvent("before-unactive")
+		}
+		return false
+	}))
 
 	return e
 }
@@ -1143,9 +1225,9 @@ func newTimeRanges(v js.Value) jsTimeRanges{
 		starts.Set(i,st)
 		ends.Set(i,en)
 	}
-	j.Set("start",starts)
-	j.Set("end",ends)
-	return jsTimeRanges(j)
+	j.Set("start",starts.Commit())
+	j.Set("end",ends.Commit())
+	return jsTimeRanges(j.Commit())
 }
 
 
@@ -1381,17 +1463,17 @@ func GetAttribute(target *ui.Element, name string) string {
 // abstractjs
 func SetAttribute(target *ui.Element, name string, value string) {
 	var attrmap ui.Object
+	var am =  ui.NewObject()
 	m, ok := target.Get("data", "attrs")
-	if !ok {
-		attrmap = ui.NewObject()
-	} else {
+	if ok {
 		attrmap, ok = m.(ui.Object)
 		if !ok {
 			panic("data/attrs should be stored as a ui.Object")
 		}
+		am = attrmap.MakeCopy()
 	}
 
-	attrmap.Set(name, ui.String(value))
+	attrmap = am.Set(name, ui.String(value)).Commit()
 	target.SetData("attrs", attrmap)
 	native, ok := target.Native.(NativeElement)
 	if !ok {
@@ -1407,12 +1489,14 @@ func RemoveAttribute(target *ui.Element, name string) {
 	if !ok {
 		return
 	}
+	var am = ui.NewObject()
 	attrmap, ok := m.(ui.Object)
 	if !ok {
 		panic("data/attrs should be stored as a ui.Object")
 	}
-	attrmap.Delete(name)
-	target.SetData("attrs", attrmap)
+	am = attrmap.MakeCopy()
+	am.Delete(name)
+	target.SetData("attrs", am.Commit())
 	
 	native, ok := target.Native.(NativeElement)
 	if !ok {

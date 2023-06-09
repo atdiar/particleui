@@ -129,7 +129,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		jscurrtarget := evt.Get("currentTarget")
 		currtargetid := jscurrtarget.Get("id")
 
-		rv:= ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
+		var rv = ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
 
 		
 		ui.DoSync(func(){
@@ -155,8 +155,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				}
 				
 			} else {
-				// this might be a stretch... but we assume that the only valid element without
-				// a native side ID is the window in javascript.
 				if jscurrtarget.Equal(js.Global().Get("document").Get("defaultView")) {
 					currentTarget = GetDocument(listener).Window().AsElement()
 					if targetid.Truthy() {
@@ -170,22 +168,39 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 							target = GetDocument(listener).Window().AsElement()		
 						} else{
 							//DEBUG("target seems to be #document")
-							//dEBUGJS(jstarget)
-							
+							//dEBUGJS(jstarget)	
 						}
 					}	
 				} else {
-					// the element has probably been deleted on the Go wasm sides
-					DEBUG("no etarget element found for this event")
-					return
+					// the element has probably been deleted on the Go wasm side
+					if jscurrtarget.Equal(js.Global().Get("document")) {
+						currentTarget= GetDocument(listener).AsElement()
+						if jstarget.Equal(js.Global().Get("document")) {
+							target = GetDocument(listener).AsElement()
+						}else{
+							if targetid.Truthy() {
+								target = GetDocument(listener).GetElementById(targetid.String())	
+								if target == nil {
+									DEBUG("currenttarget is window but no target found for this element despite a valid id")
+									return 
+								}
+							} else{
+								DEBUG("no target found for this element, no id and it's not the window")
+								return
+							}
+						}
+					} else{
+						DEBUG("no go side element corresponds to the js side target for this event")
+						return
+					}
+					
 				}
 			}
 	
 			var nevt interface{}
 			nevt = NativeEvent{evt}
+			var goevt ui.Event
 
-			goevt := ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv)
-			goevt.SetPhase(phase)
 	
 			if typ == "popstate" {
 				rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
@@ -202,19 +217,29 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				// on the target *ui.Element, knowing that it will be visible before
 				// the event dispatch.
 				hstate := js.Global().Get("history").Get("state")
-				//dEBUGJS(hstate,true)
+				dEBUGJS(hstate,true)
 				if hstate.Truthy() {
-					hstateobj := ui.NewObject()
+					hstateobj := make(map[string]interface{})
 					err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 					if err == nil {
-						GetDocument(listener).AsElement().SyncUISyncData("history", hstateobj.Value())
+						hso:= ui.ValueFrom(hstateobj).(ui.Object)
+						_, ok := hso.Get("cursor")
+						if !ok{
+							panic("popstate event fired but the state object has no cursor which is unexpected")
+						} 
+						GetDocument(listener).AsElement().SyncUISyncData("history", hso)
+						
 					}
 				}
+				
 			}
 	
 
 			if v:=jstarget.Get("value"); v.Truthy(){
 				rv.Set("value",ui.String(v.String()))
+				if typ == "popsate" {
+					panic("popstate value is being overwritten")
+				}
 			}
 
 			jsUIEvent:= js.Global().Get("UIEvent")
@@ -229,22 +254,35 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			}
 			
 			if evt.InstanceOf(jsInputEvent){
-				rv.Set("data",ui.String(evt.Get("data").String()))
-				rv.Set("inputType", ui.String(evt.Get("inputType").String()))
+				rv = rv.Set("data",ui.String(evt.Get("data").String()))
+				rv = rv.Set("inputType", ui.String(evt.Get("inputType").String()))
+				goevt = ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit())
+				goevt.SetPhase(phase)
 
 			} else if evt.InstanceOf(jsKeyboardEvent){
-				event:= newKeyboardEvent(goevt)
+		
+				event:= newKeyboardEvent(ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, nil))
 				keyboardEventSerialized(rv,event)
-				goevt = event
+				goevt = newKeyboardEvent(ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit()))
+				goevt.SetPhase(phase)
 
 			} else if evt.InstanceOf(jsMouseEvent){
-				event:= newMouseEvent(goevt)
+				
+				event:= newMouseEvent(ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, nil))
 				mouseEventSerialized(rv,event)
-				goevt = event
+				goevt = newMouseEvent(ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit()))
+				goevt.SetPhase(phase)
 
 			}else if evt.InstanceOf(jsHashChangeEvent){
 				rv.Set("newURL",ui.String(evt.Get("newURL").String()))
 				rv.Set("oldURL",ui.String(evt.Get("oldURL").String()))
+				goevt = ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit())
+				goevt.SetPhase(phase)
+			}
+
+			if goevt == nil {
+				goevt = ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit())
+				goevt.SetPhase(phase)
 			}
 			
 			currentTarget.Handle(goevt)
@@ -257,7 +295,11 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 	tgt,ok:= JSValue(listener)
 	if !ok{
+		panic("listener doesn't seem to be connected to a native JS element. Impossible to add native event listener")
+	}
 
+	if listener.IsRoot(){
+		tgt= js.Global().Get("document")
 	}
 	if !tgt.Truthy(){
 		panic("trying to add an event listener to non-existing HTML element on the JS side")
@@ -288,7 +330,7 @@ type KeyboardEvent struct{
 
 }
 
-func keyboardEventSerialized(o ui.Object,e KeyboardEvent){
+func keyboardEventSerialized(o *ui.TempObject,e KeyboardEvent){
 	o.Set("altKey",ui.Bool(e.altKey))
 	o.Set("ctrlKey",ui.Bool(e.ctrlKey))
 	o.Set("shiftKey", ui.Bool(e.shiftKey))
@@ -301,6 +343,8 @@ func keyboardEventSerialized(o ui.Object,e KeyboardEvent){
 
 	o.Set("code",ui.String(e.code))
 	o.Set("key",ui.String(e.key))
+
+	o.Commit()
 }
 
 func(k KeyboardEvent) GetModifierState()bool{
@@ -411,7 +455,7 @@ type MouseEvent struct{
 	shiftKey bool
 }
 
-func mouseEventSerialized(o ui.Object,e MouseEvent){
+func mouseEventSerialized(o *ui.TempObject,e MouseEvent){
 	o.Set("altKey",ui.Bool(e.altKey))
 	o.Set("ctrlKey",ui.Bool(e.ctrlKey))
 	o.Set("shiftKey", ui.Bool(e.shiftKey))
@@ -433,6 +477,8 @@ func mouseEventSerialized(o ui.Object,e MouseEvent){
 	if e.relatedTarget != nil{
 		o.Set("relatedTarget",ui.String(e.relatedTarget.ID))
 	}
+
+	o.Commit()
 
 }
 

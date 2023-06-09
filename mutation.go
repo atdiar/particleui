@@ -258,12 +258,13 @@ func (m Mutation) NewValue() Value     {
 		}
 		e,ok:= v.Get("value")
 		if !ok{
+			DEBUG(v)
 			panic("event value not found")
 		}
 		return e
 	}
 
-	return Copy(m.NewVal)
+	return m.NewVal
 }
 
 func (m Mutation) OldValue() Value     { 
@@ -291,12 +292,12 @@ func(m Mutation) Sync() bool{
 }
 
 func (e *Element) NewMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
-	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e, false}
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, newvalue, oldvalue, e, false}
 }
 
 
 func (e *Element) newSyncMutationEvent(category string, propname string, newvalue Value, oldvalue Value) Mutation {
-	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, Copy(newvalue), Copy(oldvalue), e, true}
+	return Mutation{strings.Join([]string{e.ID,category,propname},"/"), category,propname, newvalue, oldvalue, e, true}
 }
 
 var NoopMutationHandler = NewMutationHandler(func(evt MutationEvent)bool{

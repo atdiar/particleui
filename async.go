@@ -240,7 +240,7 @@ func(e *Element) CancelAllFetches(){
 		return
 	}
 	fetchlist:= f.(Object).MustGetList("fetch_index")
-	for _,propname:= range fetchlist.Raw(){
+	for _,propname:= range fetchlist.Unwrap(){
 		e.CancelFetch(propname.(String).String())
 	}
 }
@@ -379,10 +379,10 @@ func(e *Element) enablefetching() *Element{
 			return false
 		}
 		fetchlist:= fl.(Object).MustGetList("fetch_index")
-		if len(fetchlist.Raw()) == 0{
+		if len(fetchlist.Unwrap()) == 0{
 			e.EndTransition("fetch")
 		}
-		for _,v:= range fetchlist.Raw(){
+		for _,v:= range fetchlist.Unwrap(){
 			propname:= v.(String).String()
 			e.OnTransitionError(strings.Join([]string{"fetch",propname},"-"),NewMutationHandler(func(evt MutationEvent)bool{
 				e.errorfetchTransition(propname)
@@ -477,8 +477,8 @@ func(e *Element) InvalidateFetch(propname string){
 			return
 		}
 		s:= fs.(Object)
-		s.Set("stale",Bool(true))
-		r.Set(propname,s)
+		s =s.MakeCopy().Set("stale",Bool(true)).Commit()
+		r = r.MakeCopy().Set(propname,s).Commit()
 
 		e.Set("runtime", "fetchlist",r)
 		e.CancelFetch(propname)
@@ -521,13 +521,13 @@ func GetFetchErrors(e *Element) (map[string]error,bool){
 
 
 func(e *Element) pushFetchError(propname string, err error){
-	var errlist = NewObject()
+	var errlist Object
 	v,ok:= e.Get("runtime","fetcherrors")
 	if !ok{
-		errlist.Set(propname, String(err.Error()))
+		errlist =  NewObject().Set(propname, String(err.Error())).Commit()
 	} else{
 		r:= v.(Object)
-		errlist= r.Set(propname, String(err.Error()))
+		errlist= r.MakeCopy().Set(propname, String(err.Error())).Commit()
 	}
 	e.Set("runtime","fetcherrors",errlist)
 }
@@ -535,26 +535,23 @@ func(e *Element) pushFetchError(propname string, err error){
 
 
 func(e *Element) registerfetch(propname string ){
-	var fetchlist Object
-	var fetchindex List
+	var fetchlist = NewObject()
+	var fetchindex = NewList()
 
 	o,ok:= e.Get("runtime","fetchlist")
 	if ok{
-		fetchlist= o.(Object)
+		fetchlist= o.(Object).MakeCopy()
 		_,ok:= fetchlist.Get("fetch_index")
 		if !ok{
 			panic("Framework error: fetch index missing")
 		}
-	}else{
-		fetchlist = NewObject()
-		fetchindex = NewList()
 	}
-	f:= NewObject()
+
+	no:= NewObject().Commit()
 	
 	fetchindex = fetchindex.Append(String(propname))
-	fetchlist.Set("fetch_index",fetchindex)
-	fetchlist.Set(propname,f)
-	e.Set("runtime","fetchlist",fetchlist)
+	fetchlist = fetchlist.Set("fetch_index",fetchindex.Commit()).Set(propname,no)
+	e.Set("runtime","fetchlist",fetchlist.Commit())
 }
 
 // Note that if an error occured during the fetching process (e.g. on of the fetch failed), 
@@ -574,7 +571,7 @@ func(e *Element) checkFetchCompletion(){
 		panic("Framework error: fetch index missing")
 	}
 	index:= rindex.(List)
-	for _,prop:= range index.Raw(){
+	for _,prop:= range index.Unwrap(){
 		propname := string(prop.(String))
 		status,ok:= l.Get(propname)
 		if !ok{
@@ -604,8 +601,7 @@ func(e *Element) checkFetchCompletion(){
 func(e *Element) registerPrefetch(propname string){
 	l:= NewObject()
 	p:= NewObject()
-	l.Set(propname,p)
-	e.Set("runtime","prefetchlist",l)
+	e.Set("runtime","prefetchlist",l.Set(propname,p.Commit()).Commit())
 }
 
 
@@ -654,12 +650,19 @@ func(e *Element) prefetchCompleted(propname string, successfully bool){
 	if ok{
 		s:= fs.(Object)
 		if !successfully{
-			s.Set("status", String("failed"))
+			s = s.MakeCopy().
+					Set("status", String("failed")).
+				Commit()
+			r = r.MakeCopy().Set(propname,s).Commit()
 		} else{
-			s.Set("status", String("successful"))
-			s.Set("timestamp", String(time.Now().UTC().Format(time.RFC3339)))
+			s = s.MakeCopy().
+					Set("status", String("successful")).
+					Set("timestamp", String(time.Now().UTC().Format(time.RFC3339))).
+				Commit()
+			r = r.MakeCopy().Set(propname,s).Commit()	
 		}		
 	}
+	
 	e.Set("runtime","prefetchlist",r)
 }
 
@@ -672,8 +675,8 @@ func(e *Element) invalidatePrefetch(propname string){
 	fs,ok:= r.Get(propname)
 	if ok{
 		s:= fs.(Object)
-		s.Set("status", String("stale"))
-		r.Set(propname,s)	
+		s = s.MakeCopy().Set("status", String("stale")).Commit()
+		r = r.MakeCopy().Set(propname,s).Commit()	
 	}
 	e.Set("runtime","prefetchlist",r)
 	e.cancelPrefetch(propname)
@@ -688,13 +691,18 @@ func(e *Element) fetchCompleted(propname string, successfully bool){
 	fs,ok:= r.Get(propname)
 	if ok{
 		s:= fs.(Object)
+		ts := s.MakeCopy()
 		if !successfully{
-			s.Set("status", String("failed"))
+			ts.Set("status", String("failed"))
 		} else{
-			s.Set("status", String("successful"))
+			ts.Set("status", String("successful"))
 		}
-		s.Delete("stale")
+		ts.Delete("stale")
+		r = r.MakeCopy().
+				Set(propname,ts.Commit()).
+			Commit()
 	}
+	
 	e.Set("runtime", "fetchlist",r)
 	e.checkFetchCompletion()
 }
@@ -866,7 +874,7 @@ func newRequestStateObject(value Value, err error) Object{
 		r.Set("error",String(err.Error()))
 	}
 
-	return r
+	return r.Commit()
 }
 
 
@@ -927,16 +935,16 @@ func newResponseObject(u Value) (Value,error){
 	return rv,err
 }
 
-// SyncUISetDataOptimistically sets a data property optimistically on transition start.
+// SyncUISyncDataOptimistically sets a data property optimistically on transition start.
 // If the transition doesn't end successfully (it was cancelled or errored out) the property is reverted
 // t its former value.
 // TODO: perhaps implement this as 
-func(e *Element) SyncUISetDataOptimistically(propname string, value Value, r *http.Request, responsehandler ...func(*http.Response)(Value,error)){
+func(e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *http.Request, responsehandler ...func(*http.Response)(Value,error)){
 	oldv,_:= e.GetData(propname)
 	if Equal(oldv,value){
 		return
 	}
-	e.SyncUISetData(propname,value)
+	e.SyncUISyncData(propname,value)
 
 	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
 		e.SetDataSetUI(propname,oldv)
