@@ -418,19 +418,93 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 		
 			if tag == "head"{
 				element:= js.Global().Get("document").Call("getElementById",id)
+				defer func(){
+					// We should also add the scrip that enables batch execution:
+					batchscript := js.Global().Get("document").Call("createElement","script")
+					batchscript.Set("textContent",`
+					window.elements = {};
+		
+					window.createElementWithID = function(tagName, id) {
+					  let element = document.createElement(tagName);
+					  element.id = id;
+					  window.elements[id] = element;
+					  return element;
+					};
+					
+					window.deleteElementWithID = function(id) {
+					  let element = window.elements[id];
+					  if (element) {
+						if (element.parentNode) {
+						  element.parentNode.removeChild(element);
+						}
+						delete window.elements[id];
+					  }
+					};
+		
+					
+					window.applyBatchOperations = function(parentElementID, encodedOperations) {
+						const operationsBinary = atob(encodedOperations);
+						const operationsData = new DataView(new Uint8Array(operationsBinary.split('').map(ch => ch.charCodeAt(0))).buffer);
+
+					
+						for (let i = 0; i < operationsBinary.length; i++) {
+							operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+						}
+					
+						let offset = 0;
+						const fragment = document.createDocumentFragment();
+						const parentElement = window.getElement(parentElementID); // get parent element using its ID
+					
+						while (offset < operationsData.byteLength) {
+							const operationLen = operationsData.getUint8(offset++);
+							const operation = operationsBinary.slice(offset, offset + operationLen);
+							offset += operationLen;
+					
+							const idLen = operationsData.getUint8(offset++);
+							const elementID = operationsBinary.slice(offset, offset + idLen);
+							offset += idLen;
+					
+							const index = operationsData.getUint32(offset);
+							offset += 4;
+					
+							const element = window.getElement(elementID);
+							if (!element) continue;
+					
+							switch (operation) {
+								case "Insert":
+									if (fragment.children.length > index) {
+										fragment.insertBefore(element, fragment.children[index]);
+									} else {
+										fragment.appendChild(element);
+									}
+									break;
+								case "Remove":
+									if (element.parentNode) {
+										element.parentNode.removeChild(element);
+									}
+									break;
+							}
+						}
+						
+						parentElement.appendChild(fragment);
+					};
+					
+					`)
+					element.Call("append", batchscript)
+				}()
 				if !element.Truthy(){
 					element= js.Global().Get("document").Get(tag)
 					if !element.Truthy(){
-						element= js.Global().Get("document").Call("createElement",tag)
+						element= js.Global().Call("createElementWithID",tag,id)
 					}
 				}
 		
 				evt.Origin().Native = NewNativeElementWrapper(element)
 			}
 		
-			element:= js.Global().Get("document").Call("getElementById",id)
+			element:= js.Global().Call("getElement",id)
 			if !element.Truthy(){
-				element= js.Global().Get("document").Call("createElement",tag)
+				element= js.Global().Call("createElementWithID",tag,id)
 			}
 			evt.Origin().Native = NewNativeElementWrapper(element) 
 				
@@ -478,50 +552,81 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			// We should also add the scrip that enables batch execution:
 			batchscript := js.Global().Get("document").Call("createElement","script")
 			batchscript.Set("textContent",`
-				window.applyBatchOperations = function(parentElement, encodedOperations) {
-					const operationsBinary = atob(encodedOperations);
-					const operationsData = new DataView(new ArrayBuffer(operationsBinary.length));
-				
-					for (let i = 0; i < operationsBinary.length; i++) {
-						operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+			window.elements = {};
+
+			window.getElement = function(id) {
+				let element = document.getElementById(id);
+				if (!element) {
+				  element = window.elements[id];
+				}
+				return element;
+			};
+
+			window.createElementWithID = function(tagName, id) {
+			  let element = document.createElement(tagName);
+			  element.id = id;
+			  window.elements[id] = element;
+			  return element;
+			};
+			
+			window.deleteElementWithID = function(id) {
+			  let element = window.elements[id];
+			  if (element) {
+				if (element.parentNode) {
+				  element.parentNode.removeChild(element);
+				}
+				delete window.elements[id];
+			  }
+			};
+
+			
+			window.applyBatchOperations = function(parentElementID, encodedOperations) {
+				const operationsBinary = atob(encodedOperations);
+				const operationsData = new DataView(new Uint8Array(operationsBinary.split('').map(ch => ch.charCodeAt(0))).buffer);
+
+			
+				for (let i = 0; i < operationsBinary.length; i++) {
+					operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+				}
+			
+				let offset = 0;
+				const fragment = document.createDocumentFragment();
+				const parentElement = window.getElement(parentElementID); // get parent element using its ID
+			
+				while (offset < operationsData.byteLength) {
+					const operationLen = operationsData.getUint8(offset++);
+					const operation = operationsBinary.slice(offset, offset + operationLen);
+					offset += operationLen;
+			
+					const idLen = operationsData.getUint8(offset++);
+					const elementID = operationsBinary.slice(offset, offset + idLen);
+					offset += idLen;
+			
+					const index = operationsData.getUint32(offset);
+					offset += 4;
+			
+					const element = window.getElement(elementID);
+					if (!element) continue;
+			
+					switch (operation) {
+						case "Insert":
+							if (fragment.children.length > index) {
+								fragment.insertBefore(element, fragment.children[index]);
+							} else {
+								fragment.appendChild(element);
+							}
+							break;
+						case "Remove":
+							if (element.parentNode) {
+								element.parentNode.removeChild(element);
+							}
+							break;
 					}
+				}
 				
-					let offset = 0;
-					const fragment = document.createDocumentFragment();
-				
-					while (offset < operationsData.byteLength) {
-						const operationLen = operationsData.getUint8(offset++);
-						const operation = operationsBinary.slice(offset, offset + operationLen);
-						offset += operationLen;
-				
-						const idLen = operationsData.getUint8(offset++);
-						const elementID = operationsBinary.slice(offset, offset + idLen);
-						offset += idLen;
-				
-						const index = operationsData.getUint32(offset);
-						offset += 4;
-				
-						const element = document.getElementById(elementID);
-						if (!element) continue;
-				
-						switch (operation) {
-							case "Insert":
-								if (fragment.children.length > index) {
-									fragment.insertBefore(element, fragment.children[index]);
-								} else {
-									fragment.appendChild(element);
-								}
-								break;
-							case "Remove":
-								if (element.parentNode) {
-									element.parentNode.removeChild(element);
-								}
-								break;
-						}
-					}
-					console.Log(fragment); // DEBUG
-					parentElement.appendChild(fragment);
-				};
+				parentElement.appendChild(fragment);
+			};
+			
 			
 			`)
 			element.Call("append", batchscript)
@@ -529,7 +634,7 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 		if !element.Truthy(){
 			element= js.Global().Get("document").Get(tag)
 			if !element.Truthy(){
-				element= js.Global().Get("document").Call("createElement",tag)
+				element= js.Global().Call("createElement",tag)
 			}
 			return NewNativeElementWrapper(element), false
 		}
@@ -537,9 +642,9 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 		return NewNativeElementWrapper(element), true
 	}
 
-	element:= js.Global().Get("document").Call("getElementById",id)
+	element:= js.Global().Call("getElement",id)
 	if !element.Truthy(){
-		element= js.Global().Get("document").Call("createElement",tag)
+		element= js.Global().Call("createElementWithID",tag,id)
 		return NewNativeElementWrapper(element), false
 	}
 	return NewNativeElementWrapper(element), true
@@ -621,8 +726,12 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 
 }
 
-func (n NativeElement) BatchExecute(opslist string) {
-	js.Global().Call("applyBatchOperations",n.Value, opslist)
+func (m NativeElement) Delete(child *ui.Element){
+	js.Global().Call("deleteElementWithID",child.ID)
+}
+
+func (n NativeElement) BatchExecute(parentid string, opslist string) {
+	js.Global().Call("applyBatchOperations",parentid, opslist)
 }
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as

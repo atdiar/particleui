@@ -91,7 +91,7 @@ func reverse(ops []EditOp) []EditOp {
 }
 
 func applyEdits(e *Element, edits []EditOp, children map[string]*Element) (finalize func()){
-	DEBUG(edits)
+	//DEBUG(edits)
 	var finalizers = finalizersPool.Get()
 	for _, edit := range edits {
 		switch edit.Operation {

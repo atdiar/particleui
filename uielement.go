@@ -978,8 +978,8 @@ func (e *Element) replaceChild(oldEl AnyElement, newEl AnyElement) *Element {
 		return e
 	}
 
-	_, ok := e.hasChild(old)
-	if !ok {
+	if old.Parent == nil || old.Parent.ID != e.ID{
+		DEBUG("Can't replace child "+old.ID+" because it's not a child of "+e.ID)
 		return e
 	}
 
@@ -1014,8 +1014,7 @@ func (e *Element) removeChild(childEl AnyElement) *Element {
 		return e
 	}
 	child := childEl.AsElement()
-	_, ok := e.hasChild(child)
-	if !ok {
+	if child.Parent == nil || child.Parent.ID != e.ID{
 		return e
 	}
 
@@ -1059,9 +1058,26 @@ func (e *Element) DeleteChild(childEl AnyElement) *Element {
 		return e
 	}
 	child := childEl.AsElement()
+
+	if child.Parent == nil || child.Parent.ID != e.ID{
+		return e
+	}
+
 	child.TriggerEvent( "deleting", Bool(true))
 	child.DeleteChildren()
-	e.RemoveChild(childEl)
+	
+	finalize := detach(child)
+	e.Children.Remove(child)
+
+	if e.Native != nil {
+		if d,ok:= e.Native.(interface{Delete(*Element)}); ok{
+			d.Delete(child)
+		} else{
+			e.Native.RemoveChild(child)
+		}
+	}
+
+	finalize()
 
 	if child.isViewElement() {
 		for _, view := range child.InactiveViews {
@@ -1160,8 +1176,8 @@ func (e *Element) SetChildren(any ...AnyElement) *Element {
 }
 
 func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	/*
-	if n, ok := e.Native.(interface{ BatchExecute(string) }); ok {
+	
+	if n, ok := e.Native.(interface{ BatchExecute(string,string) }); ok {
 		allChildren := make(map[string]*Element,len(any) + len(e.Children.List))
 		oldchildrenIdList := childrenIdList(e,allChildren)
 		newchildrenIdList := make([]string, 0,len(any))
@@ -1180,26 +1196,18 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 
 		encEdits := EncodeEditOperations(editscript)
 
-		n.BatchExecute(encEdits)
+		n.BatchExecute(e.ID, encEdits)
 		
 		finalize()
 		
 		return e
-	} else{
-		e.RemoveChildren()
-		for _, el := range any {
-			e.AppendChild(el)
-			// el.ActiveView = e.ActiveView // TODO verify this is correct
-		}
-	}
-	*/
+	}	
 
 	e.RemoveChildren()
-		for _, el := range any {
-			e.AppendChild(el)
-			// el.ActiveView = e.ActiveView // TODO verify this is correct
-		}
-	
+	for _, el := range any {
+		e.AppendChild(el)
+	}
+
 	return e
 }
 
