@@ -541,7 +541,24 @@ func(l *TempList) Set(index int, val Value) *TempList{
 		l.l = Copy(l.l).(list)
 		l.copied = true
 	}
-	l.l[index] = Copy(val)
+	n:= len(l.l)
+
+	switch {
+	case index < n:
+		l.l[index] = Copy(val)
+	case index == n:
+		l.l= append(l.l,Copy(val))
+	case index < cap(l.l):
+		l.l = l.l[:index+1]
+		for i:= n; i<index;i++{
+			l.l[i] =  nil
+		}
+		l.l[index] = Copy(val)
+	default:
+		l.l= append(make([]Value,0,index+128),l.l...)
+		l.l[index] = Copy(val)
+	}
+	
 	return l
 }
 
@@ -573,7 +590,7 @@ func newlist(val ...Value) list {
 	if val != nil {
 		return list(val)
 	}
-	l := make([]Value, 0)
+	l := make([]Value, 0, 128)
 	return list(l)
 }
 
@@ -671,9 +688,10 @@ func Equal(v Value, w Value) bool {
 	}
 
 	// should be same value types
-	if v.ValueType() != w.ValueType() {
+	/*if v.ValueType() != w.ValueType() {
 		return false
 	}
+	*/
 
 	switch v.(type) {
 	case Bool:
@@ -681,12 +699,12 @@ func Equal(v Value, w Value) bool {
 	case String:
 		return v == w
 	case Number:
-		return v == w
-	case List: // TODO
+		return v == w // NaN might need some special handling here
+	case List: 
 		vl := v.(List)
 		wl,ok := w.(List)
 		if !ok{
-			wl.l = w.(list)
+			return false
 		}
 		if len(vl.l) != len(wl.l) {
 			return false
@@ -701,7 +719,7 @@ func Equal(v Value, w Value) bool {
 		vl := v.(list)
 		wl,ok := w.(list)
 		if !ok{
-			wl = w.(List).l
+			return false
 		}
 		if len(vl) != len(wl) {
 			return false
@@ -718,7 +736,7 @@ func Equal(v Value, w Value) bool {
 		vo := v.(object)
 		wo,ok := w.(object)
 		if !ok{
-			wo = w.(Object).o
+			return false
 		}
 		if len(vo) != len(wo) {
 			return false
@@ -741,11 +759,11 @@ func Equal(v Value, w Value) bool {
 		return true
 	case Object:
 		vo := v.(Object).o
-		wo,ok := w.(object)
+		wo,ok := w.(Object)
 		if !ok{
-			wo = w.(Object).o
+			return false
 		} 
-		if len(vo) != len(wo) {
+		if len(vo) != len(wo.o) {
 			return false
 		}
 		for k, rval := range vo {
@@ -753,7 +771,7 @@ func Equal(v Value, w Value) bool {
 				continue
 			}
 			val := rval.(Value)
-			rwal, ok := wo[k]
+			rwal, ok := wo.o[k]
 			if !ok {
 				return false
 			}
@@ -767,7 +785,6 @@ func Equal(v Value, w Value) bool {
 
 	}
 	
-
 	panic("Equality is not specified for this Value type")
 }
 

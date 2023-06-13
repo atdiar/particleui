@@ -21,13 +21,20 @@ func newCancelableNavContext()(context.Context, context.CancelFunc){
 
 
 
-// GetRouter returns the document router if it has been created.
+// GetRouter returns the navigation router if it has been created for a given UI tree, referenced
+// by its root *Element node.
+// A navigation router is a URL scheme based way to transform the UI tree, i.e. changing its state.
+// Each transformation is referenced by a given URL then.
+// The URL can be seen As The Engine Of *Static Application State (UATEOSAS),
+//
+// *Static because dynamic parts are fetched
 // If it has not yet, it panics.
-func GetRouter(root *Element) *Router {
-	if root.router == nil {
+func GetRouter(root AnyElement) *Router {
+	e:= root.AsElement()
+	if e.router == nil {
 		panic("FAILURE: trying to retrieve router before it has been created.")
 	}
-	return root.router
+	return e.router
 }
 
 func(e *Element) OnRouterMounted(fn func(*Router)) {

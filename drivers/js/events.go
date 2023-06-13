@@ -105,7 +105,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 					msg.SetText("Critical app failure. See console")
 					DEBUG(r)
 				}
-				body.SetChildren(msg)
+				body.SetChildren(msg.AsElement())
 				GetDocument(listener).Window().SetTitle("Critical App Failure")
 			}
 		}()

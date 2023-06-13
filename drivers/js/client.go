@@ -371,7 +371,7 @@ func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRState
 	return true
 }
 
-func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
+func ConnectNative(e *ui.Element, tag string){
 	id:= e.ID
 	if e.IsRoot(){
 		if  nativeDocumentAlreadyRendered(e,js.Global().Get("document"), id + SSRStateSuffix){
@@ -392,6 +392,7 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 					panic("unable to access windows")
 				}
 				evt.Origin().Native = NewNativeElementWrapper(wd)
+				return false
 			}
 		
 			if tag == "html"{
@@ -403,6 +404,8 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 					}
 				}
 				evt.Origin().Native = NewNativeElementWrapper(root)
+				SetAttribute(e, "id", evt.Origin().ID)
+				return false
 			}
 		
 			if tag == "body"{
@@ -414,6 +417,23 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 					}
 				}
 				evt.Origin().Native = NewNativeElementWrapper(element)
+				SetAttribute(e, "id", evt.Origin().ID)
+				return false
+			}
+
+			if tag == "script"{
+				cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
+				element:= js.Global().Get("document").Call("getElementById",id)
+				if !element.Truthy(){
+					if !cancreeatewithID{
+						element= js.Global().Get("document").Call("createElement",tag)
+					} else{
+						element= js.Global().Call("createElementWithID",tag,id)
+					}
+				}
+				evt.Origin().Native = NewNativeElementWrapper(element)
+				SetAttribute(e, "id", evt.Origin().ID)
+				return false
 			}
 		
 			if tag == "head"{
@@ -495,11 +515,13 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 				if !element.Truthy(){
 					element= js.Global().Get("document").Get(tag)
 					if !element.Truthy(){
-						element= js.Global().Call("createElementWithID",tag,id)
+						element= js.Global().Call("createElement",tag)
 					}
 				}
 		
 				evt.Origin().Native = NewNativeElementWrapper(element)
+				SetAttribute(e, "id", e.ID)
+				return false
 			}
 		
 			element:= js.Global().Call("getElement",id)
@@ -512,14 +534,15 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 
 		}).RunOnce())
 
-		return nil,false
+		return
 	}
 	if tag == "window"{
 		wd := js.Global().Get("document").Get("defaultView")
 		if !wd.Truthy() {
 			panic("unable to access windows")
 		}
-		return  NewNativeElementWrapper(wd), true
+		e.Native =  NewNativeElementWrapper(wd)
+		return 
 	}
 
 	if tag == "html"{
@@ -529,9 +552,12 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			if !root.Truthy() {
 				panic("failed to instantiate root element for the document")
 			}
-			return NewNativeElementWrapper(root), false
+			e.Native =  NewNativeElementWrapper(root)
+			return 
 		}
-		return NewNativeElementWrapper(root), true
+		e.Native =  NewNativeElementWrapper(root)
+		SetAttribute(e, "id", e.ID)
+		return
 	}
 
 	if tag == "body"{
@@ -541,9 +567,28 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			if !element.Truthy(){
 				element= js.Global().Get("document").Call("createElement",tag)
 			}
-			return NewNativeElementWrapper(element), false
+			e.Native = NewNativeElementWrapper(element)
+			SetAttribute(e, "id", e.ID)
+			return
 		}
-		return NewNativeElementWrapper(element), true
+		e.Native =  NewNativeElementWrapper(element)
+		SetAttribute(e, "id", e.ID)
+		return
+	}
+
+	if tag == "script"{
+		cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
+		element:= js.Global().Get("document").Call("getElementById",id)
+		if !element.Truthy(){
+			if !cancreeatewithID{
+				element= js.Global().Get("document").Call("createElement",tag)
+			} else{
+				element= js.Global().Call("createElementWithID",tag,id)
+			}
+		}
+		e.Native = NewNativeElementWrapper(element)
+		SetAttribute(e, "id", e.ID)
+		return
 	}
 
 	if tag == "head"{
@@ -636,18 +681,24 @@ func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
 			if !element.Truthy(){
 				element= js.Global().Call("createElement",tag)
 			}
-			return NewNativeElementWrapper(element), false
+			e.Native =  NewNativeElementWrapper(element)
+			SetAttribute(e, "id", e.ID)
+			return
 		}
 		
-		return NewNativeElementWrapper(element), true
+		e.Native =  NewNativeElementWrapper(element)
+		SetAttribute(e, "id", e.ID)
+		return
 	}
 
 	element:= js.Global().Call("getElement",id)
 	if !element.Truthy(){
 		element= js.Global().Call("createElementWithID",tag,id)
-		return NewNativeElementWrapper(element), false
+		e.Native = NewNativeElementWrapper(element)
+		return
 	}
-	return NewNativeElementWrapper(element), true
+	e.Native =  NewNativeElementWrapper(element)
+	return
 }
 
 
@@ -729,6 +780,20 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 func (m NativeElement) Delete(child *ui.Element){
 	js.Global().Call("deleteElementWithID",child.ID)
 }
+
+
+func (n NativeElement) SetChildren(children ...*ui.Element) {
+	fragment := js.Global().Get("document").Call("createDocumentFragment")
+	for _, child := range children {
+		v, ok := child.Native.(NativeElement)
+		if !ok {
+			panic("wrong format for native element underlying objects.Cannot append " + child.ID)
+		}
+		fragment.Call("append", v.Value)
+	}
+	n.Value.Call("append", fragment)
+}
+
 
 func (n NativeElement) BatchExecute(parentid string, opslist string) {
 	js.Global().Call("applyBatchOperations",parentid, opslist)

@@ -284,8 +284,155 @@ func newListsConstructor() []func() {
 	return make([]func(), 0, 512)
 }
 
+// map[string]*Element ppol
+type mapElementPool struct {
+	objects         []map[string]*Element
+	capacity        int
+	maxCapacity     int
+	baseCapacity    int
+	resizeThreshold int
+	constructor     func() map[string]*Element
+}
+
+func newMapElementPool(baseCapacity, resizeThreshold int, constructor func() map[string]*Element) *mapElementPool {
+	objects := make([]map[string]*Element, 0, baseCapacity)
+	return &mapElementPool{
+		objects:         objects,
+		capacity:        baseCapacity,
+		maxCapacity:     baseCapacity,
+		baseCapacity:    baseCapacity,
+		resizeThreshold: resizeThreshold,
+		constructor:    constructor,
+	}
+}
+
+func (p *mapElementPool) Get() map[string]*Element {
+	if len(p.objects) == 0 {
+		return p.constructor()
+	}
+
+	lastIndex := len(p.objects) - 1
+	obj := p.objects[lastIndex]
+	p.objects = p.objects[:lastIndex]
+	return obj
+}
+
+func (p *mapElementPool) Put(elements map[string]*Element) {
+	for key := range elements {
+		delete(elements, key)
+	}
+	p.objects = append(p.objects, elements)
+
+	if len(p.objects) <= p.capacity-p.resizeThreshold {
+		p.adjustCapacity(p.capacity - p.resizeThreshold)
+	} else if len(p.objects) >= p.capacity+p.resizeThreshold {
+		p.adjustCapacity(p.capacity + p.resizeThreshold)
+	}
+}
+
+func (p *mapElementPool) adjustCapacity(newCapacity int) {
+	if newCapacity < p.baseCapacity {
+		newCapacity = p.baseCapacity
+	} else if newCapacity > p.maxCapacity {
+		newCapacity = p.maxCapacity
+	}
+
+	// Downsizing
+	if newCapacity < p.capacity {
+		excess := p.objects[newCapacity:p.capacity]
+		for i := range excess {
+			excess[i] = nil
+		}
+		p.objects = p.objects[:newCapacity]
+	}
+
+	p.capacity = newCapacity
+}
+
+func (p *mapElementPool) ResizeThreshold() int {
+	return p.resizeThreshold
+}
+
+func newMapElementConstructor() map[string]*Element {
+	return make(map[string]*Element)
+}
+
+// []string pool
+type stringSlicePool struct {
+	objects         [][]string
+	capacity        int
+	maxCapacity     int
+	baseCapacity    int
+	resizeThreshold int
+	constructor     func() []string
+}
+
+func newStringSlicePool(baseCapacity, resizeThreshold int, constructor func() []string) *stringSlicePool {
+	objects := make([][]string, 0, baseCapacity)
+	return &stringSlicePool{
+		objects:         objects,
+		capacity:        baseCapacity,
+		maxCapacity:     baseCapacity,
+		baseCapacity:    baseCapacity,
+		resizeThreshold: resizeThreshold,
+		constructor:    constructor,
+	}
+}
+
+func (p *stringSlicePool) Get() []string {
+	if len(p.objects) == 0 {
+		return p.constructor()
+	}
+
+	lastIndex := len(p.objects) - 1
+	obj := p.objects[lastIndex]
+	p.objects = p.objects[:lastIndex]
+	return obj
+}
+
+func (p *stringSlicePool) Put(elements []string) {
+	p.objects = append(p.objects, elements)
+
+	if len(p.objects) <= p.capacity-p.resizeThreshold {
+		p.adjustCapacity(p.capacity - p.resizeThreshold)
+	} else if len(p.objects) >= p.capacity+p.resizeThreshold {
+		p.adjustCapacity(p.capacity + p.resizeThreshold)
+	}
+}
+
+func (p *stringSlicePool) adjustCapacity(newCapacity int) {
+	if newCapacity < p.baseCapacity {
+		newCapacity = p.baseCapacity
+	} else if newCapacity > p.maxCapacity {
+		newCapacity = p.maxCapacity
+	}
+
+	// Downsizing
+	if newCapacity < p.capacity {
+		excess := p.objects[newCapacity:p.capacity]
+		for i := range excess {
+			excess[i] = nil
+		}
+		p.objects = p.objects[:newCapacity]
+	}
+
+	p.capacity = newCapacity
+}
+
+func (p *stringSlicePool) ResizeThreshold() int {
+	return p.resizeThreshold
+}
+
+func newStringSliceConstructor() []string {
+	return make([]string, 0, 128)
+}
+
+
 
 var StackPool = newStackPool(128, 64, newElementConstructor)
 var finalizersPool = newFinalizersPool(128, 64, newFinalizersConstructor)
 var objectsPool = newObjectsPool(128, 64, newObjectsConstructor)
 var listsPool = newListsPool(128, 64, newListsConstructor)
+var elementmapsPool = newMapElementPool(128, 64, newMapElementConstructor)
+var stringsPool = newStringSlicePool(128, 64, newStringSliceConstructor)
+

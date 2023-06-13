@@ -13,7 +13,7 @@ func New(e AnyElement, modifiers ...func(*Element)*Element) *Element{
 // It is used in the declarative specification of a UI tree.
 func Children(children ...*Element) func(*Element)*Element{
 	return func(e *Element) *Element{
-		e.SetChildrenElements(children...)
+		e.SetChildren(children...)
 		return e
 	}
 }

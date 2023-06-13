@@ -154,7 +154,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 		e.ActiveView = ""
 
 		if v != nil{
-			e.SetChildrenElements(v.elements.List...)
+			e.SetChildren(v.elements.List...)
 			delete(e.InactiveViews, "")
 		}
 		
@@ -379,7 +379,7 @@ func (e *Element) activateView(name string) {
 		}
 		e.ActiveView = ":" + p
 
-		e.SetChildrenElements(view.elements.List...)
+		e.SetChildren(view.elements.List...)
 
 		e.Set("ui", "viewparameter", String(name))
 		e.EndTransition("activateview", String(name))
@@ -405,7 +405,7 @@ func (e *Element) activateView(name string) {
 
 	// 2. mount the target view
 	e.ActiveView = name
-	e.SetChildrenElements(newview.elements.List...)
+	e.SetChildren(newview.elements.List...)
 
 	delete(e.InactiveViews, name)
 	

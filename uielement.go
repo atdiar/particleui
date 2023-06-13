@@ -371,17 +371,7 @@ func NewElement(id string, doctype string) *Element {
 	}
 
 	e.subtreeRoot = e
-
-	
-	// DEBUG TODO check that it's not needed...
-	/*e.OnMountable(NewMutationHandler(func(evt MutationEvent)bool{
-		RegisterElement(evt.Origin().Root,evt.Origin())
-		evt.Origin().TriggerEvent("registered")
-		return false
-	}).RunOnce())
-	*/
-
-	
+		
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
 		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{"internals", "deleted"}, "/"), NewMutationHandler(func(event MutationEvent) bool {
@@ -1037,13 +1027,7 @@ func (e *Element) RemoveChildren() *Element {
 }
 
 func (e *Element) removeChildren() *Element {
-	/*
-	l := make([]*Element, len(e.Children.List))
-	copy(l, e.Children.List)
-	for _, child := range l {
-		e.removeChild(child)
-	}
-	*/
+
 	for i := len(e.Children.List) - 1; i >= 0; i-- {
         e.removeChild(e.Children.List[i])
     } 
@@ -1170,17 +1154,19 @@ func (e *Element) hasChild(any *Element) (int, bool) {
 	return -1, false
 }
 
+/*
 func (e *Element) SetChildren(any ...AnyElement) *Element {
 	e.SetChildrenElements(convertAny(any...)...)
 	return e
 }
+*/
 
-func (e *Element) SetChildrenElements(any ...*Element) *Element {
-	
+func (e *Element) SetChildren(any ...*Element) *Element {
 	if n, ok := e.Native.(interface{ BatchExecute(string,string) }); ok {
-		allChildren := make(map[string]*Element,len(any) + len(e.Children.List))
+		allChildren := elementmapsPool.Get()
 		oldchildrenIdList := childrenIdList(e,allChildren)
-		newchildrenIdList := make([]string, 0,len(any))
+
+		newchildrenIdList :=  stringsPool.Get()
 		for _, el := range any {
 			if e.DocType != el.DocType {
 				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, el.DocType)
@@ -1199,7 +1185,12 @@ func (e *Element) SetChildrenElements(any ...*Element) *Element {
 		n.BatchExecute(e.ID, encEdits)
 		
 		finalize()
-		
+		for k:= range allChildren{
+			delete(allChildren,k)
+		}
+		elementmapsPool.Put(allChildren)
+		newchildrenIdList = newchildrenIdList[:0]
+		stringsPool.Put(newchildrenIdList)
 		return e
 	}	
 
@@ -1568,28 +1559,21 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, "internals", "deleted"},"/"),g )
 }
 
-func newEventValue(v Value) Object{
-	o:= NewObject()
-	o.o = o.o.Set("value",v)
-	o.o = o.o.Set("id",String(newEventID()))
-
-	return o.Commit()
-}
 
 func(e *Element) TriggerEvent(name string, value ...Value){
 	n:= len(value)
 	var val Value
 	switch {
 	case n == 0:
-		val = newEventValue(Bool(true))
+		val = Bool(true)
 	case n==1:
-		val = newEventValue(value[0])
+		val = value[0]
 	default:
 		l:= NewList()
 		for _,v:= range value{
 			l = l.Append(v)
 		}
-		val = newEventValue(l.Commit())
+		val = l.Commit()
 	}
 	e.Set("event",name,val)
 }
@@ -1600,15 +1584,7 @@ func(e *Element) WatchEvent(name string, target Watchable, h *MutationHandler){
 }
 
 func(e *Element) GetEventValue(name string) (Value, bool){
-	v,ok:= e.Properties.Get("event",name)
-	if !ok{
-		return nil,false
-	}
-	w,ok:= v.(Object).Get("value")
-	if !ok{
-		panic("event object is always expected to have a value even if it is nil")
-	}
-	return w, true
+	return e.Properties.Get("event",name)
 }
 
 
@@ -1630,7 +1606,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok && category != "event" {
+	if ok && category != "event" && category != "data"{
 		if Equal(value, oldvalue) { // idempotence			
 			return
 		}
@@ -2217,7 +2193,7 @@ type Properties struct {
 }
 
 func newProperties() Properties {
-	return Properties{make(map[string]Value), make(map[string]*Elements,64)}
+	return Properties{make(map[string]Value,128), make(map[string]*Elements,64)}
 }
 
 func (p Properties) NewWatcher(propName string, watcher *Element) {

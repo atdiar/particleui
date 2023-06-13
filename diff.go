@@ -43,7 +43,7 @@ func MyersDiff(a, b []string) []EditOp {
 				op = "Insert"
 			} else {
 				x = v[k-1+max] + 1
-				op = "Delete"
+				op = "Remove"
 			}
 
 			y := x - k
@@ -66,9 +66,9 @@ func generateEditScript(trace [][]point, d, k int, a, b []string) []EditOp {
 	var ops []EditOp
 	for d >= 0 {
 		pt := trace[d][k]
-		if pt.op == "Delete" {
+		if pt.op == "Remove" {
 			if pt.x > 0 {
-				ops = append(ops, EditOp{"Delete", a[pt.x-1], pt.x - 1})
+				ops = append(ops, EditOp{"Remove", a[pt.x-1], pt.x - 1})
 			}
 			k--
 		} else if pt.op == "Insert" {
@@ -91,7 +91,6 @@ func reverse(ops []EditOp) []EditOp {
 }
 
 func applyEdits(e *Element, edits []EditOp, children map[string]*Element) (finalize func()){
-	//DEBUG(edits)
 	var finalizers = finalizersPool.Get()
 	for _, edit := range edits {
 		switch edit.Operation {
@@ -135,46 +134,4 @@ func EncodeEditOperations(operations []EditOp) string {
 	}
 
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
-}
-
-
-
-// Helpers
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-func indexOf(slice []string, value string) int {
-	for i, v := range slice {
-		if v == value {
-			return i
-		}
-	}
-	return -1
-}
-
-func insert(slice []string, index int, value string) []string {
-	return append(slice[:index], append([]string{value}, slice[index:]...)...)
-}
-
-func remove(slice []string, index int) []string {
-	return append(slice[:index], slice[index+1:]...)
 }

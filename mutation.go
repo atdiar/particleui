@@ -14,7 +14,7 @@ type MutationCallbacks struct {
 }
 
 func NewMutationCallbacks() *MutationCallbacks {
-	return &MutationCallbacks{make(map[string]*mutationHandlers, 10)}
+	return &MutationCallbacks{make(map[string]*mutationHandlers, 64)}
 }
 
 func (m *MutationCallbacks) Add(key string, h *MutationHandler) *MutationCallbacks {
@@ -251,39 +251,10 @@ func (m Mutation) Origin() *Element    { return m.Src }
 func (m Mutation) Category() string        { return m.category}
 func (m Mutation) Property() string        { return m.propname }
 func (m Mutation) NewValue() Value     { 
-	if m.category == "event"{
-		v,ok:= m.NewVal.(Object)
-		if !ok{
-			panic("event of unexpected type")
-		}
-		e,ok:= v.Get("value")
-		if !ok{
-			DEBUG(v)
-			panic("event value not found")
-		}
-		return e
-	}
-
 	return m.NewVal
 }
 
 func (m Mutation) OldValue() Value     { 
-	if m.category == "event"{
-		if m.OldVal == nil{
-			return nil
-		}
-		v,ok:= m.OldVal.(Object)
-		if !ok{
-			DEBUG(m)
-			panic("event of unexpected type")
-		}
-		e,ok:= v.Get("value")
-		if !ok{
-			panic("event value not found")
-		}
-		return e
-	}
-
 	return m.OldVal // TODO check as we don't copy the value anymore. Not expected to be modified.
 }
 

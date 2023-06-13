@@ -120,7 +120,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 
 	e.ElementStore = Elements
 	e.Parent = e
-	e.Native,_ = ConnectNative(e,"window")
+	ConnectNative(e,"window")
 
 	return e
 })
@@ -239,7 +239,7 @@ var routerConfig = func(r *ui.Router){
 		
 
 		body:= document.Body().AsElement()
-		body.SetChildren(pnf)
+		body.SetChildren(pnf.AsElement())
 		
 
 		return false
@@ -270,7 +270,7 @@ var routerConfig = func(r *ui.Router){
 	r.OnAppfailure(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		document:=  GetDocument(r.Outlet.AsElement())
 		document.Window().SetTitle("App Failure")
-		r.Outlet.AsElement().Root.SetChildren(afd)
+		r.Outlet.AsElement().Root.SetChildren(afd.AsElement())
 		return false
 	}))
 
@@ -542,8 +542,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
 
-	e.Native,_ = ConnectNative(e, "html")
-	SetAttribute(e, "id", id)
+	ConnectNative(e, "html")
 
 	getDocumentRef(e).initializeIDgenerator()
 
@@ -997,12 +996,7 @@ var newBody = Elements.NewConstructor("body",func(id string) *ui.Element{
 	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
-	tag:= "body"
-	var exist bool
-	e.Native, exist= ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, "body")
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().Root.Set("ui","body",ui.String(evt.Origin().ID))
@@ -1031,12 +1025,8 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	e := Elements.NewElement(id)
 	e = enableClasses(e)
 
-	tag:= "head"
-	var exist bool
-	e.Native, exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, "head")
+
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().Root.Set("ui","head",ui.String(evt.Origin().ID))
@@ -1069,11 +1059,7 @@ var newMeta = Elements.NewConstructor("meta",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "meta"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 })
@@ -1100,11 +1086,7 @@ var newTitle = Elements.NewConstructor("title",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "title"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 	e.Watch("ui","title",e,titleElementChangeHandler)
 
 	return e
@@ -1153,11 +1135,7 @@ var newScript = Elements.NewConstructor("script",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "script"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 })
@@ -1187,11 +1165,7 @@ var newBase = Elements.NewConstructor("base",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "base"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui","href",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		SetAttribute(evt.Origin(),"href",string(evt.NewValue().(ui.String)))
@@ -1228,11 +1202,7 @@ var newNoScript = Elements.NewConstructor("noscript",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "noscript"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 })
@@ -1261,11 +1231,7 @@ var newLink = Elements.NewConstructor("link",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "link"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 })
@@ -1302,11 +1268,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 
 	
 	tag:= "div"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "contenteditable", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b, ok := evt.NewValue().(ui.Bool)
@@ -1471,11 +1433,7 @@ var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Elemen
 	e = enableClasses(e)
 
 	tag:= "textarea"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"value")
 
@@ -1542,11 +1500,7 @@ var newHeader= Elements.NewConstructor("header", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "header"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1569,11 +1523,7 @@ var newFooter= Elements.NewConstructor("footer", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "footer"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1597,11 +1547,7 @@ var newSection= Elements.NewConstructor("section", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "section"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1629,11 +1575,7 @@ var newH1= Elements.NewConstructor("h1", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h1"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
@@ -1661,11 +1603,7 @@ var newH2= Elements.NewConstructor("h2", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h2"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
@@ -1692,11 +1630,7 @@ var newH3= Elements.NewConstructor("h3", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h3"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
@@ -1722,11 +1656,7 @@ var newH4= Elements.NewConstructor("h4", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h4"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
@@ -1753,11 +1683,7 @@ var newH5= Elements.NewConstructor("h5", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h5"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 	return e
@@ -1784,11 +1710,7 @@ var newH6= Elements.NewConstructor("h6", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "h6"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e,textContentHandler)
 	return e
@@ -1815,11 +1737,7 @@ var newSpan= Elements.NewConstructor("span", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "span"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -1845,11 +1763,7 @@ var newArticle= Elements.NewConstructor("article", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "article"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 
 	return e
@@ -1873,11 +1787,7 @@ var newAside= Elements.NewConstructor("aside", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "aside"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1899,11 +1809,7 @@ var newMain= Elements.NewConstructor("main", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "main"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -1931,11 +1837,7 @@ var newParagraph= Elements.NewConstructor("p", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "p"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, paragraphTextHandler)
 	return e
@@ -1958,11 +1860,7 @@ var newNav= Elements.NewConstructor("nav", func(id string) *ui.Element {
 		e = enableClasses(e)
 
 		tag:= "nav"
-		var exist bool
-		e.Native,exist = ConnectNative(e, tag)
-		if !exist {
-			SetAttribute(e, "id", id)
-		}
+		ConnectNative(e, tag) 
 
 		return e
 	},AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -2080,11 +1978,7 @@ var newAnchor= Elements.NewConstructor("a", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "a"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"href")
 
@@ -2190,11 +2084,7 @@ var newButton= Elements.NewConstructor("button", func(id  string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "button"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withBoolAttributeWatcher(e,"disabled")
 	withBoolAttributeWatcher(e,"autofocus")
@@ -2287,11 +2177,7 @@ var newLabel= Elements.NewConstructor("label", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "label"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"for")
 	e.Watch("ui", "text", e, textContentHandler)
@@ -2463,11 +2349,7 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "input"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringPropertyWatcher(e,"value")
 
@@ -2656,11 +2538,7 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "output"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"form")
@@ -2706,11 +2584,7 @@ var newImg= Elements.NewConstructor("img", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "img"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"alt")
@@ -2874,11 +2748,7 @@ var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "audio"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"preload")
@@ -3033,11 +2903,7 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "video"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"width")
 	withNumberAttributeWatcher(e,"height")
@@ -3094,11 +2960,7 @@ var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "source"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"src")
 	withStringAttributeWatcher(e,"type")
@@ -3140,11 +3002,7 @@ var newUl= Elements.NewConstructor("ul", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "ul"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3171,11 +3029,7 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "ol"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 	
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3206,11 +3060,7 @@ var newLi= Elements.NewConstructor("li", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "li"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 	
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3287,11 +3137,7 @@ var newThead= Elements.NewConstructor("thead", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "thead"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3310,11 +3156,7 @@ var newTr= Elements.NewConstructor("tr", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "tr"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3332,11 +3174,7 @@ var newTd= Elements.NewConstructor("td", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "td"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3354,11 +3192,7 @@ var newTh= Elements.NewConstructor("th", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "th"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3376,11 +3210,7 @@ var newTbody= Elements.NewConstructor("tbody", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "tbody"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3398,11 +3228,7 @@ var newTfoot= Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "tfoot"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3420,11 +3246,7 @@ var newCol= Elements.NewConstructor("col", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "col"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"span")
 
@@ -3444,11 +3266,7 @@ var newColGroup= Elements.NewConstructor("colgroup", func(id string) *ui.Element
 	e = enableClasses(e)
 
 	tag:= "colgroup"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"span")
 
@@ -3468,11 +3286,7 @@ var newTable= Elements.NewConstructor("table", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "table"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3513,11 +3327,7 @@ var newCanvas = Elements.NewConstructor("canvas",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "canvas"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
@@ -3582,11 +3392,7 @@ var newSvg = Elements.NewConstructor("svg",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "svg"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
@@ -3619,11 +3425,7 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 	e = enableClasses(e)
 
 	tag:= "summary"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -3674,11 +3476,7 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 	e = enableClasses(e)
 
 	tag:= "details"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 	withBoolAttributeWatcher(e,"open")
@@ -3727,11 +3525,7 @@ var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "dialog"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withBoolAttributeWatcher(e,"open")
 
@@ -3764,11 +3558,7 @@ var newCode= Elements.NewConstructor("code", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "code"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -3814,11 +3604,7 @@ var newEmbed = Elements.NewConstructor("embed",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "embed"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
@@ -3896,11 +3682,7 @@ var newObject = Elements.NewConstructor("object",func(id string)*ui.Element{
 	e = enableClasses(e)
 
 	tag:= "object"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"height")
 	withNumberAttributeWatcher(e,"width")
@@ -3929,11 +3711,7 @@ var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Elemen
 	e = enableClasses(e)
 
 	tag:= "datalist"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -3992,11 +3770,7 @@ var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "option"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"value")
 	withStringAttributeWatcher(e,"label")
@@ -4053,11 +3827,7 @@ var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Elemen
 	e = enableClasses(e)
 
 	tag:= "optgroup"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"label")
 	withBoolAttributeWatcher(e,"disabled")
@@ -4118,11 +3888,7 @@ var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Elemen
 	e = enableClasses(e)
 
 	tag:= "fieldset"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"form")
 	withStringAttributeWatcher(e,"name")
@@ -4154,11 +3920,7 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "legend"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.Watch("ui", "text", e, textContentHandler)
 
@@ -4199,11 +3961,7 @@ var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Elemen
 	e = enableClasses(e)
 
 	tag:= "progress"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withNumberAttributeWatcher(e,"max")
 	withNumberAttributeWatcher(e,"value")
@@ -4285,11 +4043,7 @@ var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "select"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e,"form")
 	withStringAttributeWatcher(e,"name")
@@ -4396,11 +4150,7 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	e = enableClasses(e)
 
 	tag:= "form"
-	var exist bool
-	e.Native,exist = ConnectNative(e, tag)
-	if !exist {
-		SetAttribute(e, "id", id)
-	}
+	ConnectNative(e, tag)
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		_,ok:= e.Get("ui","action")
@@ -4537,14 +4287,17 @@ func withNumberAttributeWatcher(e *ui.Element,attr string){
 
 // watches ("ui",attr) for a ui.Bool value.
 func withBoolAttributeWatcher(e *ui.Element, attr string){
-	e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		if evt.NewValue().(ui.Bool) {
-			SetAttribute(evt.Origin(), attr, "")
+	if !inBrowser(){
+		e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			if evt.NewValue().(ui.Bool) {
+				SetAttribute(evt.Origin(), attr, "")
+				return false
+			}
+			RemoveAttribute(evt.Origin(), attr)
 			return false
-		}
-		RemoveAttribute(evt.Origin(), attr)
-		return false
-	}))
+		}))
+	}
+	
 	withBoolPropertyWatcher(e,attr) // IDL attribute support
 }
 
