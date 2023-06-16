@@ -235,6 +235,13 @@ func(o Object) Unwrap() map[string]any{
 	return o.MakeCopy().o
 }
 
+// UnsafelyUnwrap returns the underlying map that is used to store the object values.
+// It can be used when iteraing over an object keys without having to mutatie it (avoids a copy)
+// It is deemd unsafe. This is somethign to resort to in case it shows up in performance profiling.
+func(o Object) UnsafelyUnwrap() map[string]any{
+	return o.o
+}
+
 func ValueFrom(m map[string]any) Value{
 	return object(m).Value()
 }
@@ -575,9 +582,21 @@ func(l *TempList) Commit() List{
 }
 
 // Unwrap returns the raw list. Useful for iterating over it.
-func (l List) Unwrap() []Value{
+// If Unwrap is passed anything, it will return the raw list without copying it whcih is UNSAFE.
+// In such cases, the List object could be modified if the rawlist is mutated
+func (l List) Unwrap(unsafelyfast ...bool) []Value{
 	return l.MakeCopy().l
 }
+
+
+// UnsafelyUnwrap returns the raw list. Useful for iterating over it, but without copying it beforehand
+// It can be used to avoid a copy if the list is not going to be modified.
+// But this is unsafe, mostly for use in range statements.
+func (l List) UnsafelyUnwrap() []Value{
+	return l.MakeCopy().l
+}
+
+
 
 func NewListFrom(s []Value) List{
 	return List{s,false}

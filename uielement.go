@@ -75,7 +75,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 			a := NewList(String(name))
 			e.Set("internals", "constructoroptions", a.Commit())
 		}
-		for _, copt := range l.Unwrap() {
+		for _, copt := range l.UnsafelyUnwrap() {
 			if copt == String(name) {
 				return configuratorFn(e)
 			}
@@ -1678,7 +1678,7 @@ func mutationReplay(root *Element){
 	l,ok:= root.Get("internals","mutationtrace")
 	if ok{
 		list:= l.(List)
-		for _,m:= range list.Unwrap(){
+		for _,m:= range list.UnsafelyUnwrap(){
 			obj:= m.(Object)
 
 			id,ok:= obj.Get("id")

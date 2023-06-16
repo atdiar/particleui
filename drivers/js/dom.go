@@ -27,6 +27,8 @@ func init(){
 }
 
 
+var document *Document
+
 // mutationCaptureMode describes how a Go App may capture textarea value changes
 // that happen in native javascript. For instance, when a blur event is dispatched
 // or when any mutation is observed via the MutationObserver API.
@@ -40,7 +42,7 @@ const (
 // inBrowser indicates whether the document is created in a browser environement or not.
 // This
 func inBrowser() bool{
-	if runtime.GOARCH== "wasm" && runtime.GOOS == "js"{
+	if runtime.GOOS == "js" && (runtime.GOARCH == "wasm"|| runtime.GOARCH == "ecmascript"){
 		return true
 	}
 	return false
@@ -276,7 +278,66 @@ var routerConfig = func(r *ui.Router){
 
 }
 
+type  idEnabler [T any] interface{
+	WithID(id string, options ...string) T
+}
 
+type constiface[T any] interface{
+	func() T
+	idEnabler[T]
+}
+
+type gconstructor[T ui.AnyElement, U constiface[T], V ~func(*ui.Element)*ui.Element] func()T
+
+func(c gconstructor[T,U,V]) WithID(id string, options ...string) T{
+	var u U
+	e := u.WithID(id, options...)
+	var v V
+	v(e.AsElement())
+	return e
+}
+
+// For ButtonElement: it has a dedicated Document linked constructor as it has an optional typ argument
+type  idEnablerButton [T any] interface{
+	WithID(id string, typ string, options ...string) T
+}
+
+type buttonconstiface[T any] interface{
+	func(typ ...string) T
+	idEnablerButton[T]
+}
+
+type buttongconstructor[T ui.AnyElement, U buttonconstiface[T], V ~func(*ui.Element)*ui.Element] func(typ ...string)T
+
+func(c buttongconstructor[T,U,V]) WithID(id string, typ string,  options ...string) T{
+	var u U
+	e := u.WithID(id, typ, options...)
+	var v V
+	v(e.AsElement())
+	return e
+}
+
+// For inputElement: it has a dedicated Document linked constructor as it has an additional typ argument
+type  idEnablerinput [T any] interface{
+	WithID(id string, typ string, options ...string) T
+}
+
+type inputconstiface[T any] interface{
+	func(typ string) T
+	idEnablerinput[T]
+}
+
+type inputgconstructor[T ui.AnyElement, U inputconstiface[T], V ~func(*ui.Element)*ui.Element] func(typ string)T
+
+func(c inputgconstructor[T,U,V]) WithID(id string, typ string,  options ...string) T{
+	var u U
+	e := u.WithID(id, typ, options...)
+	var v V
+	v(e.AsElement())
+	return e
+}
+
+//
 
 type Document struct {
 	*ui.Element
@@ -525,6 +586,9 @@ func(d Document) ListenAndServe(ctx context.Context){
 
 
 func GetDocument(e *ui.Element) Document{
+	if document != nil{
+		return *document
+	}
 	if e.Root == nil{
 		panic("This element does not belong to any registered subtree of the Document. Root is nil. If root of a component, it should be declared as such by callling the NewComponent method of the document Element.")
 	}
@@ -535,6 +599,9 @@ func GetDocument(e *ui.Element) Document{
 // getDocumentRef is needed for the definition of constructors wich need to refer to the document 
 // such as body, head or title. Indeed, since they 
 func getDocumentRef(e *ui.Element) *Document{
+	if document != nil{
+		return document
+	}
 	return &Document{Element:e.Root}
 }
 
@@ -558,7 +625,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	// makes ViewElements focusable (focus management support)
 	e.Watch("internals", "views",e.Root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		l:= evt.NewValue().(ui.List)
-		viewstr:= l.Get(len(l.Unwrap())-1).(ui.String)
+		viewstr:= l.Get(len(l.UnsafelyUnwrap())-1).(ui.String)
 		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view,"tabindex","-1")
 		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -611,7 +678,7 @@ func mutationreplay(d *Document) {
 	}
 
 
-	for _,rawop:= range mutationtrace.Unwrap(){
+	for _,rawop:= range mutationtrace.UnsafelyUnwrap(){
 		op:= rawop.(ui.Object)
 		elementid:= string(op.MustGetString("id"))
 		category:= string(op.MustGetString("cat"))
@@ -712,6 +779,10 @@ func NewDocument(id string, options ...string) Document {
 
 	mutationreplay(&d)
 	activityStateSupport(e)
+
+	if inBrowser(){
+		document = &d
+	}
 
 	return d
 }
@@ -2609,7 +2680,7 @@ func(j jsTimeRanges) Start(index int) time.Duration{
 		panic("Bad timeRange encoding. No start found")
 	}
 	ranges := ti.(ui.List)
-	if index >= len(ranges.Unwrap()){
+	if index >= len(ranges.UnsafelyUnwrap()){
 		panic("no time ramge at index, index out of bounds")
 	}
 	return time.Duration(ranges.Get(index).(ui.Number)) *time.Second
@@ -2621,7 +2692,7 @@ func(j jsTimeRanges) End(index int) time.Duration{
 		panic("Bad timeRange encoding. No start found")
 	}
 	ranges := ti.(ui.List)
-	if index >= len(ranges.Unwrap()){
+	if index >= len(ranges.UnsafelyUnwrap()){
 		panic("no time ramge at index, index out of bounds")
 	}
 	return time.Duration(ranges.Get(index).(ui.Number)) *time.Second

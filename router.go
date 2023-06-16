@@ -92,7 +92,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 			if ok {
 				l, ok := v.(List)
 				if ok {
-					for _, val := range l.Unwrap() {
+					for _, val := range l.UnsafelyUnwrap() {
 						viewRef, ok := val.(String)
 						if !ok {
 							panic("expected an Element ID string stored for this ViewElementt")
@@ -478,7 +478,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	if ok {
 		l, ok := v.(List)
 		if ok {
-			for _, val := range l.Unwrap() {
+			for _, val := range l.UnsafelyUnwrap() {
 				viewRef, ok := val.(String)
 				if !ok {
 					panic("internals/views does not hold a proper Reference")
@@ -909,7 +909,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link)Link) Link {
 	}*/
 	vl:= v.(List)
 	//nl:= n.(List)
-	view:= ViewElement{GetById(r.Outlet.AsElement().Root,vl.Get(len(vl.Unwrap())-1).(String).String())}
+	view:= ViewElement{GetById(r.Outlet.AsElement().Root,vl.Get(len(vl.UnsafelyUnwrap())-1).(String).String())}
 	//viewname = string(nl[len(nl)-1].(String))
 
 
@@ -1002,7 +1002,7 @@ func Path(ve ViewElement, viewname string) func(Link)Link{
 		ne.SetUI("viewelements",vl)
 		ne.SetUI("viewnames",nl)
 		uri:="/" + string(nl.Get(0).(String))
-		for i,velem:= range vl.Unwrap(){
+		for i,velem:= range vl.UnsafelyUnwrap(){
 			if i==0{
 				continue
 			}
@@ -1035,11 +1035,11 @@ func isValidLink(l Link) bool{
 	vl:= v.(List)
 	nl:= n.(List)
 
-	targetview:= GetById(l.AsElement().Root,string(vl.Get(len(vl.Unwrap())-1).(String)))
-	viewname := string(nl.Get(len(nl.Unwrap())-1).(String))
+	targetview:= GetById(l.AsElement().Root,string(vl.Get(len(vl.UnsafelyUnwrap())-1).(String)))
+	viewname := string(nl.Get(len(nl.UnsafelyUnwrap())-1).(String))
 
 	vap:= targetview.ViewAccessPath.Nodes
-	if len(vap) != len(vl.Unwrap())-1{
+	if len(vap) != len(vl.UnsafelyUnwrap())-1{
 		DEBUG("viewaccespath and link depth do not match. Some view might have been skipped")
 		return false
 	}
@@ -1144,7 +1144,7 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 		return nil
 	}
 	stack:= stk.(List)
-	hlen:= len(stack.Unwrap())
+	hlen:= len(stack.UnsafelyUnwrap())
 
 	stt,ok:= h.Get("state")
 	if !ok{

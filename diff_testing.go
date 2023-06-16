@@ -52,6 +52,6 @@ func BenchmarkNaiveDiff(b *testing.B) {
 
 /*
 
-Can you give me a one file recap in apackage main that demonstrate the use of this algorithm? I want ot paste it in the go playground and see if it works. By the way I've tried it in a codebase but the list of edits returned by the diffing function is always empty, even when I know it shouldn't so there should be a mistake somewhere..
+
 
 */

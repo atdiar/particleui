@@ -354,7 +354,7 @@ func (p *mapElementPool) ResizeThreshold() int {
 }
 
 func newMapElementConstructor() map[string]*Element {
-	return make(map[string]*Element)
+	return make(map[string]*Element,128)
 }
 
 // []string pool

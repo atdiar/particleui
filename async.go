@@ -240,7 +240,7 @@ func(e *Element) CancelAllFetches(){
 		return
 	}
 	fetchlist:= f.(Object).MustGetList("fetch_index")
-	for _,propname:= range fetchlist.Unwrap(){
+	for _,propname:= range fetchlist.UnsafelyUnwrap(){
 		e.CancelFetch(propname.(String).String())
 	}
 }
@@ -379,10 +379,10 @@ func(e *Element) enablefetching() *Element{
 			return false
 		}
 		fetchlist:= fl.(Object).MustGetList("fetch_index")
-		if len(fetchlist.Unwrap()) == 0{
+		if len(fetchlist.UnsafelyUnwrap()) == 0{
 			e.EndTransition("fetch")
 		}
-		for _,v:= range fetchlist.Unwrap(){
+		for _,v:= range fetchlist.UnsafelyUnwrap(){
 			propname:= v.(String).String()
 			e.OnTransitionError(strings.Join([]string{"fetch",propname},"-"),NewMutationHandler(func(evt MutationEvent)bool{
 				e.errorfetchTransition(propname)
@@ -571,7 +571,7 @@ func(e *Element) checkFetchCompletion(){
 		panic("Framework error: fetch index missing")
 	}
 	index:= rindex.(List)
-	for _,prop:= range index.Unwrap(){
+	for _,prop:= range index.UnsafelyUnwrap(){
 		propname := string(prop.(String))
 		status,ok:= l.Get(propname)
 		if !ok{
