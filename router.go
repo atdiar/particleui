@@ -4,6 +4,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -106,7 +107,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 		return false
 	}))
 
-	r.Outlet.AsElement().Root.WatchEvent("navigation_start",r.Outlet.AsElement().Root,NewMutationHandler(func(evt MutationEvent)bool{
+	r.Outlet.AsElement().Root.WatchEvent("navigation-start",r.Outlet.AsElement().Root,NewMutationHandler(func(evt MutationEvent)bool{
 		if r.NavCancel != nil{
 			r.NavCancel()
 		}
@@ -185,7 +186,7 @@ func (r *Router) GoTo(route string) {
 	r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
 
 	
-	r.Outlet.AsElement().Root.TriggerEvent("navigation_start", String(route))
+	r.Outlet.AsElement().Root.TriggerEvent("navigation-start", String(route))
 
 	ok := r.tryNavigate(route)
 	if !ok {
@@ -241,7 +242,7 @@ func Hijack(route, destination string) func(*Router)*Router{
 // a "page not found" view.
 // It is not advised to navigate here. It is better to represent the app error state directly.
 func (r *Router) OnNotfound(h *MutationHandler) *Router {
-	r.Outlet.AsElement().Root.Watch("navigation", "notfound", r.Outlet.AsElement().Root, h)
+	r.Outlet.AsElement().Root.WatchEvent("navigation-notfound", r.Outlet.AsElement().Root, h)
 	return r
 }
 
@@ -249,7 +250,7 @@ func (r *Router) OnNotfound(h *MutationHandler) *Router {
 // It may occur when there are insufficient rights to displaya given view for instance.
 // It is not advised to navigate here. It is better to represent the app error state directly.
 func (r *Router) OnUnauthorized(h *MutationHandler) *Router {
-	r.Outlet.AsElement().Root.Watch("navigation", "unauthorized", r.Outlet.AsElement().Root, h)
+	r.Outlet.AsElement().Root.WatchEvent("navigation-unauthorized", r.Outlet.AsElement().Root, h)
 	return r
 }
 
@@ -257,7 +258,7 @@ func (r *Router) OnUnauthorized(h *MutationHandler) *Router {
 // It may occur when a malfunction occured.
 // The MutationHandler informs of the behavior to addopt in this case.
 func (r *Router) OnAppfailure(h *MutationHandler) *Router {
-	r.Outlet.AsElement().Root.Watch("navigation", "appfailure", r.Outlet.AsElement().Root, h)
+	r.Outlet.AsElement().Root.WatchEvent("navigation-appfailure", r.Outlet.AsElement().Root, h)
 	return r
 }
 
@@ -277,9 +278,6 @@ func (r *Router) Match(route string) (prefetch func(),err error) {
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {
-		if Equal(evt.NewValue(), evt.OldValue()) {
-			return true // TODO check that it is correct and  works according to expectations
-		}
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
@@ -318,7 +316,6 @@ func (r *Router) handler() *MutationHandler {
 			if r.History.Cursor > n {
 				
 				// we are going back
-				//DEBUG("back from: ",r.History.Cursor, " to ",n)
 				for i := 0; i < cursor-n; i++ {
 					r.History.Back()
 				}
@@ -329,7 +326,6 @@ func (r *Router) handler() *MutationHandler {
 				}
 
 			} else{
-				//DEBUG("from: ",cursor, " to ",n, "by importing state")
 				r.History.ImportState(h)
 			}
 
@@ -345,17 +341,20 @@ func (r *Router) handler() *MutationHandler {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-notfound", String(newroute))
+				//return false
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
+				//return false
 			}
 			if err == ErrFrameworkFailure {
 				log.Print("APPFAILURE: ", err) // DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-appfailure", String(newroute))
+				//return false
 			}
 		} else{
-			r.Outlet.AsElement().Root.TriggerEvent("navigation_start", String(newroute))
+			r.Outlet.AsElement().Root.TriggerEvent("navigation-start", String(newroute))
 			err = a()
 			if err != nil {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
@@ -409,17 +408,20 @@ func (r *Router) redirecthandler() *MutationHandler {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-notfound", String(newroute))
+				//return false
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
+				//return false
 			}
 			if err == ErrFrameworkFailure {
 				log.Print(err) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-appfailure", String(newroute))
+				//return false
 			}
 		} else{
-			r.Outlet.AsElement().Root.TriggerEvent("navigation_start", String(newroute))
+			r.Outlet.AsElement().Root.TriggerEvent("navigation-start", String(newroute))
 			err = a()
 			if err != nil {
 				log.Print(err) // DEBUG
@@ -505,7 +507,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 	root.AsElement().Root.WatchEvent("navigation-routechangerequest", root.AsElement().Root, r.handler())
 	root.AsElement().Root.WatchEvent("navigation-routeredirectrequest", root.AsElement().Root, r.redirecthandler())
-	r.Outlet.AsElement().Root.TriggerEvent("document-loaded", Bool(true))
+	r.Outlet.AsElement().Root.TriggerEvent("document-loaded")
 	
 	eventnames:= strings.Split(events," ")
 	for _,event:= range eventnames{
@@ -1191,9 +1193,7 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 func(n *NavHistory) CurrentEntryIsNew() bool{
 	v,ok:= n.State[n.Cursor].Get("data","new")
 	if !ok{
-		DEBUG("Unable to find (data, new) cursor is : ",n.Cursor)
-		DEBUG(n.Stack,n.State)
-		return true
+		panic("Unable to find (data, new) cursor is : "+ fmt.Sprint(n.Cursor))
 	}
 	return bool(v.(Bool))
 }
@@ -1208,7 +1208,7 @@ func (n *NavHistory) Replace(URI string) *NavHistory {
 		n.State[n.Cursor].Set("data","new",v)
 	}
 	
-	// TODO what to do here? perhaps nothing, perhpas the state should be labeled new or the reverse? 
+	// TODO what to do here? perhaps nothing, perhaps the state should be labeled new or the reverse? 
 	return n
 }
 

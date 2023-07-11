@@ -2,12 +2,10 @@
 package ui
 
 import(
-	"time"
 	"strings"
 )
 
 
-var newEventID = newIDgenerator(5,time.Now().UnixNano())
 
 type MutationCallbacks struct {
 	list map[string]*mutationHandlers

@@ -217,7 +217,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				// on the target *ui.Element, knowing that it will be visible before
 				// the event dispatch.
 				hstate := js.Global().Get("history").Get("state")
-				dEBUGJS(hstate,true)
+
 				if hstate.Truthy() {
 					hstateobj := make(map[string]interface{})
 					err := json.Unmarshal([]byte(hstate.String()), &hstateobj)

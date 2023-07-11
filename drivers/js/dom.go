@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/base64"
 	"encoding/json"
-	//"github.com/goccy/go-json"
+	"fmt"
 	"strconv"
 	"strings"
 	//"math/rand"
@@ -174,10 +174,24 @@ func EnableLocalPersistence() string {
 var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
 	d:= getDocumentRef(e)
 
-	d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		LoadFromStorage(e)
+	e.WatchEvent("datastore-load",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
+		if ui.Equal(evt.OldValue(),evt.NewValue()){
+			return false
+		}
+		LoadFromStorage(evt.Origin())
 		return false
 	}))
+
+	d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		e.TriggerEvent("datastore-load")
+		return false
+	}))
+	
+	/*e.WatchEvent("registered",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		LoadFromStorage(evt.Origin())
+		return false
+	}).RunASAP().RunOnce())
+	*/
 
 	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		PutInStorage(e)
@@ -196,12 +210,16 @@ var routerConfig = func(r *ui.Router){
 		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
 		//PutInStorage(ClearFromStorage(o.AsElement())) // Note: oldsttate is cleared.
-		PutInStorage(o.AsElement())
+		//PutInStorage(o.AsElement())
+		/*d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			PutInStorage(o.AsElement())
+			return false
+		}))*/
 		return o
 	}
 
 	rs:= func(o ui.Observable) ui.Observable{
-		LoadFromStorage(o.AsElement())
+		o.AsElement().TriggerEvent("datastore-load")
 		return o
 	}
 
@@ -278,23 +296,41 @@ var routerConfig = func(r *ui.Router){
 
 }
 
+
 type  idEnabler [T any] interface{
 	WithID(id string, options ...string) T
 }
 
 type constiface[T any] interface{
-	func() T
+	~func() T
 	idEnabler[T]
 }
 
-type gconstructor[T ui.AnyElement, U constiface[T], V ~func(*ui.Element)*ui.Element] func()T
+type gconstructor[T ui.AnyElement, U constiface[T]] func()T
 
-func(c gconstructor[T,U,V]) WithID(id string, options ...string) T{
+func(c *gconstructor[T,U]) WithID(id string, options ...string) T{
 	var u U
 	e := u.WithID(id, options...)
-	var v V
-	v(e.AsElement())
+	d:= c.owner()
+	if d == nil{
+		panic("constructor should have an owner")
+	}
+	ui.RegisterElement(d.AsElement(),e.AsElement())
+
 	return e
+}
+
+func( c *gconstructor[T,U]) ownedBy(d *Document){
+	id := fmt.Sprintf("%v", *c)
+	constructorDocumentLinker[id] = d
+	d.Element.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		delete(constructorDocumentLinker,id)
+		return false
+	}))
+}
+
+func( c *gconstructor[T,U]) owner() *Document{
+	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
 }
 
 // For ButtonElement: it has a dedicated Document linked constructor as it has an optional typ argument
@@ -303,18 +339,31 @@ type  idEnablerButton [T any] interface{
 }
 
 type buttonconstiface[T any] interface{
-	func(typ ...string) T
+	~func(typ ...string) T
 	idEnablerButton[T]
 }
 
-type buttongconstructor[T ui.AnyElement, U buttonconstiface[T], V ~func(*ui.Element)*ui.Element] func(typ ...string)T
+type buttongconstructor[T ui.AnyElement, U buttonconstiface[T]] func(typ ...string)T
 
-func(c buttongconstructor[T,U,V]) WithID(id string, typ string,  options ...string) T{
+func(c *buttongconstructor[T,U]) WithID(id string, typ string,  options ...string) T{
 	var u U
 	e := u.WithID(id, typ, options...)
-	var v V
-	v(e.AsElement())
+	d:= c.owner()
+	if d == nil{
+		panic("constructor should have an owner")
+	}
+	ui.RegisterElement(d.AsElement(),e.AsElement())
+
 	return e
+}
+
+func( c *buttongconstructor[T,U]) ownedBy(d *Document){
+	id := fmt.Sprintf("%v", *c)
+	constructorDocumentLinker[id] = d
+}
+
+func( c *buttongconstructor[T,U]) owner() *Document{
+	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
 }
 
 // For inputElement: it has a dedicated Document linked constructor as it has an additional typ argument
@@ -323,21 +372,70 @@ type  idEnablerinput [T any] interface{
 }
 
 type inputconstiface[T any] interface{
-	func(typ string) T
+	~func(typ string) T
 	idEnablerinput[T]
 }
 
-type inputgconstructor[T ui.AnyElement, U inputconstiface[T], V ~func(*ui.Element)*ui.Element] func(typ string)T
+type inputgconstructor[T ui.AnyElement, U inputconstiface[T]] func(typ string)T
 
-func(c inputgconstructor[T,U,V]) WithID(id string, typ string,  options ...string) T{
+func(c *inputgconstructor[T,U]) WithID(id string, typ string,  options ...string) T{
 	var u U
 	e := u.WithID(id, typ, options...)
-	var v V
-	v(e.AsElement())
+	d:= c.owner()
+	if d == nil{
+		panic("constructor should have an owner")
+	}
+	ui.RegisterElement(d.AsElement(),e.AsElement())
+
 	return e
 }
 
-//
+func( c *inputgconstructor[T,U]) ownedBy(d *Document){
+	id := fmt.Sprintf("%v", *c)
+	constructorDocumentLinker[id] = d
+}
+
+func( c *inputgconstructor[T,U]) owner() *Document{
+	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+}
+
+// For olElement: it has a dedicated Document linked constructor as it has additional typ and  offset arguments
+type  idEnablerOl [T any] interface{
+	WithID(id string, typ string, offset int, options ...string) T
+}
+
+type olconstiface[T any] interface{
+	~func(typ string, offset int) T
+	idEnablerOl[T]
+}
+
+type olgconstructor[T ui.AnyElement, U olconstiface[T]] func(typ string, offset int)T
+
+func(c *olgconstructor[T,U]) WithID(id string, typ string, offset int,  options ...string) T{
+	var u U
+	e := u.WithID(id, typ, offset, options...)
+	d:= c.owner()
+	if d == nil{
+		panic("constructor should have an owner")
+	}
+	ui.RegisterElement(d.AsElement(),e.AsElement())
+
+	return e
+}
+
+func( c *olgconstructor[T,U]) ownedBy(d *Document){
+	id := fmt.Sprintf("%v", *c)
+	constructorDocumentLinker[id] = d
+}
+
+func( c *olgconstructor[T,U]) owner() *Document{
+	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+}
+
+
+
+// For olElement : it has a dedicated Document linked constructor as it has additional typ and offset arguments
+
 
 type Document struct {
 	*ui.Element
@@ -348,67 +446,67 @@ type Document struct {
 	src *rand.PCGSource
 
 	// Document should hold the list of all element constructors such as Meta, Title, Div, San etc.
-	body bodyConstructor
-	head headConstructor
-	Meta metaConstructor
-	Title titleConstructor
-	Script scriptConstructor
-	Base baseConstructor
-	NoScript noscriptConstructor
-	Link linkConstructor
-	Div divConstructor
-	TextArea textareaConstructor
-	Header headerConstructor
-	Footer footerConstructor
-	Section sectionConstructor
-	H1 h1Constructor
-	H2 h2Constructor
-	H3 h3Constructor
-	H4 h4Constructor
-	H5 h5Constructor
-	H6 h6Constructor
-	Span spanConstructor
-	Article articleConstructor
-	Aside asideConstructor
-	Main mainConstructor
-	Paragraph paragraphConstructor
-	Nav navConstructor
-	Anchor anchorConstructor
-	Button buttonConstructor
-	Label labelConstructor
-	Input inputConstructor
-	Output outputConstructor
-	Img imgConstructor
-	Audio audioConstructor
-	Video videoConstructor
-	Source sourceConstructor
-	Ul ulConstructor
-	Ol olConstructor
-	Li liConstructor
-	Table tableConstructor
-	Thead theadConstructor
-	Tbody tbodyConstructor
-	Tr trConstructor
-	Td tdConstructor
-	Th thConstructor
-	Col colConstructor
-	ColGroup colgroupConstructor
-	Canvas canvasConstructor
-	Svg svgConstructor
-	Summary summaryConstructor
-	Details detailsConstructor
-	Dialog dialogConstructor
-	Code codeConstructor
-	Embed embedConstructor
-	Object objectConstructor
-	Datalist datalistConstructor
-	Option optionConstructor
-	Optgroup optgroupConstructor
-	Fieldset fieldsetConstructor
-	Legend legendConstructor
-	Progress progressConstructor
-	Select selectConstructor
-	Form formConstructor
+	body gconstructor[BodyElement, bodyConstructor, ]
+	head gconstructor[HeadElement, headConstructor]
+	Meta gconstructor[MetaElement, metaConstructor]
+	Title gconstructor[TitleElement, titleConstructor]
+	Script gconstructor[ScriptElement, scriptConstructor]
+	Base gconstructor[BaseElement, baseConstructor]
+	NoScript gconstructor[NoScriptElement, noscriptConstructor]
+	Link gconstructor[LinkElement, linkConstructor]
+	Div gconstructor[DivElement, divConstructor]
+	TextArea gconstructor[TextAreaElement, textareaConstructor]
+	Header gconstructor[HeaderElement, headerConstructor]
+	Footer gconstructor[FooterElement, footerConstructor]
+	Section gconstructor[SectionElement, sectionConstructor]
+	H1 gconstructor[H1Element, h1Constructor]
+	H2 gconstructor[H2Element, h2Constructor]
+	H3 gconstructor[H3Element, h3Constructor]
+	H4 gconstructor[H4Element, h4Constructor]
+	H5 gconstructor[H5Element, h5Constructor]
+	H6 gconstructor[H6Element, h6Constructor]
+	Span gconstructor[SpanElement, spanConstructor]
+	Article gconstructor[ArticleElement, articleConstructor]
+	Aside gconstructor[AsideElement, asideConstructor]
+	Main gconstructor[MainElement, mainConstructor]
+	Paragraph gconstructor[ParagraphElement, paragraphConstructor]
+	Nav gconstructor[NavElement, navConstructor]
+	Anchor gconstructor[AnchorElement, anchorConstructor]
+	Button buttongconstructor[ButtonElement, buttonConstructor]
+	Label gconstructor[LabelElement, labelConstructor]
+	Input inputgconstructor[InputElement, inputConstructor]
+	Output gconstructor[OutputElement, outputConstructor]
+	Img gconstructor[ImgElement, imgConstructor]
+	Audio gconstructor[AudioElement, audioConstructor]
+	Video gconstructor[VideoElement, videoConstructor]
+	Source gconstructor[SourceElement, sourceConstructor]
+	Ul gconstructor[UlElement, ulConstructor]
+	Ol olgconstructor[OlElement, olConstructor]
+	Li gconstructor[LiElement, liConstructor]
+	Table gconstructor[TableElement, tableConstructor]
+	Thead gconstructor[TheadElement, theadConstructor]
+	Tbody gconstructor[TbodyElement, tbodyConstructor]
+	Tr gconstructor[TrElement, trConstructor]
+	Td gconstructor[TdElement, tdConstructor]
+	Th gconstructor[ThElement, thConstructor]
+	Col gconstructor[ColElement, colConstructor]
+	ColGroup gconstructor[ColGroupElement, colgroupConstructor]
+	Canvas gconstructor[CanvasElement, canvasConstructor]
+	Svg gconstructor[SvgElement, svgConstructor]
+	Summary gconstructor[SummaryElement, summaryConstructor]
+	Details gconstructor[DetailsElement, detailsConstructor]
+	Dialog gconstructor[DialogElement, dialogConstructor]
+	Code gconstructor[CodeElement, codeConstructor]
+	Embed gconstructor[EmbedElement, embedConstructor]
+	Object gconstructor[ObjectElement, objectConstructor]
+	Datalist gconstructor[DatalistElement, datalistConstructor]
+	Option gconstructor[OptionElement, optionConstructor]
+	Optgroup gconstructor[OptgroupElement, optgroupConstructor]
+	Fieldset gconstructor[FieldsetElement, fieldsetConstructor]
+	Legend gconstructor[LegendElement, legendConstructor]
+	Progress gconstructor[ProgressElement, progressConstructor]
+	Select gconstructor[SelectElement, selectConstructor]
+	Form gconstructor[FormElement, formConstructor]
 
 }
 
@@ -496,9 +594,13 @@ func(d Document) newID() string{
 	return newID() // DEBUG
 }
 
+// NewObservable returns a new ui.Observable element after registering it for the document.
+// If the observable alreadys exiswted for this id, it is returns as is.
+// it is up to the caller to check whether an element already exist for this id and possibly clear 
+// its state beforehand.
 func(d Document) NewObservable(id string, options ...string) ui.Observable{
 	if e:=d.GetElementById(id); e != nil{
-		ui.Delete(e)
+		return ui.Observable{e}
 	}
 	o:= d.AsElement().ElementStore.NewObservable(id,options...).AsElement()
 	
@@ -516,25 +618,10 @@ func(d Document) Head() *ui.Element{
 
 func(d Document) Body() *ui.Element{
 	e:= d.GetElementById("body")
-	if e ==nil{ panic("document BODY seems tobe missing for some odd reason...")}
-	return d.NewComponent(e)
+	if e ==nil{ panic("document BODY seems to be missing for some odd reason...")}
+	return e
 }
 
-
-// NewComponent ensures the registration of a component. A component is a part of an UI that is composed
-// of at least one Element.
-// Typicvally, component are returned by functions. These functions should integrate a call to NewComponent 
-// to ensure its registration with the document.
-func (d Document) NewComponent(root ui.AnyElement) *ui.Element{
-	el:= root.AsElement()
-	if el.Registered(){
-		return el
-	}
-	
-	ui.RegisterElement(d.AsElement(),el)
-
-	return el
-}
 
 func(d Document) SetLang(lang string) Document{
 	d.AsElement().SetUI("lang", ui.String(lang))
@@ -545,8 +632,8 @@ func (d Document) OnNavigationEnd(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("navigation-end", d, h)
 }
 
-func(d Document) OnLoaded(h *ui.MutationHandler){
-	d.AsElement().WatchEvent("document-loaded",d,h)
+func(d Document) OnReady(h *ui.MutationHandler){
+	d.AsElement().WatchEvent("document-ready",d,h)
 }
 
 func(d Document) OnRouterMounted(h *ui.MutationHandler){
@@ -581,6 +668,11 @@ func(d Document) ListenAndServe(ctx context.Context){
 	if d.Element ==nil{
 		panic("document is missing")
 	}
+
+	d.Window().AsElement().AddEventListener("wasmAndPageReady", ui.NewEventHandler(func(evt ui.Event) bool {
+		d.TriggerEvent("document-ready")
+		return false
+	}))
 	ui.GetRouter(d.AsElement()).ListenAndServe(ctx,"popstate", d.Window())
 }
 
@@ -725,7 +817,7 @@ func withNativejshelpers(d *Document) *Document{
 			}
 			
 			window.queueFocus = function(element) {
-				queueMicrotask(() => focusElement(element));
+				queueMicrotask(() => window.focusElement(element));
 			}
 
 			window.blurElement = function(element) {
@@ -737,7 +829,7 @@ func withNativejshelpers(d *Document) *Document{
 			}
 
 			window.queueBlur = function(element) {
-				queueMicrotask(() => blurElement(element));
+				queueMicrotask(() => window.blurElement(element));
 			}
 			
 			window.clearFieldValue = function(element) {
@@ -749,8 +841,54 @@ func withNativejshelpers(d *Document) *Document{
 			}
 
 			window.queueClear = function(element) {
-				queueMicrotask(() => clearFieldValue(element));
+				queueMicrotask(() => window.clearFieldValue(element));
 			}
+
+			window.scrollToElement = function(element, x, y) {
+				if(element) {
+					x = x || 0;
+					y = y || 0;
+					element.scrollTo(x, y);
+				} else {
+					console.error('Element is not defined');
+				}
+			}
+			
+			window.queueScroll = function(element, x, y) {
+				x = x || 0;
+				y = y || 0;
+				queueMicrotask(() => window.scrollToElement(element, x, y));
+				console.log('scrolling to element',x,y);
+			};
+
+			(function() {
+				// Hold onto the original methods
+				const originalScrollTo = window.scrollTo;
+				const originalScrollTopSetter = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop').set;
+				const originalScrollLeftSetter = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollLeft').set;
+	
+				// Proxy the scrollTo method
+				window.scrollTo = function() {
+					console.log('scrollTo', arguments);
+					return originalScrollTo.apply(this, arguments);
+				};
+	
+				// Proxy scrollTop
+				Object.defineProperty(Element.prototype, 'scrollTop', {
+					set: function(value) {
+						console.log('scrollTop', value);
+						originalScrollTopSetter.call(this, value);
+					}
+				});
+	
+				// Proxy scrollLeft
+				Object.defineProperty(Element.prototype, 'scrollLeft', {
+					set: function(value) {
+						console.log('scrollLeft', value);
+						originalScrollLeftSetter.call(this, value);
+					}
+				});
+			})();
 			`,
 		)
 	h:= d.Head()
@@ -758,6 +896,11 @@ func withNativejshelpers(d *Document) *Document{
 
 	return d
 }
+
+// constructorDocumentLinker maps constructors id to the document they are created for.
+// Since we do not have dependent types, it is used to  have access to the document within  
+// WithID methods, for element registration purposes (functio types do not have ccessible settable state)
+var constructorDocumentLinker = make(map[string]*Document)
 
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
@@ -773,7 +916,7 @@ func NewDocument(id string, options ...string) Document {
 	e.AppendChild(d.body.WithID("body"))
 
 	e.OnRouterMounted(routerConfig)
-	e.WatchEvent("document-loaded", e,navinitHandler)
+	d.WatchEvent("document-loaded",d,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
 
@@ -788,271 +931,280 @@ func NewDocument(id string, options ...string) Document {
 }
 
 func withStdConstructors(d Document) Document{
-	d.body = bodyConstructor(func() BodyElement {
+	d.body = gconstructor[BodyElement, bodyConstructor](func() BodyElement {
 		e:=  BodyElement{newBody(d.newID())}
-		e.Root = d.Element
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.body.ownedBy(&d)
 
-	d.head = headConstructor(func() HeadElement {
+	d.head = gconstructor[HeadElement, headConstructor](func() HeadElement {
 		e:=  HeadElement{newHead(d.newID())}
-		e.Root = d.Element
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.head.ownedBy(&d)
 
-	d.Meta = metaConstructor(func() MetaElement {
+	d.Meta = gconstructor[MetaElement, metaConstructor](func() MetaElement {
 		e:=  MetaElement{newMeta(d.newID())}
-		e.Root = d.Element
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Meta.ownedBy(&d)
 
-	d.Title = titleConstructor(func() TitleElement {
+
+	d.Title = gconstructor[TitleElement, titleConstructor](func() TitleElement {
 		e:=  TitleElement{newTitle(d.newID())}
-		e.Root = d.Element
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Title.ownedBy(&d)
 
-	d.Script = scriptConstructor(func() ScriptElement {
-		e := ScriptElement{newScript(d.newID())}
-		e.Root = d.Element
+	d.Script = gconstructor[ScriptElement, scriptConstructor](func() ScriptElement {
+		e:=  ScriptElement{newScript(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Script.ownedBy(&d)
 
-	d.Base = baseConstructor(func() BaseElement {
-		e := BaseElement{newBase(d.newID())}
-		e.Root = d.Element
+	d.Base = gconstructor[BaseElement, baseConstructor](func() BaseElement {
+		e:=  BaseElement{newBase(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Base.ownedBy(&d)
 
-	d.NoScript = noscriptConstructor(func() NoScriptElement {
-		e := NoScriptElement{newNoScript(d.newID())}
-		e.Root = d.Element
+	d.NoScript = gconstructor[NoScriptElement, noscriptConstructor](func() NoScriptElement {
+		e:=  NoScriptElement{newNoScript(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.NoScript.ownedBy(&d)
 
-	d.Link = linkConstructor(func() LinkElement {
-		e := LinkElement{newLink(d.newID())}
-		e.Root = d.Element
+	d.Link = gconstructor[LinkElement, linkConstructor](func() LinkElement {
+		e:=  LinkElement{newLink(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Link.ownedBy(&d)
 
-	d.Div = divConstructor(func() DivElement {
-		e := DivElement{newDiv(d.newID())}
-		e.Root = d.Element
+	d.Div = gconstructor[DivElement, divConstructor](func() DivElement {
+		e:=  DivElement{newDiv(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Div.ownedBy(&d)
 
-	d.TextArea = textareaConstructor(func() TextAreaElement {
-		e := TextAreaElement{newTextArea(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
 
-	d.Header = headerConstructor(func() HeaderElement {
-		e := HeaderElement{newHeader(d.newID())}
-		e.Root = d.Element
+	d.TextArea = gconstructor[TextAreaElement, textareaConstructor](func() TextAreaElement {
+		e:=  TextAreaElement{newTextArea(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.TextArea.ownedBy(&d)
 
-	d.Footer = footerConstructor(func() FooterElement {
-		e := FooterElement{newFooter(d.newID())}
-		e.Root = d.Element
+	d.Header = gconstructor[HeaderElement, headerConstructor](func() HeaderElement {
+		e:=  HeaderElement{newHeader(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Header.ownedBy(&d)
 
-	d.Section = sectionConstructor(func() SectionElement {
-		e := SectionElement{newSection(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
 
-	d.H1 = h1Constructor(func() H1Element {
-		e := H1Element{newH1(d.newID())}
-		e.Root = d.Element
+	d.Footer = gconstructor[FooterElement, footerConstructor](func() FooterElement {
+		e:=  FooterElement{newFooter(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Footer.ownedBy(&d)
 
-	d.H2 = h2Constructor(func() H2Element {
-		e := H2Element{newH2(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
 
-	d.H3 = h3Constructor(func() H3Element {
-		e := H3Element{newH3(d.newID())}
-		e.Root = d.Element
+	d.Section = gconstructor[SectionElement, sectionConstructor](func() SectionElement {
+		e:=  SectionElement{newSection(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Section.ownedBy(&d)
 
-	d.H4 = h4Constructor(func() H4Element {
-		e := H4Element{newH4(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
 
-	d.H5 = h5Constructor(func() H5Element {
-		e := H5Element{newH5(d.newID())}
-		e.Root = d.Element
+	d.H1 = gconstructor[H1Element, h1Constructor](func() H1Element {
+		e:=  H1Element{newH1(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.H1.ownedBy(&d)
 
-	d.H6 = h6Constructor(func() H6Element {
-		e := H6Element{newH6(d.newID())}
-		e.Root = d.Element
+	d.H2 = gconstructor[H2Element, h2Constructor](func() H2Element {
+		e:=  H2Element{newH2(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.H2.ownedBy(&d)
 
-	d.Span = spanConstructor(func() SpanElement {
-		e := SpanElement{newSpan(d.newID())}
-		e.Root = d.Element
+	d.H3 = gconstructor[H3Element, h3Constructor](func() H3Element {
+		e:=  H3Element{newH3(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.H3.ownedBy(&d)
+
+	d.H4 = gconstructor[H4Element, h4Constructor](func() H4Element {
+		e:=  H4Element{newH4(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.H4.ownedBy(&d)
+
+	d.H5 = gconstructor[H5Element, h5Constructor](func() H5Element {
+		e:=  H5Element{newH5(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.H5.ownedBy(&d)
+
+	d.H6 = gconstructor[H6Element, h6Constructor](func() H6Element {
+		e:=  H6Element{newH6(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.H6.ownedBy(&d)
+
+	d.Span = gconstructor[SpanElement, spanConstructor](func() SpanElement {
+		e:=  SpanElement{newSpan(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.Span.ownedBy(&d)
 	
-	d.Article = articleConstructor(func() ArticleElement {
-		e := ArticleElement{newArticle(d.newID())}
-		e.Root = d.Element
+	d.Article = gconstructor[ArticleElement, articleConstructor](func() ArticleElement {
+		e:=  ArticleElement{newArticle(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Article.ownedBy(&d)
 	
-	d.Aside = asideConstructor(func() AsideElement {
-		e := AsideElement{newAside(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
 	
-	d.Main = mainConstructor(func() MainElement {
-		e := MainElement{newMain(d.newID())}
-		e.Root = d.Element
+	d.Aside = gconstructor[AsideElement, asideConstructor](func() AsideElement {
+		e:=  AsideElement{newAside(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Aside.ownedBy(&d)
 	
-	d.Paragraph = paragraphConstructor(func() ParagraphElement {
-		e := ParagraphElement{newParagraph(d.newID())}
-		e.Root = d.Element
+	d.Main = gconstructor[MainElement, mainConstructor](func() MainElement {
+		e:=  MainElement{newMain(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Main.ownedBy(&d)
+
+	d.Paragraph = gconstructor[ParagraphElement, paragraphConstructor](func() ParagraphElement {
+		e:=  ParagraphElement{newParagraph(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.Paragraph.ownedBy(&d)
+		
+	d.Nav = gconstructor[NavElement, navConstructor](func() NavElement {
+		e:=  NavElement{newNav(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.Nav.ownedBy(&d)
 	
-	d.Nav = navConstructor(func() NavElement {
-		e := NavElement{newNav(d.newID())}
-		e.Root = d.Element
+	d.Anchor = gconstructor[AnchorElement, anchorConstructor](func() AnchorElement {
+		e:=  AnchorElement{newAnchor(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Anchor.ownedBy(&d)
 	
-	d.Anchor = anchorConstructor(func() AnchorElement {
-		e := AnchorElement{newAnchor(d.newID())}
-		e.Root = d.Element
+	d.Button = buttongconstructor[ButtonElement, buttonConstructor](func(typ ...string) ButtonElement {
+		e:=  ButtonElement{newButton(d.newID(),typ...)}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Button.ownedBy(&d)
 	
-	d.Button = buttonConstructor(func(typ ...string) ButtonElement {
-		e := ButtonElement{newButton(d.newID(), typ...)}
-		e.Root = d.Element
+	d.Label = gconstructor[LabelElement, labelConstructor](func() LabelElement {
+		e:=  LabelElement{newLabel(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Label.ownedBy(&d)
 	
-	d.Label = labelConstructor(func() LabelElement {
-		e := LabelElement{newLabel(d.newID())}
-		e.Root = d.Element
+	d.Input = inputgconstructor[InputElement, inputConstructor](func(typ string) InputElement {
+		e:=  InputElement{newInput(d.newID(),typ)}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Input.ownedBy(&d)
 	
-	d.Input = inputConstructor(func(typ string) InputElement {
-		e := InputElement{newInput(d.newID(), typ)}
-		e.Root = d.Element
+	d.Output = gconstructor[OutputElement, outputConstructor](func() OutputElement {
+		e:=  OutputElement{newOutput(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Output.ownedBy(&d)
 	
-	d.Output = outputConstructor(func() OutputElement {
-		e := OutputElement{newOutput(d.newID())}
-		e.Root = d.Element
+	d.Img = gconstructor[ImgElement, imgConstructor](func() ImgElement {
+		e:=  ImgElement{newImg(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Img.ownedBy(&d)
 	
-	d.Img = imgConstructor(func() ImgElement {
-		e := ImgElement{newImg(d.newID())}
-		e.Root = d.Element
+	d.Audio = gconstructor[AudioElement, audioConstructor](func() AudioElement {
+		e:=  AudioElement{newAudio(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Audio.ownedBy(&d)
 	
-	d.Audio = audioConstructor(func() AudioElement {
-		e := AudioElement{newAudio(d.newID())}
-		e.Root = d.Element
+	d.Video = gconstructor[VideoElement, videoConstructor](func() VideoElement {
+		e:=  VideoElement{newVideo(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Video.ownedBy(&d)
 	
-	d.Video = videoConstructor(func() VideoElement {
-		e := VideoElement{newVideo(d.newID())}
-		e.Root = d.Element
+	d.Source = gconstructor[SourceElement, sourceConstructor](func() SourceElement {
+		e:=  SourceElement{newSource(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Source.ownedBy(&d)
 	
-	d.Source = sourceConstructor(func() SourceElement {
-		e := SourceElement{newSource(d.newID())}
-		e.Root = d.Element
+	d.Ul = gconstructor[UlElement, ulConstructor](func() UlElement {
+		e:=  UlElement{newUl(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Ul.ownedBy(&d)
+		
+	d.Ol = olgconstructor[OlElement, olConstructor](func(typ string, offset int) OlElement {
+		e:=  OlElement{newOl(d.newID())}
+		o:= e.AsElement()
+		SetAttribute(o, "type", typ)
+		SetAttribute(o, "start", strconv.Itoa(offset))
+		ui.RegisterElement(d.Element,o)
+		return e
+	})
+	d.Ol.ownedBy(&d)
 	
-	d.Ul = ulConstructor(func() UlElement {
-		e := UlElement{newUl(d.newID())}
-		e.Root = d.Element
+	d.Li = gconstructor[LiElement, liConstructor](func() LiElement {
+		e:=  LiElement{newLi(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
+	d.Li.ownedBy(&d)
 	
-	d.Ol = olConstructor(func(typ string, offset int) OlElement {
-		e := OlElement{newOl(d.newID())}
-		e.Root = d.Element
+	d.Table = gconstructor[TableElement, tableConstructor](func() TableElement {
+		e:=  TableElement{newTable(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
 		return e
 	})
-	
-	d.Li = liConstructor(func() LiElement {
-		e := LiElement{newLi(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
-	
-	d.Table = tableConstructor(func() TableElement {
-		e := TableElement{newTable(d.newID())}
-		e.Root = d.Element
-		ui.RegisterElement(d.Element,e.AsElement())
-		return e
-	})
+	d.Table.ownedBy(&d)
 
 	return d
 }
@@ -2397,13 +2549,13 @@ func(i inputModifier) Width(w int) func(*ui.Element)*ui.Element{
 }
 
 func (i InputElement) Value() ui.String {
-	v, ok := i.AsElement().GetData("value")
+	v, ok := i.GetData("value")
 	if !ok {
 		return ui.String("")
 	}
 	val, ok := v.(ui.String)
 	if !ok {
-		return ui.String("")
+		panic("value is not a string type")
 	}
 	return val
 }
@@ -3107,13 +3259,11 @@ var newOl= Elements.NewConstructor("ol", func(id string) *ui.Element {
 
 
 type olConstructor func(typ string, offset int) OlElement
-func(c olConstructor) WithID(id string) func(typ string, offset int, options ...string)OlElement{
-	return func(typ string, offset int, options ...string) OlElement {
-		e:= newOl(id, options...)
-		SetAttribute(e, "type", typ)
-		SetAttribute(e, "start", strconv.Itoa(offset))
-		return OlElement{e}
-	}
+func(c olConstructor) WithID(id string,typ string, offset int, options ...string)OlElement{
+	e:= newOl(id, options...)
+	SetAttribute(e, "type", typ)
+	SetAttribute(e, "start", strconv.Itoa(offset))
+	return OlElement{e}
 }
 
 type LiElement struct {

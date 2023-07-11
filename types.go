@@ -719,6 +719,31 @@ func Equal(v Value, w Value) bool {
 		return v == w
 	case Number:
 		return v == w // NaN might need some special handling here
+	case Object:
+		vo := v.(Object).o
+		wo,ok := w.(Object)
+		if !ok{
+			return false
+		} 
+		if len(vo) != len(wo.o) {
+			return false
+		}
+		for k, rval := range vo {
+			if k == "zui_object_typ"  {
+				continue
+			}
+			val := rval.(Value)
+			rwal, ok := wo.o[k]
+			if !ok {
+				return false
+			}
+			wal := rwal.(Value)
+
+			if !Equal(val, wal) {
+				return false
+			}
+		}
+		return true
 	case List: 
 		vl := v.(List)
 		wl,ok := w.(List)
@@ -776,34 +801,8 @@ func Equal(v Value, w Value) bool {
 			}
 		}
 		return true
-	case Object:
-		vo := v.(Object).o
-		wo,ok := w.(Object)
-		if !ok{
-			return false
-		} 
-		if len(vo) != len(wo.o) {
-			return false
-		}
-		for k, rval := range vo {
-			if k == "zui_object_typ"  {
-				continue
-			}
-			val := rval.(Value)
-			rwal, ok := wo.o[k]
-			if !ok {
-				return false
-			}
-			wal := rwal.(Value)
-
-			if !Equal(val, wal) {
-				return false
-			}
-		}
-		return true
-
-	}
 	
+	}
 	panic("Equality is not specified for this Value type")
 }
 

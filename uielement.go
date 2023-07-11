@@ -629,6 +629,10 @@ func attach(parent *Element, child *Element) func() {
 			curr.Parent = parent
 		}
 		
+		/* Should be taken care of elsewhere by making sure that element constructors register
+		elemtents on thte root.
+
+
 		if curr.Root == nil{
 			curr.Root = parent.Root
 		} else if parent.Root == nil{
@@ -649,7 +653,7 @@ func attach(parent *Element, child *Element) func() {
 				return false
 			}).RunOnce().RunASAP())
 		}		
-        
+        */
 		
 		// the subtreeroot can change as opposed to the root which is nil until attached to a document root
         curr.subtreeRoot = computeSubtreeRoot(parent)
@@ -1112,7 +1116,7 @@ func (e *Element) DeleteChildren() *Element {
 var binddeleteahndler = NewMutationHandler(func(evt MutationEvent)bool{
 	Delete(evt.Origin())
 	return false
-}).RunASAP().RunOnce()
+}).RunOnce()
 
 func(e *Element) BindDeletion(source *Element) *Element{
 	e.WatchEvent("deleted",source, binddeleteahndler)
@@ -1585,6 +1589,24 @@ func(e *Element) WatchEvent(name string, target Watchable, h *MutationHandler){
 
 func(e *Element) GetEventValue(name string) (Value, bool){
 	return e.Properties.Get("event",name)
+}
+
+func(e *Element) AfterEvent(name string, target Watchable, h *MutationHandler){
+	if h.ASAP{
+		val, ok := target.AsElement().GetEventValue(name)
+		if ok {
+			h.Handle(target.AsElement().NewMutationEvent("event", name, val, nil))
+			return
+		}
+
+	}
+	e.WatchEvent(name,target,NewMutationHandler(func(evt MutationEvent)bool{
+		g:= NewMutationHandler(func(ev MutationEvent)bool{
+			return h.Handle(evt)
+		}).RunOnce()
+		e.WatchEvent(name, evt.Origin(), g)
+		return false
+	}))
 }
 
 

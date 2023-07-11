@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	//"github.com/segmentio/encoding/json"
-	//"errors"
+	"errors"
 	"log"
 	"strings"
 	"syscall/js"
@@ -119,11 +119,13 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			return 
 		}
 		store := jsStore{js.Global().Get(s)}
+		_,ok:= store.Get("zui-connected")
+		if !ok{
+			return
+		}
 
-		
+		props := make([]interface{}, 0, 64)
 
-
-		props := make([]interface{}, 0, 32)
 		c,ok:= element.Properties.Categories[category]
 		if !ok{
 			props = append(props, propname)
@@ -131,24 +133,16 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			v := js.ValueOf(props)
 			store.Set(element.ID, v) 
 		} else{
-			// We need to store and ndex listing all the propnames opf the "data" category
-			// it is only updated if the propname is not already in the list
-			_,ok:= c.Local[propname]
-			if !ok{
-				for k := range c.Local {
-					props = append(props, k)
-				}
-				props = append(props, propname)
-				// log.Print("all props stored...", props) // DEBUG
-				v := js.ValueOf(props)
-				store.Set(element.ID, v) 
+			for k:= range c.Local{
+				props = append(props, k)
 			}
+			v := js.ValueOf(props)
+			store.Set(element.ID, v)
 		}
 	
 		item := value.RawValue()
 		v := stringify(item)
 		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),js.ValueOf(v))
-		element.TriggerEvent("storesynced",ui.Bool(false))
 		return
 	}
 }
@@ -162,6 +156,10 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 	return func(e *ui.Element) error {
 		
 		store := jsStore{js.Global().Get(s)}
+		_,ok:= store.Get("zui-connected")
+		if !ok{
+			return errors.New("storage is disconnected")
+		}
 		id := e.ID
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
@@ -170,19 +168,20 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
-		properties := make([]string, 0, 32)
+		properties := make([]string, 0, 64)
 		err := json.Unmarshal([]byte(jsonprops.String()), &properties)
 		if err != nil {
 			return err
 		}
 
 		category:= "data"
-		uiloaders:= make([]func(),0,32)
+		uiloaders:= make([]func(),0,64)
 
 		for _, property := range properties {
 			// let's retrieve the propname (it is suffixed by the proptype)
 			// then we can retrieve the value
 			// log.Print("debug...", category, property) // DEBUG
+
 			propname := property
 			jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
 			if ok {					
@@ -198,8 +197,9 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 					return err
 				}
 				val:= ui.ValueFrom(rawvalue)
+
 				ui.LoadProperty(e, category, propname, val)
-				if category == "data" && e.DocType == e.ElementStore.DocType{
+				if category == "data"{
 					uiloaders = append(uiloaders, func(){
 						if e.IsRenderData(propname){
 							e.SetUI(propname, val)
@@ -230,6 +230,10 @@ var loadfromlocalstorage = loader("localStorage")
 func clearer(s string) func(element *ui.Element){ // abstractjs
 	return func(element *ui.Element){
 		store := jsStore{js.Global().Get(s)}
+		_,ok:= store.Get("zui-connected")
+		if !ok{
+			return 
+		}
 		id := element.ID
 		category:= "data"
 
@@ -256,7 +260,6 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 		}
 
 		store.Delete(id)
-		element.TriggerEvent("storesynced",ui.Bool(false))
 	}
 }
 
@@ -396,6 +399,12 @@ func ConnectNative(e *ui.Element, tag string){
 			}
 		
 			if tag == "html"{
+				// connect localStorage and sessionSTtorage
+				ls :=  jsStore{js.Global().Get("localStorage")}
+				ss :=  jsStore{js.Global().Get("sessionStorage")}
+				ls.Set("zui-connected",js.ValueOf(true))
+				ss.Set("zui-connected",js.ValueOf(true))
+
 				root:= js.Global().Get("document").Call("getElementById",id)
 				if !root.Truthy(){
 					root = js.Global().Get("document").Get("documentElement")
@@ -405,6 +414,8 @@ func ConnectNative(e *ui.Element, tag string){
 				}
 				evt.Origin().Native = NewNativeElementWrapper(root)
 				SetAttribute(e, "id", evt.Origin().ID)
+
+				
 				return false
 			}
 		
@@ -434,7 +445,7 @@ func ConnectNative(e *ui.Element, tag string){
 				evt.Origin().Native = NewNativeElementWrapper(element)
 				SetAttribute(e, "id", evt.Origin().ID)
 				return false
-			}
+		 	}
 		
 			if tag == "head"{
 				element:= js.Global().Get("document").Call("getElementById",id)
@@ -546,6 +557,12 @@ func ConnectNative(e *ui.Element, tag string){
 	}
 
 	if tag == "html"{
+		// connect localStorage and sessionSTtorage
+		ls :=  jsStore{js.Global().Get("localStorage")}
+		ss :=  jsStore{js.Global().Get("sessionStorage")}
+		ls.Set("zui-connected",js.ValueOf(true))
+		ss.Set("zui-connected",js.ValueOf(true))
+
 		root:= js.Global().Get("document").Call("getElementById",id)
 		if !root.Truthy(){
 			root = js.Global().Get("document").Get("documentElement")
@@ -557,6 +574,7 @@ func ConnectNative(e *ui.Element, tag string){
 		}
 		e.Native =  NewNativeElementWrapper(root)
 		SetAttribute(e, "id", e.ID)
+		
 		return
 	}
 
@@ -672,6 +690,35 @@ func ConnectNative(e *ui.Element, tag string){
 				parentElement.appendChild(fragment);
 			};
 			
+			(function() {
+				const originalDocumentElement = document.documentElement;
+	
+				const handler = {
+					get: function(target, propKey) {
+						const origMethod = target[propKey];
+						if (typeof origMethod === 'function') {
+							return function(...args) {
+								if (propKey === 'scrollTo') {
+									console.log('scrollTo', args);
+								}
+								return origMethod.apply(this, args);
+							};
+						} else if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+							return target[propKey];
+						}
+					},
+					set: function(target, propKey, value) {
+						if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+							console.log(propKey, value);
+						}
+						target[propKey] = value;
+						return true;
+					}
+				};
+	
+				const proxy = new Proxy(originalDocumentElement, handler);
+				document.documentElement = proxy;
+			})();
 			
 			`)
 			element.Call("append", batchscript)
@@ -830,22 +877,18 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 	if e == nil {
 		panic("loading a nil element")
 	}
-	lb,ok:=e.GetEventValue("storesynced")
-	if ok{
-		if isSynced:=lb.(ui.Bool); isSynced{
-			return e
-		}
-	}
+
 	pmode := ui.PersistenceMode(e)
+
 	storage, ok := e.ElementStore.PersistentStorer[pmode]
+	
 	if ok {
 		err := storage.Load(e)
 		if err != nil {
-			log.Print(err)
-			return e
+			panic(err)
 		}
-		e.TriggerEvent("storesynced",ui.Bool(true))
 	}
+
 	return e
 }
 
@@ -857,6 +900,7 @@ func PutInStorage(e *ui.Element) *ui.Element{
 		return e
 	}
 
+
 	for cat,props:= range e.Properties.Categories{
 		if cat != "data"{
 			continue
@@ -865,13 +909,13 @@ func PutInStorage(e *ui.Element) *ui.Element{
 			storage.Store(e,cat,prop,val)
 		}
 	}
-	e.TriggerEvent("storesynced",ui.Bool(true))
 	return e
 }
 
 // ClearFromStorage will clear an element properties from storage.
 func ClearFromStorage(e *ui.Element) *ui.Element{
 	pmode:=ui.PersistenceMode(e)
+
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if ok{
 		storage.Clear(e)
@@ -906,22 +950,32 @@ func isScrollable(property string) bool {
 }
 // abstractjs
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(el *ui.Element) *ui.Element {
+	
+	if el.IsRoot(){
+		el.AfterEvent("document-loaded", el, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			js.Global().Set("domMutationsDone", true)
+			js.Global().Call("checkAndDispatchEvent")
+			return false
+		}).RunASAP())
+	}
+	
 	el.WatchEvent("registered", el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
 		e:=event.Origin()
 		if e.IsRoot(){
 			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
-			e.WatchEvent("document-loaded",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			e.AfterEvent("document-ready",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				rootScrollRestorationSupport(evt.Origin())
+				DEBUG("scroll restoration support enabled")
 				return false
-			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
+			})) // TODO Check that we really want to do this on the main document on navigation-end.
 			
 			return false
 		}
 	
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			e.WatchEvent("document-loaded", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("document-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				router := ui.GetRouter(evt.Origin())
 	
 				ejs,ok := JSValue(e)
@@ -953,6 +1007,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 						b, ok := e.GetEventValue("shouldscroll")
 						if !ok {
+							DEBUG("shouldscroll not found")
 							return false
 						}
 						if scroll := b.(ui.Bool); scroll {
@@ -977,7 +1032,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 							}
 						}
 						return false
-					})
+					}).RunASAP()
 					e.WatchEvent("navigation-end", e.Root, h)
 				} else {
 					e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
@@ -1070,6 +1125,18 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	return false
 })
 
+var documentreadyhandler = func(root *ui.Element) *ui.Element{
+	el := root
+	
+	el.AfterEvent("document-loaded", el, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		js.Global().Call("checkAndDispatchEvent")
+		return false
+	}).RunASAP())
+
+	return root
+
+}
+
 var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstractjs
 	e:= root
 	n:= e.Native.(NativeElement).Value
@@ -1087,21 +1154,32 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		router.History.Set(e.ID+"-"+"scrollLeft", scrollleft)
 		return false
 	}))
+	
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		newpageaccess:= router.History.CurrentEntryIsNew()
+		
 		t, oktop := router.History.Get(e.ID+"-"+"scrollTop")
 		l, okleft := router.History.Get(e.ID+"-"+"scrollLeft")
 
 		if !oktop || !okleft {
+			DEBUG("scrollpositions have not been found in history !!!")
 			ejs.Set("scrollTop", 0)
 			ejs.Set("scrollLeft", 0)
 		} else{
 			top := t.(ui.Number)
 			left := l.(ui.Number)
 
+			DEBUG("scrollpositions have been found in history !!!)", top, " ", left)
+
+			DEBUG("scroll height ",ejs.Get("scrollHeight").Float())
+			DEBUG("top should be ", top)
+
 			ejs.Set("scrollTop", float64(top))
 			ejs.Set("scrollLeft", float64(left))
+
+			DEBUG("scrolled to height ",ejs.Get("scrollTop").Float())                                                                                      
+			
 		}
 		
 		// focus restoration if applicable
@@ -1112,6 +1190,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 				DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
 				return false
 			}
+			DEBUG("ui/focus ",v)
 			elid:=v.(ui.String).String()
 			el:= getDocumentRef(e).GetElementById(elid)
 
@@ -1126,14 +1205,17 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 					
 			}
 		} else{
+			DEBUG("focuselementid from history; ",v)
 			elid:=v.(ui.String).String()
 			el:= getDocumentRef(e).GetElementById(elid)
 
 			if el != nil && el.Mounted(){
+
 				Focus(el,false)
 				if newpageaccess{
+					DEBUG("newpageaccess")
 					if !partiallyVisible(el){
-						//DEBUG("focused element not in view...scrolling")
+						DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
 				}
@@ -1142,7 +1224,8 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		}
 		
 		return false
-	})
+	}).RunASAP()
+
 	e.WatchEvent("navigation-end", e, h)
 
 	return e
@@ -1159,7 +1242,7 @@ func activityStateSupport(e *ui.Element)*ui.Element{
 		visibilityState := js.Global().Get("document").Get("visibilityState").String()
 		if visibilityState == "hidden"{
 			e.TriggerEvent("before-unactive")
-		}
+		} 
 		return false
 	}))
 
@@ -1182,6 +1265,7 @@ func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 	if scrollintoview{
 		if !partiallyVisible(e.AsElement()){
 			n.Call("scrollIntoView")
+			DEBUG("scrolling into view")
 		}
 	}
 }
