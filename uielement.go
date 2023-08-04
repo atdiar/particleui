@@ -205,7 +205,6 @@ func(e *Element) Registered() bool{
 // GetByID finds any element that has been part of the UI tree at least once by its ID.
 func GetById(root *Element, id string) *Element {
 	if root.registry == nil{
-		DEBUG(root, id)
 		panic("internal err: root element should have an element registry.")
 	}
 
@@ -1591,24 +1590,33 @@ func(e *Element) GetEventValue(name string) (Value, bool){
 	return e.Properties.Get("event",name)
 }
 
-func(e *Element) AfterEvent(name string, target Watchable, h *MutationHandler){
+// AfterEvent registers a mutation handler that gets called each time an mutation event occurs and
+// has been handled.
+func (e *Element)  AfterEvent(eventname string, target Watchable, h *MutationHandler){
 	if h.ASAP{
-		val, ok := target.AsElement().GetEventValue(name)
-		if ok {
-			h.Handle(target.AsElement().NewMutationEvent("event", name, val, nil))
+		_,ok:= e.GetEventValue(eventname)
+		if ok{
+			e.WatchEvent(eventname,target,h.RunOnce())
 			return
 		}
-
+		if h.Once{
+			return
+		}
 	}
-	e.WatchEvent(name,target,NewMutationHandler(func(evt MutationEvent)bool{
+
+	m:= NewMutationHandler(func(evt MutationEvent)bool{
 		g:= NewMutationHandler(func(ev MutationEvent)bool{
 			return h.Handle(evt)
 		}).RunOnce()
-		e.WatchEvent(name, evt.Origin(), g)
+		e.WatchEvent(eventname, evt.Origin(), g)
 		return false
-	}))
-}
+	})
 
+	if h.Once{
+		m = m.RunOnce()
+	}
+	e.WatchEvent(eventname,target,m)
+}
 
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.

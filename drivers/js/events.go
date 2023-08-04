@@ -203,6 +203,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 	
 			if typ == "popstate" {
+				DEBUG("popstate fired.. history will be retrieved from browser if it exists")
 				rv.Set("value",ui.String(js.Global().Get("location").Get("pathname").String()))
 
 				/*u,err:= url.ParseRequestURI(value)

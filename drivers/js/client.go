@@ -49,7 +49,6 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 			let lastGC = Date.now();
 
 			function runGCDuringIdlePeriods(deadline) {
-				console.log("runGCDuringIdlePeriods") 
 
 				if (deadline.didTimeout || !deadline.timeRemaining()) {
 					setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
@@ -71,6 +70,21 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 	
 		`)
 		d.Head().AppendChild(scrIdleGC)
+
+		/*d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("document-loaded", evt.Origin(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+				js.Global().Call("onWasmDone")
+				return false
+			}))
+			
+			return false
+		}))*/
+
+		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			js.Global().Call("onWasmDone")
+			return false
+		}))
+
 		d.ListenAndServe(ctx)
 	}
 }
@@ -936,8 +950,6 @@ func ClearFromStorage(e *ui.Element) *ui.Element{
 */
 
 
-
-
 func isScrollable(property string) bool {
 	switch property {
 	case "auto":
@@ -949,27 +961,18 @@ func isScrollable(property string) bool {
 	}
 }
 // abstractjs
+// 
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(el *ui.Element) *ui.Element {
-	
-	if el.IsRoot(){
-		el.AfterEvent("document-loaded", el, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			js.Global().Set("domMutationsDone", true)
-			js.Global().Call("checkAndDispatchEvent")
-			return false
-		}).RunASAP())
-	}
-	
 	el.WatchEvent("registered", el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
 		e:=event.Origin()
 		if e.IsRoot(){
 			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
-			e.AfterEvent("document-ready",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			e.WatchEvent("document-ready",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				rootScrollRestorationSupport(evt.Origin())
-				DEBUG("scroll restoration support enabled")
 				return false
-			})) // TODO Check that we really want to do this on the main document on navigation-end.
+			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
 			
 			return false
 		}
@@ -1007,7 +1010,6 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 						b, ok := e.GetEventValue("shouldscroll")
 						if !ok {
-							DEBUG("shouldscroll not found")
 							return false
 						}
 						if scroll := b.(ui.Bool); scroll {
@@ -1033,7 +1035,12 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						}
 						return false
 					}).RunASAP()
-					e.WatchEvent("navigation-end", e.Root, h)
+
+					e.WatchEvent("document-ready",e.Root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+						evt.Origin().WatchEvent("navigation-end", evt.Origin().Root, h)
+						return false
+					}).RunASAP().RunOnce())
+
 				} else {
 					e.SetUI("scrollrestore", ui.Bool(false)) // DEBUG SetUI instead of SetDataSetUI as this is not business logic
 				}
@@ -1099,6 +1106,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)boo
 	return false
 })
 
+
 var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	e:= evt.Origin()
 
@@ -1125,22 +1133,11 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	return false
 })
 
-var documentreadyhandler = func(root *ui.Element) *ui.Element{
-	el := root
-	
-	el.AfterEvent("document-loaded", el, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		js.Global().Call("checkAndDispatchEvent")
-		return false
-	}).RunASAP())
-
-	return root
-
-}
 
 var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstractjs
 	e:= root
 	n:= e.Native.(NativeElement).Value
-	router := ui.GetRouter(root)
+	r := ui.GetRouter(root)
 
 	ejs := js.Global().Get("document").Get("scrollingElement")
 
@@ -1150,35 +1147,28 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 	d.Window().AsElement().AddEventListener("scroll", ui.NewEventHandler(func(evt ui.Event) bool {
 		scrolltop := ui.Number(ejs.Get("scrollTop").Float())
 		scrollleft := ui.Number(ejs.Get("scrollLeft").Float())
-		router.History.Set(e.ID+"-"+"scrollTop", scrolltop)
-		router.History.Set(e.ID+"-"+"scrollLeft", scrollleft)
+		r.History.Set(e.ID+"-"+"scrollTop", scrolltop)
+		r.History.Set(e.ID+"-"+"scrollLeft", scrollleft)
 		return false
 	}))
 	
 
 	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		router := ui.GetRouter(evt.Origin().Root)
 		newpageaccess:= router.History.CurrentEntryIsNew()
 		
 		t, oktop := router.History.Get(e.ID+"-"+"scrollTop")
 		l, okleft := router.History.Get(e.ID+"-"+"scrollLeft")
 
 		if !oktop || !okleft {
-			DEBUG("scrollpositions have not been found in history !!!")
 			ejs.Set("scrollTop", 0)
 			ejs.Set("scrollLeft", 0)
 		} else{
 			top := t.(ui.Number)
 			left := l.(ui.Number)
 
-			DEBUG("scrollpositions have been found in history !!!)", top, " ", left)
-
-			DEBUG("scroll height ",ejs.Get("scrollHeight").Float())
-			DEBUG("top should be ", top)
-
 			ejs.Set("scrollTop", float64(top))
-			ejs.Set("scrollLeft", float64(left))
-
-			DEBUG("scrolled to height ",ejs.Get("scrollTop").Float())                                                                                      
+			ejs.Set("scrollLeft", float64(left))                                                                                    
 			
 		}
 		
@@ -1187,10 +1177,8 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		if !ok{
 			v,ok= e.Get("ui","focus")
 			if !ok{
-				DEBUG("expected focus element to exist. Not sure it always does but should check. ***DEBUG***")
 				return false
 			}
-			DEBUG("ui/focus ",v)
 			elid:=v.(ui.String).String()
 			el:= getDocumentRef(e).GetElementById(elid)
 
@@ -1198,14 +1186,12 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 				Focus(el,false)
 				if newpageaccess{
 					if !partiallyVisible(el){
-						//DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
 				}
 					
 			}
 		} else{
-			DEBUG("focuselementid from history; ",v)
 			elid:=v.(ui.String).String()
 			el:= getDocumentRef(e).GetElementById(elid)
 
@@ -1213,9 +1199,7 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 
 				Focus(el,false)
 				if newpageaccess{
-					DEBUG("newpageaccess")
 					if !partiallyVisible(el){
-						DEBUG("focused element not in view...scrolling")
 						n.Call("scrollIntoView")
 					}
 				}
@@ -1226,7 +1210,10 @@ var rootScrollRestorationSupport = func(root *ui.Element)*ui.Element { // abstra
 		return false
 	}).RunASAP()
 
-	e.WatchEvent("navigation-end", e, h)
+	e.WatchEvent("document-ready",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().WatchEvent("navigation-end", evt.Origin(), h)
+		return false
+	}).RunASAP().RunOnce())
 
 	return e
 }
@@ -1265,7 +1252,6 @@ func Focus(e ui.AnyElement, scrollintoview bool){ // abstractjs
 	if scrollintoview{
 		if !partiallyVisible(e.AsElement()){
 			n.Call("scrollIntoView")
-			DEBUG("scrolling into view")
 		}
 	}
 }

@@ -311,7 +311,7 @@ var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// 
 	return false
 })
 
-
+var checkDOMready = NoopMutationHandler
 
 // SetInnerHTML sets the innerHTML property of HTML elements.
 // Please note that it is unsafe to sets client submitted HTML inputs.

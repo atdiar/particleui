@@ -175,9 +175,6 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 	d:= getDocumentRef(e)
 
 	e.WatchEvent("datastore-load",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
-		if ui.Equal(evt.OldValue(),evt.NewValue()){
-			return false
-		}
 		LoadFromStorage(evt.Origin())
 		return false
 	}))
@@ -185,13 +182,8 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 	d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		e.TriggerEvent("datastore-load")
 		return false
-	}))
-	
-	/*e.WatchEvent("registered",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		LoadFromStorage(evt.Origin())
-		return false
 	}).RunASAP().RunOnce())
-	*/
+	
 
 	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		PutInStorage(e)
@@ -209,19 +201,16 @@ var routerConfig = func(r *ui.Router){
 	ns:= func(id string) ui.Observable{
 		d:= GetDocument(r.Outlet.AsElement())
 		o:= d.NewObservable(id,EnableSessionPersistence())
-		//PutInStorage(ClearFromStorage(o.AsElement())) // Note: oldsttate is cleared.
-		//PutInStorage(o.AsElement())
-		/*d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			PutInStorage(o.AsElement())
-			return false
-		}))*/
 		return o
 	}
 
+	ors:= r.History.RecoverState
+
 	rs:= func(o ui.Observable) ui.Observable{
-		o.AsElement().TriggerEvent("datastore-load")
-		return o
+		o.UIElement.TriggerEvent("datastore-load")
+		return ors(o)
 	}
+
 
 	r.History.NewState = ns
 	r.History.RecoverState = rs
@@ -636,6 +625,11 @@ func(d Document) OnReady(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("document-ready",d,h)
 }
 
+func (d Document) isReady() bool{
+	_, ok:= d.GetEventValue("document-ready")
+	return ok
+}
+
 func(d Document) OnRouterMounted(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("router-mounted",d,h)
 }
@@ -669,10 +663,15 @@ func(d Document) ListenAndServe(ctx context.Context){
 		panic("document is missing")
 	}
 
-	d.Window().AsElement().AddEventListener("wasmAndPageReady", ui.NewEventHandler(func(evt ui.Event) bool {
-		d.TriggerEvent("document-ready")
+	d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
+		d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().TriggerEvent("document-ready")
+			return false
+		}).RunASAP())
+		
 		return false
 	}))
+
 	ui.GetRouter(d.AsElement()).ListenAndServe(ctx,"popstate", d.Window())
 }
 
@@ -788,7 +787,7 @@ func mutationreplay(d *Document) {
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	/*e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		evt.Origin().WatchEvent("navigation-end",evt.Origin().Root,ui.NewMutationHandler(func(event ui.MutationEvent)bool{
 			r:= ui.GetRouter(event.Origin())
 			if !r.History.CurrentEntryIsNew(){
@@ -799,10 +798,22 @@ func Autofocus(e *ui.Element) *ui.Element{
 		}))
 		return false
 	}).RunASAP().RunOnce())
+	*/
+	e.AfterEvent("navigation-end", e.Root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		if !e.Mounted(){
+			return false
+		}
+		r:= ui.GetRouter(evt.Origin())
+		if !r.History.CurrentEntryIsNew(){
+			return false
+		}
+		Focus(e,true)
+		return false
+	}))
 	return e
 }
 
-// withNativejshelpers returns a modifier that appends a scriptin which naive js functions to be called
+// withNativejshelpers returns a modifier that appends a script in which naive js functions to be called
 // from Go are defined
 func withNativejshelpers(d *Document) *Document{
 	s:= d.Script.WithID("nativehelpers").
@@ -915,6 +926,7 @@ func NewDocument(id string, options ...string) Document {
 	e.AppendChild(d.head.WithID("head")) 
 	e.AppendChild(d.body.WithID("body"))
 
+
 	e.OnRouterMounted(routerConfig)
 	d.WatchEvent("document-loaded",d,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
@@ -926,6 +938,8 @@ func NewDocument(id string, options ...string) Document {
 	if inBrowser(){
 		document = &d
 	}
+
+	
 
 	return d
 }

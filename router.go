@@ -306,7 +306,6 @@ func (r *Router) handler() *MutationHandler {
 			}
 			v, ok := ho.Get("cursor")
 			if !ok {
-				DEBUG("navigation route request handler history value: ",ho)
 				panic("unable to retrieve history object cursor value")
 			}
 			n := int(v.(Number))
@@ -320,15 +319,16 @@ func (r *Router) handler() *MutationHandler {
 					r.History.Back()
 				}
 			} else if r.History.Cursor < n {
+				// we are going forward
 				r.History.ImportState(h)
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
-
+				
 			} else{
 				r.History.ImportState(h)
 			}
-
+			
 			
 		}
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
@@ -438,10 +438,6 @@ func (r *Router) redirecthandler() *MutationHandler {
 		
 		r.Outlet.AsElement().Root.TriggerEvent("navigation-end", String(newroute))
 
-		
-		
-
-		//DEBUG("redirect ",*r.History)
 
 		return false
 	})
@@ -1100,11 +1096,18 @@ func NewNavigationHistory(approot *Element) *NavHistory {
 	n.State = make([]Observable, 0, 1024)
 	n.Cursor = -1
 	n.NewState = func(id string) Observable{
+		e:= GetById(approot,id)
+		if e != nil{
+			return Observable{e}
+		}
 		o:= approot.ElementStore.NewObservable(id)
 		RegisterElement(approot,o.AsElement())
 		return o
 	}
-	n.RecoverState = func(o Observable)Observable{return o}
+	n.RecoverState = func(o Observable)Observable{
+		o.Set("data","new", Bool(false))
+		return o
+	}
 	n.Length = 1024
 	return n
 }
@@ -1168,9 +1171,23 @@ func(n *NavHistory) ImportState(v Value) *NavHistory{
 			if stobj==nil{
 				stobj=n.NewState("hstate"+strconv.Itoa(i)).AsElement()
 			}
-			n.State = append(n.State, n.RecoverState(Observable{stobj}))
+			recstate:= Observable{stobj}
+			
+			_,ok:= recstate.Get("data","new")
+			if !ok{
+				recstate=n.RecoverState(recstate)
+			}
+			
+			n.State = append(n.State,recstate)
 		}
 	}
+
+		/*
+	for _,s:= range n.State{
+		s.Set("data","new",Bool(false))
+	}
+	*/
+	
 	
 	return n
 }
@@ -1200,13 +1217,8 @@ func(n *NavHistory) CurrentEntryIsNew() bool{
 
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
-	v,ok:= n.State[n.Cursor].Get("data","new")
 	n.State[n.Cursor] = n.NewState("hstate"+strconv.Itoa(n.Cursor))
-	if !ok{
-		n.State[n.Cursor].Set("data","new", Bool(true))
-	} else{
-		n.State[n.Cursor].Set("data","new",v)
-	}
+	n.State[n.Cursor].Set("data","new",Bool(false))
 	
 	// TODO what to do here? perhaps nothing, perhaps the state should be labeled new or the reverse? 
 	return n
@@ -1228,13 +1240,17 @@ func (n *NavHistory) Forward() string {
 			n.State[n.Cursor].Set("data","new", Bool(false))
 		}
 		n.Cursor++
+		n.State[n.Cursor].Set("data","new", Bool(false))
 	}
-	v,ok := n.State[n.Cursor].Get("data","new")
+	
+	/*v,ok := n.State[n.Cursor].Get("data","new")
 	if !ok{
-		n.State[n.Cursor].Set("data","new", Bool(true))
+		//n.State[n.Cursor].Set("data","new", Bool(true))
+		panic("unable to find new page marker")
 	} else{
 		n.State[n.Cursor].Set("data","new", v)
 	}
+	*/
 	return n.Stack[n.Cursor]
 }
 
