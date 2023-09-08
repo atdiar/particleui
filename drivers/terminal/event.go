@@ -24,7 +24,7 @@ func CreateKeyEvent(target *ui.Element, evt *tcell.EventKey) ui.Event {
 
 // CreateMouaseEvent returns a new MouseEvent.
 func CreateMouseEvent(target *ui.Element, evt *tcell.EventMouse) ui.Event {
-	return ui.NewEvent("mouseevent",true,true,target,GetApplication().AsElement(),evt,nil)
+	return ui.NewEvent("mouseevent",true,true,target,target,evt,nil)
 }
 
 func defaultGoEventTranslator(evt ui.Event) tcell.Event{
@@ -41,7 +41,7 @@ func defaultGoEventTranslator(evt ui.Event) tcell.Event{
 // NativeDispatch allows for the propagation of a JS event created in Go.
 func NativeDispatch(evt ui.Event){
 	nevt:= defaultGoEventTranslator(evt)
-	GetApplication().NativeElement().QueueEvent(nevt)
+	GetApplication(evt.CurrentTarget()).NativeElement().QueueEvent(nevt)
 }
 
 
@@ -49,22 +49,23 @@ func NativeDispatch(evt ui.Event){
 var NativeEventBridge = func(NativeEventName string, listener *ui.Element, capture bool) {
 	var apprecovery = func(){
 		if r := recover(); r != nil {
-			GetApplication().QueueUpdateDraw(func(){
-				t:= tview.NewModal()
-				GetApplication().NativeElement().ResizeToFullScreen(t)
+			app:= GetApplication(listener)
+			t:= tview.NewModal()
+			app.NativeElement().ResizeToFullScreen(t)
 
-				t.SetText("An error occured in the application. \n"+ fmt.Sprint(r)).
-				AddButtons([]string{"Quit"}).
-				SetDoneFunc(func(buttonIndex int, buttonLabel string){
-					GetApplication().NativeElement().Stop()
-				})
-			})	
+			t.SetText("An error occured in the application. \n"+ fmt.Sprint(r)).
+			AddButtons([]string{"Quit"}).
+			SetDoneFunc(func(buttonIndex int, buttonLabel string){
+				app.NativeElement().Stop()
+			})
+			app.Draw()	
 		}
 	}
 
 	k:=listener.Native.(NativeElement).Value
 
-	GetApplication().QueueUpdateDraw(func(){	
+	app:= GetApplication(listener)
+	app.QueueUpdateDraw(func(){	
 		// Switch on the event name since the callback signature will be different
 
 		// input event

@@ -451,9 +451,12 @@ func (r *Router) OnRoutechangeRequest(m *MutationHandler) {
 	r.Outlet.AsElement().Root.WatchEvent("navigation-routechangerequest", r.Outlet.AsElement().Root, m)
 }
 
-// ListenAndServe registers a listener for route change.
+// ListenAndServe registers a listener for route change after having verified links.
 // It should only be called after the app structure has been fully built.
 // It listens on the element that receives routechangeevent (first argument)
+// It is also the point at which the app runs, in case the document can be dynamically altered.
+// It needs to be called and if there is no external navigation event to listen to, 
+// an empty string can be passed to the events parameter.
 // 
 // For Implementers
 //

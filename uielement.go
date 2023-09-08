@@ -1702,7 +1702,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 }
 
-// mutationReplay basically replays the trrace of the program stored as a list of prop mutations of 
+// mutationReplay basically replays the trace of the program stored as a list of prop mutations of 
 // the UI tree. 
 func mutationReplay(root *Element){
 	l,ok:= root.Get("internals","mutationtrace")
