@@ -90,7 +90,7 @@ func(w ApplicationElement) GetFocus() *ui.Element{
 }
 
 func(w ApplicationElement) NativeElement() *tview.Application{
-	return w.AsElement().Native.(NativeElement).Value.(*tview.Application)
+	return w.AsElement().Native.(NativeElement).Value.(Application).v
 }
 
 // Run calls for the terminal app startup after having triggered a "running" event on the application.
@@ -140,7 +140,7 @@ var newApplication= Elements.NewConstructor("application", func(id string) *ui.E
 	}
 
 	raw.SetScreen(Screen)
-	
+
 	raw.SetAfterDrawFunc(func(screen tcell.Screen) {
 		afterdraw:= ui.NewEvent("afterdraw", false, false, e, e,screen, nil)
 		defer func() {
@@ -185,49 +185,13 @@ var newApplication= Elements.NewConstructor("application", func(id string) *ui.E
 		return b
 
 	})
-
-	e.Watch("ui","focus",e, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		target:= GetDocument(evt.Origin()).GetElementById(evt.NewValue().(ui.String).String())
-		if target == nil{
-			return false
-		}
-		evt.Origin().Native.(NativeElement).Value.(*tview.Application).SetFocus(target.Native.(NativeElement).Value.(tview.Primitive))
-		return false
-	}))
-
-	e.Watch("ui","mouseenabled",e, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		evt.Origin().Native.(NativeElement).Value.(*tview.Application).EnableMouse(evt.NewValue().(ui.Bool).Bool())
-		return false
-	}))
-
+	
 
 	return e
 })
 
 func GetApplication(e *ui.Element) ApplicationElement{
 	return GetDocument(e).Application()
-}
-
-
-type appModifier struct{}
-func(m appModifier) AsApplicationElement(e *ui.Element) ApplicationElement{
-	return ApplicationElement{e}
-}
-
-
-func(m appModifier) SetFocus(p *ui.Element) func(*ui.Element)*ui.Element{
-	return func(e *ui.Element)*ui.Element{
-		e.Set("ui","focus", ui.String(p.ID))
-		return e
-	}
-}
-
-
-func(m appModifier) EnableMouse(b bool) func(*ui.Element)*ui.Element{
-	return func(e *ui.Element)*ui.Element{
-		e.Set("ui","mouseenabled", ui.Bool(b))
-		return e
-	}
 }
 
 
@@ -258,7 +222,7 @@ func(c *gconstructor[T,U]) WithID(id string, options ...string) T{
 	}
 	ui.RegisterElement(d.AsElement(),e.AsElement())
 
-	return e
+	return withEventSupport(e)
 }
 
 func( c *gconstructor[T,U]) ownedBy(d *Document){
@@ -296,7 +260,7 @@ func(c *buttongconstructor[T,U]) WithID(id string, label string,  options ...str
 	}
 	ui.RegisterElement(d.AsElement(),e.AsElement())
 
-	return e
+	return withEventSupport(e)
 }
 
 func( c *buttongconstructor[T,U]) ownedBy(d *Document){
@@ -309,17 +273,95 @@ func( c *buttongconstructor[T,U]) owner() *Document{
 }
 
 
-// NativeElement defines a wrapper around a js.Value that implements the
+// Since all UI elements are derived from the same base type *Box,
+// we can define a generic wrapper with a method that erturns that base element.
+// It should be useful when needing to access the underlying box of an element.
+type universalWrapper[T any] struct{
+	v T
+}
+
+
+func (w universalWrapper[T]) Box() *tview.Box{
+	switch v:= any(w.v).(type){
+	case *tview.Application:
+		return nil
+	case *tview.Box:
+		return v
+	case *tview.Button:
+		return v.Box
+	case *tview.Checkbox:
+		return v.Box
+	case *tview.DropDown:
+		return v.Box
+	case *tview.Frame:
+		return v.Box
+	case *tview.Form:
+		return v.Box
+	case *tview.Flex:
+		return v.Box
+	case *tview.Grid:
+		return v.Box
+	case *tview.InputField:
+		return v.Box
+	case *tview.List:
+		return v.Box
+	case *tview.Modal:
+		return v.Box
+	case *tview.Pages:
+		return v.Box
+	case *tview.TreeView:
+		return v.Box
+	case *tview.TextView:
+		return v.Box
+	case *tview.Table:
+		return v.Box
+	case *tview.TableCell:
+		return nil
+	case *tview.Image:
+		return v.Box
+	case *tview.TextArea:
+		return v.Box
+	default:
+		panic("not a tview.Box")
+	}
+}
+
+type Application = universalWrapper[*tview.Application]
+type Box = universalWrapper[*tview.Box]
+type Button = universalWrapper[*tview.Button]
+type CheckBox = universalWrapper[*tview.Checkbox]
+type DropDown = universalWrapper[*tview.DropDown]
+type Frame = universalWrapper[*tview.Frame]
+type Form = universalWrapper[*tview.Form]
+type Flex = universalWrapper[*tview.Flex]
+type Grid = universalWrapper[*tview.Grid]
+type Image = universalWrapper[*tview.Image]
+type InputField = universalWrapper[*tview.InputField]
+type List = universalWrapper[*tview.List]
+type Modal = universalWrapper[*tview.Modal]
+type Pages = universalWrapper[*tview.Pages]
+type TreeView = universalWrapper[*tview.TreeView]
+type TextView = universalWrapper[*tview.TextView]
+type Table = universalWrapper[*tview.Table]
+type TextArea = universalWrapper[*tview.TextArea]
+
+
+type Boxable interface{
+	Box() *tview.Box
+}
+
+
+// NativeElement defines a wrapper around a native element that implements the
 // ui.NativeElementWrapper interface.
 type NativeElement struct {
-	Value any
+	Value Boxable
 }
 
-func NewNativeElementWrapper(v any) NativeElement {
-	return NativeElement{v}
+func NewNativeElementWrapper[T any](v T) NativeElement {
+	return NativeElement{universalWrapper[T]{v}}
 }
 
-// TODO implement these methods by switching on the type of the Native Element (Probably by drawing the leemnt on screen)
+
 func (n NativeElement) AppendChild(child *ui.Element) {
 	n.Value.(tview.Primitive).Draw(Screen)
 	p:= child.Parent
@@ -462,119 +504,119 @@ func withStdConstructors(d Document)Document{
 	d.Box = gconstructor[BoxElement, boxConstructor,](func() BoxElement{
 		e := BoxElement{newBox(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Box.ownedBy(&d)
 
 	d.Button = buttongconstructor[ButtonElement, buttonConstructor,](func(label string) ButtonElement{
 		e := ButtonElement{newButton(d.newID(),label)}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Button.ownedBy(&d)
 
 	d.CheckBox = gconstructor[CheckBoxElement, checkboxConstructor,](func() CheckBoxElement{
 		e := CheckBoxElement{newCheckBox(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.CheckBox.ownedBy(&d)
 
 	d.DropDown = gconstructor[DropDownElement, dropdownConstructor,](func() DropDownElement{
 		e := DropDownElement{newDropDown(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.DropDown.ownedBy(&d)
 
 	d.Frame = gconstructor[FrameElement, frameConstructor,](func() FrameElement{
 		e := FrameElement{newFrame(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Frame.ownedBy(&d)
 
 	d.Form = gconstructor[FormElement, formConstructor,](func() FormElement{
 		e := FormElement{newForm(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Form.ownedBy(&d)
 
 	d.Flex = gconstructor[FlexElement, flexConstructor,](func() FlexElement{
 		e := FlexElement{newFlex(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Flex.ownedBy(&d)
 
 	d.Grid = gconstructor[GridElement, gridConstructor,](func() GridElement{
 		e := GridElement{newGrid(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Grid.ownedBy(&d)
 
 	d.Image = gconstructor[ImageElement, imageConstructor,](func() ImageElement{
 		e := ImageElement{newImage(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Image.ownedBy(&d)
 
 	d.InputField = gconstructor[InputFieldElement, inputfieldConstructor,](func() InputFieldElement{
 		e := InputFieldElement{newInputField(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.InputField.ownedBy(&d)
 
 	d.List = gconstructor[ListElement, listConstructor,](func() ListElement{
 		e := ListElement{newList(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.List.ownedBy(&d)
 
 	d.Modal = gconstructor[ModalElement, modalConstructor,](func() ModalElement{
 		e := ModalElement{newModal(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Modal.ownedBy(&d)
 
 	d.Pages = gconstructor[PagesElement, pagesConstructor,](func() PagesElement{
 		e := PagesElement{newPages(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Pages.ownedBy(&d)
 
 	d.TreeView = gconstructor[TreeViewElement, treeviewConstructor,](func() TreeViewElement{
 		e := TreeViewElement{newTreeView(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.TreeView.ownedBy(&d)
 
 	d.TextView = gconstructor[TextViewElement, textviewConstructor,](func() TextViewElement{
 		e := TextViewElement{newTextView(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.TextView.ownedBy(&d)
 
 	d.Table = gconstructor[TableElement, tableConstructor,](func() TableElement{
 		e := TableElement{newTable(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.Table.ownedBy(&d)
 
 	d.TextArea = gconstructor[TextAreaElement, textareaConstructor,](func() TextAreaElement{
 		e := TextAreaElement{newTextArea(d.newID())}
 		ui.RegisterElement(d.Element,e.AsElement())
-		return e
+		return withEventSupport(e)
 	})
 	d.TextArea.ownedBy(&d)
 
@@ -692,7 +734,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
 
-	root:= tview.NewBox()
+	root:= tview.NewFlex().SetDirection(tview.FlexRowCSS).SetFullScreen(true)
 	e.Native = NewNativeElementWrapper(root)
 
 	w:= GetApplication(e)
@@ -702,7 +744,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 		panic(err)
 	}
 	
-	return e
+	return withEventSupport(e)
 })
 
 // NewDocument returns the root of a new terminal app. It is the top-most element
@@ -725,196 +767,88 @@ type BoxElement struct{
 }
 
 func(e BoxElement) NativeElement() *tview.Box{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Box)
+	return e.AsElement().Native.(NativeElement).Value.Box()
 }
 
-func(e BoxElement) Blur(){
-	GetApplication(document.AsElement()).QueueUpdateDraw(func() {
-		e.NativeElement().Blur()
-	})
+func(e BoxElement) UnderlyingBox() BoxElement{
+	return e
 }
-
-func(e BoxElement) Focus(delegate func(p tview.Primitive)){
-	GetApplication(document.AsElement()).QueueUpdateDraw(func() {
-		e.NativeElement().Focus(delegate)
-	})
-}
-
-func(e BoxElement) GetBakcgroundColor() tcell.Color{
-	var c tcell.Color
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		c= e.NativeElement().GetBackgroundColor()
-	})
-	return c
-}
-
-func(e BoxElement) GetBorderAttributes() tcell.AttrMask{
-	var c tcell.AttrMask
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		c= e.NativeElement().GetBorderAttributes()
-	})
-	return c
-}
-
-func(e BoxElement) GetBorderColor() tcell.Color{
-	var c tcell.Color
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		c= e.NativeElement().GetBorderColor()
-	})
-	return c
-}
-
-func(e BoxElement) GetDrawFunc() (f func(screen tcell.Screen,x,y,width,height int)(int,int,int,int)){
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		f= e.NativeElement().GetDrawFunc()
-	})
-	return f
-}
-
-func (e BoxElement) GetInnerRect() (x0, y0, x1, y1 int) {
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		x0, y0, x1, y1 = e.NativeElement().GetInnerRect()
-	})
-	return x0, y0, x1, y1
-}
-
-
-
-// GetInputCapture returns the function that is called when the user presses a key.
-func(e BoxElement) GetInputCapture() func(event *tcell.EventKey) *tcell.EventKey{
-	var f func(event *tcell.EventKey) *tcell.EventKey
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		f= e.NativeElement().GetInputCapture()
-	})
-	return f
-}
-
-// GetMouseCapture returns the function that is called when the user presses a mouse button.
-func(e BoxElement) GetMouseCapture() func(actiion tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse){
-	var f func(actiion tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse)
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		f= e.NativeElement().GetMouseCapture()
-	})
-	return f
-}
-
-func (e BoxElement) GetRect() (x0, y0, x1, y1 int) {
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		x0, y0, x1, y1 = e.NativeElement().GetRect()
-	})
-	return x0, y0, x1, y1
-}
-
-func (e BoxElement) GetTitle() string {
-	var t string
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		t = e.NativeElement().GetTitle()
-	})
-	return t
-}
-
-func (e BoxElement) HasFocus() bool {
-	var t bool
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		t = e.NativeElement().HasFocus()
-	})
-	return t
-}
-
-func (e BoxElement) InRect(x,y int) bool {
-	var t bool
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		t = e.NativeElement().InRect(x,y)
-	})
-	return t
-}
-
-func(e BoxElement) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-	var f func(event *tcell.EventKey, setFocus func(p tview.Primitive))
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		f= e.NativeElement().InputHandler()
-	})
-	return f
-}
-
-func(e BoxElement) MouseHandler() (f func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consume bool, capture tview.Primitive)){
-	GetApplication(document.AsElement()).QueueUpdate(func() {
-		f= e.NativeElement().MouseHandler()
-	})
-	return f
-}
-
-
 
 type boxModifier struct{}
 var BoxModifier boxModifier
 
-func (b boxModifier) AsBoxElement(e *ui.Element) BoxElement{
-	return BoxElement{e}
-}
-
-func(m boxModifier) SetBackgroundColor(color tcell.Color) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdateDraw(func() {
-			m.AsBoxElement(e).NativeElement().SetBackgroundColor(color)
-		})
+func(m boxModifier) BackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBackgroundColor(color)
 		return e
 	}
 }
 
-func(m boxModifier) SetBorder(border bool) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetBorder(border)
-		})
+func(m boxModifier) ShowBorder(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBorder(b)
 		return e
 	}
 }
 
-func(m boxModifier) SetBorderColor(color tcell.Color) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetBorderColor(color)
-		})
+func(m boxModifier) BorderColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBorderColor(color)
 		return e
 	}
 }
 
-func(m boxModifier) SetBorderAttributes(attributes tcell.AttrMask) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetBorderAttributes(attributes)
-		})
+func(m boxModifier) BorderPadding(left, top, right, bottom int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBorderPadding(left,top,right,bottom)
 		return e
 	}
 }
 
-func(m boxModifier) SetTitle(title string) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetTitle(title)
-		})
+func(m boxModifier) BorderAttributes(attr tcell.AttrMask) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBorderAttributes(attr)
 		return e
 	}
 }
 
-func(m boxModifier) SetTitleAlign(align int) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetTitleAlign(align)
-		})
+func(m boxModifier) BorderStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetBorderStyle(style)
 		return e
 	}
 }
 
-func(m boxModifier) SetTitleColor(color tcell.Color) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		GetApplication(document.AsElement()).QueueUpdate(func() {
-			m.AsBoxElement(e).NativeElement().SetTitleColor(color)
-		})
+func(m boxModifier) SetTitle(title string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetTitle(title)
 		return e
 	}
 }
+
+func(m boxModifier) SetTitleAlign(align int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetTitleAlign(align)
+		return e
+	}
+}
+
+func(m boxModifier) SetTitleColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetTitleColor(color)
+		return e
+	}
+}
+
+func(m boxModifier) SetRect(x, y, width, height int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.Box().SetRect(x,y,width,height)
+		return e
+	}
+}
+
+
+
 
 
 var newBox = Elements.NewConstructor("box",func(id string)*ui.Element{
@@ -940,7 +874,7 @@ type ButtonElement struct{
 }
 
 func(e ButtonElement) NativeElement() *tview.Button{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Button)
+	return e.AsElement().Native.(NativeElement).Value.(Button).v
 }
 
 func(e ButtonElement) UnderlyingBox() BoxElement{
@@ -978,7 +912,7 @@ type FrameElement struct{
 }
 
 func(e FrameElement) NativeElement() *tview.Frame{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Frame)
+	return e.AsElement().Native.(NativeElement).Value.(Frame).v
 }
 
 func(e FrameElement) UnderlyingBox() BoxElement{
@@ -1013,7 +947,7 @@ type GridElement struct{
 }
 
 func(e GridElement) NativeElement() *tview.Grid{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Grid)
+	return e.AsElement().Native.(NativeElement).Value.(Grid).v
 }
 
 func(e GridElement) UnderlyingBox() BoxElement{
@@ -1053,7 +987,7 @@ type FlexElement struct{
 }
 
 func(e FlexElement) NativeElement() *tview.Flex{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Flex)
+	return e.AsElement().Native.(NativeElement).Value.(Flex).v
 }
 
 func(e FlexElement) UnderlyingBox() BoxElement{
@@ -1090,7 +1024,7 @@ type PagesElement struct{
 }
 
 func(e PagesElement) NativeElement() *tview.Pages{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Pages)
+	return e.AsElement().Native.(NativeElement).Value.(Pages).v
 }
 
 func(e PagesElement) UnderlyingBox() BoxElement{
@@ -1123,49 +1057,18 @@ func(m pagesModifier) AddPage(name string, elements ...*ui.Element) func(*ui.Ele
 			p:= PagesElement{evt.Origin()}.NativeElement()
 			pname:= string(evt.NewValue().(ui.String))
 			
-			GetApplication(e).QueueUpdateDraw(func(){
-				if p.HasPage(pname){
-					p.SwitchToPage(pname)
+			if p.HasPage(pname){
+				p.SwitchToPage(pname)
+			} else{
+				if !p.HasPage("pagenotfound -- SYSERR"){
+					p.AddAndSwitchToPage("pagenotfound -- SYSERR",tview.NewBox().SetBorder(true).SetTitle("Page Not Found -- SYSERR"),true)
 				} else{
-					if !p.HasPage("pagenotfound -- SYSERR"){
-						p.AddAndSwitchToPage("pagenotfound -- SYSERR",tview.NewBox().SetBorder(true).SetTitle("Page Not Found -- SYSERR"),true)
-					} else{
-						p.SwitchToPage("pagenotfound -- SYSERR")
-					}
+					p.SwitchToPage("pagenotfound -- SYSERR")
 				}
-			})
+			}
 			
 			return false
 		}))
-		return e
-	}
-}
-
-func(m pagesModifier) HidePage(name string) func(*ui.Element)*ui.Element{
-	return func(e *ui.Element)*ui.Element{
-		GetApplication(e).QueueUpdateDraw(func(){
-			m.AsPagesElement(e).NativeElement().HidePage(name)
-		})
-		return e
-	}
-}
-
-func(m pagesModifier) ShowPage(name string) func(*ui.Element)*ui.Element{
-	return func(e *ui.Element)*ui.Element{
-		GetApplication(e).QueueUpdateDraw(func(){
-			m.AsPagesElement(e).NativeElement().ShowPage(name)
-		})
-		return e
-	}
-}
-
-// SetRect is used to set the position and dimensions of an element.
-// It has not effect if part of a layout (flex or grid)
-func(m pagesModifier) SetRect(x,y,width,height int) func(*ui.Element)*ui.Element{
-	return func(e *ui.Element)*ui.Element{
-		GetApplication(e).QueueUpdateDraw(func(){
-			tview.Primitive(m.AsPagesElement(e).NativeElement()).SetRect(x,y,width,height)
-		})
 		return e
 	}
 }
@@ -1195,7 +1098,7 @@ type ModalElement struct{
 }
 
 func(e ModalElement) NativeElement() *tview.Modal{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Modal)
+	return e.AsElement().Native.(NativeElement).Value.(Modal).v
 }
 
 func(e ModalElement) UnderlyingBox() BoxElement{
@@ -1236,7 +1139,7 @@ type FormElement struct{
 }
 
 func(e FormElement) NativeElement() *tview.Form{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Form)
+	return e.AsElement().Native.(NativeElement).Value.(Form).v
 }
 
 func(e FormElement) UnderlyingBox() BoxElement{
@@ -1275,7 +1178,7 @@ type ImageElement struct{
 }
 
 func(e ImageElement) NativeElement() *tview.Image{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Image)
+	return e.AsElement().Native.(NativeElement).Value.(Image).v
 }
 
 func(e ImageElement) UnderlyingBox() BoxElement{
@@ -1324,7 +1227,7 @@ type CheckBoxElement struct{
 }
 
 func(e CheckBoxElement) NativeElement() *tview.Checkbox{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Checkbox)
+	return e.AsElement().Native.(NativeElement).Value.(CheckBox).v
 }
 
 func(e CheckBoxElement) UnderlyingBox() BoxElement{
@@ -1364,7 +1267,7 @@ type DropDownElement struct{
 }
 
 func(e DropDownElement) NativeElement() *tview.DropDown{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.DropDown)
+	return e.AsElement().Native.(NativeElement).Value.(DropDown).v
 }
 
 func(e DropDownElement) UnderlyingBox() BoxElement{
@@ -1404,7 +1307,7 @@ type InputFieldElement struct{
 }
 
 func(e InputFieldElement) NativeElement() *tview.InputField{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.InputField)
+	return e.AsElement().Native.(NativeElement).Value.(InputField).v
 }
 
 func(e InputFieldElement) UnderlyingBox() BoxElement{
@@ -1444,7 +1347,7 @@ type ListElement struct{
 }
 
 func(e ListElement) NativeElement() *tview.List{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.List)
+	return e.AsElement().Native.(NativeElement).Value.(List).v
 }
 
 func(e ListElement) UnderlyingBox() BoxElement{
@@ -1484,7 +1387,7 @@ type TreeViewElement struct{
 }
 
 func(e TreeViewElement) NativeElement() *tview.TreeView{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.TreeView)
+	return e.AsElement().Native.(NativeElement).Value.(TreeView).v
 }
 
 func(e TreeViewElement) UnderlyingBox() BoxElement{
@@ -1524,7 +1427,7 @@ type TableElement struct{
 }
 
 func(e TableElement) NativeElement() *tview.Table{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.Table)
+	return e.AsElement().Native.(NativeElement).Value.(Table).v
 }
 
 func(e TableElement) UnderlyingBox() BoxElement{
@@ -1564,7 +1467,7 @@ type TextAreaElement struct{
 }
 
 func(e TextAreaElement) NativeElement() *tview.TextArea{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.TextArea)
+	return e.AsElement().Native.(NativeElement).Value.(TextArea).v
 }
 
 func(e TextAreaElement) UnderlyingBox() BoxElement{
@@ -1604,7 +1507,7 @@ type TextViewElement struct{
 }
 
 func(e TextViewElement) NativeElement() *tview.TextView{
-	return e.AsElement().Native.(NativeElement).Value.(*tview.TextView)
+	return e.AsElement().Native.(NativeElement).Value.(TextView).v
 }
 
 func(e TextViewElement) UnderlyingBox() BoxElement{

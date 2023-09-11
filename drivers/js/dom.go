@@ -672,7 +672,7 @@ func(d Document) ListenAndServe(ctx context.Context){
 		return false
 	}))
 
-	ui.GetRouter(d.AsElement()).ListenAndServe(ctx,"popstate", d.Window())
+	d.Router().ListenAndServe(ctx,"popstate", d.Window())
 }
 
 
