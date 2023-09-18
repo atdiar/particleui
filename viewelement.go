@@ -134,6 +134,23 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	return v
 }
 
+// ActiveViewName retrieves the name of the current active view if it exists.
+func (v ViewElement) ActiveViewName() (string, bool) {
+	a,ok:= v.AsElement().GetUI("activeview")
+	if ok{
+		return a.(String).String(),ok
+	}
+	return "",ok
+}
+
+func(v ViewElement) ViewExists(name string) bool{
+	_,ok:= v.AsElement().InactiveViews[name]
+	if ok{
+		return true
+	}
+	return v.AsElement().ActiveView == name
+}
+
 var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	e:=evt.Origin()
 	var ok bool
@@ -325,14 +342,14 @@ func (e *Element) activateView(name string) {
 	}
 
 	if name == ""{
-		panic("frmwork error: view name can't be the empty string. This is reserved for default view and never 'activated'.")
+		panic("framework error: view name can't be the empty string. This is reserved for default view and never 'activated'.")
 	}
 	if e.ActiveView == name {
 		e.EndTransition("activateview", String(name)) // already active
 		return
 	}
 
-	// TODO should actiation cancellation be considered an error state?
+	// TODO should activation cancellation be considered an error state?
 
 	newview, ok := e.InactiveViews[name]
 	if !ok {
