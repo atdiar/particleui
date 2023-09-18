@@ -4,6 +4,7 @@ package term
 
 import(
 	"context"
+	"image"
 	"fmt"
 	"log"
 	"time"
@@ -462,6 +463,41 @@ func (n NativeElement) PrependChild(child *ui.Element) {
 		}
 		return 
 	}
+
+	if f,ok:= n.Value.(Form); ok{
+		f.v.Clear(true)
+		for _, c:= range child.Parent.Children.List{
+			if b, ok:=c.Native.(NativeElement).Value.(Button);ok{
+				l:=b.v.GetLabel()
+				f.v.AddButton(l,nil)
+			}
+
+			if c, ok:=c.Native.(NativeElement).Value.(CheckBox);ok{
+				f.v.AddFormItem(c.v)
+			}
+
+			if d, ok:=c.Native.(NativeElement).Value.(DropDown);ok{
+				f.v.AddFormItem(d.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(Image);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(InputField);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextArea);ok{
+				f.v.AddFormItem(l.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextView);ok{
+				f.v.AddFormItem(l.v)
+			}
+		}
+		return 
+	}
 }
 
 func (n NativeElement) InsertChild(child *ui.Element, index int) {
@@ -500,6 +536,41 @@ func (n NativeElement) InsertChild(child *ui.Element, index int) {
 		}
 		return 
 	}
+
+	if f,ok:= n.Value.(Form); ok{
+		f.v.Clear(true)
+		for _, c:= range child.Parent.Children.List{
+			if b, ok:=c.Native.(NativeElement).Value.(Button);ok{
+				l:=b.v.GetLabel()
+				f.v.AddButton(l,nil)
+			}
+
+			if c, ok:=c.Native.(NativeElement).Value.(CheckBox);ok{
+				f.v.AddFormItem(c.v)
+			}
+
+			if d, ok:=c.Native.(NativeElement).Value.(DropDown);ok{
+				f.v.AddFormItem(d.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(Image);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(InputField);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextArea);ok{
+				f.v.AddFormItem(l.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextView);ok{
+				f.v.AddFormItem(l.v)
+			}
+		}
+		return 
+	}
 }
 
 func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
@@ -535,6 +606,41 @@ func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
 				minGridWidth:= int(props.RawValue().MustGetNumber("minGridWidth"))
 				focus := bool(props.RawValue().MustGetBool("focus"))
 				f.v.AddItem(c.Native.(NativeElement).Value.(tview.Primitive),row,column,rowSpan, columnSpan, minGridHeight, minGridWidth,focus)
+		}
+		return 
+	}
+
+	if f,ok:= n.Value.(Form); ok{
+		f.v.Clear(true)
+		for _, c:= range new.Parent.Children.List{
+			if b, ok:=c.Native.(NativeElement).Value.(Button);ok{
+				l:=b.v.GetLabel()
+				f.v.AddButton(l,nil)
+			}
+
+			if c, ok:=c.Native.(NativeElement).Value.(CheckBox);ok{
+				f.v.AddFormItem(c.v)
+			}
+
+			if d, ok:=c.Native.(NativeElement).Value.(DropDown);ok{
+				f.v.AddFormItem(d.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(Image);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(InputField);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextArea);ok{
+				f.v.AddFormItem(l.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextView);ok{
+				f.v.AddFormItem(l.v)
+			}
 		}
 		return 
 	}
@@ -583,6 +689,41 @@ func (n NativeElement) SetChildren(children ...*ui.Element) {
 				minGridWidth:= int(props.RawValue().MustGetNumber("minGridWidth"))
 				focus := bool(props.RawValue().MustGetBool("focus"))
 				f.v.AddItem(c.Native.(NativeElement).Value.(tview.Primitive),row,column,rowSpan, columnSpan, minGridHeight, minGridWidth,focus)
+		}
+		return 
+	}
+
+	if f,ok:= n.Value.(Form); ok{
+		f.v.Clear(true)
+		for _, c:= range children{
+			if b, ok:=c.Native.(NativeElement).Value.(Button);ok{
+				l:=b.v.GetLabel()
+				f.v.AddButton(l,nil)
+			}
+
+			if c, ok:=c.Native.(NativeElement).Value.(CheckBox);ok{
+				f.v.AddFormItem(c.v)
+			}
+
+			if d, ok:=c.Native.(NativeElement).Value.(DropDown);ok{
+				f.v.AddFormItem(d.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(Image);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if i, ok:=c.Native.(NativeElement).Value.(InputField);ok{
+				f.v.AddFormItem(i.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextArea);ok{
+				f.v.AddFormItem(l.v)
+			}
+
+			if l, ok:=c.Native.(NativeElement).Value.(TextView);ok{
+				f.v.AddFormItem(l.v)
+			}
 		}
 		return 
 	}
@@ -1199,22 +1340,17 @@ func(e CheckBoxElement) UnderlyingBox() BoxElement{
 }
 
 
-var newCheckbox = Elements.NewConstructor("checkbox",func(id string)*ui.Element{
+var newCheckBox = Elements.NewConstructor("checkbox",func(id string)*ui.Element{
 	
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewCheckbox())
-
-	// TODO think about calling Draw OnMounted
-
 	return e
 })
 
 
 type checkboxConstructor func() CheckBoxElement
 func(c checkboxConstructor) WithID(id string, options ...string)CheckBoxElement{
-	e:= CheckBoxElement{newCheckbox(id, options...)}
-	
-	
+	e:= CheckBoxElement{newCheckBox(id, options...)}
 	return e
 }
 
@@ -1727,55 +1863,6 @@ func(m formModifier) LabelColor(color tcell.Color) func(*ui.Element)*ui.Element{
 }
 
 
-
-// ImageElement
-type ImageElement struct{
-	*ui.Element
-}
-
-
-// InputFieldElement
-type InputFieldElement struct{
-	*ui.Element
-}
-
-func(e InputFieldElement) NativeElement() *tview.InputField{
-	return e.AsElement().Native.(NativeElement).Value.(InputField).v
-}
-
-func(e InputFieldElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newInputField = Elements.NewConstructor("inputfield",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewInputField())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type inputfieldConstructor func() InputFieldElement
-func(c inputfieldConstructor) WithID(id string, options ...string)InputFieldElement{
-	e:= InputFieldElement{newInputField(id, options...)}
-	
-	
-	return e
-}
-
-
-
 // FrameElement allows to render space around an element if provided, otherwise, just some space.
 type FrameElement struct{
 	*ui.Element
@@ -1810,6 +1897,51 @@ type frameConstructor func() FrameElement
 func(c frameConstructor) WithID(id string, options ...string)FrameElement{
 	return FrameElement{newFrame(id, options...)}
 }
+
+type frameModifier struct{}
+var FrameModifier frameModifier
+
+func(m frameModifier) AddText(text string, header bool, align int, color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Frame).v.AddText(text,header,align,color)
+		return e
+	}
+}
+
+func(m frameModifier) SetBorders(top, bottom, header, footer, left, right int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Frame).v.SetBorders(top,bottom,header,footer,left,right)
+		return e
+	}
+}
+
+func(m frameModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m frameModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
+
 
 // GridElement
 type GridElement struct{
@@ -1846,9 +1978,737 @@ var newGrid = Elements.NewConstructor("grid",func(id string)*ui.Element{
 type gridConstructor func() GridElement
 func(c gridConstructor) WithID(id string, options ...string)GridElement{
 	e:= GridElement{newGrid(id, options...)}
-	
-	
 	return e
+}
+
+type gridModifier struct{}
+var GridModifier gridModifier
+
+func(m gridModifier) Columns(columns ...int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetColumns(columns...)
+		return e
+	}
+}
+
+func(m gridModifier) Rows(rows ...int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetRows(rows...)
+		return e
+	}
+}
+
+func(m gridModifier) Borders(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetBorders(b)
+		return e
+	}
+}
+
+func(m gridModifier) BordersColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetBordersColor(color)
+		return e
+	}
+}
+
+func(m gridModifier) Gap(row, column int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetGap(row,column)
+		return e
+	}
+}
+
+func(m gridModifier) MinSize(row, column int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetMinSize(row,column)
+		return e
+	}
+}
+
+func(m gridModifier) Offset(row, column int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetOffset(row,column)
+		return e
+	}
+}
+
+func(m gridModifier) Size(numRows, numColumn, rowSize, columnSize int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Grid).v.SetSize(numRows,numColumn,rowSize,columnSize)
+		return e
+	}
+}
+
+func(m gridModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m gridModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
+// ImageElement
+type ImageElement struct{
+	*ui.Element
+}
+
+
+func(e ImageElement) NativeElement() *tview.Image{
+	return e.AsElement().Native.(NativeElement).Value.(Image).v
+}
+
+func(e ImageElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+var newImage = Elements.NewConstructor("image",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewImage())
+
+	// TODO think about calling Draw OnMounted
+
+	return e
+})
+
+
+type imageConstructor func() ImageElement
+func(c imageConstructor) WithID(id string, options ...string)ImageElement{
+	e:= ImageElement{newImage(id, options...)}
+	return e
+}
+
+type imageModifier struct{}
+var ImageModifier imageModifier
+
+func(m imageModifier) Align(vertical, horizontal int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetAlign(vertical,horizontal)
+		return e
+	}
+}
+
+func(m imageModifier) AspectRatio(aspectRatio float64) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetAspectRatio(aspectRatio)
+		return e
+	}
+}
+
+func(m imageModifier) Colors(colors int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetColors(colors)
+		return e
+	}
+}
+
+func(m imageModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetDisabled(b)
+		return e
+	}
+}
+
+func(m imageModifier) Dithering(d int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetDithering(d)
+		return e
+	}
+}
+
+func(m imageModifier) FormAttributes(labelWidth int, labelColor, bgColoro, fieldTextColor, fieldbgColor tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetFormAttributes(labelWidth,labelColor,bgColoro,fieldTextColor,fieldbgColor)
+		return e
+	}
+}
+
+func(m imageModifier) SetImage(image image.Image) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetImage(image)
+		return e
+	}
+}
+
+func(m imageModifier) Label(label string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetLabel(label)
+		return e
+	}
+}
+
+func(m imageModifier) LabelStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetLabelStyle(style)
+		return e
+	}
+}
+
+func(m imageModifier) LabelWidth(width int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetLabelWidth(width)
+		return e
+	}
+}
+
+func(m imageModifier) Size(rows, colums int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Image).v.SetSize(rows,colums)
+		return e
+	}
+}
+
+func(m imageModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m imageModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
+
+// InputFieldElement
+type InputFieldElement struct{
+	*ui.Element
+}
+
+func(e InputFieldElement) NativeElement() *tview.InputField{
+	return e.AsElement().Native.(NativeElement).Value.(InputField).v
+}
+
+func(e InputFieldElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+
+var newInputField = Elements.NewConstructor("inputfield",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewInputField())
+	return e
+})
+
+
+type inputfieldConstructor func() InputFieldElement
+func(c inputfieldConstructor) WithID(id string, options ...string)InputFieldElement{
+	e:= InputFieldElement{newInputField(id, options...)}
+	return e
+}
+
+type inputfieldModifier struct{}
+var InputFieldModifier inputfieldModifier
+
+
+
+func(m inputfieldModifier) FieldBackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetFieldBackgroundColor(color)
+		return e
+	}
+}
+
+func(m inputfieldModifier) FieldStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetFieldStyle(style)
+		return e
+	}
+}
+
+func(m inputfieldModifier) FieldTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetFieldTextColor(color)
+		return e
+	}
+}
+
+func(m inputfieldModifier) FieldWidth(width int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetFieldWidth(width)
+		return e
+	}
+}
+
+func(m inputfieldModifier) FormAttributes(labelWidth int, labelColor, bgColoro, fieldTextColor, fieldbgColor tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetFormAttributes(labelWidth,labelColor,bgColoro,fieldTextColor,fieldbgColor)
+		return e
+	}
+}
+
+func(m inputfieldModifier) Label(label string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetLabel(label)
+		return e
+	}
+}
+
+func(m inputfieldModifier) LabelColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetLabelColor(color)
+		return e
+	}
+}
+
+func(m inputfieldModifier) LabelStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetLabelStyle(style)
+		return e
+	}
+}
+
+func(m inputfieldModifier) LabelWidth(width int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetLabelWidth(width)
+		return e
+	}
+}
+
+func(m inputfieldModifier) MaskCharacter(char rune) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetMaskCharacter(char)
+		return e
+	}
+}
+
+func(m inputfieldModifier) Placeholder(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetPlaceholder(text)
+		return e
+	}
+}
+
+func(m inputfieldModifier) PlaceholderStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetPlaceholderStyle(style)
+		return e
+	}
+}
+
+func(m inputfieldModifier) PlaceholderTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetPlaceholderTextColor(color)
+		return e
+	}
+}
+
+func(m inputfieldModifier) Text(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(InputField).v.SetText(text)
+		return e
+	}
+}
+
+func(m inputfieldModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m inputfieldModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
+
+// ListElement
+type ListElement struct{
+	*ui.Element
+}
+
+func(e ListElement) NativeElement() *tview.List{
+	return e.AsElement().Native.(NativeElement).Value.(List).v
+}
+
+func(e ListElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+
+var newList = Elements.NewConstructor("list",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewList())
+	return e
+})
+
+
+type listConstructor func() ListElement
+func(c listConstructor) WithID(id string, options ...string)ListElement{
+	e:= ListElement{newList(id, options...)}
+	return e
+}
+
+type listModifier struct{}
+var ListModifier listModifier
+
+// Given the API for tview.List , we 'd like to generate the modifiers
+// for the corresponding InputFieldElement i.e. inputfieldModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such SetChangedFunc.
+// Namely: AddItem, CurrentItem, HighlightFullLine, ItemText, MainTextColor, MainTextStyle, Offset, SecondaryTextColor, SecondaryTextStyle, SelectedBackgroundColor, SelectedFocusOnly, SelectedStyle, SelectedTextColor, ShortcutColor, ShortcutStyle, WrapAround, and finally ShowSecondaryText.
+
+func(m listModifier) AddItem(text, secondaryText string, shortcut rune, selected func()) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.AddItem(text,secondaryText,shortcut,selected)
+		return e
+	}
+}
+
+func(m listModifier) CurrentItem(index int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetCurrentItem(index)
+		return e
+	}
+}
+
+func(m listModifier) HighlightFullLine(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetHighlightFullLine(b)
+		return e
+	}
+}
+
+func(m listModifier) ItemText(index int, main, secondary string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetItemText(index,main, secondary)
+		return e
+	}
+}
+
+func(m listModifier) MainTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetMainTextColor(color)
+		return e
+	}
+}
+
+func(m listModifier) MainTextStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetMainTextStyle(style)
+		return e
+	}
+}
+
+func(m listModifier) Offset(items, horizontal int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetOffset(items, horizontal)
+		return e
+	}
+}
+
+func(m listModifier) SecondaryTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSecondaryTextColor(color)
+		return e
+	}
+}
+
+func(m listModifier) SecondaryTextStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSecondaryTextStyle(style)
+		return e
+	}
+}
+
+func(m listModifier) SelectedBackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSelectedBackgroundColor(color)
+		return e
+	}
+}
+
+func(m listModifier) SelectedFocusOnly(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSelectedFocusOnly(b)
+		return e
+	}
+}
+
+func(m listModifier) SelectedStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSelectedStyle(style)
+		return e
+	}
+}
+
+func(m listModifier) SelectedTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetSelectedTextColor(color)
+		return e
+	}
+}
+
+func(m listModifier) ShortcutColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetShortcutColor(color)
+		return e
+	}
+}
+
+func(m listModifier) ShortcutStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetShortcutStyle(style)
+		return e
+	}
+}
+
+func(m listModifier) WrapAround(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.SetWrapAround(b)
+		return e
+	}
+}
+
+func(m listModifier) ShowSecondaryText(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(List).v.ShowSecondaryText(b)
+		return e
+	}
+}
+
+func(m listModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m listModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
+
+// ModalElement
+type ModalElement struct{
+	*ui.Element
+}
+
+func(e ModalElement) NativeElement() *tview.Modal{
+	return e.AsElement().Native.(NativeElement).Value.(Modal).v
+}
+
+func(e ModalElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+
+var newModal = Elements.NewConstructor("modal",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewModal())
+	return e
+})
+
+
+
+type modalConstructor func() ModalElement
+func(c modalConstructor) WithID(id string, options ...string)ModalElement{
+	e:= ModalElement{newModal(id, options...)}
+	return e
+}
+
+type modalModifier struct{}
+var ModalModifier modalModifier
+
+// Given the API for tview.List , we 'd like to generate the modifiers
+// for the corresponding ModalElement i.e. modalModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such SetDoneFunc.
+// Namely: AddButtons, ClearButtons, SetBackgroundColor, SetButtonActivatedStyle, SetButtonBackgroundColor, SetButtonStyle, SetButtonTextColor, SetFocus, SetText and finally SetTextColor.
+
+func(m modalModifier) Buttons(buttons ...string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.AddButtons(buttons)
+		return e
+	}
+}
+
+func(m modalModifier) ClearButtons() func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.ClearButtons()
+		return e
+	}
+}
+
+func(m modalModifier) BackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetBackgroundColor(color)
+		return e
+	}
+}
+
+func(m modalModifier) ButtonActivatedStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetButtonActivatedStyle(style)
+		return e
+	}
+}
+
+func(m modalModifier) ButtonBackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetButtonBackgroundColor(color)
+		return e
+	}
+}
+
+func(m modalModifier) ButtonStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetButtonStyle(style)
+		return e
+	}
+}
+
+func(m modalModifier) ButtonTextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetButtonTextColor(color)
+		return e
+	}
+}
+
+func(m modalModifier) Focus(index int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetFocus(index)
+		return e
+	}
+}
+
+func(m modalModifier) Text(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetText(text)
+		return e
+	}
+}
+
+func(m modalModifier) TextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Modal).v.SetTextColor(color)
+		return e
+	}
+}
+
+func(m modalModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m modalModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
 }
 
 
@@ -1926,134 +2786,9 @@ func(c pagesConstructor) WithID(id string, options ...string)PagesElement{
 	return e
 }
 
-// ModalElement
-type ModalElement struct{
-	*ui.Element
-}
-
-func(e ModalElement) NativeElement() *tview.Modal{
-	return e.AsElement().Native.(NativeElement).Value.(Modal).v
-}
-
-func(e ModalElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newModal = Elements.NewConstructor("modal",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewModal())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
 
 
 
-type modalConstructor func() ModalElement
-func(c modalConstructor) WithID(id string, options ...string)ModalElement{
-	e:= ModalElement{newModal(id, options...)}
-	
-	
-	return e
-}
-
-
-
-func(e ImageElement) NativeElement() *tview.Image{
-	return e.AsElement().Native.(NativeElement).Value.(Image).v
-}
-
-func(e ImageElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-var newImage = Elements.NewConstructor("image",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewImage())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type imageConstructor func() ImageElement
-func(c imageConstructor) WithID(id string, options ...string)ImageElement{
-	e:= ImageElement{newImage(id, options...)}
-	
-	
-	return e
-}
-
-var newCheckBox = Elements.NewConstructor("checkbox",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewCheckbox())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-
-// ListElement
-type ListElement struct{
-	*ui.Element
-}
-
-func(e ListElement) NativeElement() *tview.List{
-	return e.AsElement().Native.(NativeElement).Value.(List).v
-}
-
-func(e ListElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newList = Elements.NewConstructor("list",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewList())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type listConstructor func() ListElement
-func(c listConstructor) WithID(id string, options ...string)ListElement{
-	e:= ListElement{newList(id, options...)}
-	
-	
-	return e
-}
 
 // TreeViewElement
 type TreeViewElement struct{
