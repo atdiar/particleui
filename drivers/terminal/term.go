@@ -3130,7 +3130,128 @@ func(c textviewConstructor) WithID(id string, options ...string)TextViewElement{
 	return e
 }
 
+type textviewModifier struct{}
+var TextViewModifier textviewModifier
 
+// Given the API for tview.TextView , we 'd like to generate the modifiers
+// for the corresponding TextViewElement i.e. textviewModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such as SetChangedFunc.
+// Namely, SetBackgroundColor, SetDynamicColors, SetFormAttributes,  SetLabel, SetLabelWidth, SetMaxLines, SetRegions, SetScrollable, SetSize, SetTet, SetTextAlign, SetTextColor, SetTextStyle, SetToggleHighlights, SetWordWrap, SetWrap
+
+func(m textviewModifier) BackgroundColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetBackgroundColor(color)
+		return e
+	}
+}
+
+func(m textviewModifier) DynamicColors(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetDynamicColors(b)
+		return e
+	}
+}
+
+func(m textviewModifier) FormAttributes(labelWidth int, labelColor, bgColor, fieldTextColor, fieldBgColor tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetFormAttributes(labelWidth,labelColor,bgColor,fieldTextColor,fieldBgColor)
+		return e
+	}
+}
+
+func(m textviewModifier) Label(label string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetLabel(label)
+		return e
+	}
+}
+
+func(m textviewModifier) LabelWidth(width int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetLabelWidth(width)
+		return e
+	}
+}
+
+func(m textviewModifier) MaxLines(lines int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetMaxLines(lines)
+		return e
+	}
+}
+
+func(m textviewModifier) Regions(enable bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetRegions(enable)
+		return e
+	}
+}
+
+func(m textviewModifier) Scrollable(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetScrollable(b)
+		return e
+	}
+}
+
+func(m textviewModifier) Size(rows, columns int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetSize(rows,columns)
+		return e
+	}
+}
+
+func(m textviewModifier) Text(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetText(text)
+		return e
+	}
+}
+
+func(m textviewModifier) TextAlign(align int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetTextAlign(align)
+		return e
+	}
+}
+
+func(m textviewModifier) TextColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetTextColor(color)
+		return e
+	}
+}
+
+func(m textviewModifier) TextStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetTextStyle(style)
+		return e
+	}
+}
+
+func(m textviewModifier) ToggleHighlights(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetToggleHighlights(b)
+		return e
+	}
+}
+
+func(m textviewModifier) WordWrap(wraponwords bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetWordWrap(wraponwords)
+		return e
+	}
+}
+
+func(m textviewModifier) Wrap(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextView).v.SetWrap(b)
+		return e
+	}
+}
 
 // TreeViewElement
 type TreeViewElement struct{
@@ -3153,13 +3274,14 @@ func(e TreeViewElement) UnderlyingBox() BoxElement{
 }
 
 
+func(e TreeViewElement) NewTreeNode(text string) *tview.TreeNode{
+	return tview.NewTreeNode(text)
+}
+
 var newTreeView = Elements.NewConstructor("treeview",func(id string)*ui.Element{
 	
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewTreeView())
-
-	// TODO think about calling Draw OnMounted
-
 	return e
 })
 
@@ -3167,10 +3289,67 @@ var newTreeView = Elements.NewConstructor("treeview",func(id string)*ui.Element{
 type treeviewConstructor func() TreeViewElement
 func(c treeviewConstructor) WithID(id string, options ...string)TreeViewElement{
 	e:= TreeViewElement{newTreeView(id, options...)}
-	
-	
 	return e
 }
 
+type treeviewModifier struct{}
+var TreeViewModifier treeviewModifier
+
+// Given the API for tview.TreeView , we 'd like to generate the modifiers
+// for the corresponding TreeViewElement i.e. treeviewModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such as SetChangedFunc.
+// Namely SetAlign, SetCurrentNode, SetGraphics, SetGraphicsColor, SetPrefixes,  SetRoot, SetTopLevel.
+
+func(m treeviewModifier) Align(align bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetAlign(align)
+		return e
+	}
+}
+
+func(m treeviewModifier) CurrentNode(node *tview.TreeNode) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetCurrentNode(node)
+		return e
+	}
+}
+
+func(m treeviewModifier) Graphics(showGraphics bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetGraphics(showGraphics)
+		return e
+	}
+}
+
+func(m treeviewModifier) GraphicsColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetGraphicsColor(color)
+		return e
+	}
+}
+
+func(m treeviewModifier) Prefixes(prefixes []string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetPrefixes(prefixes)
+		return e
+	}
+}
+
+func(m treeviewModifier) Root(node *tview.TreeNode) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetRoot(node)
+		return e
+	}
+}
+
+func(m treeviewModifier) TopLevel(level int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TreeView).v.SetTopLevel(level)
+		return e
+	}
+}
 
 
