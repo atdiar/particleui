@@ -2767,14 +2767,37 @@ func(m pagesModifier) AddPage(name string, elements ...*ui.Element) func(*ui.Ele
 	}
 }
 
+func(m pagesModifier) FlexItem(fixedsize int, proportion int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("fixedsize",ui.Number(fixedsize))
+		prop.Set("proportion",ui.Number(proportion))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("flex",prop.Commit())
+		return e
+	}
+}
+
+func(m pagesModifier) GridItem(row, column int, rowSpan, columnSpan int, minGridHeight, minGridWidth int, focus bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		prop:= ui.NewObject()
+		prop.Set("row",ui.Number(row))
+		prop.Set("column",ui.Number(column))
+		prop.Set("rowSpan",ui.Number(rowSpan))
+		prop.Set("columnSpan",ui.Number(columnSpan))
+		prop.Set("minGridHeight",ui.Number(minGridHeight))
+		prop.Set("minGridWidth",ui.Number(minGridWidth))
+		prop.Set("focus",ui.Bool(focus))
+		e.SetUI("grid",prop.Commit())
+		return e
+	}
+}
+
 
 var newPages = Elements.NewConstructor("pages",func(id string)*ui.Element{
 	
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewPages())
-
-	// TODO think about calling Draw OnMounted
-
 	return e
 })
 
@@ -2787,6 +2810,325 @@ func(c pagesConstructor) WithID(id string, options ...string)PagesElement{
 }
 
 
+// TableElement
+type TableElement struct{
+	*ui.Element
+}
+
+func(e TableElement) NativeElement() *tview.Table{
+	return e.AsElement().Native.(NativeElement).Value.(Table).v
+}
+
+func(e TableElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+func(e TableElement) NewTableCell(text string) *tview.TableCell{
+	return tview.NewTableCell(text)
+}
+
+
+var newTable = Elements.NewConstructor("table",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewTable())
+	return e
+})
+
+
+type tableConstructor func() TableElement
+func(c tableConstructor) WithID(id string, options ...string)TableElement{
+	e:= TableElement{newTable(id, options...)}
+	return e
+}
+
+type tableModifier struct{}
+var TableModifier tableModifier
+
+// Given the API for tview.Table , we 'd like to generate the modifiers
+// for the corresponding TableElement i.e. tableModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such as SetDoneFunc.
+// Namely, SetBorders, SetBordersColor, SetCell, SetCellSimple, SetContent, SetEvaluateAllRows, SetFixed, SetOffset, SetSelectable, SetSelecetedStyle, SetSeparator, SetWrapSelection
+
+func(m tableModifier) Borders(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetBorders(b)
+		return e
+	}
+}
+
+func(m tableModifier) BordersColor(color tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetBordersColor(color)
+		return e
+	}
+}
+
+func(m tableModifier) Cell(row, column int, cell *tview.TableCell) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetCell(row,column,cell)
+		return e
+	}
+}
+
+func(m tableModifier) CellSimple(row, column int, text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetCellSimple(row,column,text)
+		return e
+	}
+}
+
+func(m tableModifier) Content(content tview.TableContent) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetContent(content)
+		return e
+	}
+}
+
+func(m tableModifier) EvaluateAllRows(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetEvaluateAllRows(b)
+		return e
+	}
+}
+
+func(m tableModifier) Fixed(rows, columns int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetFixed(rows,columns)
+		return e
+	}
+}
+
+func(m tableModifier) Offset(row, column int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetOffset(row,column)
+		return e
+	}
+}
+
+func(m tableModifier) Selectable(rows, columns bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetSelectable(rows,columns)
+		return e
+	}
+}
+
+func(m tableModifier) SelectedStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetSelectedStyle(style)
+		return e
+	}
+}
+
+func(m tableModifier) Separator(separator rune) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetSeparator(separator)
+		return e
+	}
+}
+
+func(m tableModifier) WrapSelection(vertical, horizontal bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(Table).v.SetWrapSelection(vertical,horizontal)
+		return e
+	}
+}
+
+
+// TextAreaElement
+type TextAreaElement struct{
+	*ui.Element
+}
+
+func(e TextAreaElement) NativeElement() *tview.TextArea{
+	return e.AsElement().Native.(NativeElement).Value.(TextArea).v
+}
+
+func(e TextAreaElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+
+var newTextArea = Elements.NewConstructor("textarea",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewTextArea())
+	return e
+})
+
+
+type textareaConstructor func() TextAreaElement
+func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
+	e:= TextAreaElement{newTextArea(id, options...)}
+	return e
+}
+
+type textareaModifier struct{}
+var TextAreaModifier textareaModifier
+
+// Given the API for tview.TextArea , we 'd like to generate the modifiers
+// for the corresponding TextAreaElement i.e. textareaModifier.
+// It should follow the same patterns as the other modifiers, especially
+// wrt method signatures and naming scheme. A lot of the code is similar to what has already been written.
+// Usually, the modifiers are the Setter methods of the corresponding tview type.
+// except for the callback accepting methods such as SetChangedFunc.
+// Namely,SetDisabled, SetFormAttributes, SetLabel,SetLabelStyle, SetLabelWidth, SetMaxLength, SetOffset, SetPlaceholder, SetPlaceholderStyle, SetSize, SetText, SetWordWrap, SetWrap
+
+func(m textareaModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetDisabled(b)
+		return e
+	}
+}
+
+func(m textareaModifier) FormAttributes(labelWidth int, labelColor, bgColor, fieldTextColor, fieldBgColor tcell.Color) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetFormAttributes(labelWidth,labelColor,bgColor,fieldTextColor,fieldBgColor)
+		return e
+	}
+}
+
+func(m textareaModifier) Label(label string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetLabel(label)
+		return e
+	}
+}
+
+func(m textareaModifier) LabelStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetLabelStyle(style)
+		return e
+	}
+}
+
+func(m textareaModifier) LabelWidth(width int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetLabelWidth(width)
+		return e
+	}
+}
+
+func(m textareaModifier) MaxLength(length int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetMaxLength(length)
+		return e
+	}
+}
+
+func(m textareaModifier) Offset(row, column int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetOffset(row,column)
+		return e
+	}
+}
+
+func(m textareaModifier) Placeholder(text string) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetPlaceholder(text)
+		return e
+	}
+}
+
+func(m textareaModifier) PlaceholderStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetPlaceholderStyle(style)
+		return e
+	}
+}
+
+func(m textareaModifier) Size(rows, columns int) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetSize(rows,columns)
+		return e
+	}
+}
+
+func(m textareaModifier) Text(text string, cursorAtTheEnd bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetText(text,cursorAtTheEnd)
+		return e
+	}
+}
+
+func(m textareaModifier) TextStyle(style tcell.Style) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetTextStyle(style)
+		return e
+	}
+}
+
+func(m textareaModifier) WordWrap(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetWordWrap(b)
+		return e
+	}
+}
+
+func(m textareaModifier) Wrap(b bool) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.Native.(NativeElement).Value.(TextArea).v.SetWrap(b)
+		return e
+	}
+}
+
+
+// TextViewElement
+type TextViewElement struct{
+	*ui.Element
+}
+
+func(e TextViewElement) NativeElement() *tview.TextView{
+	return e.AsElement().Native.(NativeElement).Value.(TextView).v
+}
+
+func(e TextViewElement) UnderlyingBox() BoxElement{
+	box:= document.GetElementById(e.AsElement().ID+"-box")
+	if box!= nil{
+		return BoxElement{box}
+	}
+
+	b:= document.Box.WithID(e.AsElement().ID+"-box")
+	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
+	return b
+}
+
+
+var newTextView = Elements.NewConstructor("textview",func(id string)*ui.Element{
+	
+	e := ui.NewElement(id, Elements.DocType)
+	e.Native = NewNativeElementWrapper(tview.NewTextView())
+
+	// TODO think about calling Draw OnMounted
+
+	return e
+})
+
+
+type textviewConstructor func() TextViewElement
+func(c textviewConstructor) WithID(id string, options ...string)TextViewElement{
+	e:= TextViewElement{newTextView(id, options...)}
+	
+	
+	return e
+}
 
 
 
@@ -2830,124 +3172,5 @@ func(c treeviewConstructor) WithID(id string, options ...string)TreeViewElement{
 	return e
 }
 
-// TableElement
-type TableElement struct{
-	*ui.Element
-}
-
-func(e TableElement) NativeElement() *tview.Table{
-	return e.AsElement().Native.(NativeElement).Value.(Table).v
-}
-
-func(e TableElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newTable = Elements.NewConstructor("table",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewTable())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type tableConstructor func() TableElement
-func(c tableConstructor) WithID(id string, options ...string)TableElement{
-	e:= TableElement{newTable(id, options...)}
-	
-	
-	return e
-}
-
-// TextAreaElement
-type TextAreaElement struct{
-	*ui.Element
-}
-
-func(e TextAreaElement) NativeElement() *tview.TextArea{
-	return e.AsElement().Native.(NativeElement).Value.(TextArea).v
-}
-
-func(e TextAreaElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newTextArea = Elements.NewConstructor("textarea",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewTextArea())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type textareaConstructor func() TextAreaElement
-func(c textareaConstructor) WithID(id string, options ...string)TextAreaElement{
-	e:= TextAreaElement{newTextArea(id, options...)}
-	
-	
-	return e
-}
-
-// TextViewElement
-type TextViewElement struct{
-	*ui.Element
-}
-
-func(e TextViewElement) NativeElement() *tview.TextView{
-	return e.AsElement().Native.(NativeElement).Value.(TextView).v
-}
-
-func(e TextViewElement) UnderlyingBox() BoxElement{
-	box:= document.GetElementById(e.AsElement().ID+"-box")
-	if box!= nil{
-		return BoxElement{box}
-	}
-
-	b:= document.Box.WithID(e.AsElement().ID+"-box")
-	b.AsElement().Native = NewNativeElementWrapper(e.NativeElement().Box)
-	return b
-}
-
-
-var newTextView = Elements.NewConstructor("textview",func(id string)*ui.Element{
-	
-	e := ui.NewElement(id, Elements.DocType)
-	e.Native = NewNativeElementWrapper(tview.NewTextView())
-
-	// TODO think about calling Draw OnMounted
-
-	return e
-})
-
-
-type textviewConstructor func() TextViewElement
-func(c textviewConstructor) WithID(id string, options ...string)TextViewElement{
-	e:= TextViewElement{newTextView(id, options...)}
-	
-	
-	return e
-}
 
 
