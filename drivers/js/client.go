@@ -298,11 +298,6 @@ var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete",func(e
 	return e
 })
 
-/*var NoFetchWhileHydrating = ui.NewConstructorOption("nofetchwhilehydrating", func(e *ui.Element)*ui.Element{
-	e.On
-	return e
-})
-*/
 
 // isPersisted checks whether an element exist in storage already
 func isPersisted(e *ui.Element) bool{

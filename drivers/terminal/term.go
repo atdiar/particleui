@@ -8,6 +8,8 @@ import(
 	"fmt"
 	"log"
 	"time"
+	"os/exec"
+	"strings"
 	// crand "crypto/rand"
 	"golang.org/x/exp/rand"
 
@@ -25,7 +27,9 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "terminal"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE)
+	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowdatapersistence).
+	AddPersistenceMode("diskpersistence", load, store, clear)
+	
 	Screen tcell.Screen
 	
 	document *Document
@@ -264,7 +268,7 @@ func(c *buttongconstructor[T,U]) WithID(id string, label string,  options ...str
 	return withEventSupport(e)
 }
 
-func( c *buttongconstructor[T,U]) ownedBy(d *Document){
+func(c *buttongconstructor[T,U]) ownedBy(d *Document){
 	id := fmt.Sprintf("%v", *c)
 	constructorDocumentLinker[id] = d
 }
@@ -1050,6 +1054,13 @@ func GetDocument(e *ui.Element) Document{
 	return withStdConstructors(Document{Element:e.Root}) // TODO initialize document *Element constructors
 }
 
+func getDocumentRef(e *ui.Element) *Document{
+	if document != nil{
+		return document
+	}
+	return &Document{Element:e.Root}
+}
+
 var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 
 	e := Elements.NewAppRoot(id).AsElement()
@@ -1065,7 +1076,7 @@ var newDocument = Elements.NewConstructor("root", func(id string) *ui.Element {
 	}
 	
 	return withEventSupport(e)
-})
+}, AllowDataStorage)
 
 // NewDocument returns the root of a new terminal app. It is the top-most element
 // in the tree of Elements that consitute the full document.
@@ -1079,6 +1090,31 @@ func NewDocument(id string, options ...string) Document {
 
 	return d
 }
+
+// Document option that turns data storage on for a document
+var EnableDataStorage = "enable-data-storage"
+var AllowDataStorage = ui.NewConstructorOption("enable-data-storage", func(e *ui.Element) *ui.Element {
+	if diskStorage != nil{
+		return e
+	}
+	err:= initDiskStorage("./datastore.json")
+	if err != nil{
+		panic(err)
+	}
+	d:= getDocumentRef(e)
+	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		if diskStorage == nil{
+			return false
+		}
+		err := diskStorage.Close()
+		if err != nil{
+			log.Print(err) // TODO check output location
+		}
+		return false
+	}))
+	return e
+})
+
 
 
 // BoxElement
@@ -1206,7 +1242,7 @@ var newBox = Elements.NewConstructor("box",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+}, AllowDataStorage)
 
 
 type boxConstructor func() BoxElement
@@ -1244,7 +1280,7 @@ var newButton = Elements.NewConstructor("button",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 type buttonConstructor func(label string) ButtonElement
 func(c buttonConstructor) WithID(id string, label string, options ...string)ButtonElement{
@@ -1345,7 +1381,7 @@ var newCheckBox = Elements.NewConstructor("checkbox",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewCheckbox())
 	return e
-})
+},AllowDataStorage)
 
 
 type checkboxConstructor func() CheckBoxElement
@@ -1479,7 +1515,7 @@ var newDropDown = Elements.NewConstructor("dropdown",func(id string)*ui.Element{
 	e.Native = NewNativeElementWrapper(tview.NewDropDown())
 
 	return e
-})
+},AllowDataStorage)
 
 
 type dropdownConstructor func() DropDownElement
@@ -1648,7 +1684,7 @@ var newFlex = Elements.NewConstructor("flex",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 
 type flexConstructor func() FlexElement
@@ -1733,7 +1769,7 @@ var newForm = Elements.NewConstructor("form",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 
 type formConstructor func() FormElement
@@ -1891,7 +1927,7 @@ var newFrame = Elements.NewConstructor("frame",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 type frameConstructor func() FrameElement
 func(c frameConstructor) WithID(id string, options ...string)FrameElement{
@@ -1972,7 +2008,7 @@ var newGrid = Elements.NewConstructor("grid",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 
 type gridConstructor func() GridElement
@@ -2095,7 +2131,7 @@ var newImage = Elements.NewConstructor("image",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 
 type imageConstructor func() ImageElement
@@ -2237,7 +2273,7 @@ var newInputField = Elements.NewConstructor("inputfield",func(id string)*ui.Elem
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewInputField())
 	return e
-})
+},AllowDataStorage)
 
 
 type inputfieldConstructor func() InputFieldElement
@@ -2375,6 +2411,30 @@ func(m inputfieldModifier) GridItem(row, column int, rowSpan, columnSpan int, mi
 	}
 }
 
+// CmdExec modifier turns the input field into a command executor by listening to the 
+// Done event and executing  the command string after splitting it using strings.Field.
+
+func(m inputfieldModifier) ExecuteCommands() func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		e.AddEventListener("done", ui.NewEventHandler(func(ev ui.Event)bool{
+			cmd:= e.Native.(NativeElement).Value.(InputField).v.GetText()
+			
+			if cmd== ""{
+				return false
+			}
+
+			e.Native.(NativeElement).Value.(InputField).v.SetText("")
+			args:= strings.Fields(cmd)
+			if len(args)== 0{
+				return false
+			}
+			exec.Command(args[0],args[1:]...).Run()
+			return false
+		}))
+		return e
+	}
+}
+
 
 // ListElement
 type ListElement struct{
@@ -2402,7 +2462,7 @@ var newList = Elements.NewConstructor("list",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewList())
 	return e
-})
+},AllowDataStorage)
 
 
 type listConstructor func() ListElement
@@ -2594,7 +2654,7 @@ var newModal = Elements.NewConstructor("modal",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewModal())
 	return e
-})
+},AllowDataStorage)
 
 
 
@@ -2799,7 +2859,7 @@ var newPages = Elements.NewConstructor("pages",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewPages())
 	return e
-})
+},AllowDataStorage)
 
 
 type pagesConstructor func() PagesElement
@@ -2840,7 +2900,7 @@ var newTable = Elements.NewConstructor("table",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewTable())
 	return e
-})
+},AllowDataStorage)
 
 
 type tableConstructor func() TableElement
@@ -2971,7 +3031,7 @@ var newTextArea = Elements.NewConstructor("textarea",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewTextArea())
 	return e
-})
+},AllowDataStorage)
 
 
 type textareaConstructor func() TextAreaElement
@@ -3119,7 +3179,7 @@ var newTextView = Elements.NewConstructor("textview",func(id string)*ui.Element{
 	// TODO think about calling Draw OnMounted
 
 	return e
-})
+},AllowDataStorage)
 
 
 type textviewConstructor func() TextViewElement
@@ -3253,6 +3313,14 @@ func(m textviewModifier) Wrap(b bool) func(*ui.Element)*ui.Element{
 	}
 }
 
+// since *tview.TextView implements io.Writer, we can have a modifier that lets us use it as the cmd.Output
+func(m textviewModifier) Stdout(cmd exec.Cmd) func(*ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		cmd.Stdout = e.Native.(NativeElement).Value.(TextView).v
+		return e
+	}
+}
+
 // TreeViewElement
 type TreeViewElement struct{
 	*ui.Element
@@ -3283,7 +3351,7 @@ var newTreeView = Elements.NewConstructor("treeview",func(id string)*ui.Element{
 	e := ui.NewElement(id, Elements.DocType)
 	e.Native = NewNativeElementWrapper(tview.NewTreeView())
 	return e
-})
+},AllowDataStorage)
 
 
 type treeviewConstructor func() TreeViewElement
