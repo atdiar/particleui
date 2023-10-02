@@ -198,7 +198,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 	
 		item := value.RawValue()
 		v := stringify(item)
-		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),js.ValueOf(v))
+		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),v)
 		return
 	}
 }
@@ -223,7 +223,7 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 		}
 
 		properties := make([]string, 0, 64)
-		err = json.Unmarshal([]byte(jsonprops.String()), &properties)
+		err = json.Unmarshal([]byte(jsonprops.(string)), &properties)
 		if err != nil {
 			return err
 		}
@@ -237,10 +237,10 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 			// log.Print("debug...", category, property) // DEBUG
 
 			propname := property
-			jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
-			if ok {					
+			jsonvalue, err := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
+			if err != nil {					
 				var rawvaluemapstring string
-				err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
+				err = json.Unmarshal([]byte(jsonvalue.(string)), &rawvaluemapstring)
 				if err != nil {
 					return err
 				}
@@ -282,23 +282,23 @@ var load = loader("disk")
 
 func clearer(s string) func(element *ui.Element){ // abstractjs
 	return func(element *ui.Element){
-		store := jsStore{js.Global().Get(s)}
-		_,ok:= store.Get("zui-connected")
-		if !ok{
+		store := diskStorage
+		_,err:= store.Get("zui-connected")
+		if err != nil{
 			return 
 		}
 		id := element.ID
 		category:= "data"
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsonproperties, ok := store.Get(id)
-		if !ok {
+		jsonproperties, err := store.Get(id)
+		if err != nil {
 			return
 		}
 
 		properties := make([]string, 0, 50)
 		
-		err := json.Unmarshal([]byte(jsonproperties.String()), &properties)
+		err = json.Unmarshal([]byte(jsonproperties.(string)), &properties)
 		if err != nil {
 			store.Delete(id)
 			panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
@@ -322,17 +322,16 @@ var clear = clearer("disk")
 func isPersisted(e *ui.Element) bool{
 	pmode:=ui.PersistenceMode(e)
 
-	var s string
 	switch pmode{
 	case"disk":
-		s = "disk"
+		store := diskStorage
+		_, err := store.Get(e.ID)
+		return err == nil
 	default:
 		return false
 	}
 
-	store := jsStore{js.Global().Get(s)}
-	_, ok := store.Get(e.ID)
-	return ok
+	
 }
 
 func stringify(v interface{}) string {
