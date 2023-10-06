@@ -2,9 +2,65 @@ package functions
 
 import(
 	"github.com/atdiar/particleui"
+	"github.com/atdiar/particleui/drivers/js"
 )
 
-func css(modifier string, property,value string) func(*ui.Element) *ui.Element{
+// Styling via CSS
+//  Styling is defined per element it applies on (so by its unique ID)
+//  and per pseudoclass (hover, active, focus, visited, link, first-child, last-child, checked, disabled, enabled)
+
+// Style allows to define a style for an element, namespaced by stylesheet ID.
+// Each call to style clears any previous style, allowing to specify a new one for
+// that specific element, for a given stylesheet.
+// That means that calling Style multiple times on the same element will only replace the previous style.
+// The categorisation in different stylesheet could allow for instance to 
+// differentiate styles for light and dark mode.
+func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		if styled(stylesheetID,e){
+			panic("Element already styled for this stylesheet")
+		}
+		
+		clearStyle(e)
+		for _,fn := range stylefns{
+			e = fn(e)
+		}
+		document:= doc.GetDocument(e)
+		s, ok:=document.GetStyleSheet(stylesheetID)
+		if !ok{
+			s = document.NewStyleSheet(stylesheetID)
+		}
+		defer s.Update()
+		// TODO retrieve css ruleset and "translert" (translate + insert) into stylesheet
+		rls,ok:= e.Get("css","ruleset")
+		if !ok{
+			return e
+		}
+		ruleset := rls.(ui.Object)
+		ruleset.Range(func(pseudoclass string, rulelist ui.Value){
+			for _, rule := range rulelist.(ui.List).UnsafelyUnwrap(){
+				ruleobj := rule.(ui.Object)
+				property := ruleobj.MustGetString("property")
+				value := ruleobj.MustGetString("value")
+				// Let's add the rule to the stylesheet for this element
+				selector:= "#"+e.ID+pseudoclass
+				rulestr:= property.String()+":"+value.String()+";"
+				s.InsertRule(selector,rulestr)
+			}
+		})
+		return e
+	}
+}
+
+
+// CSS holds a list of style modifying functions organized by
+// the type of element they apply to. (container or content) and what they do (change of Style or of layout).
+// For instance, to change the background color of a container to red,
+// one would use CSS.Container.Style.BackgroundColor.Value("red").
+// To center the content of an element, one would use CSS.Content.Layout.AlignItems.Center (for Flex items)
+var CSS = struct{Container; Content}{*newContainer(), *newContent()}
+
+func css(pseudoclass string, property,value string) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element) *ui.Element{
 		// Retrieve/Create a css ruleset object and store the new rule/declaration.
 		var ruleset *ui.TempObject
@@ -13,21 +69,67 @@ func css(modifier string, property,value string) func(*ui.Element) *ui.Element{
 			ruleset = ui.NewObject()
 		}
 		ruleset = c.(ui.Object).MakeCopy()
-		ruleobj,ok:= ruleset.Get(modifier)
-		var rules *ui.TempObject
+		ruleobj,ok:= ruleset.Get(pseudoclass)
 		if !ok{
-			rules = ui.NewObject()
-			rules.Set(property,ui.String(value))
-			ruleset.Set(modifier,rules.Commit())
+			rules := ui.NewObject().
+						Set("property",ui.String(property)).
+						Set("value",ui.String(value)).
+					Commit()
+			ruleset.Set(pseudoclass,ui.NewList(rules).Commit())
+
 		} else{
-			rules = ruleobj.(ui.Object).MakeCopy()
-			rules.Set(property,ui.String(value))
-			ruleset.Set(modifier,rules.Commit())
+
+			rulelist := ruleobj.(ui.List).MakeCopy()
+			rules := ui.NewObject().
+						Set("property",ui.String(property)).
+						Set("value",ui.String(value)).
+					Commit()
+			rulelist.Append(rules)
+			ruleset.Set(pseudoclass,rulelist.Commit())
 		}
 		e.Set("css","ruleset",ruleset.Commit())
 		return e
 	}
 }
+
+/*
+func StyleRemoveAll(e *ui.Element) *ui.Element{
+	clearStyle(e)
+	e.Set("internals", "css-styles-list", ui.NewList().Commit())
+	return e
+}
+
+func StyleRemoveFor(stylesheetid string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		stylesheets,ok:= e.Get("internals","css-styles-list")
+		if !ok{
+			return clearStyle(e)
+		}
+		s:= stylesheets.(ui.List).Filter(func(v ui.Value)bool{
+			return v.(ui.String).String() != stylesheetid
+		})
+		e.Set("internals","css-styles-list",s)
+
+		return clearStyle(e)
+	}
+	
+}
+*/
+ssssssssss
+func clearStyle (e *ui.Element) *ui.Element{
+	e.Set("css","ruleset",ui.NewObject().Commit())
+	return e
+}
+
+func styled(stylesheetid string, e *ui.Element)bool{
+	styles,ok:= e.Get("internals","css-styles-list")
+	if !ok{
+		return false
+	}
+	return styles.(ui.List).Contains(ui.String(stylesheetid))
+}
+
+
 
 type valueFn[T any] struct{
 	VFn func(property, pseudoclass string) (func(*ui.Element) *ui.Element)
@@ -150,6 +252,49 @@ type Content struct {
 	Disabled *Content
 	Enabled *Content
 }
+
+func newContainer() *Container{
+	c := initializeContainer[None]()
+	c.Hover = initializeContainer[Hover]()
+	c.Active = initializeContainer[Active]()
+	c.Focus = initializeContainer[Focus]()
+	c.Visited = initializeContainer[Visited]()
+	c.Link = initializeContainer[Link]()
+	c.FirstChild = initializeContainer[FirstChild]()
+	c.LastChild = initializeContainer[LastChild]()
+	c.Checked = initializeContainer[Checked]()
+	c.Disabled = initializeContainer[Disabled]()
+	c.Enabled = initializeContainer[Enabled]()
+	return c
+}
+
+func newContent() *Content{
+	c := initializeContent[None]()
+	c.Hover = initializeContent[Hover]()
+	c.Active = initializeContent[Active]()
+	c.Focus = initializeContent[Focus]()
+	c.Visited = initializeContent[Visited]()
+	c.Link = initializeContent[Link]()
+	c.FirstChild = initializeContent[FirstChild]()
+	c.LastChild = initializeContent[LastChild]()
+	c.Checked = initializeContent[Checked]()
+	c.Disabled = initializeContent[Disabled]()
+	c.Enabled = initializeContent[Enabled]()
+	return c
+}
+
+type CSSStyles struct{
+	Container
+	Content
+}
+
+func NewCSSStyles() CSSStyles{
+	c := CSSStyles{}
+	c.Container = *newContainer()
+	c.Content = *newContent()
+	return c
+}
+
 
 func initializeContainer[pseudoclass any]() *Container{
 	c := Container{}
@@ -1664,7 +1809,7 @@ type ContainerStyle struct {
 	}
 	ListStyleImage struct {
 		None func(*ui.Element) *ui.Element
-		Url func(value string) (*ui.Element) *ui.Element
+		Url func(value string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Opacity struct {

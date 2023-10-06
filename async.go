@@ -363,9 +363,8 @@ func(e *Element) enablefetching() *Element{
 			e.EndTransition("prefetch")
 		}
 
-		prefetchlist.Range(func(propname string,v Value)bool{
+		prefetchlist.Range(func(propname string,v Value){
 			e.startprefetchTransition(propname)
-			return false
 		})
 		
 		return false
@@ -493,9 +492,8 @@ func(e *Element)InvalidateAllFetches(){
 		}
 		fl:= l.(Object)
 
-		fl.Range(func(propname string,v Value)bool{
+		fl.Range(func(propname string,v Value){
 			e.InvalidateFetch(propname)
-			return false
 		})	
 	}
 }
@@ -511,9 +509,8 @@ func GetFetchErrors(e *Element) (map[string]error,bool){
 	}
 	m:= make(map[string]error)
 	
-	v.(Object).Range(func(propname string,v Value)bool{
+	v.(Object).Range(func(propname string,v Value){
 		m[propname]= errors.New(string(v.(String)))
-		return false
 	})
 	return m,ok
 

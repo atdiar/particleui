@@ -222,10 +222,11 @@ func (o Object) Size() int{
 }
 
 
-func (o Object) Range(f func(key string, val Value) (done bool)){
+func (o Object) Range(f func(key string, val Value)){
 	for k,v := range o.o{
 		if k == "zui_object_typ" || k == "zui_object_value" || k == "zui_object_raw"{continue}
-		if f(k,v.(Value)){break}
+		//if f(k,v.(Value)){break}
+		f(k,v.(Value))
 	}
 }
 // Unwrap returnis the underlying map that is used to store the object values.
@@ -596,6 +597,15 @@ func (l List) UnsafelyUnwrap() []Value{
 	return l.MakeCopy().l
 }
 
+
+func(l List) Contains(val Value) bool{
+	for _,v:= range l.l{
+		if Equal(v,val){
+			return true
+		}
+	}
+	return false
+}
 
 
 func NewListFrom(s []Value) List{

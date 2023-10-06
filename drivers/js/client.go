@@ -403,7 +403,7 @@ func ConnectNative(e *ui.Element, tag string){
 				if !wd.Truthy() {
 					panic("unable to access windows")
 				}
-				evt.Origin().Native = NewNativeElementWrapper(wd)
+				evt.Origin().Native = NewNativeElementWrapper(wd, "Window")
 				return false
 			}
 		
@@ -421,7 +421,7 @@ func ConnectNative(e *ui.Element, tag string){
 						panic("failed to instantiate root element for the document")
 					}
 				}
-				evt.Origin().Native = NewNativeElementWrapper(root)
+				evt.Origin().Native = NewNativeHTMLElement(root)
 				SetAttribute(e, "id", evt.Origin().ID)
 
 				
@@ -436,7 +436,7 @@ func ConnectNative(e *ui.Element, tag string){
 						element= js.Global().Get("document").Call("createElement",tag)
 					}
 				}
-				evt.Origin().Native = NewNativeElementWrapper(element)
+				evt.Origin().Native = NewNativeHTMLElement(element)
 				SetAttribute(e, "id", evt.Origin().ID)
 				return false
 			}
@@ -451,7 +451,7 @@ func ConnectNative(e *ui.Element, tag string){
 						element= js.Global().Call("createElementWithID",tag,id)
 					}
 				}
-				evt.Origin().Native = NewNativeElementWrapper(element)
+				evt.Origin().Native = NewNativeHTMLElement(element)
 				SetAttribute(e, "id", evt.Origin().ID)
 				return false
 		 	}
@@ -539,7 +539,7 @@ func ConnectNative(e *ui.Element, tag string){
 					}
 				}
 		
-				evt.Origin().Native = NewNativeElementWrapper(element)
+				evt.Origin().Native = NewNativeHTMLElement(element)
 				SetAttribute(e, "id", e.ID)
 				return false
 			}
@@ -548,7 +548,7 @@ func ConnectNative(e *ui.Element, tag string){
 			if !element.Truthy(){
 				element= js.Global().Call("createElementWithID",tag,id)
 			}
-			evt.Origin().Native = NewNativeElementWrapper(element) 
+			evt.Origin().Native = NewNativeHTMLElement(element) 
 				
 			return false
 
@@ -561,7 +561,7 @@ func ConnectNative(e *ui.Element, tag string){
 		if !wd.Truthy() {
 			panic("unable to access windows")
 		}
-		e.Native =  NewNativeElementWrapper(wd)
+		e.Native =  NewNativeElementWrapper(wd, "Window")
 		return 
 	}
 
@@ -578,10 +578,10 @@ func ConnectNative(e *ui.Element, tag string){
 			if !root.Truthy() {
 				panic("failed to instantiate root element for the document")
 			}
-			e.Native =  NewNativeElementWrapper(root)
+			e.Native =  NewNativeHTMLElement(root)
 			return 
 		}
-		e.Native =  NewNativeElementWrapper(root)
+		e.Native =  NewNativeHTMLElement(root)
 		SetAttribute(e, "id", e.ID)
 		
 		return
@@ -594,11 +594,11 @@ func ConnectNative(e *ui.Element, tag string){
 			if !element.Truthy(){
 				element= js.Global().Get("document").Call("createElement",tag)
 			}
-			e.Native = NewNativeElementWrapper(element)
+			e.Native = NewNativeHTMLElement(element)
 			SetAttribute(e, "id", e.ID)
 			return
 		}
-		e.Native =  NewNativeElementWrapper(element)
+		e.Native =  NewNativeHTMLElement(element)
 		SetAttribute(e, "id", e.ID)
 		return
 	}
@@ -613,7 +613,7 @@ func ConnectNative(e *ui.Element, tag string){
 				element= js.Global().Call("createElementWithID",tag,id)
 			}
 		}
-		e.Native = NewNativeElementWrapper(element)
+		e.Native = NewNativeHTMLElement(element)
 		SetAttribute(e, "id", e.ID)
 		return
 	}
@@ -737,12 +737,12 @@ func ConnectNative(e *ui.Element, tag string){
 			if !element.Truthy(){
 				element= js.Global().Call("createElement",tag)
 			}
-			e.Native =  NewNativeElementWrapper(element)
+			e.Native =  NewNativeHTMLElement(element)
 			SetAttribute(e, "id", e.ID)
 			return
 		}
 		
-		e.Native =  NewNativeElementWrapper(element)
+		e.Native =  NewNativeHTMLElement(element)
 		SetAttribute(e, "id", e.ID)
 		return
 	}
@@ -750,10 +750,10 @@ func ConnectNative(e *ui.Element, tag string){
 	element:= js.Global().Call("getElement",id)
 	if !element.Truthy(){
 		element= js.Global().Call("createElementWithID",tag,id)
-		e.Native = NewNativeElementWrapper(element)
+		e.Native = NewNativeHTMLElement(element)
 		return
 	}
-	e.Native =  NewNativeElementWrapper(element)
+	e.Native =  NewNativeHTMLElement(element)
 	return
 }
 
@@ -762,10 +762,17 @@ func ConnectNative(e *ui.Element, tag string){
 // ui.NativeElementWrapper interface.
 type NativeElement struct {
 	js.Value
+	typ string
 }
 
-func NewNativeElementWrapper(v js.Value) NativeElement {
-	return NativeElement{v}
+// NewNativeElementWrapper creates a new NativeElement from a js.Value.
+func NewNativeElementWrapper(v js.Value, typ string) NativeElement {
+	return NativeElement{v,typ}
+}
+
+// NewNativeHTMLElement creates a new Native HTML Element from a js.Value of a HTMLELement.
+func NewNativeHTMLElement(v js.Value) NativeElement {
+	return NativeElement{v,"HTMLElement"}
 }
 
 func (n NativeElement) AppendChild(child *ui.Element) {
@@ -774,7 +781,10 @@ func (n NativeElement) AppendChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot append " + child.ID)
 		return
 	}
-	n.Value.Call("append", v.Value)
+	if n.typ == "HTMLElement"{
+		n.Value.Call("append", v.Value)
+	}
+	
 }
 
 func (n NativeElement) PrependChild(child *ui.Element) {
@@ -783,7 +793,9 @@ func (n NativeElement) PrependChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot prepend " + child.ID)
 		return
 	}
-	n.Value.Call("prepend", v.Value)
+	if n.typ == "HTMLElement"{
+		n.Value.Call("prepend", v.Value)
+	}
 }
 
 func (n NativeElement) InsertChild(child *ui.Element, index int) {
@@ -792,19 +804,21 @@ func (n NativeElement) InsertChild(child *ui.Element, index int) {
 		log.Print("wrong format for native element underlying objects.Cannot insert " + child.ID)
 		return
 	}
-	childlist := n.Value.Get("children")
-	length := childlist.Get("length").Int()
-	if index > length {
-		log.Print("insertion attempt out of bounds.")
-		return
-	}
+	if n.typ == "HTMLElement"{
+		childlist := n.Value.Get("children")
+		length := childlist.Get("length").Int()
+		if index > length {
+			log.Print("insertion attempt out of bounds.")
+			return
+		}
 
-	if index == length {
-		n.Value.Call("append", v.Value)
-		return
+		if index == length {
+			n.Value.Call("append", v.Value)
+			return
+		}
+		r := childlist.Call("item", index)
+		n.Value.Call("insertBefore", v.Value, r)
 	}
-	r := childlist.Call("item", index)
-	n.Value.Call("insertBefore", v.Value, r)
 }
 
 func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
@@ -813,13 +827,15 @@ func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot replace " + old.ID)
 		return
 	}
-	nnew, ok := new.Native.(NativeElement)
-	if !ok {
-		log.Print("wrong format for native element underlying objects.Cannot replace with " + new.ID)
-		return
+	if n.typ == "HTMLElement"{
+		nnew, ok := new.Native.(NativeElement)
+		if !ok {
+			log.Print("wrong format for native element underlying objects.Cannot replace with " + new.ID)
+			return
+		}
+		//nold.Call("replaceWith", nnew) also works
+		n.Value.Call("replaceChild", nnew.Value, nold.Value)
 	}
-	//nold.Call("replaceWith", nnew) also works
-	n.Value.Call("replaceChild", nnew.Value, nold.Value)
 }
 
 func (n NativeElement) RemoveChild(child *ui.Element) {
@@ -828,31 +844,38 @@ func (n NativeElement) RemoveChild(child *ui.Element) {
 		log.Print("wrong format for native element underlying objects.Cannot remove ", child.Native)
 		return
 	}
-	v.Value.Call("remove")
-	//n.Value.Call("removeChild", v.Value)
+	if n.typ == "HTMLElement"{
+		v.Value.Call("remove")
+	}
 
 }
 
-func (m NativeElement) Delete(child *ui.Element){
-	js.Global().Call("deleteElementWithID",child.ID)
+func (n NativeElement) Delete(child *ui.Element){
+	if n.typ == "HTMLElement"{
+		js.Global().Call("deleteElementWithID",child.ID)
+	}
 }
 
 
 func (n NativeElement) SetChildren(children ...*ui.Element) {
-	fragment := js.Global().Get("document").Call("createDocumentFragment")
-	for _, child := range children {
-		v, ok := child.Native.(NativeElement)
-		if !ok {
-			panic("wrong format for native element underlying objects.Cannot append " + child.ID)
+	if n.typ == "HTMLElement"{
+		fragment := js.Global().Get("document").Call("createDocumentFragment")
+		for _, child := range children {
+			v, ok := child.Native.(NativeElement)
+			if !ok {
+				panic("wrong format for native element underlying objects.Cannot append " + child.ID)
+			}
+			fragment.Call("append", v.Value)
 		}
-		fragment.Call("append", v.Value)
+		n.Value.Call("append", fragment)
 	}
-	n.Value.Call("append", fragment)
 }
 
 
 func (n NativeElement) BatchExecute(parentid string, opslist string) {
-	js.Global().Call("applyBatchOperations",parentid, opslist)
+	if n.typ == "HTMLElement"{
+		js.Global().Call("applyBatchOperations",parentid, opslist)
+	}
 }
 
 // JSValue retrieves the js.Value corresponding to the Element submmitted as
@@ -1682,6 +1705,54 @@ func enableClasses(e *ui.Element) *ui.Element {
 	})
 	e.Watch("css", "class", e, h)
 	return e
+}
+
+func makeStyleSheet(observable *ui.Element) *ui.Element {
+	new := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		rss:= js.Global().New("CSSStyleSheet",struct{
+			baseURL string 
+			media []any 
+			disabled bool
+			}{"", nil, false},
+		)
+		evt.Origin().Native = NativeElement{Value: rss, typ: "CSSStyleSheet"}
+
+		return false
+	})
+
+	enable:= ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		s,ok:= JSValue(evt.Origin())
+		if !ok{
+			return false
+		}
+		s.Set("disabled",false)
+		evt.Origin().SetUI("active", ui.Bool(true))
+		return false
+	})
+
+	disable:= ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		s,ok:= JSValue(evt.Origin())
+		if !ok{
+			return false
+		}
+		s.Set("disabled",true)
+		evt.Origin().SetUI("active", ui.Bool(false))
+		return false
+	})
+
+	update := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		s,ok:= JSValue(evt.Origin())
+		if !ok{
+			return false
+		}
+		s.Call("replaceSync",StyleSheet{evt.Origin()}.String())
+		return false
+	})
+	observable.WatchEvent("new", observable, new)
+	observable.WatchEvent("enable", observable, enable)
+	observable.WatchEvent("disable", observable, disable)
+	observable.Watch("ui","stylesheet", observable, update)
+	return observable
 }
 
 

@@ -497,6 +497,7 @@ type Document struct {
 	Select gconstructor[SelectElement, selectConstructor]
 	Form gconstructor[FormElement, formConstructor]
 
+	StyleSheets map[string]StyleSheet
 }
 
 func(d *Document) initializeIDgenerator() {
@@ -654,6 +655,106 @@ func(d Document) Delete(){ // TODO check for dangling references
 func(d Document) SetTitle(title string){
 	d.AsElement().SetUI("title",ui.String(title))
 }
+
+// Document styles in stylesheet
+
+type StyleSheet struct{
+	raw *ui.Element
+}
+
+func(s StyleSheet) AsElement() *ui.Element{
+	return s.raw
+}
+
+
+func(s StyleSheet) InsertRule(selector string, rules string) StyleSheet{
+	o:= ui.NewObject().Set(selector,ui.String(rules)).Commit()
+	r,ok:= s.raw.GetData("stylesheet")
+	if !ok{
+		rulelist:= ui.NewList(o).Commit()
+		s.raw.SetData("stylesheet",rulelist)
+		return s
+	}
+	rulelist:= r.(ui.List).MakeCopy()
+	s.raw.SetData("stylesheet",rulelist.Append(o).Commit())
+	return s
+}
+
+func(s StyleSheet) String() string{
+	var res strings.Builder
+
+	r,ok:= s.raw.GetData("stylesheet")
+	if !ok{
+		return ""
+	}
+	rules:= r.(ui.List).UnsafelyUnwrap()
+	for _,rule:= range rules{
+		o:= rule.(ui.Object)
+		o.Range(func(k string, v ui.Value){
+			res.WriteString(k)
+			res.WriteString("{")
+			res.WriteString(v.(ui.String).String())
+			res.WriteString("}\n") // TODO check carriage return necessity
+		})
+	}
+	return res.String()
+}
+
+func (d Document) NewStyleSheet(id string) StyleSheet{
+	o:= d.NewObservable(id).AsElement()
+	o.DocType = "text/css"
+	makeStyleSheet(o)
+	o.TriggerEvent("new")
+	s:= StyleSheet{raw:o}
+	d.StyleSheets[id] = s
+	return s
+}
+
+func (d Document) GetStyleSheet(id string) (StyleSheet,bool){
+	s,ok:= d.StyleSheets[id]
+	return s,ok
+}
+
+func(d Document) SetActiveStyleSheets(ids ...string) Document{
+	for _,s:= range d.StyleSheets{
+		var idlist = make(map[string]struct{})
+		for _,id:= range ids{
+			idlist[id] = struct{}{}
+		}
+		_,ok:= idlist[s.AsElement().ID]
+		if ok{
+			s.Enable()
+		}else{
+			s.Disable()
+		}
+	}
+	return d
+}
+
+func(s StyleSheet) Enable() StyleSheet{
+	s.AsElement().TriggerEvent("enable")
+	return s
+}
+
+func(s StyleSheet) Disable() StyleSheet{
+	s.AsElement().TriggerEvent("disable")
+	return s
+}
+
+func(s StyleSheet) Active() bool{
+	a,ok:= s.AsElement().GetUI("active")
+	if !ok{
+		panic("stylesheet should have an active property")
+	}
+	return bool(a.(ui.Bool))
+}
+
+
+func(s StyleSheet) Update() StyleSheet{
+	s.AsElement().SetUI("stylesheet",ui.String(s.String()))
+	return s
+}
+
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
@@ -920,6 +1021,7 @@ func NewDocument(id string, options ...string) Document {
 	d:= Document{Element:newDocument(id, options...)}
 	
 	d = withStdConstructors(d)
+	d.StyleSheets = make(map[string]StyleSheet)
 
 	e:= d.Element
 
