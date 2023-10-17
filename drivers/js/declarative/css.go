@@ -115,7 +115,7 @@ func StyleRemoveFor(stylesheetid string) func(*ui.Element) *ui.Element{
 	
 }
 */
-ssssssssss
+
 func clearStyle (e *ui.Element) *ui.Element{
 	e.Set("css","ruleset",ui.NewObject().Commit())
 	return e

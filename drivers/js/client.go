@@ -31,6 +31,9 @@ var (
 		ApplyGlobalOption(allowdatapersistence)
 )
 
+// TODO on init, Apply EnableMutationCaptureto Elements if ldlflags -X tag is set for the buildtype variable to "dev" 
+// Also, the mutationtrace should be stored in the sessionstorage or localstorage
+// And the mutationtrace shouldreplay once the document is ready.
 
 
 // NewBuilder registers a new document building function.
@@ -1707,7 +1710,9 @@ func enableClasses(e *ui.Element) *ui.Element {
 	return e
 }
 
-func makeStyleSheet(observable *ui.Element) *ui.Element {
+// todo abstractjs
+func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
+	
 	new := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		rss:= js.Global().New("CSSStyleSheet",struct{
 			baseURL string 
@@ -1716,6 +1721,14 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 			}{"", nil, false},
 		)
 		evt.Origin().Native = NativeElement{Value: rss, typ: "CSSStyleSheet"}
+
+		d,ok:= JSValue(GetDocument(evt.Origin()))
+		if !ok{
+			panic("stylesheet is not registered on document or document is not connected to its native dom element")
+		}
+
+		d.Get("adoptedStyleSheets").Call("concat",rss)
+		
 
 		return false
 	})
@@ -1752,6 +1765,24 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 	observable.WatchEvent("enable", observable, enable)
 	observable.WatchEvent("disable", observable, disable)
 	observable.Watch("ui","stylesheet", observable, update)
+	observable.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		// TODO remove from adopted stylesheets
+		d,ok:= JSValue(GetDocument(evt.Origin()))
+		if !ok{
+			panic("stylesheet is not registered on document or document is not connected to its native dom element")
+		}
+
+		sheet,ok:= JSValue(evt.Origin())
+		if !ok{
+			panic("stylesheet is not connected to its native dom element")
+		}
+
+		as := d.Get("adoptedStyleSheets")
+		fas := js.Global().Call("filterByValue", as,sheet)
+		d.Set("adoptedStyleSheets",fas)
+
+		return false
+	}))
 	return observable
 }
 

@@ -62,8 +62,12 @@ func useRouter(user AnyElement, fn func(*Router)) {
 // state registered as a shortcut upon request.
 type Router struct {
 	Outlet   ViewElement
+
+	// Navigation context
 	NavContext context.Context
-	NavCancel context.CancelFunc
+
+	// Navigation context cancellation function
+	CancelNavigation context.CancelFunc
 
 	Links map[string]Link
 
@@ -108,14 +112,14 @@ func NewRouter(rootview ViewElement, options ...func(*Router)*Router) *Router {
 	}))
 
 	r.Outlet.AsElement().Root.WatchEvent("navigation-start",r.Outlet.AsElement().Root,NewMutationHandler(func(evt MutationEvent)bool{
-		if r.NavCancel != nil{
-			r.NavCancel()
+		if r.CancelNavigation != nil{
+			r.CancelNavigation()
 		}
 		
 		NavContext,CancelNav := newCancelableNavContext()
 		r.NavContext = NavContext
-		r.NavCancel = CancelNav
-		// TODO if state is being replayed, cancelnav
+		r.CancelNavigation = CancelNav
+
 		return false
 	}))
 

@@ -298,6 +298,10 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 }
 
 
+func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
+	return observable
+}
+
 var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
 	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
 	return false

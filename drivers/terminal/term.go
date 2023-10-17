@@ -1015,7 +1015,7 @@ func(d Document) Router() *ui.Router{
 func(d Document) Delete(){ // TODO check for dangling references
 	ui.DoSync(func(){
 		e:= d.AsElement()
-		d.Router().NavCancel()
+		d.Router().CancelNavigation()
 		ui.Delete(e)
 	})
 }

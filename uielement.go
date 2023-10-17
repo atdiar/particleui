@@ -1682,24 +1682,62 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 
 	if e.ElementStore!= nil && e.ElementStore.MutationCapture{
+		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
+			return
+		}
 		if e.Registered(){
 			m:= NewObject()
 			m.Set("id",String(e.ID))
 			m.Set("cat",String(category))
 			m.Set("prop",String(propname))
+			n:= m.Commit()
 			m.Set("val",Copy(value))
-			l,ok:= e.Get("internals","mutationtrace")
+			l,ok:= e.Root.Get("internals","mutationtrace")
 			if !ok{
 				l=NewList(m.Commit()).Commit()
 				e.Root.Set("internals","mutationtrace",l)
 			} else{
-				list:= l.(List)
-				list = list.MakeCopy().Append(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",list)
+				list,ok:= l.(List)
+				if !ok{
+					list = NewList(m.Commit()).Commit()
+					e.Root.Set("internals","mutationtrace",list)
+				} else{
+					list = list.MakeCopy().Append(m.Commit()).Commit()
+					e.Root.Set("internals","mutationtrace",list)
+				}
+				
 			}
+
+			e.Root.TriggerEvent("new-mutation",n)
 		}
 	}
 
+	if e.ElementStore != nil && e.ElementStore.MutationReplay{
+		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
+			return
+		}
+
+		if e.Registered(){
+			n:= NewObject().
+				Set("id",String(e.ID)).
+				Set("cat",String(category)).
+				Set("prop",String(propname)).
+			Commit()
+
+			t,ok:= e.Root.Get("internals","mutationlist")
+			if !ok{
+				t= NewList(n).Commit()
+				e.Root.Set("internals","mutationlist",t)
+			} else{
+				list,ok:= t.(List)
+				if !ok{
+					e.Root.Set("internals","mutationlist",NewList(n).Commit())
+				} else{
+					e.Root.Set("internals","mutationlist",list.MakeCopy().Append(n).Commit())
+				}	
+			}
+		}
+	}
 }
 
 // mutationReplay basically replays the trace of the program stored as a list of prop mutations of 
@@ -1707,7 +1745,10 @@ func (e *Element) Set(category string, propname string, value Value) {
 func mutationReplay(root *Element){
 	l,ok:= root.Get("internals","mutationtrace")
 	if ok{
-		list:= l.(List)
+		list,ok:= l.(List)
+		if !ok{
+			return
+		}
 		for _,m:= range list.UnsafelyUnwrap(){
 			obj:= m.(Object)
 
@@ -1724,6 +1765,10 @@ func mutationReplay(root *Element){
 			prop,ok := obj.Get("prop")
 			if !ok{
 				panic("mutation record should have a property")
+			}
+
+			if prop.(String).String() == "mutationtrace" && cat.(String).String() == "internals"{
+				continue
 			}
 
 			val,ok:= obj.Get("val")

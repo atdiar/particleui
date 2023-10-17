@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -565,7 +566,7 @@ func (d Document) Window() Window {
 	return wd
 }
 
-func (d Document)GetElementById(id string) *ui.Element{
+func (d Document) GetElementById(id string) *ui.Element{
 	return ui.GetById(d.AsElement(),id)
 }
 
@@ -647,7 +648,7 @@ func(d Document) Router() *ui.Router{
 func(d Document) Delete(){ // TODO check for dangling references
 	ui.DoSync(func(){
 		e:= d.AsElement()
-		d.Router().NavCancel()
+		d.Router().CancelNavigation()
 		ui.Delete(e)
 	})
 }
@@ -703,7 +704,7 @@ func(s StyleSheet) String() string{
 func (d Document) NewStyleSheet(id string) StyleSheet{
 	o:= d.NewObservable(id).AsElement()
 	o.DocType = "text/css"
-	makeStyleSheet(o)
+	makeStyleSheet(o, id)
 	o.TriggerEvent("new")
 	s:= StyleSheet{raw:o}
 	d.StyleSheets[id] = s
@@ -731,6 +732,15 @@ func(d Document) SetActiveStyleSheets(ids ...string) Document{
 	return d
 }
 
+func(d Document) DeleteStyleSheet(id string){
+	s,ok:= d.StyleSheets[id]
+	if !ok{
+		return
+	}
+	s.Delete()
+	delete(d.StyleSheets,id)
+}
+
 func(s StyleSheet) Enable() StyleSheet{
 	s.AsElement().TriggerEvent("enable")
 	return s
@@ -753,6 +763,82 @@ func(s StyleSheet) Active() bool{
 func(s StyleSheet) Update() StyleSheet{
 	s.AsElement().SetUI("stylesheet",ui.String(s.String()))
 	return s
+}
+
+func(s StyleSheet) Delete(){
+	ui.Delete(s.AsElement())
+}
+
+// TODO attach mutationrecorder to document on document creation
+// Make sure that it is sessionstorage enabled.
+// Think about the datastorage logic, (also when reseting the recorder)
+
+// mutationRecorder holds the log of the property mutations of a document.
+type mutationRecorder struct{
+	raw *ui.Element 
+}
+
+func( m mutationRecorder) Capture(){
+	m.raw.ElementStore.EnableMutationCapture()
+	d:= GetDocument(m.raw)
+
+	var h *ui.MutationHandler
+	h = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			l,ok:= m.raw.GetData("mutationlist")
+			if !ok{
+				m.raw.SetData("mutationlist", ui.NewList(evt.NewValue()).Commit())
+			} else{
+				list,ok:= l.(ui.List)
+				if !ok{
+					m.raw.SetData("mutationlist",ui.NewList(evt.NewValue()).Commit())
+				} else{
+					m.raw.SetData("mutationlist",list.MakeCopy().Append(evt.NewValue()).Commit())
+				}
+			}
+		return false
+	})
+
+	m.raw.WatchEvent("new-mutation",d, h)
+	m.raw.WatchEvent("stop-mutationrecording", d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		d.RemoveMutationHandler("internals","mutationlist",m.raw,h)
+		return false
+	}).RunOnce())
+
+}
+
+func(m mutationRecorder) Replay() error{
+	m.raw.TriggerEvent("stop-mutationrecording")
+	m.raw.ElementStore.EnableMutationReplay()
+	d:= GetDocument(m.raw)
+	d.Router().CancelNavigation()
+	mutationreplay(&d)
+
+	replaylist,_:= d.Get("internals","mutationlist")
+	recordlist,_:= m.raw.GetData("mutationlist")
+
+	complete := ui.Equal(replaylist, recordlist)
+	if !complete{
+		return errors.New("Exact state hasn't been recovered from mutation recording")
+	}
+	return nil
+}
+
+func(m mutationRecorder) Reset() {
+	//TODO
+}
+
+
+func (d Document) newMutationRecorder(options ...string) mutationRecorder{
+	m:= d.NewObservable("mutation-recorder", options...)
+	return mutationRecorder{m.AsElement()}
+}
+
+func (d Document) MutationRecorder() mutationRecorder{
+	m:= d.GetElementById("mutation-recorder")
+	if m == nil{
+		panic("mutation recorder is missing")
+	}
+	return mutationRecorder{m}
 }
 
 
@@ -1001,6 +1087,10 @@ func withNativejshelpers(d *Document) *Document{
 					}
 				});
 			})();
+
+			window.filterByValue(arr, valueToRemove) {
+				return arr.filter(item => item !== valueToRemove);
+			}
 			`,
 		)
 	h:= d.Head()
