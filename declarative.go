@@ -17,6 +17,18 @@ func Children(children ...*Element) func(*Element)*Element{
 		return e
 	}
 }
+
+// Append is an *Element modifier which can be used to append children to an Element.
+// It is used in the declarative specification of a UI tree.
+func AppendChildren(children ...*Element) func(*Element)*Element{
+	return func(e *Element) *Element{
+		for _,child:= range children{
+			e.AppendChild(child)
+		}
+		return e
+	}
+}
+
 // Listen is an *Element modifier that enables an element to listen to a specific event and handle to it.
 func Listen(event string, h *EventHandler) func(*Element)*Element{
 	return func(e *Element) *Element{

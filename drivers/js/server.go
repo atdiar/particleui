@@ -85,7 +85,7 @@ func newDefaultServer() *http.Server{
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8888"
 	}
 
 	server := &http.Server{
@@ -233,14 +233,20 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 
 		document:= f()
 		withNativejshelpers(&document)
+		err := d.mutationRecorder().Replay()
+		if err != nil{
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		d.mutationRecorder().Capture()
 		
 		go func(){
 			document.ListenAndServe(r.Context())	// launches a new UI thread
-		}() 
+		}()
 		
 
 		ui.DoSync(func() {
-			router:= ui.GetRouter(document.AsElement())
+			router:= document.Router()
 			route:= r.URL.Path
 			_,routeexist:= router.Match(route)
 			if routeexist != nil{
@@ -248,6 +254,7 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 			}
 			router.GoTo(route)
 		})
+		
 		
 		err= document.Render(w)
 		if err != nil{ 
@@ -263,8 +270,6 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 
 	})
 
-
-	// TODO reset global state i.e. ElementStore and Document's BuildOption ? and PRNG based ID generator oo
 	return func(ctx context.Context){
 		log.Print("Listening on: "+Server.Addr)
 		if ctx == nil{
@@ -749,7 +754,7 @@ func newHTMLDocument(document Document) *html.Node {
 
 func generateStateHistoryRecordElement(root *ui.Element) *html.Node{
 	state:=  SerializeStateHistory(root)
-	script:= `<script id='` + root.ID+SSRStateSuffix+`' type="application/json">
+	script:= `<script id='` + SSRStateElementID+`' type="application/json">
 	` + state + `
 	<script>`
 	scriptNode, err:= html.Parse(strings.NewReader(script))

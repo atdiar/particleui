@@ -1109,6 +1109,9 @@ func NewNavigationHistory(approot *Element) *NavHistory {
 		}
 		o:= approot.ElementStore.NewObservable(id)
 		RegisterElement(approot,o.AsElement())
+		// Initially was done in the constructore but might be more appropriate here
+		o.AsElement().TriggerEvent("mountable")
+		o.AsElement().TriggerEvent("mounted")
 		return o
 	}
 	n.RecoverState = func(o Observable)Observable{

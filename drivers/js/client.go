@@ -31,21 +31,22 @@ var (
 		ApplyGlobalOption(allowdatapersistence)
 )
 
-// TODO on init, Apply EnableMutationCaptureto Elements if ldlflags -X tag is set for the buildtype variable to "dev" 
+// TODO on init, Apply EnableMutationCapture to Elements if ldlflags -X tag is set for the buildtype variable to "dev" 
 // Also, the mutationtrace should be stored in the sessionstorage or localstorage
-// And the mutationtrace shouldreplay once the document is ready.
+// And the mutationtrace should replay once the document is ready.
 
 
 // NewBuilder registers a new document building function.
 func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 	return  func(ctx context.Context){
-		d:=f()
 		// GC is triggered only when the browser is idle.
 		debug.SetGCPercent(-1)
 		js.Global().Set("triggerGC", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			runtime.GC()
 			return nil
 		}))
+
+		d:=f()
 		withNativejshelpers(&d)
 
 		scrIdleGC := d.Script().SetInnerHTML(`
@@ -82,15 +83,69 @@ func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
 			
 			return false
 		}))*/
+		
 
 		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
 			return false
 		}))
 
+		err := d.mutationRecorder().Replay()
+		if err != nil{
+			d.mutationRecorder().Clear()
+			d=f()
+			withNativejshelpers(&d)
+
+			scrIdleGC := d.Script().SetInnerHTML(`
+				let lastGC = Date.now();
+
+				function runGCDuringIdlePeriods(deadline) {
+
+					if (deadline.didTimeout || !deadline.timeRemaining()) {
+						setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
+						return;
+					}
+					
+					let now = Date.now();
+					if (now - lastGC >= 120000) { // Check if at least 2 minutes passed since last GC
+						window.triggerGC(); // Trigger GC
+						lastGC = now;
+					}
+
+					// Schedule a new callback for the next idle time, but not sooner than 2 minutes from now
+					setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
+				}
+
+				// Start the loop
+				window.requestIdleCallback(runGCDuringIdlePeriods);
+		
+			`)
+			d.Head().AppendChild(scrIdleGC)
+
+			d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				js.Global().Call("onWasmDone")
+				return false
+			}))
+
+			DEBUG(err)
+		}
+		d.mutationRecorder().Capture()
+
 		d.ListenAndServe(ctx)
 	}
 }
+
+/*
+
+SSR is implemented as mutation capture without replay on the server and
+mutation replay without capture on the client.
+
+Hot Reloading is implemented as mutation capture with replay on the client.
+
+Pure CSR (client side rendering) does not capture, nor replay mutations.
+Pure SSG (server side rendering) does not capture, nor replay mutations.
+
+*/
 
 var dEBUGJS = func(v js.Value, isJsonString ...bool){
 	if isJsonString!=nil{
@@ -359,29 +414,28 @@ var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 })
 
 
-// TODO
-// it also recovers the mutationtrace
-func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRStateNodeID string) bool{
-	if !document.Truthy(){
-		return false
-	}
+func nativeDocumentAlreadyRendered() bool{
 	//  get native document status by looking for the ssr hint encoded in the page (data attribute)
 	// the data attribute should be removed once the document state is replayed.
-	statenode:= document.Call("getElementById",SSRStateNodeID )
+	statenode:= js.Global().Get("document)").Call("getElementById",SSRStateElementID )
 	if !statenode.Truthy(){
 		// TODO: check if the document is already rendered, at least partially, still.
 		return false
 	}
+
+	/*
 	state:= statenode.Get("textContent").String()
 	v,err:= DeserializeStateHistory(state)
 	if err != nil{
 		panic(err)
 	}
+	
 	root.Set("internals","mutationtrace",v)	
-	root.WatchEvent("mutationreplayed",root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	root.WatchEvent("mutation-replayed",root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		statenode.Call("remove")
 		return false
 	}))
+	*/
 
 	return true
 }
@@ -389,17 +443,31 @@ func nativeDocumentAlreadyRendered(root *ui.Element, document js.Value, SSRState
 func ConnectNative(e *ui.Element, tag string){
 	id:= e.ID
 	if e.IsRoot(){
-		if  nativeDocumentAlreadyRendered(e,js.Global().Get("document"), id + SSRStateSuffix){
-			e.ElementStore.EnableMutationReplay()
-			e.WatchEvent("mutationreplayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
-				evt.Origin().ElementStore.MutationReplay = false
+		if  nativeDocumentAlreadyRendered() && e.ElementStore.MutationReplay{
+			e.ElementStore.Disconnected = true
+
+			statenode:= js.Global().Get("document)").Call("getElementById",SSRStateElementID )
+			state:= statenode.Get("textContent").String()
+			v,err:= DeserializeStateHistory(state)
+			if err != nil{
+				panic(err)
+			}
+			
+			e.Set("internals","mutationtrace",v)	
+
+			e.WatchEvent("mutation-replayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
+				// TODO check value to see if replay  error or not?
+				e.ElementStore.MutationReplay = false
+				statenode.Call("remove")
+				evt.Origin().TriggerEvent("connect-native")
+				evt.Origin().ElementStore.Disconnected = false
 				return false
 			}))
 		}
 	}
 	
-	if e.ElementStore.MutationReplay{
-		e.WatchEvent("mutationreplayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	if e.ElementStore.Disconnected{
+		e.WatchEvent("connect-native",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 
 			if tag == "window"{
 				wd := js.Global().Get("document").Get("defaultView")
@@ -411,7 +479,7 @@ func ConnectNative(e *ui.Element, tag string){
 			}
 		
 			if tag == "html"{
-				// connect localStorage and sessionSTtorage
+				// connect localStorage and sessionStorage
 				ls :=  jsStore{js.Global().Get("localStorage")}
 				ss :=  jsStore{js.Global().Get("sessionStorage")}
 				ls.Set("zui-connected",js.ValueOf(true))

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrNoTemplate = errors.New("Element template missing")
+	ErrReplayFailure = errors.New("mutation replay failed")
 	DEBUG         = log.Println // DEBUG
 )
 
@@ -45,6 +45,7 @@ type ElementStore struct {
 
 	MutationCapture bool
 	MutationReplay bool
+	Disconnected bool // true if the go element tree is not connected to its native counterpart
 }
 
 type storageFunctions struct {
@@ -89,7 +90,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 
 // NewElementStore creates a new namespace for a list of Element constructors.
 func NewElementStore(storeid string, doctype string) *ElementStore {
-	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]storageFunctions, 5), make(map[string]bool,8),false,false}
+	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]storageFunctions, 5), make(map[string]bool,8),false,false, false}
 	es.RuntimePropTypes["event"]=true
 	es.RuntimePropTypes["navigation"]=true
 	es.RuntimePropTypes["runtime"]=true
@@ -97,8 +98,8 @@ func NewElementStore(storeid string, doctype string) *ElementStore {
 
 	es.NewConstructor("observable",func(id string)*Element{ // TODO check if this shouldn't be done at the coument level rather
 		o:= newObservable(id)
-		o.AsElement().TriggerEvent("mountable")
-		o.AsElement().TriggerEvent("mounted")
+		//o.AsElement().TriggerEvent("mountable")
+		//o.AsElement().TriggerEvent("mounted")
 		return o.AsElement()
 	})
 	
@@ -1681,110 +1682,151 @@ func (e *Element) Set(category string, propname string, value Value) {
 		}
 	}
 
-	if e.ElementStore!= nil && e.ElementStore.MutationCapture{
+	if mutationcapturing(e){
 		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
 			return
 		}
-		if e.Registered(){
-			m:= NewObject()
-			m.Set("id",String(e.ID))
-			m.Set("cat",String(category))
-			m.Set("prop",String(propname))
-			n:= m.Commit()
-			m.Set("val",Copy(value))
-			l,ok:= e.Root.Get("internals","mutationtrace")
+		m:= NewObject()
+		m.Set("id",String(e.ID))
+		m.Set("cat",String(category))
+		m.Set("prop",String(propname))
+		n:= m.Commit()
+		m.Set("val",Copy(value))
+		l,ok:= e.Root.Get("internals","mutationtrace")
+		if !ok{
+			l=NewList(m.Commit()).Commit()
+			e.Root.Set("internals","mutationtrace",l)
+		} else {
+			list,ok:= l.(List)
 			if !ok{
-				l=NewList(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",l)
+				list = NewList(m.Commit()).Commit()
+				e.Root.Set("internals","mutationtrace",list)
 			} else{
-				list,ok:= l.(List)
-				if !ok{
-					list = NewList(m.Commit()).Commit()
-					e.Root.Set("internals","mutationtrace",list)
-				} else{
-					list = list.MakeCopy().Append(m.Commit()).Commit()
-					e.Root.Set("internals","mutationtrace",list)
-				}
-				
+				list = list.MakeCopy().Append(m.Commit()).Commit()
+				e.Root.Set("internals","mutationtrace",list)
 			}
-
-			e.Root.TriggerEvent("new-mutation",n)
 		}
+
+		e.Root.TriggerEvent("new-mutation",n)
 	}
 
-	if e.ElementStore != nil && e.ElementStore.MutationReplay{
+	if mutationreplaying(e){
 		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
 			return
 		}
 
-		if e.Registered(){
-			n:= NewObject().
-				Set("id",String(e.ID)).
-				Set("cat",String(category)).
-				Set("prop",String(propname)).
-			Commit()
+		n:= NewObject().
+			Set("id",String(e.ID)).
+			Set("cat",String(category)).
+			Set("prop",String(propname)).
+		Commit()
 
-			t,ok:= e.Root.Get("internals","mutationlist")
+		t,ok:= e.Root.Get("internals","mutationlist")
+		if !ok{
+			t= NewList(n).Commit()
+			e.Root.Set("internals","mutationlist",t)
+		} else{
+			list,ok:= t.(List)
 			if !ok{
-				t= NewList(n).Commit()
-				e.Root.Set("internals","mutationlist",t)
+				e.Root.Set("internals","mutationlist",NewList(n).Commit())
 			} else{
-				list,ok:= t.(List)
-				if !ok{
-					e.Root.Set("internals","mutationlist",NewList(n).Commit())
-				} else{
-					e.Root.Set("internals","mutationlist",list.MakeCopy().Append(n).Commit())
-				}	
-			}
+				e.Root.Set("internals","mutationlist",list.MakeCopy().Append(n).Commit())
+			}	
 		}
 	}
 }
 
 // mutationReplay basically replays the trace of the program stored as a list of prop mutations of 
 // the UI tree. 
-func mutationReplay(root *Element){
+func mutationReplay(root *Element) error{
 	l,ok:= root.Get("internals","mutationtrace")
 	if ok{
 		list,ok:= l.(List)
 		if !ok{
-			return
+			return nil
 		}
 		for _,m:= range list.UnsafelyUnwrap(){
 			obj:= m.(Object)
 
 			id,ok:= obj.Get("id")
 			if !ok{
-				panic("mutation record should have an id")
+				return ErrReplayFailure
 			}
 
 			cat,ok:= obj.Get("cat")
 			if !ok{
-				panic("mutation record should have a category")
+				return ErrReplayFailure
 			}
 
 			prop,ok := obj.Get("prop")
 			if !ok{
-				panic("mutation record should have a property")
-			}
-
-			if prop.(String).String() == "mutationtrace" && cat.(String).String() == "internals"{
-				continue
+				return ErrReplayFailure
 			}
 
 			val,ok:= obj.Get("val")
 			if !ok{
-				panic("mutation record should have a value")
+				return ErrReplayFailure
 			}
 
 			e:= GetById(root,id.(String).String())
 			if e==nil{
-				panic("FWERR: element " + id.(String).String() + " does not exist. Unable to recover Pre-rendered state")	
+				return ErrReplayFailure
 			}
+			e.BindValue("event","mutationreplayed",root)
 			e.Set(cat.(String).String(),prop.(String).String(),val)	
 		}
-		root.Set("internals","mutationtrace",nil)
-		root.TriggerEvent("documentstaterecovered")
+		root.Set("internals","mutationtrace",NewList().Commit())
+		root.TriggerEvent("mutationreplayed")
 	}
+	return nil
+}
+
+func mutationreplaying(e *Element) bool{
+	if e == nil{
+		return false
+	}
+	if e.ElementStore == nil{
+		return false
+	}
+	if !e.ElementStore.MutationReplay{
+		return false
+	}
+
+	if !e.Registered(){
+		DEBUG("element is not registered")
+		return false
+	}
+
+	v,ok:= e.Root.Get("internals", "mutation-replaying")
+	if !ok{
+		return false
+	}
+
+	return v.(Bool).Bool()
+}
+
+func mutationcapturing(e *Element)bool{
+	if e == nil{
+		return false
+	}
+	if e.ElementStore == nil{
+		return false
+	}
+	if !e.ElementStore.MutationCapture{
+		return false
+	}
+
+	if !e.Registered(){
+		DEBUG("element is not registered")
+		return false
+	}
+
+	v,ok:= e.Root.Get("internals", "mutation-capturing")
+	if !ok{
+		return false
+	}
+
+	return v.(Bool).Bool()
 }
 
 

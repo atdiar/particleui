@@ -345,7 +345,7 @@ func cloneReq(r *http.Request) (*http.Request){
 }
 */
 
-// enablefetching enablesa fetch transition for an element
+// enablefetching adds fetch transition support to UI elements.
 func(e *Element) enablefetching() *Element{
 	prefetch := NewMutationHandler(func(evt MutationEvent)bool{
 		// prefetchstart by iterating on prefetchlist
@@ -416,30 +416,36 @@ func(e *Element) Prefetch(){
 	if !e.Registered(){
 		panic("Prefetch can only be called on registered elements")
 	}
-	
-	// should start the prefetching process by triggering the prefetch transitions that have been registered
-	e.StartTransition("prefetch")
-		
+	e.Root.WatchEvent("document-loaded",e.Root, NewMutationHandler(func(evt MutationEvent)bool{
+		// should start the prefetching process by triggering the prefetch transitions that have been registered
+		e.StartTransition("prefetch")
+			return false
+	}).RunASAP().RunOnce())
 }
 
 
 func(e *Element) Fetch(props ...string){
 	if !e.Registered(){
-		//panic("Fetch can only be called on registered elements. Error for "+ e.ID)
-		return // eventually registration is going to be unnecessary
+		panic("Fetch can only be called on registered elements. Error for "+ e.ID)
 	}
-	if len(props) == 0{
-		e.Properties.Delete("runtime","fetcherrors")
-		//e.Properties.Delete("fetchstatus","cancelled")
 
-		// should start the fetching process by triggering the fetch transitions that have been registered
-		e.StartTransition("fetch")
-		return
-	}
-	for _,prop:= range props{
-		e.startfetchTransition(prop)
-	}
+	// The Fetch will only proceed once a document tree is fully created, i.e. once the document-loaded event
+	// has fired
+	e.Root.WatchEvent("document-loaded",e.Root, NewMutationHandler(func(evt MutationEvent)bool{
+		if len(props) == 0{
+			e.Properties.Delete("runtime","fetcherrors")
+			//e.Properties.Delete("fetchstatus","cancelled")
 	
+			// should start the fetching process by triggering the fetch transitions that have been registered
+			e.StartTransition("fetch")
+			return false
+		}
+		for _,prop:= range props{
+			e.startfetchTransition(prop)
+		}	
+		
+		return false
+	}).RunASAP().RunOnce())
 }
 
 func(e *Element) ForceFetch(){
@@ -792,71 +798,76 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 		panic("Element is not registered. Cannot process request")
 	}
 
-	var ctx context.Context
-	var cancelFn context.CancelFunc
+	e.Root.WatchEvent("document-loaded", e.Root,NewMutationHandler(func(evt MutationEvent)bool{
+		var ctx context.Context
+		var cancelFn context.CancelFunc
 
-	onstart := NewMutationHandler(func(evt MutationEvent)bool{
-		ctx,cancelFn= context.WithCancel(r.Context())
-		r = r.WithContext(ctx)
+		onstart := NewMutationHandler(func(evt MutationEvent)bool{
+			ctx,cancelFn= context.WithCancel(r.Context())
+			r = r.WithContext(ctx)
 
-		e.Properties.Delete("event","request-error-"+requestID(r))
+			e.Properties.Delete("event","request-error-"+requestID(r))
 
-		DoAsync(e.Root,func() {
-			res, err:= HttpClient.Do(r)
-			if err!= nil{
+			DoAsync(e.Root,func() {
+				res, err:= HttpClient.Do(r)
+				if err!= nil{
+					DoSync(func(){
+						e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
+					})
+					return
+				}
+				defer res.Body.Close()
+				if responsehandler == nil{
+					return
+				}
+				v,err:= responsehandler(res)
+				if err!= nil{
+					DoSync(func(){
+						e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
+					})
+					return
+				}
 				DoSync(func(){
-					e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
+					e.endrequestTransition(r.URL.String(),newRequestStateObject(v,nil))
 				})
-				return
-			}
-			defer res.Body.Close()
-			if responsehandler == nil{
-				return
-			}
-			v,err:= responsehandler(res)
-			if err!= nil{
-				DoSync(func(){
-					e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))
-				})
-				return
-			}
-			DoSync(func(){
-				e.endrequestTransition(r.URL.String(),newRequestStateObject(v,nil))
 			})
-		})
-		return false
-	}).RunOnce()
+			return false
+		}).RunOnce()
 
-	onerror:= NewMutationHandler(func(evt MutationEvent)bool{
-		return false
-	}).RunOnce()
+		onerror:= NewMutationHandler(func(evt MutationEvent)bool{
+			return false
+		}).RunOnce()
 
-	
-	oncancel := NewMutationHandler(func(evt MutationEvent)bool{
-		cancelFn()
-		return false
-	}).RunOnce()
+		
+		oncancel := NewMutationHandler(func(evt MutationEvent)bool{
+			cancelFn()
+			return false
+		}).RunOnce()
 
-	onend := NewMutationHandler(func(evt MutationEvent)bool{
-		// initially thought that we could do nothing if req was canceleld or on error
-		// but in fact it doesn't matter because a request in flight may still have mutated data on 
-		// the serveer
-		// the clien only controls the request.
-		evt.Origin().Root.TriggerEvent("request-"+requestID(r),String(r.Method))
-		return false
-	}).RunOnce()
+		onend := NewMutationHandler(func(evt MutationEvent)bool{
+			// initially thought that we could do nothing if req was canceleld or on error
+			// but in fact it doesn't matter because a request in flight may still have mutated data on 
+			// the serveer
+			// the clien only controls the request.
+			evt.Origin().Root.TriggerEvent("request-"+requestID(r),String(r.Method))
+			return false
+		}).RunOnce()
 
-	e.newRequestTransition(requestID(r),onstart,onerror,oncancel,onend)
+		e.newRequestTransition(requestID(r),onstart,onerror,oncancel,onend)
 
-	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
-		evt.Origin().OnRequestError(r,NewMutationHandler(func(event MutationEvent)bool{
-			event.Origin().endrequestTransition(r.URL.String(),event.NewValue())
+		e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
+			evt.Origin().OnRequestError(r,NewMutationHandler(func(event MutationEvent)bool{
+				event.Origin().endrequestTransition(r.URL.String(),event.NewValue())
+				return false
+			}).RunOnce())
 			return false
 		}).RunOnce())
+		
+		e.startrequestTransition(requestID(r))
+		
 		return false
-	}).RunOnce())
-	
-	e.startrequestTransition(requestID(r))
+	}).RunOnce().RunASAP())
+
 }
 
 func(e *Element)CancelRequest(r *http.Request){
@@ -955,15 +966,10 @@ func(e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *h
 
 	
 	e.OnRequestEnd(r,NewMutationHandler(func(evt MutationEvent)bool{
-		// TODO: modify this so that only representaed data (there is a mutation handler for the same propname
+		// TODO: modify this so that only represented data (there is a mutation handler for the same propname
 		// on the "ui" namespace, is assigned?)
 		truev,_:= e.GetData(propname)
 		e.SetDataSetUI(propname,truev)
-		// Somehow, check if the value is the same as the one we set optimistically
-		// If it is reverted, we should trigger an event to indicate that the value was reverted. (TODO)
-		// An alternative (not sure it is ergonomic) is for the value to hold its state (optimistic, reverted, etc)
-		// SO that the UI can react to this.
-		// Or mybe hold the state of the prop somewhere else but it requires a lot of bookkeeping. (reinitialiwzing state etc)
 		return false
 	}).RunOnce())
 

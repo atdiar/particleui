@@ -6,6 +6,7 @@ import(
 )
 
 var Children = ui.Children
+var AppendChilden = ui.AppendChildren
 var E = ui.New
 var Listen = ui.Listen
 var Class = func(classes ...string) func(*ui.Element)*ui.Element{

@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
+	//"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -72,7 +72,7 @@ func newIDgenerator(charlen int, seed uint64) func() string {
 var newID = newIDgenerator(16, uint64(time.Now().UnixNano()))
 
 
-func SerializeStateHistory(e *ui.Element) string{ // TODO review mutationcapture state handling
+func SerializeStateHistory(e *ui.Element) string{
 	d:= GetDocument(e).AsElement()
 	sth,ok:= d.Get("internals","mutationtrace")
 	if !ok{
@@ -596,6 +596,10 @@ func(d Document) NewObservable(id string, options ...string) ui.Observable{
 	o:= d.AsElement().ElementStore.NewObservable(id,options...).AsElement()
 	
 	ui.RegisterElement(d.AsElement(),o)
+	// DEBUG initially that was done in the constructor but might be 
+	// more appropriate here.
+	o.TriggerEvent("mountable")
+	o.TriggerEvent("mounted")
 
 	return ui.Observable{o}
 }	
@@ -622,6 +626,11 @@ func(d Document) SetLang(lang string) Document{
 func (d Document) OnNavigationEnd(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("navigation-end", d, h)
 }
+
+func(d Document) OnLoaded(h *ui.MutationHandler){
+	d.AsElement().WatchEvent("document-loaded",d,h)
+}
+
 
 func(d Document) OnReady(h *ui.MutationHandler){
 	d.AsElement().WatchEvent("document-ready",d,h)
@@ -778,9 +787,12 @@ type mutationRecorder struct{
 	raw *ui.Element 
 }
 
-func( m mutationRecorder) Capture(){
-	m.raw.ElementStore.EnableMutationCapture()
+func(m mutationRecorder) Capture(){
+	if  !m.raw.ElementStore.MutationCapture{
+		return
+	}
 	d:= GetDocument(m.raw)
+	d.Set("internals","mutation-capturing",ui.Bool(true))
 
 	var h *ui.MutationHandler
 	h = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
@@ -799,33 +811,48 @@ func( m mutationRecorder) Capture(){
 	})
 
 	m.raw.WatchEvent("new-mutation",d, h)
-	m.raw.WatchEvent("stop-mutationrecording", d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		d.RemoveMutationHandler("internals","mutationlist",m.raw,h)
-		return false
-	}).RunOnce())
-
 }
 
-func(m mutationRecorder) Replay() error{
-	m.raw.TriggerEvent("stop-mutationrecording")
-	m.raw.ElementStore.EnableMutationReplay()
+func(m mutationRecorder) Replay() error {
+	if !m.raw.ElementStore.MutationReplay{
+		return ui.ErrReplayFailure
+	}
+
 	d:= GetDocument(m.raw)
-	d.Router().CancelNavigation()
-	mutationreplay(&d)
+	d.Set("internals","mutation-capturing",ui.Bool(false))
+	d.Set("internals","mutation-replaying",ui.Bool(true))
+
+	defer func(){
+		d.Set("internals","mutation-replaying",ui.Bool(false))
+	}()
+
+	if r:= d.Router(); r!= nil{
+		r.CancelNavigation()
+	}
+	err := mutationreplay(&d)
+	if err != nil{
+		return ui.ErrReplayFailure
+	}
 
 	replaylist,_:= d.Get("internals","mutationlist")
 	recordlist,_:= m.raw.GetData("mutationlist")
 
 	complete := ui.Equal(replaylist, recordlist)
+	
+
 	if !complete{
-		return errors.New("Exact state hasn't been recovered from mutation recording")
+		return ui.ErrReplayFailure
 	}
+	d.TriggerEvent("mutation-replayed")
 	return nil
 }
 
-func(m mutationRecorder) Reset() {
-	//TODO
+func(m mutationRecorder) Clear(){
+	m.raw.SetData("mutationlist",ui.NewList().Commit())
+	d:= GetDocument(m.raw)
+	d.Set("internals","mutationtrace",ui.NewList().Commit())
 }
+
 
 
 func (d Document) newMutationRecorder(options ...string) mutationRecorder{
@@ -833,7 +860,7 @@ func (d Document) newMutationRecorder(options ...string) mutationRecorder{
 	return mutationRecorder{m.AsElement()}
 }
 
-func (d Document) MutationRecorder() mutationRecorder{
+func (d Document) mutationRecorder() mutationRecorder{
 	m:= d.GetElementById("mutation-recorder")
 	if m == nil{
 		panic("mutation recorder is missing")
@@ -939,11 +966,11 @@ var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool 
 	return false
 }).RunASAP()
 
-func mutationreplay(d *Document) {
+func mutationreplay(d *Document) error {
 
 	e:= d.Element
 	if !e.ElementStore.MutationReplay{
-		return
+		return nil
 	}
 
 	rh,ok:= e.Get("internals","mutationtrace")
@@ -958,19 +985,38 @@ func mutationreplay(d *Document) {
 
 	for _,rawop:= range mutationtrace.UnsafelyUnwrap(){
 		op:= rawop.(ui.Object)
-		elementid:= string(op.MustGetString("id"))
-		category:= string(op.MustGetString("cat"))
-		propname:= string(op.MustGetString("prop"))
-		value,_:= op.Get("val")
-		el:= GetDocument(e).GetElementById(elementid)
+			id,ok:= op.Get("id")
+			if !ok{
+				return ui.ErrReplayFailure
+			}
+
+			cat,ok:= op.Get("cat")
+			if !ok{
+				return ui.ErrReplayFailure
+			}
+
+			prop,ok := op.Get("prop")
+			if !ok{
+				return ui.ErrReplayFailure
+			}
+
+			val,ok:= op.Get("val")
+			if !ok{
+				return ui.ErrReplayFailure
+			}
+		el:= GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil{
-			panic("Unable to recover state for this element id. Element  doesn't exist")
+			// Unable to recover state for this element id. Element  doesn't exist"
+			return ui.ErrReplayFailure
 		}
-		el.BindValue("event","mutationreplayed",e)
-		el.Set(category,propname,value)
+		
+		el.BindValue("event","connect-native",e)
+		el.BindValue("event","mutation-replayed",e)
+		
+		el.Set(cat.(ui.String).String(),prop.(ui.String).String(),val)
 	}
 
-	e.TriggerEvent("mutationreplayed")
+	return nil
 }
 
 func Autofocus(e *ui.Element) *ui.Element{
@@ -1112,6 +1158,7 @@ func NewDocument(id string, options ...string) Document {
 	
 	d = withStdConstructors(d)
 	d.StyleSheets = make(map[string]StyleSheet)
+	d.newMutationRecorder(EnableSessionPersistence())
 
 	e:= d.Element
 
@@ -1123,8 +1170,6 @@ func NewDocument(id string, options ...string) Document {
 	d.WatchEvent("document-loaded",d,navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
-
-	mutationreplay(&d)
 	activityStateSupport(e)
 
 	if inBrowser(){
@@ -1465,6 +1510,44 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 	return e
 })
 
+// EnableWasm adds the default wasm loader script to the head element of the document.
+func (d *Document) EnableWasm() *Document{
+	h:= d.Head()
+	h.AppendChild(d.Script.WithID("wasmVM").Src("/wasm_exec.js"))
+	h.AppendChild(d.Script.WithID("goruntime").
+		SetInnerHTML(
+			`
+				let wasmLoadedResolver, loadEventResolver;
+				window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
+				window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
+			
+				window.onWasmDone = function() {
+					wasmLoadedResolver();
+				}
+			
+				window.addEventListener('load', () => {
+					console.log("load event fired...");
+					loadEventResolver();
+				});
+			
+				const go = new Go();
+				WebAssembly.instantiateStreaming(fetch("/app.wasm"), go.importObject)
+				.then((result) => {
+					go.run(result.instance);
+				});
+			
+				Promise.all([window.wasmLoaded, window.loadEventFired]).then(() => {
+					setTimeout(() => {
+						console.log("about to dispatch PageReady event...");
+						window.dispatchEvent(new Event('PageReady'));
+					}, 50);
+				});
+			`,
+		),
+	)
+	return d
+}
+
 
 
 type headConstructor func() HeadElement
@@ -1722,7 +1805,7 @@ func(d divConstructor) WithID(id string, options ...string)DivElement{
 	return DivElement{newDiv(id, options...)}
 }
 
-const SSRStateSuffix = "-ssr-state"
+const SSRStateElementID = "zui-ssr-state"
 const HydrationAttrName = "data-needh2o"
 
 
