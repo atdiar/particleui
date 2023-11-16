@@ -14,6 +14,8 @@ import (
 	"strings"
 	//"math/rand"
 	"net/url"
+	"net/http"
+	"net/http/cookiejar"
 	"time"
 	"runtime"
 	"golang.org/x/exp/rand"
@@ -26,6 +28,13 @@ func init(){
 	ui.NativeEventBridge = NativeEventBridge
 	ui.NativeDispatch = NativeDispatch
 }
+
+var(
+	DevMode = "false"
+	HMRMode = "false"
+	SSRMode = "false"
+	SSGMode = "false"
+)
 
 
 var document *Document
@@ -112,7 +121,7 @@ func (w Window) AsElement() *ui.Element {
 }
 
 func (w Window) SetTitle(title string) {
-	w.AsElement().SetUI("title", ui.String(title))
+	w.AsElement().SetDataSetUI("title", ui.String(title))
 }
 
 // TODO see if can get height width of window view port, etc.
@@ -132,7 +141,7 @@ var newWindowConstructor= Elements.NewConstructor("window", func(id string) *ui.
 
 func newWindow(title string, options ...string) Window {
 	e:= newWindowConstructor("window", options...)
-	e.SetUI("title", ui.String(title))
+	e.SetDataSetUI("title", ui.String(title))
 	return Window{e}
 }
 
@@ -190,6 +199,25 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 		PutInStorage(e)
 		return false
 	}))
+	return e
+})
+
+var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Element) *ui.Element {
+	d:= getDocumentRef(e)
+	fetcher:= ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().Fetch()
+		return false
+	})
+	e.WatchEvent("document-ready",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		e.OnMount(fetcher)
+		e.OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			evt.Origin().RemoveMutationHandler("event","unmounted",evt.Origin(),fetcher)
+			return false
+		}).RunOnce())
+		return false
+	}).RunASAP().RunOnce())
+
+	
 	return e
 })
 
@@ -499,6 +527,7 @@ type Document struct {
 	Form gconstructor[FormElement, formConstructor]
 
 	StyleSheets map[string]StyleSheet
+	HttpClient *http.Client
 }
 
 func(d *Document) initializeIDgenerator() {
@@ -619,7 +648,7 @@ func(d Document) Body() *ui.Element{
 
 
 func(d Document) SetLang(lang string) Document{
-	d.AsElement().SetUI("lang", ui.String(lang))
+	d.AsElement().SetDataSetUI("lang", ui.String(lang))
 	return d
 }
 
@@ -663,7 +692,7 @@ func(d Document) Delete(){ // TODO check for dangling references
 }
 
 func(d Document) SetTitle(title string){
-	d.AsElement().SetUI("title",ui.String(title))
+	d.AsElement().SetDataSetUI("title",ui.String(title))
 }
 
 // Document styles in stylesheet
@@ -770,7 +799,7 @@ func(s StyleSheet) Active() bool{
 
 
 func(s StyleSheet) Update() StyleSheet{
-	s.AsElement().SetUI("stylesheet",ui.String(s.String()))
+	s.AsElement().SetDataSetUI("stylesheet",ui.String(s.String()))
 	return s
 }
 
@@ -934,7 +963,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view,"tabindex","-1")
 		e.Watch("ui","activeview",view,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			e.SetUI("focus",ui.String(view.ID))
+			e.SetDataSetUI("focus",ui.String(view.ID))
 			return false
 		}))
 		return false
@@ -1158,6 +1187,13 @@ func NewDocument(id string, options ...string) Document {
 	
 	d = withStdConstructors(d)
 	d.StyleSheets = make(map[string]StyleSheet)
+	d.HttpClient = &http.Client{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		panic(err)
+	}
+	d.HttpClient.Jar = jar
+	
 	d.newMutationRecorder(EnableSessionPersistence())
 
 	e:= d.Element
@@ -1588,7 +1624,7 @@ type TitleElement struct{
 }
 
 func(m TitleElement) Set(title string) TitleElement{
-	m.AsElement().SetUI("title",ui.String(title))
+	m.AsElement().SetDataSetUI("title",ui.String(title))
 	return m
 }
 
@@ -1667,7 +1703,7 @@ type BaseElement struct{
 }
 
 func(b BaseElement) SetHREF(url string) BaseElement{
-	b.AsElement().SetUI("href",ui.String(url))
+	b.AsElement().SetDataSetUI("href",ui.String(url))
 	return b
 }
 
@@ -1764,12 +1800,12 @@ type DivElement struct {
 }
 
 func (d DivElement) Contenteditable(b bool) DivElement {
-	d.AsElement().SetUI("contenteditable", ui.Bool(b))
+	d.AsElement().SetDataSetUI("contenteditable", ui.Bool(b))
 	return d
 }
 
 func (d DivElement) SetText(str string) DivElement {
-	d.AsElement().SetUI("text", ui.String(str))
+	d.AsElement().SetDataSetUI("text", ui.String(str))
 	return d
 }
 
@@ -1832,41 +1868,41 @@ func (t TextAreaElement) Text() string {
 
 func(t textAreaModifer) Value(text string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("value", ui.String(text))
+		e.SetDataSetUI("value", ui.String(text))
 		return e
 	}
 }
 
 func(t textAreaModifer) Cols(i int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("cols",ui.Number(i))
+		e.SetDataSetUI("cols",ui.Number(i))
 		return e
 	}
 }
 
 func(t textAreaModifer) Rows(i int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("rows",ui.Number(i))
+		e.SetDataSetUI("rows",ui.Number(i))
 		return e
 	}
 }
 
 func(t textAreaModifer) MinLength(i int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("minlength",ui.Number(i))
+		e.SetDataSetUI("minlength",ui.Number(i))
 		return e
 	}
 }
 
 func(t textAreaModifer) MaxLength(i int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("maxlength",ui.Number(i))
+		e.SetDataSetUI("maxlength",ui.Number(i))
 		return e
 	}
 }
 func(t textAreaModifer) Required(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("required",ui.Bool(b))
+		e.SetDataSetUI("required",ui.Bool(b))
 		return e
 	}
 }
@@ -1878,7 +1914,7 @@ func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
-					e.AsElement().SetUI("form", ui.String(form.ID))
+					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
 				return false
 			}).RunOnce())
@@ -1890,14 +1926,14 @@ func (t textAreaModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 
 func(t textAreaModifer) Name(name string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("name",ui.String(name))
+		e.SetDataSetUI("name",ui.String(name))
 		return e
 	}
 }
 
 func(t textAreaModifer) Placeholder(p string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("placeholder",ui.String(p))
+		e.SetDataSetUI("placeholder",ui.String(p))
 		return e
 	}
 }
@@ -1910,7 +1946,7 @@ func(t textAreaModifer) Wrap(mode string)func(*ui.Element)*ui.Element{
 		if mode == "hard" || mode == "off"{
 			v = mode
 		}
-		e.SetUI("wrap",ui.String(v))
+		e.SetDataSetUI("wrap",ui.String(v))
 		return e
 	}
 }
@@ -1923,7 +1959,7 @@ func(t textAreaModifer) Autocomplete(on bool)func(*ui.Element)*ui.Element{
 		}else{
 			val = "off"
 		}
-		e.SetUI("autocomplete",ui.String(val))
+		e.SetDataSetUI("autocomplete",ui.String(val))
 		return e
 	}
 }
@@ -1934,7 +1970,7 @@ func(t textAreaModifer) Spellcheck(mode string)func(*ui.Element)*ui.Element{
 		if mode == "true" || mode == "false"{
 			v = mode
 		}
-		e.SetUI("spellcheck",ui.String(v))
+		e.SetDataSetUI("spellcheck",ui.String(v))
 		return e
 	}
 }
@@ -2077,7 +2113,7 @@ type H1Element struct {
 }
 
 func (h H1Element) SetText(s string) H1Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2105,7 +2141,7 @@ type H2Element struct {
 }
 
 func (h H2Element) SetText(s string) H2Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2132,7 +2168,7 @@ type H3Element struct {
 }
 
 func (h H3Element) SetText(s string) H3Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2159,7 +2195,7 @@ type H4Element struct {
 }
 
 func (h H4Element) SetText(s string) H4Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2185,7 +2221,7 @@ type H5Element struct {
 }
 
 func (h H5Element) SetText(s string) H5Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2212,7 +2248,7 @@ type H6Element struct {
 }
 
 func (h H6Element) SetText(s string) H6Element {
-	h.AsElement().SetUI("text", ui.String(s))
+	h.AsElement().SetDataSetUI("text", ui.String(s))
 	return h
 }
 
@@ -2239,7 +2275,7 @@ type SpanElement struct {
 }
 
 func (s SpanElement) SetText(str string) SpanElement {
-	s.AsElement().SetUI("text", ui.String(str))
+	s.AsElement().SetDataSetUI("text", ui.String(str))
 	return s
 }
 
@@ -2339,7 +2375,7 @@ type ParagraphElement struct {
 }
 
 func (p ParagraphElement) SetText(s string) ParagraphElement {
-	p.AsElement().SetUI("text", ui.String(s))
+	p.AsElement().SetDataSetUI("text", ui.String(s))
 	return p
 }
 
@@ -2390,7 +2426,7 @@ type AnchorElement struct {
 }
 
 func (a AnchorElement) SetHREF(target string) AnchorElement {
-	a.AsElement().SetUI("href", ui.String(target))
+	a.AsElement().SetDataSetUI("href", ui.String(target))
 	return a
 }
 
@@ -2409,7 +2445,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 	}).RunASAP())
 
 	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		a.SetUI("active", evt.NewValue())
+		a.SetDataSetUI("active", evt.NewValue())
 		return false
 	}).RunASAP())
 
@@ -2429,7 +2465,7 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}))
 
-	a.SetUI("link", ui.String(link.AsElement().ID))
+	a.SetDataSetUI("link", ui.String(link.AsElement().ID))
 
 	
 
@@ -2480,7 +2516,7 @@ func (a AnchorElement) OnInactive(h *ui.MutationHandler) AnchorElement {
 }
 
 func (a AnchorElement) SetText(text string) AnchorElement {
-	a.AsElement().SetUI("text", ui.String(text))
+	a.AsElement().SetDataSetUI("text", ui.String(text))
 	return a
 }
 
@@ -2550,14 +2586,14 @@ var ButtonModifier buttonModifer
 
 func(m buttonModifer) Disabled(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("disabled",ui.Bool(b))
+		e.SetDataSetUI("disabled",ui.Bool(b))
 		return e
 	}
 }
 
 func(m buttonModifer) Text(str string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("text", ui.String(str))
+		e.SetDataSetUI("text", ui.String(str))
 		return e
 	}
 }
@@ -2569,7 +2605,7 @@ func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
-					e.SetUI("form", ui.String(form.ID))
+					e.SetDataSetUI("form", ui.String(form.ID))
 				}
 				return false
 			}).RunOnce())
@@ -2581,12 +2617,12 @@ func(b buttonModifer) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 
 
 func (b ButtonElement) SetDisabled(t bool) ButtonElement {
-	b.AsElement().SetUI("disabled", ui.Bool(t))
+	b.AsElement().SetDataSetUI("disabled", ui.Bool(t))
 	return b
 }
 
 func (b ButtonElement) SetText(str string) ButtonElement {
-	b.AsElement().SetUI("text", ui.String(str))
+	b.AsElement().SetDataSetUI("text", ui.String(str))
 	return b
 }
 
@@ -2624,7 +2660,7 @@ func(c buttonConstructor) WithID(id string, typ string, options ...string)Button
 func buttonOption(name string) ui.ConstructorOption{
 	return ui.NewConstructorOption(name,func(e *ui.Element)*ui.Element{
 
-		e.SetUI("type",ui.String(name))		
+		e.SetDataSetUI("type",ui.String(name))		
 
 		return e
 	})
@@ -2639,7 +2675,7 @@ var LabelModifier labelModifier
 
 func(m labelModifier) Text(str string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("text", ui.String(str))
+		e.SetDataSetUI("text", ui.String(str))
 		return e
 	}
 }
@@ -2651,7 +2687,7 @@ func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if e.Mounted(){
-					e.SetUI("for", ui.String(e.ID))
+					e.SetDataSetUI("for", ui.String(e.ID))
 				} else{
 					DEBUG("label for attributes couldb't be set") // panic instead?
 				}
@@ -2664,7 +2700,7 @@ func(m labelModifier) For(e *ui.Element) func(*ui.Element)*ui.Element{
 }
 
 func (l LabelElement) SetText(s string) LabelElement {
-	l.AsElement().SetUI("text", ui.String(s))
+	l.AsElement().SetDataSetUI("text", ui.String(s))
 	return l
 }
 
@@ -2674,7 +2710,7 @@ func (l LabelElement) For(e *ui.Element) LabelElement {
 		
 		evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			if e.Mounted(){
-				l.AsElement().SetUI("for", ui.String(e.ID))
+				l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			}
 			return false
 		}).RunOnce())
@@ -2712,119 +2748,119 @@ var InputModifier inputModifier
 
 func(i inputModifier) Step(step int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("step",ui.Number(step))
+		e.SetDataSetUI("step",ui.Number(step))
 		return e
 	}
 }
 
 func(i inputModifier) Checked(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("checked",ui.Bool(b))
+		e.SetDataSetUI("checked",ui.Bool(b))
 		return e
 	}
 }
 
 func(i inputModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("disabled",ui.Bool(b))
+		e.SetDataSetUI("disabled",ui.Bool(b))
 		return e
 	}
 }
 
 func(i inputModifier) MaxLength(m int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("maxlength",ui.Number(m))
+		e.SetDataSetUI("maxlength",ui.Number(m))
 		return e
 	}
 }
 
 func(i inputModifier) MinLength(m int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("minlength",ui.Number(m))
+		e.SetDataSetUI("minlength",ui.Number(m))
 		return e
 	}
 }
 
 func(i inputModifier) Autocomplete(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("autocomplete",ui.Bool(b))
+		e.SetDataSetUI("autocomplete",ui.Bool(b))
 		return e
 	}
 }
 
 func(i inputModifier) InputMode(mode string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("inputmode",ui.String(mode))
+		e.SetDataSetUI("inputmode",ui.String(mode))
 		return e
 	}
 }
 
 func(i inputModifier) Size(s int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("size",ui.Number(s))
+		e.SetDataSetUI("size",ui.Number(s))
 		return e
 	}
 }
 
 func(i inputModifier) Placeholder(p string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("placeholder",ui.String(p))
+		e.SetDataSetUI("placeholder",ui.String(p))
 		return e
 	}
 }
 
 func(i inputModifier)Pattern(p string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("pattern",ui.String(p))
+		e.SetDataSetUI("pattern",ui.String(p))
 		return e
 	}
 }
 
 func(i inputModifier) Multiple() func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("multiple",ui.Bool(true))
+		e.SetDataSetUI("multiple",ui.Bool(true))
 		return e
 	}
 }
 
 func(i inputModifier) Required(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("required",ui.Bool(b))
+		e.SetDataSetUI("required",ui.Bool(b))
 		return e
 	}
 }
 
 func(i inputModifier) Accept(accept string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("accept",ui.String(accept))
+		e.SetDataSetUI("accept",ui.String(accept))
 		return e
 	}
 }
 
 func(i inputModifier) Src(src string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("src",ui.String(src))
+		e.SetDataSetUI("src",ui.String(src))
 		return e
 	}
 }
 
 func(i inputModifier)Alt(alt string)func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("alt",ui.String(alt))
+		e.SetDataSetUI("alt",ui.String(alt))
 		return e
 	}
 }
 
 func(i inputModifier) Name(name string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("name",ui.String(name))
+		e.SetDataSetUI("name",ui.String(name))
 		return e
 	}
 }
 
 func(i inputModifier) Height(h int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("height",ui.Number(h))
+		e.SetDataSetUI("height",ui.Number(h))
 		return e
 	}
 }
@@ -2832,7 +2868,7 @@ func(i inputModifier) Height(h int) func(*ui.Element)*ui.Element{
 
 func(i inputModifier) Width(w int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("width",ui.Number(w))
+		e.SetDataSetUI("width",ui.Number(w))
 		return e
 	}
 }
@@ -3925,7 +3961,7 @@ type SummaryElement struct{
 }
 
 func (s SummaryElement) SetText(str string) SummaryElement {
-	s.AsElement().SetUI("text", ui.String(str))
+	s.AsElement().SetDataSetUI("text", ui.String(str))
 	return s
 }
 
@@ -3954,17 +3990,17 @@ type DetailsElement struct{
 }
 
 func (d DetailsElement) SetText(str string) DetailsElement {
-	d.AsElement().SetUI("text", ui.String(str))
+	d.AsElement().SetDataSetUI("text", ui.String(str))
 	return d
 }
 
 func(d DetailsElement) Open() DetailsElement{
-	d.AsElement().SetUI("open",ui.Bool(true))
+	d.AsElement().SetDataSetUI("open",ui.Bool(true))
 	return d
 }
 
 func(d DetailsElement) Close() DetailsElement{
-	d.AsElement().SetUI("open",nil)
+	d.AsElement().SetDataSetUI("open",ui.Bool(false))
 	return d
 }
 
@@ -4058,7 +4094,7 @@ type CodeElement struct {
 }
 
 func (c CodeElement) SetText(str string) CodeElement {
-	c.AsElement().SetUI("text", ui.String(str))
+	c.AsElement().SetDataSetUI("text", ui.String(str))
 	return c
 }
 
@@ -4420,7 +4456,7 @@ type LegendElement struct{
 }
 
 func(l LegendElement) SetText(s string) LegendElement{
-	l.AsElement().SetUI("text",ui.String(s))
+	l.AsElement().SetDataSetUI("text",ui.String(s))
 	return l
 }
 
@@ -4451,7 +4487,7 @@ type ProgressElement struct{
 
 func(p ProgressElement) SetMax(m float64) ProgressElement{
 	if m>0{
-		p.AsElement().SetUI("max", ui.Number(m))
+		p.AsElement().SetDataSetUI("max", ui.Number(m))
 	}
 	
 	return p
@@ -4459,7 +4495,7 @@ func(p ProgressElement) SetMax(m float64) ProgressElement{
 
 func(p ProgressElement) SetValue(v float64) ProgressElement{
 	if v>0{
-		p.AsElement().SetUI("value", ui.Number(v))
+		p.AsElement().SetDataSetUI("value", ui.Number(v))
 	}
 	
 	return p
@@ -4496,21 +4532,21 @@ var SelectModifier selectModifier
 
 func(m selectModifier) Autocomplete(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("autocomplete",ui.Bool(b))
+		e.SetDataSetUI("autocomplete",ui.Bool(b))
 		return e
 	}
 }
 
 func(m selectModifier) Size(s int) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("size",ui.Number(s))
+		e.SetDataSetUI("size",ui.Number(s))
 		return e
 	}
 }
 
 func(m selectModifier) Disabled(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("disabled",ui.Bool(b))
+		e.SetDataSetUI("disabled",ui.Bool(b))
 		return e
 	}
 }
@@ -4522,7 +4558,7 @@ func (m selectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 			
 			evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 				if form.Mounted(){
-					e.AsElement().SetUI("form", ui.String(form.ID))
+					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
 				return false
 			}).RunOnce())
@@ -4534,14 +4570,14 @@ func (m selectModifier) Form(form *ui.Element) func(*ui.Element)*ui.Element{
 
 func(m selectModifier) Required(b bool) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("required",ui.Bool(b))
+		e.SetDataSetUI("required",ui.Bool(b))
 		return e
 	}
 }
 
 func(m selectModifier) Name(name string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("name",ui.String(name))
+		e.SetDataSetUI("name",ui.String(name))
 		return e
 	}
 }
@@ -4585,7 +4621,7 @@ var FormModifer = formModifier{}
 
 func(f formModifier) Name(name string) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("name",ui.String(name))
+		e.SetDataSetUI("name",ui.String(name))
 		return e
 	}
 }
@@ -4596,7 +4632,7 @@ func(f formModifier) Method(methodname string) func(*ui.Element) *ui.Element{
 		m = "POST"
 	}
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("method",ui.String(m))
+		e.SetDataSetUI("method",ui.String(m))
 		return e
 	}
 }
@@ -4614,42 +4650,42 @@ func(f formModifier) Target(target string) func(*ui.Element) *ui.Element{
 	}
 
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("target",ui.String(m))
+		e.SetDataSetUI("target",ui.String(m))
 		return e
 	}
 }
 
 func(f formModifier) Action(u url.URL) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("action",ui.String(u.String()))
+		e.SetDataSetUI("action",ui.String(u.String()))
 		return e
 	}
 }
 
 func(f formModifier) Autocomplete() func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("autocomplete",ui.Bool(true))
+		e.SetDataSetUI("autocomplete",ui.Bool(true))
 		return e
 	}
 }
 
 func(f formModifier) NoValidate() func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("novalidate",ui.Bool(true))
+		e.SetDataSetUI("novalidate",ui.Bool(true))
 		return e
 	}
 }
 
 func(f formModifier) EncType(enctype string) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("enctype",ui.String(enctype))
+		e.SetDataSetUI("enctype",ui.String(enctype))
 		return e
 	}
 }
 
 func(f formModifier) Charset(charset string) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI("accept-charset",ui.String(charset))
+		e.SetDataSetUI("accept-charset",ui.String(charset))
 		return e
 	}
 }
@@ -4665,7 +4701,7 @@ var newForm= Elements.NewConstructor("form", func(id string) *ui.Element {
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		_,ok:= e.Get("ui","action")
 		if !ok{
-			evt.Origin().SetUI("action",ui.String(evt.Origin().Route()))
+			evt.Origin().SetDataSetUI("action",ui.String(evt.Origin().Route()))
 		}
 		return false
 	}).RunOnce().RunASAP())
@@ -4846,7 +4882,7 @@ func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, m
 // If the element is not watching the ui property named after the attribute name, it does nothing.
 func Attr(name,value string) func(*ui.Element)*ui.Element{
 	return func(e *ui.Element)*ui.Element{
-		e.SetUI(name,ui.String(value))
+		e.SetDataSetUI(name,ui.String(value))
 		return e
 	}
 }
@@ -4873,3 +4909,7 @@ func(s set) Add(str string) set{
 	s[str]= struct{}{}
 	return s
 }
+
+var NoopMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	return false
+})

@@ -5,28 +5,12 @@ import (
 	"encoding/base32"
 	"errors"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
 )
 
-
-
-func init(){
-	SetHttpClient(HttpClient)
-}
-
-var HttpClient = http.DefaultClient
-var CookieJar *cookiejar.Jar
 var  PrefetchMaxAge = 5 * time.Second
-
-// SetHttpClient allows for the use of a custom http client.
-// It changes the value of HttpClient whose default value is the default Go http Client.
-func SetHttpClient(c *http.Client){
-	c.Jar = CookieJar
-	HttpClient = c
-}
 
 
 // WorkQueue is a queue of UI mutating function that can be built from multiple goroutines.
@@ -291,7 +275,7 @@ func(e *Element) fetchData(propname string, r *http.Request, responsehandler fun
 	
 	DoAsync(e.Root,func(){
 
-		res, err:= HttpClient.Do(r)
+		res, err:= e.Root.HttpClient.Do(r)
 		if err!= nil{
 			DoSync(func() {
 				if prefetching{
@@ -809,7 +793,7 @@ func(e *Element) NewRequest(r *http.Request, responsehandler func(*http.Response
 			e.Properties.Delete("event","request-error-"+requestID(r))
 
 			DoAsync(e.Root,func() {
-				res, err:= HttpClient.Do(r)
+				res, err:= e.Root.HttpClient.Do(r)
 				if err!= nil{
 					DoSync(func(){
 						e.TriggerEvent("request-error-"+requestID(r),newRequestStateObject(nil,err))

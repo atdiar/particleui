@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"math/rand"
+	"net/http"
 	"strings"
 )
 
@@ -54,7 +55,7 @@ type storageFunctions struct {
 	Clear func(*Element)
 }
 
-// ConstructorOption defines a type for optional function that can be called on
+// ConstructorOption defines a type for optional *Element modifiers that can be applied during
 // Element construction. It allows to specify optional Element construction behaviours.
 // Useful if we want to be able to return different types of buttons from a button
 // Element constructor for example.
@@ -134,12 +135,12 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
  // EnableMutationCapture enables mutation capture of the UI tree. This is used for debugging, 
  // implementing hot reloading, SSR (server-side-rendering) etc.
  // It basically captures a trace of the program execution that can be replayed later.
-func (e *ElementStore) EnableMutationCapture() *ElementStore {	e.MutationCapture = true; e.MutationReplay = false;	return e}
+func (e *ElementStore) EnableMutationCapture() *ElementStore {	e.MutationCapture = true;	return e}
 
 
 // EnableMutationReplay enables mutation replay of the UI tree. This is used to recover the state corresponding
 // to a UI tree that has already been rendered.
-func(e *ElementStore) EnableMutationReplay() *ElementStore{	e.MutationReplay = true; e.MutationCapture = false;	return e}
+func(e *ElementStore) EnableMutationReplay() *ElementStore{	e.MutationReplay = true;	return e}
 
 // NewAppRoot returns the starting point of an app. It is a viewElement whose main
 // view name is the root id string.
@@ -327,6 +328,7 @@ type Element struct {
 	// The top level Element is the root node that represents a document: it should control navigation i.e. 
 	// document state.
 	router *Router
+	HttpClient *http.Client
 }
 
 func (e *Element) AsElement() *Element { return e }
@@ -365,6 +367,7 @@ func NewElement(id string, doctype string) *Element {
 		"",
 		newViewNodes(),
 		newViewAccessNode(nil, ""),
+		nil,
 		nil,
 		nil,
 		nil,

@@ -44,6 +44,7 @@ func newObservable(id string) Observable {
 		nil,
 		nil,
 		nil,
+		nil,
 	}
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{

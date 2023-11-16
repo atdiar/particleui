@@ -6,35 +6,176 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
 
+var csr, ssr, ssg bool
+
 // buildCmd represents the build command
 var buildCmd = &cobra.Command{
 	Use:   "build",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "build is the command to build the project",
+	Long: `
+		Build is the command to build the project.
+		It does not prepare a new release of the project.
+		It simply builds the source and create an unoptimized executable for
+		development purposes.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+		Depending on the platform (web, mobile, desktop, terminal), the command may
+		accept different flags.
+		For example, the web platform accepts the following flags:
+		- csr (default): compile the project for client-side rendering 
+			o app is compiled as main.wasm and found in ./dev/build/app/
+			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/csr
+
+		- ssr: compile the project for server-side rendering
+			o app is compiled as main.wasm and found in ./dev/build/app/ (same as in csr)
+			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/ssr
+
+		- ssg: compile the project, producing the static html files (static site generation)
+			o the different pages are found in ./dev/build/ssg/pages/
+			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/ssg
+
+		The mobile platform has its build target specified at initialization time.
+		It does not need to be supplied at build time.
+
+		The desktop and terminal platforms have their build target determined by the OS the command is run on.
+	`,
+	Example: `
+		# building a web project
+		zui build -csr
+		zui build -ssr
+		zui build -ssg
+
+		# building a mobile, desktop or terminal  project
+		zui build
+
+		
+	`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("build called")
+			err:= LoadConfig()
+			if err != nil{
+				fmt.Println(err)
+				os.Exit(1)
+				return
+			}
+
+			if On("web"){
+				if !csr && !ssr && !ssg{
+					// Prompt the user to choose an option
+					fmt.Printf("Please choose one of the following options:\n")
+					fmt.Printf("  1 for CSR (client-side rendering)\n  2 for SSR (server-side rendering)\n 3 for SSG (static site generation)\n")
+		
+					// Read the user's input
+					var option int
+					for {
+						fmt.Scanf("%d", &option)
+		
+						// If the user enters a valid option, set the value of the CSR or SSR flag and break out of the loop
+						if option == 1 {
+							csr = true
+							break
+						}
+						if option == 2 {
+							ssr = true
+							break
+						}
+		
+						if option == 3 {
+							ssg = true
+							break
+						}
+		
+						// Otherwise, display feedback and loop back to the prompt again
+						fmt.Fprintf(os.Stderr, "Invalid option: %d\n", option)
+					}
+				}
+
+				// if csr
+				if csr{
+					err = Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+					if err != nil {
+						fmt.Println("Error: unable to build the default app.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose{
+						fmt.Println("default app built.")
+					}
+
+					// Let's build the default server.
+					// The output file should be in dev/build/server/csr/
+					err = Build(filepath.Join(".","dev","build","server", "csr","main"), []string{"server", "csr"})
+					if err != nil {
+						fmt.Println("Error: unable to build the default server.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose{
+						fmt.Println("default server built.")
+					}
+				} else if ssr{
+					err = Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+					if err != nil {
+						fmt.Println("Error: unable to build the default app.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose{
+						fmt.Println("wasm app built.")
+					}
+
+					// Let's build the default server.
+					// The output file should be in dev/build/server/ssr/
+					err = Build(filepath.Join(".","dev","build","server", "ssr","main"),[]string{"server","ssr"})
+					if err != nil {
+						fmt.Println("Error: unable to build the ssr server.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose{
+						fmt.Println("ssr server built.")
+					}
+				} else if ssg{
+					// TODO
+					fmt.Println("building for ssg is not yet supported")
+					os.Exit(1)
+					return
+				}
+			} else if On("mobile"){
+				// TODO
+				// Make sure that only acceptable flags have been passed.
+				// csr, ssr, ssg don't make any sense here.
+				fmt.Println("building for mobile is not yet supported")
+				os.Exit(1)
+			} else if On("desktop"){
+				// TODO
+				// Make sure that only acceptable flags have been passed.
+				// csr, ssr, ssg don't make any sense here.
+				fmt.Println("building for desktop is not yet supported")
+				os.Exit(1)
+			} else if On("terminal"){
+				// TODO
+			} else{
+				fmt.Println("unknown platform")
+				os.Exit(1)
+				return
+			}
 	},
 }
+
 
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// buildCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// buildCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	buildCmd.Flags().BoolVarP(&csr,"csr", "c", false, "build for client-side rendering")
+	buildCmd.Flags().BoolVarP(&ssr,"ssr", "s", false, "build for server-side rendering")
+	buildCmd.Flags().BoolVarP(&ssg,"ssg", "g", false, "build for static site generation")
 }

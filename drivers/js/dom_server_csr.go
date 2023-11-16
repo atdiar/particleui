@@ -1,4 +1,4 @@
-//go:build server
+//go:build server && csr
 
 
 package doc
@@ -6,17 +6,17 @@ package doc
 import (
 	"bytes"
 	"context"
+	"flag"
+	"fmt"
 	"io"
 	"strings"
 	"net"
 	"net/http"
-	"net/url"
-	"net/http/cookiejar"
 	"os"
 	"time"
-	"sync"
 	"path/filepath"
 	"log"
+	
 
 	"github.com/atdiar/particleui"
 
@@ -24,69 +24,37 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-func init(){
-	ui.HttpClient = modifyClient(ui.HttpClient)
-}
-
 var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE).EnableMutationCapture()
-	mu *sync.Mutex
+	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
+		
 
 	DefaultPattern = "/"
-	StaticPath = "assets"
+
+	absStaticPath = filepath.Join(".","dev","build","app")
+	absIndexPath = filepath.Join(absStaticPath,"index.html")
+	absCurrentPath = filepath.Join(".","dev","build","server","csr")
+
+	StaticPath,_ = filepath.Rel(absCurrentPath,absStaticPath)
+	IndexPath,_ = filepath.Rel(absCurrentPath,absIndexPath)
 
 
 	ServeMux *http.ServeMux
 	Server *http.Server = newDefaultServer()
 	
-	// HTMLHandlerModifier, when not nil, enables to change the behaviour of the request handling.
-	// It corresponds loosely to the ability of adding middleware/endware request handler, by using
-	// request handler composition.
-	// One use-case could be to process http cookies to retrieve info that could be used to customize
-	// Document creation, which can be done by changing the DocumentInitializer.
-	HTMLhandlerModifier func(http.Handler)http.Handler
-	renderHTMLhandler http.Handler
+	
+	RenderHTMLhandler http.Handler
 
-
-	httpHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-		mu.Lock()
-		defer mu.Unlock()
-		// Cookie handling
-		cj, err := cookiejar.New(nil)
-		if err != nil{
-			http.Error(w,"Error creating cookiejar",http.StatusInternalServerError)
-			return
-		}
-		ui.CookieJar = cj
-		ui.HttpClient.Jar = ui.CookieJar
-		cj.SetCookies(r.URL, r.Cookies())
-
-
-
-		h:= renderHTMLhandler
-		if HTMLhandlerModifier != nil{
-			h=HTMLhandlerModifier(h)
-		}
-
-		w = cookiejarWriter{w,r.URL}
-		h.ServeHTTP(w,r)
-
-	})
 )
 
-func newDefaultServer() *http.Server{
-	host := os.Getenv("HOST")
-	if host == "" {
-		host = "localhost"
-	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8888"
-	}
+func newDefaultServer() *http.Server{
+	var host, port string
+	flag.StringVar(&host,"host", "localhost", "Host name for the server")
+	flag.StringVar(&port, "port", "8888", "Port number for the server")
+	flag.Parse()
 
 	server := &http.Server{
 		Addr:    host + ":" + port,
@@ -95,22 +63,6 @@ func newDefaultServer() *http.Server{
 	return server
 }
 
-type cookiejarWriter struct{
-	http.ResponseWriter
-	URL *url.URL
-}
-
-func(c cookiejarWriter) Write(b []byte) (int,error){
-	cookies:= ui.CookieJar.Cookies(c.URL)
-	for _,cookie:= range cookies{
-		http.SetCookie(c.ResponseWriter,cookie)
-	}
-	return c.ResponseWriter.Write(b)
-}
-/*
- Server-side HTML rendering TODO place behind compile directive
-
-*/
 
 
 type customRoundTripper struct {
@@ -182,99 +134,52 @@ func (w *responseRecorder) Result() *http.Response {
 }
 
 
-func ChangeServeMux(s *http.ServeMux) {
-	if s == nil{
-		s = http.NewServeMux()
-	}
-	s.Handle(DefaultPattern,httpHandler)
-}
-
-
-
-// ChangeServer changes the http.Server
-// It also registers doc.ServeMux as a http request handler.
-func ChangeServer(s *http.Server){
-	s.Handler = ServeMux
-	Server = s
-}
-
-// NewDocumentInitializerHandler returns a http.Handler that sets the DocumentInitializer
-// If needed, it should be called as a middleware by wrapping HTMLHandlerModifier.
-func NewDocumentInitializerHandler(modifier func(r *http.Request, d Document)) http.Handler{
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-		DocumentInitializer = func(d Document)Document{
-			modifier(r,d)
-			if DocumentInitializer != nil{
-				return DocumentInitializer(d)
-			}
-			return d
-		}
-	})
-}
-
-// NewBuilder registers a new document building function. This function should not be called
-// manually afterwards.
-func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
+// NewBuilder registers a new document building function. 
+// In Server Rendering mode (ssr or csr), it starts a server.
+// It accepts functions that can be used to modify the global state (environment) in which a document is built.
+func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
-	renderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
 		path, err := filepath.Abs(r.URL.Path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+
 		path = filepath.Join(StaticPath, r.URL.Path)
 
-		fi, err := os.Stat(path)
-		if err == nil && !fi.IsDir(){
-			fileServer.ServeHTTP(w,r)
+		_, err = os.Stat(path)
+		if os.IsNotExist(err) {
+			// file does not exist, serve index.html
+			http.ServeFile(w, r, filepath.Join(StaticPath, IndexPath))
 			return
-		}
-
-		document:= f()
-		withNativejshelpers(&document)
-		err := d.mutationRecorder().Replay()
-		if err != nil{
+		} else if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		d.mutationRecorder().Capture()
-		
-		go func(){
-			document.ListenAndServe(r.Context())	// launches a new UI thread
-		}()
-		
 
-		ui.DoSync(func() {
-			router:= document.Router()
-			route:= r.URL.Path
-			_,routeexist:= router.Match(route)
-			if routeexist != nil{
-				w.WriteHeader(http.StatusNotFound)
-			}
-			router.GoTo(route)
-		})
-		
-		
-		err= document.Render(w)
-		if err != nil{ 
-			switch err{
-			case ui.ErrNotFound:
-				w.WriteHeader(http.StatusNotFound)
-			case ui.ErrFrameworkFailure:
-				w.WriteHeader(http.StatusInternalServerError)
-			case ui.ErrUnauthorized:
-				w.WriteHeader(http.StatusUnauthorized)
-			}
-		}
-
+		fileServer.ServeHTTP(w, r)
 	})
 
+	for _,m:= range buildEnvModifiers{
+		m()
+	}
+
+
 	return func(ctx context.Context){
-		log.Print("Listening on: "+Server.Addr)
-		if ctx == nil{
-			ctx = context.Background()
+		ctx, shutdown := context.WithCancel(ctx)
+
+		ServeMux.Handle(DefaultPattern,RenderHTMLhandler)
+		
+		if DevMode != "false"{
+			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Trigger server shutdown logic
+				shutdown()
+				fmt.Fprintln(w, "Server is shutting down...")
+			}))
 		}
+
 		go func(){ // allows for graceful shutdown signaling
 			if Server.TLSConfig == nil{
 				if err:=Server.ListenAndServe(); err!= nil && err != http.ErrServerClosed{
@@ -287,6 +192,8 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 			}		
 		}()
 
+		log.Print("Listening on: "+Server.Addr)
+
 		for{
 			select{
 			case <-ctx.Done():
@@ -294,8 +201,9 @@ func NewBuilder(f func()Document)(ListenAndServe func(ctx context.Context)){
 				if err!= nil{
 					panic(err)
 				}
+				log.Printf("Server shutdown")
+				os.Exit(0)
 			}
-			log.Printf("Server shutdown")
 		}
 		
 	}
@@ -519,12 +427,9 @@ func newTimeRanges() jsTimeRanges{
 	
 	j.Set("length",ui.Number(length))
 
-	starts:= ui.NewList()
-	ends := ui.NewList()
-
-	j.Set("start",starts)
-	j.Set("end",ends)
-	return jsTimeRanges(j)
+	j.Set("start",ui.NewList().Commit())
+	j.Set("end",ui.NewList().Commit())
+	return jsTimeRanges(j.Commit())
 }
 
 

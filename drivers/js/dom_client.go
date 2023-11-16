@@ -24,20 +24,33 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements                      = ui.NewElementStore("default", DOCTYPE).
+	Elements                      = ui.NewElementStore("default", DOCTYPE).EnableMutationReplay().
 		AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
 		AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
 		AddConstructorOptionsTo("observable",AllowSessionStoragePersistence,AllowAppLocalStoragePersistence).
-		ApplyGlobalOption(allowdatapersistence)
+		ApplyGlobalOption(allowdatapersistence).
+		ApplyGlobalOption(allowDataFetching)
 )
 
 // TODO on init, Apply EnableMutationCapture to Elements if ldlflags -X tag is set for the buildtype variable to "dev" 
 // Also, the mutationtrace should be stored in the sessionstorage or localstorage
 // And the mutationtrace should replay once the document is ready.
 
+func init(){
+	if DevMode != "false"{
+		Elements.EnableMutationCapture()
+	}
+}
+
 
 // NewBuilder registers a new document building function.
-func NewBuilder(f func()Document)(ListenAndServe func(context.Context)){
+// In Server Rendering mode (ssr or csr), it starts a server.
+// It accepts functions that can be used to modify the global state (environment) in which a document is built.
+func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(context.Context)){
+	for _,mod:= range buildEnvModifiers{
+		mod()
+	}
+
 	return  func(ctx context.Context){
 		// GC is triggered only when the browser is idle.
 		debug.SetGCPercent(-1)

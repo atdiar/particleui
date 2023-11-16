@@ -21,7 +21,9 @@ var verbose bool
 
 var interactive, graphic bool
 var projectName string
-var web, mobile, desktop, terminal string
+
+var web, desktop, terminal bool
+var mobile string 
 
 var config map[string]string
 const configFileName = "zui_config.json"
@@ -29,6 +31,17 @@ const configFileName = "zui_config.json"
 func configExists() bool {
 	_, err := os.Stat(configFileName)
 	return !os.IsNotExist(err)
+}
+
+//  Check that config is valid, i.e. it has at least the projectName and platform keys.
+func configIsValid() bool {
+	if _, ok := config["projectName"]; !ok {
+		return false
+	}
+	if _, ok := config["platform"]; !ok {
+		return false
+	}
+	return true
 }
 
 func LoadConfig() error {
@@ -42,6 +55,11 @@ func LoadConfig() error {
 	if err := decoder.Decode(&config); err != nil {
 		return err
 	}
+
+	if !configIsValid() {
+		return fmt.Errorf("invalid configuration file")
+	}
+
 	return nil
 }
 
@@ -72,29 +90,38 @@ var initCmd = &cobra.Command{
 		- mobile
 		- desktop
 		- terminal
-		Each platform has different possible build targets, which are:
-		- web: 
+		
+		Some platforms allow different build options, such as web:
 			o csr (client-side rendering)
 			o ssr (server-side rendering)
 			o ssg (static site generation)
-		- mobile:
-			o android
-			o ios
-		- desktop:
+		
+		Or desktop:
 			o windows
 			o linux
 			o darwin (macos)
-		- terminal: (in general, these are built cross-platform and are not specified until build time)
+		These options are specified at initialization time but at build time.
+
+		Some other platforms require the build target to be specified at initialization time:
+		Such is the case for the mobile platform:
+			o android
+			o ios
+		In fact, the project type depends on the platform and the target in this case.
+
+		Lastly, some projects are fully platform-agnostic, such as desktop or terminal projects.
+		Depending on the OS the commands are run on, they will allow to build the corresponding binary.
+		Whether on either of the following OSes:
 			o windows
 			o linux
-			o macos (darwin)
+			o macOS (darwin)
 		
-		Such an initialized project may only target one platform.
-		To target multiplatform, you should create a project for each platform.
+		An initialized project may only target one platform, and sometimes even
+		only one target for that platform as seen in the mobile case.
+	
 	`,
 	Example: `
-		zui init github.com/stephenstrange/kamartajwebapp -web
-		zui init github.com/stephenstrange/kamartajiosapp -mobile=android
+		zui init github.com/stephenstrange/thewebapp -web
+		zui init github.com/stephenstrange/theiosapp -mobile=ios
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if interactive {
@@ -118,16 +145,16 @@ var initCmd = &cobra.Command{
 	
 		platformsSpecified := 0
 	
-		if web != "" {
+		if web {
 			platformsSpecified++
 		}
 		if mobile != "" {
 			platformsSpecified++
 		}
-		if desktop != "" {
+		if desktop {
 			platformsSpecified++
 		}
-		if terminal != "" {
+		if terminal {
 			platformsSpecified++
 		}
 	
@@ -148,10 +175,11 @@ var initCmd = &cobra.Command{
 		// git should ignore the release directory
 		createFile(".gitignore", "/release")
 
-		if web != "" {
+		if web {
 			// handle web project initialization
 			config["projectName"] = projectName
 			config["platform"] = "web"
+			config["web"] = ""
 			
 
 			// project initialization logic
@@ -267,7 +295,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err = Build(filepath.Join(".","dev","build","app", "main.wasm"))
+			err = Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
 				fmt.Println("Error: Could not build the default app.")
 				os.Exit(1)
@@ -280,7 +308,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default server.
 			// The output file should be in dev/build/server/csr/
-			err = Build(filepath.Join(".","dev","build","server", "csr","main"))
+			err = Build(filepath.Join(".","dev","build","server", "csr","main"), nil)
 			if err != nil {
 				fmt.Println("Error: Could not build the default server.")
 				os.Exit(1)
@@ -298,7 +326,7 @@ var initCmd = &cobra.Command{
 				return
 			}
 			if verbose{
-				fmt.Println("SUCCESS! Your project has been initialized.")
+				fmt.Println("SUCCESS! Your web project has been initialized.")
 			}
 
 
@@ -315,34 +343,40 @@ var initCmd = &cobra.Command{
 					return
 				}
 			}
-			// Process mobileOptions further
+			// Process mobileOptions further TODO
 			fmt.Println("Mobile platform not yet implemented.")
-		} else if desktop != "" {
-			// handle desktop initialization
-			desktopOptions := strings.Split(desktop, ",")
-			validDesktopOptions := map[string]bool{"windows": true, "linux": true, "darwin": true}
-			for _, option := range desktopOptions {
-				if !validDesktopOptions[option] {
-					fmt.Printf("Error: Invalid desktop option '%s'\n", option)
-					return
-				}
-			}
+			os.Exit(1)
+		} else if desktop{
+		
 			// Process desktopOptions further
 			fmt.Println("Desktop platform not yet implemented.")
-		} else if terminal != "" {
+			os.Exit(1)
+		} else if terminal {
 			// handle terminal initialization
+			// TODO initialize default terminal example app
 			config["projectName"] = projectName
 			config["platform"] = "terminal"
+			config["terminal"] = ""
 			if err := SaveConfig(); err != nil {
 				fmt.Println("Error: Could not save configuration file.")
+				os.Exit(1)
 				return
+			}
+			if verbose{
+				fmt.Println("SUCCESS! Your terminal project has been initialized.")
 			}
 		} else {
 			fmt.Println("Error: A platform (web, mobile, desktop, terminal) must be specified.")
+			os.Exit(1)
 		}
 	},
 	
 	
+}
+
+func On(platform string) bool{
+	_,ok:= config[platform]
+	return ok
 }
 
 func createFolder(path string) error{
@@ -440,67 +474,99 @@ func copyFile(src, dst string) error {
 	return destFile.Sync()
 }
 
-func Build(outputPath string, buildTags ...string) error {
-	// Check if the build is for WebAssembly and save the current environment
-	isWasm := strings.HasSuffix(outputPath, ".wasm")
-	var originalGOOS, originalGOARCH string
-	if isWasm {
-		originalGOOS = os.Getenv("GOOS")
-		originalGOARCH = os.Getenv("GOARCH")
-		os.Setenv("GOOS", "js")
-		os.Setenv("GOARCH", "wasm")
-	}
-
-	// Defer the restoration of the environment variables
-	defer func() {
+func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
+	if On("web"){
+		// Check if the build is for WebAssembly and save the current environment
+		isWasm := strings.HasSuffix(outputPath, ".wasm")
+		var originalGOOS, originalGOARCH string
 		if isWasm {
-			os.Setenv("GOOS", originalGOOS)
-			os.Setenv("GOARCH", originalGOARCH)
+			originalGOOS = os.Getenv("GOOS")
+			originalGOARCH = os.Getenv("GOARCH")
+			os.Setenv("GOOS", "js")
+			os.Setenv("GOARCH", "wasm")
 		}
-	}()
 
-	// Determine the correct file extension for the executable for non-WASM builds
-	if !isWasm {
-		goos := os.Getenv("GOOS")
-		if goos == "" {
-			goos = runtime.GOOS // Default to the current system's OS if GOOS is not set
+		// Defer the restoration of the environment variables
+		defer func() {
+			if isWasm {
+				os.Setenv("GOOS", originalGOOS)
+				os.Setenv("GOARCH", originalGOARCH)
+			}
+		}()
+
+		// Determine the correct file extension for the executable for non-WASM builds
+		if !isWasm {
+			goos := os.Getenv("GOOS")
+			if goos == "" {
+				goos = runtime.GOOS // Default to the current system's OS if GOOS is not set
+			}
+			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
+				outputPath += ".exe"
+			}
 		}
-		if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
-			outputPath += ".exe"
+
+		// Ensure the output directory exists
+		outputDir := filepath.Dir(outputPath)
+		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+			return fmt.Errorf("error creating output directory: %v", err)
+		}	
+
+		args := []string{"build"}
+
+		// add ldflagsif any relevant
+		ldflags:= ldflags()
+		if ldflags != "" {
+			args = append(args, "-ldflags", ldflags)	
 		}
-	}
 
-	// Ensure the output directory exists
-	outputDir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-		return fmt.Errorf("error creating output directory: %v", err)
-	}
-
-	args := []string{"build"}
-
-	// Add build tags if provided
-	if len(buildTags) > 0 {
-		args = append(args, "-tags", strings.Join(buildTags, ","))
-	}
-
-	// Set the output file
-	args = append(args, "-o", outputPath)
-
-	// Specify the source file
-	sourceFile := filepath.Join("dev", "main.go")
-	args = append(args, sourceFile)
-
-	// Execute the build command
-	cmd := exec.Command("go", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("build failed: %v", err)
-	}
+		 // Add build tags if provided
+		 if len(buildTags) > 0 {
+			args = append(args, "-tags", strings.Join(buildTags, " "))
+		}
 	
-	return nil
+		// Add additional command-line arguments if provided
+		if len(cmdArgs) > 0 {
+			args = append(args, cmdArgs...)
+		}
+	
+		// Set the output file
+		args = append(args, "-o", outputPath)
+	
+		// Specify the source file
+		sourceFile := filepath.Join(".", "dev", "main.go")
+		args = append(args, sourceFile)
+
+
+		// Execute the build command
+		cmd := exec.Command("go", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("build failed: %v", err)
+		}
+		
+		return nil
+	}
+
+	if On("mobile"){
+		// TODO
+		// target aware (android vs ios)
+		return fmt.Errorf("mobile platform not yet implemented")
+	}
+
+	if On("desktop"){
+		// TODO
+		return fmt.Errorf("desktop platform not yet implemented")
+	}
+
+	if On("terminal"){
+		// TODO
+		return fmt.Errorf("terminal platform not yet implemented")
+	}
+
+	return fmt.Errorf("unknown platform")
 }
 
 
@@ -516,7 +582,7 @@ func runInteractiveMode() {
 	fmt.Print("Choose a platform (web/mobile/desktop/terminal): ")
 	fmt.Scanln(&input)
 
-	switch input {
+	/*switch input {
 	case "web":
 		fmt.Print("Choose a target for web (csr/ssr/ssg): ")
 		fmt.Scanln(&input)
@@ -535,6 +601,7 @@ func runInteractiveMode() {
 		fmt.Println("Invalid platform selected.")
 		return
 	}
+	*/
 
 	// Continue with the rest of the project initialization logic
 }
@@ -547,10 +614,10 @@ func init() {
 	initCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Run the command in interactive mode")
 	initCmd.Flags().BoolVarP(&graphic, "graphic", "g", false, "Run the command in graphic mode")
 	
-	initCmd.Flags().StringVar(&web, "web", "", "Specify a web target option (csr, ssr, ssg)")
-	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
-	initCmd.Flags().StringVar(&desktop, "desktop", "", "Specify a desktop target option (windows, darwin, linux)")
-	initCmd.Flags().StringVar(&terminal, "terminal", "", "Specify a terminal target option (any additional terminal option can be added here)")
+	initCmd.Flags().BoolVarP(&web, "web","w", false, "Specify a web target option (csr, ssr, ssg)")
+	initCmd.Flags().StringVar(&mobile, "mobile", "m", "Specify a mobile target option (android, ios)")
+	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
+	initCmd.Flags().BoolVarP(&terminal, "terminal", "t",false, "Specify a terminal target option (any additional terminal option can be added here)")
 	
 	rootCmd.AddCommand(initCmd)
 }
@@ -585,7 +652,7 @@ func App() doc.Document {
 	)
 
 	// The document observes the input for changes and update the paragraph accordingly.
-	document.Watch("ui","text",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	document.Watch("data","text",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.Value().String()+"!")
 		return false
 	}))

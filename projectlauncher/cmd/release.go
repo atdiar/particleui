@@ -22,6 +22,11 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("release called")
+
+		// TODO when building wasm remove debug info
+		// And any other potential optimization
+
+		// Add -tinygo flag to build with the tu=inygo compiler if present
 	},
 }
 
@@ -38,3 +43,5 @@ func init() {
 	// is called directly, e.g.:
 	// releaseCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
+
+

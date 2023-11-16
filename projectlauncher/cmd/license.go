@@ -21,7 +21,7 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("license called")
+		fmt.Println(license)
 	},
 }
 
@@ -38,3 +38,11 @@ func init() {
 	// is called directly, e.g.:
 	// licenseCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
+
+var license = `
+
+Refer to the LICENSE file for licensing information.
+Copyright simpleXware 2023.
+`
+
+// Needs only one source of truth for the license file.
