@@ -26,7 +26,7 @@ var web, desktop, terminal bool
 var mobile string 
 
 var config map[string]string
-const configFileName = "zui_config.json"
+const configFileName = "zui.config.json"
 
 func configExists() bool {
 	_, err := os.Stat(configFileName)
@@ -513,7 +513,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		args := []string{"build"}
 
-		// add ldflagsif any relevant
+		// add ldflags if any relevant
 		ldflags:= ldflags()
 		if ldflags != "" {
 			args = append(args, "-ldflags", ldflags)	

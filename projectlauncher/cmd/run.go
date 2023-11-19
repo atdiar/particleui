@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var uipkg = "github.com/atdiar/particleUI"
+var uipkg = "github.com/atdiar/particleui"
 
 var nohmr bool
 var releaseMode bool

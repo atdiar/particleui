@@ -37,7 +37,7 @@ var (
 // And the mutationtrace should replay once the document is ready.
 
 func init(){
-	if DevMode != "false"{
+	if DevMode != "false" && HMRMode != "false"{
 		Elements.EnableMutationCapture()
 	}
 }
@@ -62,7 +62,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		d:=f()
 		withNativejshelpers(&d)
 
-		scrIdleGC := d.Script().SetInnerHTML(`
+		scrIdleGC := d.Script().Unsafe_SetInnerHTML(`
 			let lastGC = Date.now();
 
 			function runGCDuringIdlePeriods(deadline) {
@@ -88,15 +88,6 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		`)
 		d.Head().AppendChild(scrIdleGC)
 
-		/*d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			evt.Origin().WatchEvent("document-loaded", evt.Origin(),ui.NewMutationHandler(func(event ui.MutationEvent)bool{
-				js.Global().Call("onWasmDone")
-				return false
-			}))
-			
-			return false
-		}))*/
-		
 
 		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
@@ -109,7 +100,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			d=f()
 			withNativejshelpers(&d)
 
-			scrIdleGC := d.Script().SetInnerHTML(`
+			scrIdleGC := d.Script().Unsafe_SetInnerHTML(`
 				let lastGC = Date.now();
 
 				function runGCDuringIdlePeriods(deadline) {
@@ -142,6 +133,11 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 			DEBUG(err)
 		}
+
+		// sse support if hmr is enabled
+		if HMRMode != "false"{
+			d.Head().AppendChild(d.Script.WithID("ssesupport").Unsafe_SetInnerHTML(SSEscript))
+		}
 		d.mutationRecorder().Capture()
 
 		d.ListenAndServe(ctx)
@@ -159,6 +155,24 @@ Pure CSR (client side rendering) does not capture, nor replay mutations.
 Pure SSG (server side rendering) does not capture, nor replay mutations.
 
 */
+
+var SSEscript = `
+
+	// Create a new EventSource instance to connect to the SSE endpoint
+	var eventSource = new EventSource('/sse');
+
+	// Listen for the 'reload' event
+	eventSource.addEventListener('reload', function(event) {
+		console.log('Reload event received, refreshing the page');
+		window.location.reload(); // Reload the browser
+	});
+
+	// Optional: Listen for errors
+	eventSource.onerror = function(event) {
+		console.error('EventSource failed:', event);
+		eventSource.close(); // Close the connection if there's an error
+	};
+`
 
 var dEBUGJS = func(v js.Value, isJsonString ...bool){
 	if isJsonString!=nil{
@@ -973,9 +987,10 @@ func JSValue(el ui.AnyElement) (js.Value,bool) { // TODO  unexport
 	return n.Value, true
 }
 
-// SetInnerHTML sets the innerHTML property of HTML elements.
-// Please note that it is unsafe to sets client submittd HTML inputs.
-func SetInnerHTML(e *ui.Element, html string) *ui.Element {
+// Unsafe_SetInnerHTML sets the innerHTML property of HTML elements.
+// Please note that it is unsafe (risk of XSS) 
+// Do not use it to dynamically inject unsanitized text inputs.
+func Unsafe_SetInnerHTML(e *ui.Element, html string) *ui.Element {
 	jsv,ok := JSValue(e)
 	if !ok{
 		return e
@@ -983,6 +998,7 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 	jsv.Set("innerHTML", html)
 	return e
 } // abstractjs
+
 
 // LoadFromStorage will load an element properties.
 // If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate

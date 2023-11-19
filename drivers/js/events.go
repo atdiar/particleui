@@ -1,4 +1,4 @@
-//go:build !server && js
+//go:build !server
 
 
 // Package doc defines the default set of Element constructors, native interfaces,

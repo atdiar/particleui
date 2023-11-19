@@ -39,6 +39,11 @@ var (
 	StaticPath,_ = filepath.Rel(absCurrentPath,absStaticPath)
 	IndexPath,_ = filepath.Rel(absCurrentPath,absIndexPath)
 
+	host string
+	port string
+
+	release bool
+	nohmr bool
 
 	ServeMux *http.ServeMux
 	Server *http.Server = newDefaultServer()
@@ -49,17 +54,31 @@ var (
 )
 
 
-func newDefaultServer() *http.Server{
-	var host, port string
+func init(){
 	flag.StringVar(&host,"host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
+
+	flag.BoolVar(&release, "release", false, "Build the app in release mode")
+	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	
 	flag.Parse()
 
-	server := &http.Server{
+	if !release{
+		DevMode = "true"
+	}
+
+	if !nohmr{
+		HMRMode = "true"
+	}
+
+}
+
+
+func newDefaultServer() *http.Server{
+	return &http.Server{
 		Addr:    host + ":" + port,
 		Handler: ServeMux,
 	}
-	return server
 }
 
 
