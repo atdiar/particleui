@@ -30,6 +30,7 @@ var (
 	// Elements stores wasm-generated HTML ui.Element constructors.
 	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
 
+	uipkg = "github.com/atdiar/particleui"
 	DefaultPattern = "/"
 
 	absStaticPath = filepath.Join(".","dev","build","app")
@@ -228,6 +229,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 	return func(ctx context.Context){
 		ctx, shutdown := context.WithCancel(ctx)
+		var activehmr bool
 
 		ServeMux.Handle(DefaultPattern,RenderHTMLhandler)
 		
@@ -238,6 +240,99 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				fmt.Fprintln(w, "Server is shutting down...")
 			}))
 		}
+
+		if HMRMode == "true"{
+			// TODO: Implement Server-Sent Evemt logic for browser reload
+			// Implement filesystem watching and trigger compile on change
+			// (in another goroutine) if it's a go file. I fany file change, send SSE message to frontend
+			//
+			// 1. Watch ./dev/*.go files. If any is modified, try to recompile. IF not successful nothing happens of course.
+			// 2. Watch ./dev/build/app folder. If anything changed, send SSE message to frontend to reload the page.
+
+			// path to the directory containing the source files
+			outputPath, err := filepath.Rel(absCurrentPath,filepath.Join(".","dev","build","app"))
+			if err != nil{
+				log.Println(err)
+				panic("Can't find path to output directory ./dev/build/app")
+			}
+
+			srcDirPath,err := filepath.Rel(absCurrentPath,filepath.Join(".","dev"))
+			if err != nil{
+				log.Println(err)
+				log.Println("Unable to watch for changes in ./dev folder, couldn't find path.")
+			} else{
+
+				// watching for changes made to the source files which should be in the ./dev directory
+				// ie. ../../../dev
+				watcher, err := WatchDir(srcDirPath, func(event fsnotify.Event) {
+					// Only rebuild if the event is for a .go file
+					if filepath.Ext(event.Name) == ".go" {
+						// path to main.go
+						sourceFile := filepath.Join(srcDirPath, "main.go")
+						// let's build main.go TODO: shouldn't rebuild the server.. might need to 
+						// review impl of zui (or not, here it should be agnostic so might as well 
+						// reimplement the logic with the few specific requirements)
+						originalGOOS := os.Getenv("GOOS")
+						originalGOARCH := os.Getenv("GOARCH")
+						os.Setenv("GOOS", "js")
+						os.Setenv("GOARCH", "wasm")
+						defer func() {
+							os.Setenv("GOOS", originalGOOS)
+							os.Setenv("GOARCH", originalGOARCH)
+						}()
+						// Ensure the output directory is already existing
+						outputDir := filepath.Dir(outputPath)
+						if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+							panic("Output directory should already exist")
+						}
+						// add the relevant build and linker flags
+						args := []string{"build"}
+						ldflags:= ldflags()
+						if ldflags != "" {
+							args = append(args, "-ldflags", ldflags)	
+						}
+
+						args = append(args, "-o", outputPath)
+
+						args = append(args, sourceFile)
+						cmd := exec.Command("go", args...)
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+
+						err := cmd.Run()
+						if err == nil {
+							fmt.Println("main.go was rebuilt.")
+						}						
+					}
+				})
+
+				if err != nil{
+					log.Println(err)
+					panic("Unable to watch for changes in ./dev folder.")
+				}
+				defer watcher.Close()
+
+				// watching for changes made to the output files which should be in the ./dev/build/app directory
+				// ie. ../../dev/build/app
+				wc, err := WatchDir(outputPath, func(event fsnotify.Event) {
+					// Send event to trigger a page reload
+					SSEChannel.SendEvent("reload",event.String(),"","")	
+				})
+				if err != nil{
+					log.Println(err)
+					panic("Unable to watch for changes in ./dev/build/app folder.")
+				} 
+				defer wc.Close()
+				activehmr = true				
+				ServeMux.Handle("/sse", SSEChannel)
+			}
+		}
+
+		// return server info including whether hmr is active
+		ServeMux.Handle("/info",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, "Server is running on port "+port)
+			fmt.Fprintln(w, "HMR status active: ", activehmr)
+		}))
 
 		go func(){ // allows for graceful shutdown signaling
 			if Server.TLSConfig == nil{
@@ -730,3 +825,19 @@ func generateStateHistoryRecordElement(root *ui.Element) *html.Node{
 
 func recoverStateHistory(){}
 var recoverStateHistoryHandler = ui.NoopMutationHandler
+
+
+func ldflags() string {
+	flags := make(map[string]string)
+
+	flags[uipkg + "/drivers/js.DevMode"] = DevMode
+	flags[uipkg + "/drivers/js.SSGMode"] = SSGMode
+	flags[uipkg + "/drivers/js.SSRMode"] = SSRMode
+	flags[uipkg + "/drivers/js.HMRMode"]= HMRMode
+
+	var ldflags []string
+	for key, value := range flags {
+		ldflags = append(ldflags, fmt.Sprintf("-X %s=%s", key, value))
+	}
+	return strings.Join(ldflags, " ")
+}
