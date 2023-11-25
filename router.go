@@ -279,6 +279,32 @@ func (r *Router) Match(route string) (prefetch func(),err error) {
 
 }
 
+func (r *Router) ListRoutes() []string {
+    var routes []string
+    r.traverseRoutes(r.Routes, "", &routes)
+    return routes
+}
+
+func (r *Router) traverseRoutes(node *rnode, currentPath string, routes *[]string) {
+    if node == nil {
+        return
+    }
+
+    // Iterate through each view in the node
+    for viewName, viewMap := range node.next {
+        for id, nextNode := range viewMap {
+            newPath := strings.Trim(fmt.Sprintf("%s/%s/%s", currentPath, viewName, id), "/")
+            if len(nextNode.next) == 0 {
+                // If this is a leaf node, add the path to the routes
+                *routes = append(*routes, newPath)
+            } else {
+                // Otherwise, continue traversing
+                r.traverseRoutes(nextNode, newPath, routes)
+            }
+        }
+    }
+}
+
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
 	mh := NewMutationHandler(func(evt MutationEvent) bool {

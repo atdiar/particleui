@@ -695,6 +695,10 @@ func(d Document) SetTitle(title string){
 	d.AsElement().SetDataSetUI("title",ui.String(title))
 }
 
+func(d Document) SetFavicon(href string){
+	d.AsElement().SetDataSetUI("favicon",ui.String(href))
+}
+
 // Document styles in stylesheet
 
 type StyleSheet struct{
@@ -754,11 +758,16 @@ func (d Document) GetStyleSheet(id string) (StyleSheet,bool){
 	return s,ok
 }
 
+// SetActiveStyleSheets enables the style sheets with the given ids and disables the others.
+// If a style sheet with a given id does not exist, it is ignored.
+// The order of activation is the order provided in the arguments.
 func(d Document) SetActiveStyleSheets(ids ...string) Document{
+	l:= ui.NewList()
 	for _,s:= range d.StyleSheets{
 		var idlist = make(map[string]struct{})
 		for _,id:= range ids{
 			idlist[id] = struct{}{}
+			l = l.Append(ui.String(id))
 		}
 		_,ok:= idlist[s.AsElement().ID]
 		if ok{
@@ -767,6 +776,7 @@ func(d Document) SetActiveStyleSheets(ids ...string) Document{
 			s.Disable()
 		}
 	}
+	d.Set("internals","activestylesheets",l.Commit())
 	return d
 }
 
@@ -1186,6 +1196,8 @@ func NewDocument(id string, options ...string) Document {
 	d:= Document{Element:newDocument(id, options...)}
 	
 	d = withStdConstructors(d)
+
+	
 	d.StyleSheets = make(map[string]StyleSheet)
 	d.HttpClient = &http.Client{}
 	jar, err := cookiejar.New(nil)
@@ -1200,6 +1212,21 @@ func NewDocument(id string, options ...string) Document {
 
 	e.AppendChild(d.head.WithID("head")) 
 	e.AppendChild(d.body.WithID("body"))
+
+	// favicon support (note: it's reactive, which means the favicon can be changed by
+	// simply modifying the path to the source image)
+	d.Watch("ui","favicon",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		var l LinkElement
+		f:= d.GetElementById("favicon")
+		if f != nil{
+			l = LinkElement{f}.SetAttribute("href",string(evt.NewValue().(ui.String)))
+			return false
+		}
+		l= d.Link.WithID("favicon").SetAttribute("rel","icon").SetAttribute("type","image/x-icon").SetAttribute("href",string(evt.NewValue().(ui.String)))
+		d.Head().AppendChild(l)
+		return false
+	}).RunASAP())
+	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
 
 
 	e.OnRouterMounted(routerConfig)
@@ -4809,6 +4836,7 @@ func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 		return e
 	}
 }
+
 
 
 // watches ("ui",attr) for a ui.String value.

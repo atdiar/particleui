@@ -21,6 +21,7 @@ var verbose bool
 
 var interactive, graphic bool
 var projectName string
+var template string
 
 var web, desktop, terminal bool
 var mobile string 
@@ -96,21 +97,16 @@ var initCmd = &cobra.Command{
 			o ssr (server-side rendering)
 			o ssg (static site generation)
 		
-		Or desktop:
-			o windows
-			o linux
-			o darwin (macos)
-		These options are specified at initialization time but at build time.
 
 		Some other platforms require the build target to be specified at initialization time:
 		Such is the case for the mobile platform:
 			o android
 			o ios
-		In fact, the project type depends on the platform and the target in this case.
+		In fact, the whole project depends on the platform and the target in this case.
 
 		Lastly, some projects are fully platform-agnostic, such as desktop or terminal projects.
-		Depending on the OS the commands are run on, they will allow to build the corresponding binary.
-		Whether on either of the following OSes:
+		Depending on the OS the commands are run on, they will allow to build the corresponding binary 
+		for either of the following OSes:
 			o windows
 			o linux
 			o macOS (darwin)
@@ -173,7 +169,14 @@ var initCmd = &cobra.Command{
 		}
 
 		// git should ignore the release directory
-		createFile(".gitignore", "/release")
+		// TODO remove this?
+		/*
+		createFile(".gitignore", `
+			/release
+			/dev/build/*
+			!/dev/build/app
+		`)
+		*/
 
 		if web {
 			// handle web project initialization
@@ -181,121 +184,141 @@ var initCmd = &cobra.Command{
 			config["platform"] = "web"
 			config["web"] = ""
 			
+			if template == ""{
+				// project initialization logic
+				// should create the directories, basic template file, dev directory with dev server runnable source
 
-			// project initialization logic
-			// should create the directories, basic template file, dev directory with dev server runnable source
+				// Create dev directory if it doesn't already exists
+				err:= createDirectory(filepath.Join(".","dev"))
+				if err!= nil{
+					fmt.Println("Error: Could not create dev directory.")
+					os.Exit(1)
+					return
+				}
 
-			// Create dev directory if it doesn't already exists
-			err:= createFolder(filepath.Join(".","dev"))
-			if err!= nil{
-				fmt.Println("Error: Could not create dev directory.")
-				os.Exit(1)
-				return
+				// dev holds the source code for the app.
+				//
+				// zui build compiles in CSR mode by default.
+				// It also builds the server executable in dev/server/csr.
+				//
+				// zui build --ssr compiles in CSR mode and
+				// puts the code for the CSR server in dev/server/ssr
+				// the index.html file in dev/bin won't be served by the dev server.
+				//
+				// zui build --ssg compiles in SSG mode and output the file in dev/build/ssg.
+				//
+				// zui run -dev starts the dev server in CSR mode by default.
+				// It serves the index.html file in dev/build as well as the
+				// compiled app and the assets.
+				//
+				// zui run -dev -ssr starts the dev server in SSR mode.
+				//
+				// zui run -dev -ssg starts the dev server in SSG mode.
+				// It serves the dev/build/ssg directory.
+				//
+				// -port might be an option for the dev server.
+				//
+
+				// Default build: on project initialization, a default project is 
+				// created in the dev directory.
+				// A sort of hello world app that can be run with zui run -dev.
+				//
+				// In the future, it should be possible to run zui init -template= template_URL
+				// to create a project from a template. (TODO: use go new)
+
+				// Let's create the default main.go file in the dev directory.
+				// This will contain a default app that outputs a hello world, a game or something.
+				// The default app should be a module, so run go mod init in the current directory.
+				// The module name should be the project name.
+
+				
+				
+				err = createDirectory(filepath.Join(".","dev","build"))
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build directory.")
+					os.Exit(1)
+					return
+				}
+
+				err = createDirectory(filepath.Join(".","dev","build","app"))
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build/app directory.")
+					os.Exit(1)
+					return
+				}
+
+				// Default main.go file
+				err = createFile(filepath.Join(".","dev","build","app", "main.go"), defaultprojectfile)
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build/app/main.go file.")
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("default main.go file created.")
+				}
+
+				// Default index.html file
+				err = createFile(filepath.Join(".","dev","build","app","index.html"), defaultindexfile)
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build/app/index.html file.")
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("default index.html file created.")
+				}
+
+				// copy wasm_exec.js to the ./dev/build/app directory
+				err = CopyWasmExecJs(filepath.Join(".","dev","build","app"))
+				if err!= nil{
+					fmt.Println("Error: Could not copy wasm_exec.js file.")
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("wasm_exec.js file copied from Go distribution.")
+				}
+
+				// Create asset folder and put a default favicon.ico in it
+				err = createDirectory(filepath.Join(".","dev","build","app","assets"))
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build/app/assets directory.")
+					os.Exit(1)
+					return
+				}
+
+				err = createFile(filepath.Join(".","dev","build","app","assets","favicon.ico"), "")
+				if err!= nil{
+					fmt.Println("Error: Could not create dev/build/app/assets/favicon.ico file.")
+					os.Exit(1)
+					return
+				}
+
+
+				// This should be a module, so run go mod init in the current directory.
+				// The module name should be the project name.
+				err = initGoModule(projectName)
+				if err!= nil{
+					fmt.Println("Error: Could not initialize go module.")
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("go module initialized.")
+				}
+			} else{
+				// TODO
+				// run $go new template_URL projectname
 			}
-
-			// dev holds the source code for the app.
-			//
-			// zui build compiles in CSR mode by default.
-			// It also builds the server executable in dev/server/csr.
-			//
-			// zui build --ssr compiles in CSR mode and
-			// puts the code for the CSR server in dev/server/ssr
-			// the index.html file in dev/bin won't be served by the dev server.
-			//
-			// zui build --ssg compiles in SSG mode and output the file in dev/build/ssg.
-			//
-			// zui run -dev starts the dev server in CSR mode by default.
-			// It serves the index.html file in dev/build as well as the
-			// compiled app and the assets.
-			//
-			// zui run -dev -ssr starts the dev server in SSR mode.
-			//
-			// zui run -dev -ssg starts the dev server in SSG mode.
-			// It serves the dev/build/ssg directory.
-			//
-			// -port might be an option for the dev server.
-			//
-
-			// Default build: on project initialization, a default project is 
-			// created in the dev directory.
-			// A sort of hello world app that can be run with zui run -dev.
-			//
-			// In the future, it should be possible to run zui init -template= template_URL
-			// to create a project from a template. (TODO: use go new)
-
-			// Let's create the default main.go file in the dev directory.
-			// This will contain a default app that outputs a hello world, a game or something.
-			// The default app should be a module, so run go mod init in the current directory.
-			// The module name should be the project name.
-
 			
-			
-			err = createFolder(filepath.Join(".","dev","build"))
-			if err!= nil{
-				fmt.Println("Error: Could not create dev/build directory.")
-				os.Exit(1)
-				return
-			}
-
-			err = createFolder(filepath.Join(".","dev","build","app"))
-			if err!= nil{
-				fmt.Println("Error: Could not create dev/build/app directory.")
-				os.Exit(1)
-				return
-			}
-
-			// Default main.go file
-			err = createFile(filepath.Join(".","dev","build","app", "main.go"), defaultprojectfile)
-			if err!= nil{
-				fmt.Println("Error: Could not create dev/build/app/main.go file.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("default main.go file created.")
-			}
-
-			// Default index.html file
-			err = createFile(filepath.Join(".","dev","build","app","index.html"), defaultindexfile)
-			if err!= nil{
-				fmt.Println("Error: Could not create dev/build/app/index.html file.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("default index.html file created.")
-			}
-
-			// copy wasm_exec.js to the ./dev/build/app directory
-			err = CopyWasmExecJs(filepath.Join(".","dev","build","app"))
-			if err!= nil{
-				fmt.Println("Error: Could not copy wasm_exec.js file.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("wasm_exec.js file copied from Go distribution.")
-			}
-
-			// This should be a module, so run go mod init in the current directory.
-			// The module name should be the project name.
-			err = initGoModule(projectName)
-			if err!= nil{
-				fmt.Println("Error: Could not initialize go module.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("go module initialized.")
-			}
-
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err = Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
 				fmt.Println("Error: Could not build the default app.")
 				os.Exit(1)
@@ -344,11 +367,22 @@ var initCmd = &cobra.Command{
 				}
 			}
 			// Process mobileOptions further TODO
+			if template != "" {
+				// TODO
+			} else{
+				// TODO
+			}
 			fmt.Println("Mobile platform not yet implemented.")
 			os.Exit(1)
 		} else if desktop{
 		
 			// Process desktopOptions further
+			if template != "" {
+				// TODO
+			} else{
+				// TODO
+			}
+
 			fmt.Println("Desktop platform not yet implemented.")
 			os.Exit(1)
 		} else if terminal {
@@ -357,6 +391,11 @@ var initCmd = &cobra.Command{
 			config["projectName"] = projectName
 			config["platform"] = "terminal"
 			config["terminal"] = ""
+			if template != "" {
+				// TODO
+			} else{
+				// TODO
+			}
 			if err := SaveConfig(); err != nil {
 				fmt.Println("Error: Could not save configuration file.")
 				os.Exit(1)
@@ -379,7 +418,7 @@ func On(platform string) bool{
 	return ok
 }
 
-func createFolder(path string) error{
+func createDirectory(path string) error{
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
 		return err
 	}
@@ -572,15 +611,73 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 func runInteractiveMode() {
 	var input string
+	var platform int
+	var target int
 
 	// Prompt for project name
 	fmt.Print("Project name: ")
-	fmt.Scanln(&input)
+	_,err:= fmt.Scanln(&input)
+	if err != nil {
+		fmt.Println("Error: Could not read project name input.")
+		os.Exit(1)
+		return
+	}
 	projectName = input
 
-	// Prompt for platform
-	fmt.Print("Choose a platform (web/mobile/desktop/terminal): ")
-	fmt.Scanln(&input)
+	iloop:
+	for{
+		// Prompt for platform
+		fmt.Print(`
+		Choose a platform (1,2,3, or 4): 
+			1. web
+			2. mobile
+			3. desktop
+			4. terminal
+			
+		`)
+		_,err = fmt.Scanln(&platform)
+		if err != nil {
+			fmt.Println("Error: Could not read platform input.")
+			os.Exit(1)
+			return
+		}
+
+		switch platform {
+		case 1:
+			web = true
+			break iloop
+		case 2:
+			platformloop:
+			for {
+				fmt.Print("Choose a target for mobile (1 for android, 2 for iOS): ")
+				_,err = fmt.Scanln(&target)
+				if err != nil {
+					fmt.Println("Error: Could not read mobile target input.")
+					os.Exit(1)
+					return
+				}
+				switch target {
+				case 1: mobile = "android"
+					break platformloop
+				case 2: mobile = "ios"
+					break platformloop
+				default:
+					fmt.Println("Invalid mobile target selected. Try again.")
+				}
+			}
+			break iloop
+		case 3:
+			desktop = true
+			break iloop
+		case 4:
+			terminal = true
+			break iloop
+		default:
+			fmt.Println("Invalid platform selected. Try again.")
+		}
+	}
+	
+
 
 	/*switch input {
 	case "web":
@@ -618,6 +715,7 @@ func init() {
 	initCmd.Flags().StringVar(&mobile, "mobile", "m", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
 	initCmd.Flags().BoolVarP(&terminal, "terminal", "t",false, "Specify a terminal target option (any additional terminal option can be added here)")
+	initCmd.Flags().StringVar(&template, "template", "", "Specify a template URL to initialize the project from")
 	
 	rootCmd.AddCommand(initCmd)
 }
