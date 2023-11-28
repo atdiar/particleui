@@ -408,9 +408,7 @@ var initCmd = &cobra.Command{
 			fmt.Println("Error: A platform (web, mobile, desktop, terminal) must be specified.")
 			os.Exit(1)
 		}
-	},
-	
-	
+	},	
 }
 
 func On(platform string) bool{
@@ -419,7 +417,7 @@ func On(platform string) bool{
 }
 
 func createDirectory(path string) error{
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+	if err := os.MkdirAll(path, 0644); err != nil {
 		return err
 	}
 	if verbose {
@@ -464,7 +462,7 @@ func CopyWasmExecJs(destinationDir string) error {
 	source := filepath.Join(goRoot, "misc", "wasm", "wasm_exec.js")
 
 	// Ensure the destination directory exists
-	err := os.MkdirAll(destinationDir, os.ModePerm) // Create the destination directory if it does not exist
+	err := os.MkdirAll(destinationDir, 0644) // Create the destination directory if it does not exist
 	if err != nil {
 		return fmt.Errorf("error creating destination directory: %v", err)
 	}
@@ -546,7 +544,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Ensure the output directory exists
 		outputDir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(outputDir, 0644); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
@@ -676,29 +674,6 @@ func runInteractiveMode() {
 			fmt.Println("Invalid platform selected. Try again.")
 		}
 	}
-	
-
-
-	/*switch input {
-	case "web":
-		fmt.Print("Choose a target for web (csr/ssr/ssg): ")
-		fmt.Scanln(&input)
-		web = input
-	case "mobile":
-		fmt.Print("Choose a target for mobile (android/ios): ")
-		fmt.Scanln(&input)
-		mobile = input
-	case "desktop":
-		fmt.Print("Choose a target for desktop (windows/darwin/linux): ")
-		fmt.Scanln(&input)
-		desktop = input
-	case "terminal":
-		terminal = "terminal" // default for terminal
-	default:
-		fmt.Println("Invalid platform selected.")
-		return
-	}
-	*/
 
 	// Continue with the rest of the project initialization logic
 }
@@ -741,7 +716,7 @@ func App() doc.Document {
 		Children(
 			E(document.Input.WithID("input").SetAttribute("type","text"),
 				Ref(&input),
-				// TODO need SetValueOnChange and SetValueOnInput vs SetValueOnEnter ?
+				SyncValueOnChange(),
 			),
 			E(document.Label().For(&input).SetText("What's your name?")),
 			E(document.Paragraph().SetText("Hello!"),

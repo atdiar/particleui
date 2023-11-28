@@ -140,6 +140,10 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		}
 		d.mutationRecorder().Capture()
 
+		if !InBrowser(){ // SSR Mode only
+			CreateSiteMap(d, filepath.Join(".","sitemap.xml"))
+		}
+
 		d.ListenAndServe(ctx)
 	}
 }

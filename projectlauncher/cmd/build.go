@@ -7,6 +7,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -144,8 +145,33 @@ var buildCmd = &cobra.Command{
 						fmt.Println("ssr server built.")
 					}
 				} else if ssg{
-					// TODO
-					fmt.Println("building for ssg is not yet supported")
+					err = Build(filepath.Join(".","dev","build","server", "ssg","main"),[]string{"server","ssg"})
+					if err != nil {
+						fmt.Println("Error: unable to build the ssg server.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose{
+						fmt.Println("ssg server built.")
+					}
+
+					// Now we need to build the pages by running the server executable
+					// at least once.
+					// The output files will be found in dev/build/ssg/static
+					cmd:= exec.Command(filepath.Join(".","dev","build","server", "ssg","main"),"generate")
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					cmd.Dir = filepath.Join(".","dev","build","server", "ssg")
+					err = cmd.Run()
+					if err != nil {
+						fmt.Println("Error: unable to build the ssg pages.")
+					} else{
+						if verbose{
+							fmt.Println("ssg pages built.")
+						}
+					}
+					
 					os.Exit(1)
 					return
 				}

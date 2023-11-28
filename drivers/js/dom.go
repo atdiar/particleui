@@ -5,19 +5,23 @@ package doc
 import (
 	"context"
 	crand "crypto/rand"
-	"encoding/binary"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
-	//"errors"
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+
 	//"math/rand"
-	"net/url"
 	"net/http"
 	"net/http/cookiejar"
-	"time"
+	"net/url"
 	"runtime"
+	"time"
+
 	"golang.org/x/exp/rand"
 
 	"github.com/atdiar/particleui"
@@ -2917,6 +2921,66 @@ func (i InputElement) SetDisabled(b bool)InputElement{
 	return i
 }
 
+// SyncValueOnInput is an element modifier which is used to sync the 
+// value of an InputElement once an input event is received
+// This modifier is configurable, allowing to process he raw event value
+// before syncing the UI element. For example to trim the value when it's a ui.String.
+func SyncValueOnInput(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.AddEventListener("input", ui.NewEventHandler(func(evt ui.Event)bool{
+			val:= evt.Value()
+			for _,f:= range valuemodifiers{
+				val = f(val)
+			}
+			evt.Target().SyncUISyncData("value", val)
+			
+			return false
+		}))
+		return e
+	}
+}
+
+// SyncValueOnChange is an element modifier which is used to sync the 
+// value of an InputElement once an input event is received
+// This modifier is configurable, allowing to process he raw event value
+// before syncing the UI element. For example to trim the value when it's a ui.String.
+func SyncValueOnChange(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.AddEventListener("change", ui.NewEventHandler(func(evt ui.Event)bool{
+			val:= evt.Value()
+			for _,f:= range valuemodifiers{
+				val = f(val)
+			}
+			evt.Target().SyncUISyncData("value", val)
+			
+			return false
+		}))
+		return e
+	}
+}
+
+// SyncValueOnEnter returns an element modifier which is used to sync the 
+// value of an InputElement once an input event is received.
+// This modifier is configurable, allowing to process he raw event value
+// before syncing the UI element. For example to trim the value when it's a ui.String.
+func SyncValueOnEnter(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.AddEventListener("keyup", ui.NewEventHandler(func(evt ui.Event)bool{
+			event:= evt.(KeyboardEvent)
+			if event.key == "13"{
+				val:= evt.Value()
+				for _,f:= range valuemodifiers{
+					val = f(val)
+				}
+				evt.Target().SyncUISyncData("value", val)
+			}
+			
+			return false
+		}))
+		return e
+	}
+}
+
 
 var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 	
@@ -4941,3 +5005,48 @@ func(s set) Add(str string) set{
 var NoopMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 	return false
 })
+
+func Sitemap(d Document) ([]byte,error){
+	r:= d.Router()
+	if r == nil{
+		return nil,errors.New("no router")
+	}
+
+	routelist:= r.RouteList()
+	if routelist == nil{
+		return nil,errors.New("no route list")
+	}
+
+	urlset := urlset{}
+	for _, u := range routelist {
+		urlset.Urls = append(urlset.Urls, mapurl{Loc: u})
+	}
+	output, err := xml.MarshalIndent(urlset, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return output, nil
+
+}
+
+func CreateSitemap(d Document, path string) error{
+	o,err:= Sitemap(d)
+	if err != nil{
+		return err
+	}
+	return os.WriteFile(path,o,0644)
+}
+
+type mapurl struct {
+    Loc string `xml:"loc"`
+}
+
+type urlset struct {
+    XMLName xml.Name `xml:"urlset"`
+    Urls    []mapurl    `xml:"url"`
+}
+
+
+
+

@@ -279,7 +279,7 @@ func (r *Router) Match(route string) (prefetch func(),err error) {
 
 }
 
-func (r *Router) ListRoutes() []string {
+func (r *Router) RouteList() []string {
     var routes []string
     r.traverseRoutes(r.Routes, "", &routes)
     return routes

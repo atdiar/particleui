@@ -46,6 +46,7 @@ var (
 
 	release bool
 	nohmr bool
+	noserver bool
 
 	ServeMux *http.ServeMux
 	Server *http.Server = newDefaultServer()
@@ -62,6 +63,7 @@ func init(){
 	flag.StringVar(&host,"host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
+	flag.BoolVar(&noserver, "noserver", false, "Generate the pages without starting a server")
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
@@ -173,35 +175,17 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		panic(err)
 	}
 	document.mutationRecorder().Capture()
-	
+
+	// Creating the sitemap.xml file and putting it under the static directory
+	// that should have been created in the output directory.
+	err = CreateSitemap(document, filepath.Join(StaticPath,"sitemap.xml"))
+	if err != nil{
+		panic(err)
+	}
+
 	go func(){
 		document.ListenAndServe(nil)	// launches a new UI thread
 	}()
-	
-		/*
-	ui.DoSync(func() {
-		router:= document.Router()
-		route:= r.URL.Path
-		_,routeexist:= router.Match(route)
-		if routeexist != nil{
-			w.WriteHeader(http.StatusNotFound)
-		}
-		router.GoTo(route)
-	})
-	
-	
-	err= document.Render(w)
-	if err != nil{ 
-		switch err{
-		case ui.ErrNotFound:
-			w.WriteHeader(http.StatusNotFound)
-		case ui.ErrFrameworkFailure:
-			w.WriteHeader(http.StatusInternalServerError)
-		case ui.ErrUnauthorized:
-			w.WriteHeader(http.StatusUnauthorized)
-		}
-	}
-	*/
 
 	// Should generate the file system based structure of the website.
 	ui.DoSync(func() {
@@ -214,8 +198,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			if verbose{
 				fmt.Printf("Created %d pages\n", numPages)
 			}
-		}
-		
+		}	
 	})
 
 
@@ -245,6 +228,11 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		m()
 	}
 
+	if noserver{
+		return func(ctx context.Context){
+		}
+	}
+
 	// TODO modify HMR mode to accouunt for ssg structural changes. (no wasm etc, different output directory etc.)
 	// ******************************
 	return func(ctx context.Context){
@@ -262,15 +250,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		}
 
 		if HMRMode == "true"{
-			// TODO: Implement Server-Sent Evemt logic for browser reload
-			// Implement filesystem watching and trigger compile on change
-			// (in another goroutine) if it's a go file. I fany file change, send SSE message to frontend
-			//
-			// 1. Watch ./dev/*.go files. If any is modified, try to recompile. IF not successful nothing happens of course.
-			// 2. Watch ./dev/build/app folder. If anything changed, send SSE message to frontend to reload the page.
-
+			
 			// path to the directory containing the source files
-			outputPath, err := filepath.Rel(absCurrentPath,filepath.Join(".","dev","build","app"))
+			outputPath, err := filepath.Rel(absCurrentPath,filepath.Join(".","dev","build","server","ssg"))
 			if err != nil{
 				log.Println(err)
 				panic("Can't find path to output directory ./dev/build/app")
@@ -848,7 +830,7 @@ var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func CreatePages(doc Document) (int, error) {
     router := doc.Router() // Retrieve the router from the document
-    routes := router.ListRoutes()
+    routes := router.RouteList()
     basePath := "/dev/build/server/ssg"
 
     var count int
@@ -869,7 +851,7 @@ func CreatePages(doc Document) (int, error) {
 func (d Document) CreatePage(filePath string) error {
     // Create the directory if it doesn't exist
     dirPath := filepath.Dir(filePath)
-    if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+    if err := os.MkdirAll(dirPath, 0644); err != nil {
         return err
     }
 

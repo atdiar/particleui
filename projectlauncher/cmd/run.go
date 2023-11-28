@@ -218,8 +218,32 @@ func Run(buildoptions ...string) error{
 
 			return nil
 		} else if ssg{
-			// TODO
-			fmt.Println("building for ssg is not yet supported")
+			serverbinpath := filepath.Join(".","dev","build","server", "ssg","main")
+			if releaseMode{
+				buildoptions = append(buildoptions, "release")
+			}
+			if nohmr{
+				buildoptions = append(buildoptions, "nohmr")
+			}
+			err := Build(serverbinpath,buildoptions)
+			if err != nil {
+				return err
+			}
+
+			if verbose{
+				fmt.Println("wasm app built.")
+			}
+
+			// Let's build the default server.
+			// The output file should be in dev/build/server/ssr/
+			cmd:= exec.Command(serverbinpath)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Dir = filepath.Join(".","dev","build","server", "ssg")
+			err = cmd.Run()
+			if err != nil {
+				return err
+			}
 			os.Exit(1)
 			return nil
 		}
