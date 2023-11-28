@@ -159,7 +159,7 @@ var buildCmd = &cobra.Command{
 					// Now we need to build the pages by running the server executable
 					// at least once.
 					// The output files will be found in dev/build/ssg/static
-					cmd:= exec.Command(filepath.Join(".","dev","build","server", "ssg","main"),"generate")
+					cmd:= exec.Command(filepath.Join(".","dev","build","server", "ssg","main"),"noserver")
 					cmd.Stdout = os.Stdout
 					cmd.Stderr = os.Stderr
 					cmd.Dir = filepath.Join(".","dev","build","server", "ssg")
