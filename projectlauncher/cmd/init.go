@@ -426,29 +426,23 @@ func createDirectory(path string) error{
 	return nil
 }
 
-func createFile(path, content string) error{
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		file, err := os.Create(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
+func createFile(path, content string) error {
+    // Convert the content string to a byte slice
+    data := []byte(content)
 
-		// Write the content to the file
-		_, err = file.WriteString(content)
-		if err != nil {
-			return err
-		}
-		if verbose {
-			fmt.Printf("%s file created.\n", path)
-		}
-		return nil
-	}
-	if verbose {
-		fmt.Printf("%s file already exists.\n", path)
-	}
-	return nil
+    // Write the data to the path, os.WriteFile handles creating or truncating the file
+    err := os.WriteFile(path, data, 0644) // 0644 is a common permission setting for writable files
+    if err != nil {
+        return err
+    }
+
+    // Verbose output
+    if verbose {
+        fmt.Printf("%s file created or overwritten.\n", path)
+    }
+    return nil
 }
+
 
 // CopyWasmExecJs copies the wasm_exec.js file from the Go distribution to the specified destination directory.
 func CopyWasmExecJs(destinationDir string) error {
