@@ -116,8 +116,8 @@ var initCmd = &cobra.Command{
 	
 	`,
 	Example: `
-		zui init github.com/stephenstrange/thewebapp -web
-		zui init github.com/stephenstrange/theiosapp -mobile=ios
+		zui init github.com/stephenstrange/thewebapp --web
+		zui init github.com/stephenstrange/theiosapp --mobile=ios
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if interactive {
@@ -681,7 +681,7 @@ func init() {
 	initCmd.Flags().BoolVarP(&graphic, "graphic", "g", false, "Run the command in graphic mode")
 	
 	initCmd.Flags().BoolVarP(&web, "web","w", false, "Specify a web target option (csr, ssr, ssg)")
-	initCmd.Flags().StringVar(&mobile, "mobile", "m", "Specify a mobile target option (android, ios)")
+	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
 	initCmd.Flags().BoolVarP(&terminal, "terminal", "t",false, "Specify a terminal target option (any additional terminal option can be added here)")
 	initCmd.Flags().StringVar(&template, "template", "", "Specify a template URL to initialize the project from")
