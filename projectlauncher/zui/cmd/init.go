@@ -156,6 +156,7 @@ var initCmd = &cobra.Command{
 	
 		if platformsSpecified > 1 {
 			fmt.Println("Error: Please specify only one platform (web, mobile, desktop, terminal).")
+			fmt.Print(platformsSpecified, web,mobile,desktop,terminal)
 			os.Exit(1)
 			return
 		}
