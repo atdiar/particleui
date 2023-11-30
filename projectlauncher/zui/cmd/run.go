@@ -299,5 +299,5 @@ func init() {
 	runCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Run in release mode")
     runCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Runs the server in server-side rendering mode")
     runCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Runs the server in static file mode for ssg.")
-    runCmd.Flags().BoolVarP(&nohmr, "nohmr", "nh", false, "Disable hot module replacement")
+    runCmd.Flags().BoolVarP(&nohmr, "nohmr","", false, "Disable hot module replacement")
 }
