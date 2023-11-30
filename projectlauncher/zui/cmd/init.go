@@ -277,7 +277,7 @@ var initCmd = &cobra.Command{
 				// copy wasm_exec.js to the ./dev/build/app directory
 				err = CopyWasmExecJs(filepath.Join(".","dev","build","app"))
 				if err!= nil{
-					fmt.Println("Error: Unable to copy wasm_exec.js file.")
+					fmt.Println("Error: Unable to copy wasm_exec.js file.",err)
 					os.Exit(1)
 					return
 				}
