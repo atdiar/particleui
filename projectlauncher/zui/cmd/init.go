@@ -450,10 +450,7 @@ func createFile(path, content string) error {
 // CopyWasmExecJs copies the wasm_exec.js file from the Go distribution to the specified destination directory.
 func CopyWasmExecJs(destinationDir string) error {
 	// Determine the Go root directory
-	goRoot := os.Getenv("GOROOT") // GOROOT environment variable points to the Go installation
-	if goRoot == "" {
-		return fmt.Errorf("GOROOT environment variable is not set")
-	}
+	goRoot := runtime.GOROOT()
 
 	// Source wasm_exec.js path
 	source := filepath.Join(goRoot, "misc", "wasm", "wasm_exec.js")
