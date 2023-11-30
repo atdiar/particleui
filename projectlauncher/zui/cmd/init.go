@@ -251,7 +251,7 @@ var initCmd = &cobra.Command{
 				}
 
 				// Default main.go file
-				err = createFile(filepath.Join(".","dev","build","app", "main.go"), defaultprojectfile)
+				err = createFile(filepath.Join(".","dev","main.go"), defaultprojectfile)
 				if err!= nil{
 					fmt.Println("Error: Unable to create dev/build/app/main.go file.")
 					os.Exit(1)
