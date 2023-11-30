@@ -569,7 +569,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		args = append(args, "-o", outputPath)
 	
 		// Specify the source file
-		sourceFile := filepath.Join(".", "dev", "main.go")
+		sourceFile := "main.go"
 		args = append(args, sourceFile)
 
 
