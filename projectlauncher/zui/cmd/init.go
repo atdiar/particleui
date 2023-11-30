@@ -306,7 +306,7 @@ var initCmd = &cobra.Command{
 				// The module name should be the project name.
 				err = initGoModule(projectName)
 				if err!= nil{
-					fmt.Println("Error: Unable to initialize go module.")
+					fmt.Println("Error: Unable to initialize go module.",err)
 					os.Exit(1)
 					return
 				}
@@ -323,7 +323,7 @@ var initCmd = &cobra.Command{
 			// The output file should be in dev/build/app/main.wasm
 			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
-				fmt.Println("Error: Unable to build the default app.")
+				fmt.Println("Error: Unable to build the default app.",err)
 				os.Exit(1)
 				return
 			}
@@ -474,6 +474,11 @@ func CopyWasmExecJs(destinationDir string) error {
 }
 
 func initGoModule(moduleName string) error {
+	// Check if the current directory is already a go module
+	_, err := os.Stat("go.mod")
+	if err == nil {
+		return err
+	}
 	cmd := exec.Command("go", "mod", "init", moduleName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
