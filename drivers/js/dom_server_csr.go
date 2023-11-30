@@ -258,6 +258,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 						cmd := exec.Command("go", args...)
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
+						cmd.Dir = filepath.Join(".","dev")
 
 						err := cmd.Run()
 						if err == nil {
