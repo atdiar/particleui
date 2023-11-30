@@ -169,6 +169,8 @@ var initCmd = &cobra.Command{
 			return
 		}
 
+		config = make(map[string]string)
+
 		// git should ignore the release directory
 		// TODO remove this?
 		/*
