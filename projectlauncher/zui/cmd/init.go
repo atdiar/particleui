@@ -194,7 +194,7 @@ var initCmd = &cobra.Command{
 				// Create dev directory if it doesn't already exists
 				err:= createDirectory(filepath.Join(".","dev"))
 				if err!= nil{
-					fmt.Println("Error: Could not create dev directory.")
+					fmt.Println("Error: Unable to create dev directory.")
 					os.Exit(1)
 					return
 				}
@@ -238,14 +238,14 @@ var initCmd = &cobra.Command{
 				
 				err = createDirectory(filepath.Join(".","dev","build"))
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build directory.")
+					fmt.Println("Error: unable to create dev/build directory.",err)
 					os.Exit(1)
 					return
 				}
 
 				err = createDirectory(filepath.Join(".","dev","build","app"))
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build/app directory.")
+					fmt.Println("Error: Unable to create dev/build/app directory.")
 					os.Exit(1)
 					return
 				}
@@ -253,7 +253,7 @@ var initCmd = &cobra.Command{
 				// Default main.go file
 				err = createFile(filepath.Join(".","dev","build","app", "main.go"), defaultprojectfile)
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build/app/main.go file.")
+					fmt.Println("Error: Unable to create dev/build/app/main.go file.")
 					os.Exit(1)
 					return
 				}
@@ -265,7 +265,7 @@ var initCmd = &cobra.Command{
 				// Default index.html file
 				err = createFile(filepath.Join(".","dev","build","app","index.html"), defaultindexfile)
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build/app/index.html file.")
+					fmt.Println("Error: Unable to create dev/build/app/index.html file.")
 					os.Exit(1)
 					return
 				}
@@ -277,7 +277,7 @@ var initCmd = &cobra.Command{
 				// copy wasm_exec.js to the ./dev/build/app directory
 				err = CopyWasmExecJs(filepath.Join(".","dev","build","app"))
 				if err!= nil{
-					fmt.Println("Error: Could not copy wasm_exec.js file.")
+					fmt.Println("Error: Unable to copy wasm_exec.js file.")
 					os.Exit(1)
 					return
 				}
@@ -289,14 +289,14 @@ var initCmd = &cobra.Command{
 				// Create asset folder and put a default favicon.ico in it
 				err = createDirectory(filepath.Join(".","dev","build","app","assets"))
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build/app/assets directory.")
+					fmt.Println("Error: Unable to create dev/build/app/assets directory.")
 					os.Exit(1)
 					return
 				}
 
 				err = createFile(filepath.Join(".","dev","build","app","assets","favicon.ico"), "")
 				if err!= nil{
-					fmt.Println("Error: Could not create dev/build/app/assets/favicon.ico file.")
+					fmt.Println("Error: Unable to create dev/build/app/assets/favicon.ico file.")
 					os.Exit(1)
 					return
 				}
@@ -306,7 +306,7 @@ var initCmd = &cobra.Command{
 				// The module name should be the project name.
 				err = initGoModule(projectName)
 				if err!= nil{
-					fmt.Println("Error: Could not initialize go module.")
+					fmt.Println("Error: Unable to initialize go module.")
 					os.Exit(1)
 					return
 				}
@@ -323,7 +323,7 @@ var initCmd = &cobra.Command{
 			// The output file should be in dev/build/app/main.wasm
 			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
-				fmt.Println("Error: Could not build the default app.")
+				fmt.Println("Error: Unable to build the default app.")
 				os.Exit(1)
 				return
 			}
@@ -336,7 +336,7 @@ var initCmd = &cobra.Command{
 			// The output file should be in dev/build/server/csr/
 			err = Build(filepath.Join(".","dev","build","server", "csr","main"), nil)
 			if err != nil {
-				fmt.Println("Error: Could not build the default server.")
+				fmt.Println("Error: Unable to build the default server.")
 				os.Exit(1)
 				return
 			}
@@ -347,7 +347,7 @@ var initCmd = &cobra.Command{
 
 			// Config file should be valid now.
 			if err := SaveConfig(); err != nil {
-				fmt.Println("Error: Could not save configuration file.")
+				fmt.Println("Error: Unable to save configuration file.")
 				os.Exit(1)
 				return
 			}
@@ -400,7 +400,7 @@ var initCmd = &cobra.Command{
 				// TODO
 			}
 			if err := SaveConfig(); err != nil {
-				fmt.Println("Error: Could not save configuration file.")
+				fmt.Println("Error: Unable to save configuration file.")
 				os.Exit(1)
 				return
 			}
@@ -420,7 +420,7 @@ func On(platform string) bool{
 }
 
 func createDirectory(path string) error{
-	if err := os.MkdirAll(path, 0644); err != nil {
+	if err := os.MkdirAll(path, 0755); err != nil {
 		return err
 	}
 	if verbose {
@@ -459,7 +459,7 @@ func CopyWasmExecJs(destinationDir string) error {
 	source := filepath.Join(goRoot, "misc", "wasm", "wasm_exec.js")
 
 	// Ensure the destination directory exists
-	err := os.MkdirAll(destinationDir, 0644) // Create the destination directory if it does not exist
+	err := os.MkdirAll(destinationDir, 0755) // Create the destination directory if it does not exist
 	if err != nil {
 		return fmt.Errorf("error creating destination directory: %v", err)
 	}
@@ -541,7 +541,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Ensure the output directory exists
 		outputDir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(outputDir, 0644); err != nil {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
@@ -613,7 +613,7 @@ func runInteractiveMode() {
 	fmt.Print("Project name: ")
 	_,err:= fmt.Scanln(&input)
 	if err != nil {
-		fmt.Println("Error: Could not read project name input.")
+		fmt.Println("Error: Unable to read project name input.")
 		os.Exit(1)
 		return
 	}
@@ -632,7 +632,7 @@ func runInteractiveMode() {
 		`)
 		_,err = fmt.Scanln(&platform)
 		if err != nil {
-			fmt.Println("Error: Could not read platform input.")
+			fmt.Println("Error: Unable to read platform input.")
 			os.Exit(1)
 			return
 		}
@@ -647,7 +647,7 @@ func runInteractiveMode() {
 				fmt.Print("Choose a target for mobile (1 for android, 2 for iOS): ")
 				_,err = fmt.Scanln(&target)
 				if err != nil {
-					fmt.Println("Error: Could not read mobile target input.")
+					fmt.Println("Error: Unable to read mobile target input.")
 					os.Exit(1)
 					return
 				}

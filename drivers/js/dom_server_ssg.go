@@ -851,7 +851,7 @@ func CreatePages(doc Document) (int, error) {
 func (d Document) CreatePage(filePath string) error {
     // Create the directory if it doesn't exist
     dirPath := filepath.Dir(filePath)
-    if err := os.MkdirAll(dirPath, 0644); err != nil {
+    if err := os.MkdirAll(dirPath, 0755); err != nil {
         return err
     }
 
