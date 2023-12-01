@@ -53,9 +53,9 @@ const (
 	onInput
 )
 
-// inBrowser indicates whether the document is created in a browser environement or not.
+// InBrowser indicates whether the document is created in a browser environement or not.
 // This
-func inBrowser() bool{
+func InBrowser() bool{
 	if runtime.GOOS == "js" && (runtime.GOARCH == "wasm"|| runtime.GOARCH == "ecmascript"){
 		return true
 	}
@@ -1239,7 +1239,7 @@ func NewDocument(id string, options ...string) Document {
 
 	activityStateSupport(e)
 
-	if inBrowser(){
+	if InBrowser(){
 		document = &d
 	}
 
@@ -1703,8 +1703,8 @@ func(s ScriptElement) Defer() ScriptElement{
 	return s
 }
 
-func(s ScriptElement) SetInnerHTML(content string) ScriptElement{
-	SetInnerHTML(s.AsElement(),content)
+func(s ScriptElement) Unsafe_SetInnerHTML(content string) ScriptElement{
+	Unsafe_SetInnerHTML(s.AsElement(),content)
 	return s
 }
 
@@ -1770,8 +1770,8 @@ type NoScriptElement struct{
 	*ui.Element
 }
 
-func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
-	SetInnerHTML(s.AsElement(),content)
+func(s NoScriptElement) Unsafe_SetInnerHTML(content string) NoScriptElement{
+	Unsafe_SetInnerHTML(s.AsElement(),content)
 	return s
 }
 
@@ -4925,7 +4925,7 @@ func withNumberAttributeWatcher(e *ui.Element,attr string){
 
 // watches ("ui",attr) for a ui.Bool value.
 func withBoolAttributeWatcher(e *ui.Element, attr string){
-	if !inBrowser(){
+	if !InBrowser(){
 		e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			if evt.NewValue().(ui.Bool) {
 				SetAttribute(evt.Origin(), attr, "")
