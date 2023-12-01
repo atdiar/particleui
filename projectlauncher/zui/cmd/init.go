@@ -530,10 +530,11 @@ func copyFile(src, dst string) error {
 }
 
 func tryAddToWorkspace() error {
-    // Check if GOWORK is set
-	// DEBUG
-	fmt.Println(os.Environ())
-    if _, ok := os.LookupEnv("GOWORK"); ok {
+	ok,err := isGoWorkSet()
+	if err != nil{
+		return err
+	}
+    if ok {
         // Attempt to add the current directory to the workspace
         cmd := exec.Command("go", "work", "use", "-r", ".")
         output, err := cmd.CombinedOutput()
@@ -551,6 +552,14 @@ func tryAddToWorkspace() error {
 		}
     }
     return nil
+}
+
+func isGoWorkSet() (bool, error) {
+    out, err := exec.Command("go", "env", "GOWORK").Output()
+    if err != nil {
+        return false, err
+    }
+    return strings.TrimSpace(string(out)) != "", nil
 }
 
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
