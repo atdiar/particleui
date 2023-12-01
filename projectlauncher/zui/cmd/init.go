@@ -477,6 +477,9 @@ func initGoModule(moduleName string) error {
 	// Check if the current directory is already a go module
 	_, err := os.Stat("go.mod")
 	if err == nil {
+		if verbose{
+			fmt.Println("go.mod already exists, skipping module initialization")
+		}
 		return err
 	}
 	cmd := exec.Command("go", "mod", "init", moduleName)
@@ -484,7 +487,9 @@ func initGoModule(moduleName string) error {
 	if err != nil {
 		return fmt.Errorf("error initializing go module: %s, output: %s", err, output)
 	}
-	fmt.Printf("Successfully initialized go module: %s\n", moduleName)
+	if verbose{
+		fmt.Printf("Successfully initialized go module: %s\n", moduleName)
+	}
 	
 	return tryAddToWorkspace()
 }
