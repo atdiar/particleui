@@ -521,16 +521,11 @@ func tryAddToWorkspace() error {
     if _, ok := os.LookupEnv("GOWORK"); ok {
         // Attempt to add the current directory to the workspace
         cmd := exec.Command("go", "work", "use", "-r", ".")
-        cmd.Stdout = os.Stdout
-        cmd.Stderr = os.Stderr
-
-        fmt.Println("Attempting to add current module to Go workspace")
-        if err := cmd.Run(); err != nil {
-            // You can choose to ignore the error or handle it differently
-            fmt.Println("Note: there was an error adding to workspace, which may be ignorable if the module is already in go.work")
-            return nil  // or return err if you want to treat this as an error
-        }
-
+        output, err := cmd.CombinedOutput()
+		if err != nil{
+			return fmt.Errorf("error adding to workspace: %s, output: %s", err, output)
+		}
+    
 		if verbose{
 			fmt.Println("Successfully added to Go workspace")
 		}
