@@ -314,6 +314,19 @@ var initCmd = &cobra.Command{
 				if verbose{
 					fmt.Println("go module initialized.")
 				}
+
+				// Add the current directory to the workspace if GOWORK is set
+				err = tryAddToWorkspace()
+				if err!= nil{
+					fmt.Println("Error: Unable to add to workspace.",err)
+					os.Exit(1)
+					return
+				}
+				
+				if verbose{
+					fmt.Println("added the project module to workspace.")
+				}
+
 			} else{
 				// TODO
 				// run $go new template_URL projectname
@@ -491,7 +504,7 @@ func initGoModule(moduleName string) error {
 		fmt.Printf("Successfully initialized go module: %s\n", moduleName)
 	}
 	
-	return tryAddToWorkspace()
+	return nil
 }
 
 // copyFile is a helper function that copies a file from src to dst.
