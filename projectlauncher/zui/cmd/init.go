@@ -531,6 +531,8 @@ func copyFile(src, dst string) error {
 
 func tryAddToWorkspace() error {
     // Check if GOWORK is set
+	// DEBUG
+	fmt.Println(os.Environ())
     if _, ok := os.LookupEnv("GOWORK"); ok {
         // Attempt to add the current directory to the workspace
         cmd := exec.Command("go", "work", "use", "-r", ".")
