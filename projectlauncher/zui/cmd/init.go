@@ -485,7 +485,8 @@ func initGoModule(moduleName string) error {
 		return fmt.Errorf("error initializing go module: %s, output: %s", err, output)
 	}
 	fmt.Printf("Successfully initialized go module: %s\n", moduleName)
-	return nil
+	
+	return tryAddToWorkspace()
 }
 
 // copyFile is a helper function that copies a file from src to dst.
@@ -508,6 +509,33 @@ func copyFile(src, dst string) error {
 	}
 
 	return destFile.Sync()
+}
+
+func tryAddToWorkspace() error {
+    // Check if GOWORK is set
+    if _, ok := os.LookupEnv("GOWORK"); ok {
+        // Attempt to add the current directory to the workspace
+        cmd := exec.Command("go", "work", "use", "-r", ".")
+        cmd.Stdout = os.Stdout
+        cmd.Stderr = os.Stderr
+
+        fmt.Println("Attempting to add current module to Go workspace")
+        if err := cmd.Run(); err != nil {
+            // You can choose to ignore the error or handle it differently
+            fmt.Println("Note: there was an error adding to workspace, which may be ignorable if the module is already in go.work")
+            return nil  // or return err if you want to treat this as an error
+        }
+
+		if verbose{
+			fmt.Println("Successfully added to Go workspace")
+		}
+
+    } else {
+		if verbose{
+			fmt.Println("GOWORK is not set, skipping workspace addition")
+		}
+    }
+    return nil
 }
 
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
