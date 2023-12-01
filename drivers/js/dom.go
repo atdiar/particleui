@@ -1703,8 +1703,8 @@ func(s ScriptElement) Defer() ScriptElement{
 	return s
 }
 
-func(s ScriptElement) Unsafe_SetInnerHTML(content string) ScriptElement{
-	Unsafe_SetInnerHTML(s.AsElement(),content)
+func(s ScriptElement) SetInnerHTML(content string) ScriptElement{
+	SetInnerHTML(s.AsElement(),content)
 	return s
 }
 
@@ -1770,8 +1770,8 @@ type NoScriptElement struct{
 	*ui.Element
 }
 
-func(s NoScriptElement) Unsafe_SetInnerHTML(content string) NoScriptElement{
-	Unsafe_SetInnerHTML(s.AsElement(),content)
+func(s NoScriptElement) SetInnerHTML(content string) NoScriptElement{
+	SetInnerHTML(s.AsElement(),content)
 	return s
 }
 

@@ -63,7 +63,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		d:=f()
 		withNativejshelpers(&d)
 
-		scrIdleGC := d.Script().Unsafe_SetInnerHTML(`
+		scrIdleGC := d.Script().SetInnerHTML(`
 			let lastGC = Date.now();
 
 			function runGCDuringIdlePeriods(deadline) {
@@ -101,7 +101,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			d=f()
 			withNativejshelpers(&d)
 
-			scrIdleGC := d.Script().Unsafe_SetInnerHTML(`
+			scrIdleGC := d.Script().SetInnerHTML(`
 				let lastGC = Date.now();
 
 				function runGCDuringIdlePeriods(deadline) {
@@ -137,7 +137,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 		// sse support if hmr is enabled
 		if HMRMode != "false"{
-			d.Head().AppendChild(d.Script.WithID("ssesupport").Unsafe_SetInnerHTML(SSEscript))
+			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
 		d.mutationRecorder().Capture()
 
@@ -992,10 +992,10 @@ func JSValue(el ui.AnyElement) (js.Value,bool) { // TODO  unexport
 	return n.Value, true
 }
 
-// Unsafe_SetInnerHTML sets the innerHTML property of HTML elements.
+// SetInnerHTML sets the innerHTML property of HTML elements.
 // Please note that it is unsafe (risk of XSS) 
 // Do not use it to dynamically inject unsanitized text inputs.
-func Unsafe_SetInnerHTML(e *ui.Element, html string) *ui.Element {
+func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 	jsv,ok := JSValue(e)
 	if !ok{
 		return e
