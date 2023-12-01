@@ -764,24 +764,25 @@ func App() doc.Document {
 
 	document:= doc.NewDocument("HelloWorld", doc.EnableScrollRestoration()).EnableWasm()
 	var input *ui.Element 
-	var parahraph *ui.Element
+	var paragraph *ui.Element
 
 
 	E(document.Body(),
 		Children(
-			E(document.Input.WithID("input").SetAttribute("type","text"),
+			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
 				Ref(&input),
-				SyncValueOnChange(),
+				doc.SyncValueOnChange(),
 			),
-			E(document.Label().For(&input).SetText("What's your name?")),
+			E(document.Label().For(input.AsElement()).SetText("What's your name?")),
 			E(document.Paragraph().SetText("Hello!"),
-				Ref(&parahraph),
+				Ref(&paragraph),
+			),
 		),
 	)
 
 	// The document observes the input for changes and update the paragraph accordingly.
 	document.Watch("data","text",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.Value().String()+"!")
+		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
 		return false
 	}))
 	return document
@@ -791,6 +792,7 @@ func main(){
 	ListenAndServe := doc.NewBuilder(App)
 	ListenAndServe(nil)
 }
+
 
 `
 var defaultindexfile = `

@@ -830,9 +830,18 @@ func recoverStateHistory(){}
 var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func CreatePages(doc Document) (int, error) {
-    router := doc.Router() // Retrieve the router from the document
-    routes := router.RouteList()
     basePath := "/dev/build/server/ssg"
+	router := doc.Router() // Retrieve the router from the document
+	if router == nil{
+		err := d.CreatePage("/")
+		if err != nil{
+			return 0,err
+		}
+		return 1,nil
+	}
+
+    routes := router.RouteList()
+    
 
     var count int
     for _, route := range routes {
@@ -840,6 +849,7 @@ func CreatePages(doc Document) (int, error) {
 		if verbose{
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
 		}
+		doc.Router().GoTo(route)
         if err := doc.CreatePage(fullPath); err != nil {
             return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
         }

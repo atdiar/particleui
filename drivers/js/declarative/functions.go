@@ -21,6 +21,12 @@ var Ref = ui.Ref
 var InitRouter = ui.InitRouter
 var Hijack = ui.Hijack
 
+func SetAttribute(name,value string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		doc.SetAttribute(e,name,value)
+		return e
+	}
+}
 
 
 

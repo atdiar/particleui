@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
+	//"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -929,7 +929,9 @@ func(d Document) ListenAndServe(ctx context.Context){
 		return false
 	}))
 
-	d.Router().ListenAndServe(ctx,"popstate", d.Window())
+	if d.Router() != nil{
+		d.Router().ListenAndServe(ctx,"popstate", d.Window())
+	}
 }
 
 
@@ -1578,7 +1580,7 @@ var newHead = Elements.NewConstructor("head",func(id string)*ui.Element{
 })
 
 // EnableWasm adds the default wasm loader script to the head element of the document.
-func (d *Document) EnableWasm() *Document{
+func (d Document) EnableWasm() Document{
 	h:= d.Head()
 	h.AppendChild(d.Script.WithID("wasmVM").Src("/wasm_exec.js"))
 	h.AppendChild(d.Script.WithID("goruntime").
@@ -2772,6 +2774,11 @@ func(c labelConstructor) WithID(id string, options ...string)LabelElement{
 
 type InputElement struct {
 	*ui.Element
+}
+
+func(i InputElement) SetAttribute(name,value string) InputElement{
+	SetAttribute(i.Element,name,value)
+	return i
 }
 
 type inputModifier struct{}
@@ -5007,14 +5014,16 @@ var NoopMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 })
 
 func Sitemap(d Document) ([]byte,error){
+	var routelist = make([]string,64)
 	r:= d.Router()
 	if r == nil{
-		return nil,errors.New("no router")
+		routelist = append(routelist,"/")
+	} else{
+		routelist = r.RouteList()
 	}
 
-	routelist:= r.RouteList()
 	if routelist == nil{
-		return nil,errors.New("no route list")
+		panic("no route list")
 	}
 
 	urlset := urlset{}
