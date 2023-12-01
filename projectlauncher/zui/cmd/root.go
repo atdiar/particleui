@@ -38,7 +38,7 @@ func Execute() {
 }
 
 func init() {
-    rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+    rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 }
 
 
