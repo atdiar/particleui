@@ -613,6 +613,9 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		sourceFile := "."
 		args = append(args, sourceFile)
 
+		if verbose{
+			fmt.Println("Running go build",args)
+		}
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
