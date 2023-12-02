@@ -566,7 +566,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web"){
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
-		var wasmArgs = make([]string,32)
+		var wasmArgs = make([]string,0,32)
 		if isWasm {
 			wasmArgs = append(wasmArgs,[]string{"GOOS=js", "GOARCH=wasm"}...)
 		}
