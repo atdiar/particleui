@@ -566,28 +566,14 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web"){
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
-		var originalGOOS, originalGOARCH string
 		if isWasm {
-			originalGOOS = os.Getenv("GOOS")
-			originalGOARCH = os.Getenv("GOARCH")
-			os.Setenv("GOOS", "js")
-			os.Setenv("GOARCH", "wasm")
+			cmdArgs = append(cmdArgs, "GOOS=js", "GOARCH=wasm")
 		}
 
-		// Defer the restoration of the environment variables
-		defer func() {
-			if isWasm {
-				os.Setenv("GOOS", originalGOOS)
-				os.Setenv("GOARCH", originalGOARCH)
-			}
-		}()
 
 		// Determine the correct file extension for the executable for non-WASM builds
 		if !isWasm {
-			goos := os.Getenv("GOOS")
-			if goos == "" {
-				goos = runtime.GOOS // Default to the current system's OS if GOOS is not set
-			}
+			goos := runtime.GOOS 
 			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
 				outputPath += ".exe"
 			}
