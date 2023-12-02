@@ -566,8 +566,9 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web"){
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
+		var wasmArgs = make([]string,32)
 		if isWasm {
-			cmdArgs = append(cmdArgs, "GOOS=js", "GOARCH=wasm")
+			wasmArgs = append(wasmArgs,[]string{"GOOS=js", "GOARCH=wasm"}...)
 		}
 
 
@@ -585,7 +586,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
-		args := []string{"build"}
+		args := append(wasmArgs, "build")
 
 		// add ldflags if any relevant
 		ldflags:= ldflags()
