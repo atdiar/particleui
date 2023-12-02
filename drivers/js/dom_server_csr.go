@@ -232,14 +232,13 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 						// let's build main.go TODO: shouldn't rebuild the server.. might need to 
 						// review impl of zui (or not, here it should be agnostic so might as well 
 						// reimplement the logic with the few specific requirements)
-						
 						// Ensure the output directory is already existing
 						outputDir := filepath.Dir(outputPath)
 						if _, err := os.Stat(outputDir); os.IsNotExist(err) {
 							panic("Output directory should already exist")
 						}
 						// add the relevant build and linker flags
-						args := []string{"GOOS=js", "GOARCH=wasm","build"}
+						args := []string{"build"}
 						ldflags:= ldflags()
 						if ldflags != "" {
 							args = append(args, "-ldflags", ldflags)	
@@ -252,6 +251,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
 						cmd.Dir = filepath.Join(".","dev")
+						cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 
 						err := cmd.Run()
 						if err == nil {

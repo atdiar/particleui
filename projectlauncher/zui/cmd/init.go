@@ -566,15 +566,13 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web"){
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
-		var wasmArgs = make([]string,0,32)
-		if isWasm {
-			wasmArgs = append(wasmArgs,[]string{"GOOS=js", "GOARCH=wasm"}...)
-		}
-
 
 		// Determine the correct file extension for the executable for non-WASM builds
 		if !isWasm {
-			goos := runtime.GOOS 
+			goos := os.Getenv("GOOS")
+			if goos == "" {
+				goos = runtime.GOOS // Default to the current system's OS if GOOS is not set
+			}
 			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
 				outputPath += ".exe"
 			}
@@ -586,7 +584,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
-		args := append(wasmArgs, "build")
+		args := []string{"build"}
 
 		// add ldflags if any relevant
 		ldflags:= ldflags()
@@ -620,6 +618,9 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		cmd.Dir = filepath.Join(".","dev")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		if isWasm{
+			cmd.Env = append(cmd.Environ(),"GOOS=js", "GOARCH=wasm")
+		}
 
 		err := cmd.Run()
 		if err != nil {

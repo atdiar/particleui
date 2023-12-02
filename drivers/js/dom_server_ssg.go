@@ -274,14 +274,6 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 						// let's build main.go TODO: shouldn't rebuild the server.. might need to 
 						// review impl of zui (or not, here it should be agnostic so might as well 
 						// reimplement the logic with the few specific requirements)
-						originalGOOS := os.Getenv("GOOS")
-						originalGOARCH := os.Getenv("GOARCH")
-						os.Setenv("GOOS", "js")
-						os.Setenv("GOARCH", "wasm")
-						defer func() {
-							os.Setenv("GOOS", originalGOOS)
-							os.Setenv("GOARCH", originalGOARCH)
-						}()
 						// Ensure the output directory is already existing
 						outputDir := filepath.Dir(outputPath)
 						if _, err := os.Stat(outputDir); os.IsNotExist(err) {
