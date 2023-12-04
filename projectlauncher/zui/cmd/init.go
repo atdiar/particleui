@@ -301,6 +301,9 @@ var initCmd = &cobra.Command{
 					return
 				}
 
+				// Create directory for the HMR source code that can then be run
+				// to watch over the app files and recompile
+
 
 				// This should be a module, so run go mod init in the current directory.
 				// The module name should be the project name.
@@ -615,7 +618,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".","dev")
+		cmd.Dir = filepath.Join(".")
 		if isWasm{
 			cmd.Dir  = filepath.Join(".")
 		}
