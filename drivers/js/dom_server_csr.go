@@ -202,9 +202,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		}
 
 		if HMRMode == "true"{
-			// TODO: Implement Server-Sent Evemt logic for browser reload
+			// TODO: Implement Server-Sent Event logic for browser reload
 			// Implement filesystem watching and trigger compile on change
-			// (in another goroutine) if it's a go file. I fany file change, send SSE message to frontend
+			// (in another goroutine) if it's a go file. If any file change, send SSE message to frontend
 			//
 			// 1. Watch ./dev/*.go files. If any is modified, try to recompile. IF not successful nothing happens of course.
 			// 2. Watch ./dev/build/app folder. If anything changed, send SSE message to frontend to reload the page.
@@ -255,7 +255,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 						err := cmd.Run()
 						if err == nil {
-							fmt.Println("main.go was rebuilt.")
+							fmt.Println("main.wasm was rebuilt.")
 						}						
 					}
 				})
@@ -312,10 +312,8 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				log.Printf("Server shutdown")
 				os.Exit(0)
 			}
-		}
-		
-	}
-	
+		}	
+	}	
 }
 
 

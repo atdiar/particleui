@@ -347,7 +347,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default server.
 			// The output file should be in dev/build/server/csr/
-			err = Build(filepath.Join(".","dev","build","server", "csr","main"), nil)
+			err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
 			if err != nil {
 				fmt.Println("Error: Unable to build the default server.")
 				os.Exit(1)
@@ -616,6 +616,9 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		// Execute the build command
 		cmd := exec.Command("go", args...)
 		cmd.Dir = filepath.Join(".","dev")
+		if isWasm{
+			cmd.Dir  = filepath.Join(".")
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if isWasm{
