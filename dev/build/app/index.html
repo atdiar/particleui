@@ -1,0 +1,43 @@
+
+<!doctype html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<base href="/">
+	
+	<script id="wasmVM" src="/wasm_exec.js"></script>
+	<script id="goruntime">
+        let wasmLoadedResolver, loadEventResolver;
+        window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
+        window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
+
+        window.onWasmDone = function() {
+            wasmLoadedResolver();
+        }
+
+        window.addEventListener('load', () => {
+            loadEventResolver();
+        });
+
+        const go = new Go();
+        WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject)
+        .then((result) => {
+            go.run(result.instance);
+        });
+
+        Promise.all([window.wasmLoaded, window.loadEventFired]).then(() => {
+            setTimeout(() => {
+                window.dispatchEvent(new Event('PageReady'));
+            }, 50);
+        });
+    </script>
+
+</head>
+
+<body>
+	
+
+</body>
+
+</html>

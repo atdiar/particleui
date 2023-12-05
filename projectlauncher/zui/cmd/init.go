@@ -337,7 +337,7 @@ var initCmd = &cobra.Command{
 			
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+			err := Build(filepath.Join(".","build","app", "main.wasm"),nil)
 			if err != nil {
 				fmt.Println("Error: Unable to build the default app.",err)
 				os.Exit(1)
@@ -579,12 +579,6 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
 				outputPath += ".exe"
 			}
-		}
-
-		// Ensure the output directory exists
-		outputDir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
 		args := []string{"build"}
