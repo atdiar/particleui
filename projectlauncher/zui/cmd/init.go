@@ -579,6 +579,12 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
 				outputPath += ".exe"
 			}
+		}
+
+		// Ensure the output directory exists
+		outputDir := filepath.Dir(outputPath)
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("error creating output directory: %v", err)
 		}	
 
 		args := []string{"build"}
@@ -612,9 +618,9 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".")
+		cmd.Dir = filepath.Join(".","dev")
 		if isWasm{
-			cmd.Dir  = filepath.Join(".", "dev")
+			cmd.Dir  = filepath.Join(".","dev")
 		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
