@@ -582,7 +582,12 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		}
 
 		// Ensure the output directory exists
-		outputDir := filepath.Dir(outputPath)
+		//outputDir := filepath.Dir(outputPath)
+		outputDirRel,err := filepath.Rel(".",outputPath)
+		if err!= nil{
+			return err
+		}
+		outputDir := filepath.Dir(outputDirRel)
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}	
@@ -626,7 +631,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			cmd.Env = append(cmd.Environ(),"GOOS=js", "GOARCH=wasm")
 		}
 
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("build failed: %v", err)
 		}
