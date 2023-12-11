@@ -132,7 +132,12 @@ func Run(buildoptions ...string) error{
 		cmd:= exec.Command(serverbinpath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Dir = filepath.Join(".","dev","build","server", "csr")
+		serverpathrel,err:= filepath.Rel(".",filepath.Join(".","dev","build","server", "csr"))
+		fmt.Println("***DEBUG***", serverpathrel)
+		if err != nil{
+			return err
+		}
+		cmd.Dir = serverpathrel
 		err = cmd.Run()
 		if err != nil {
 			return err
