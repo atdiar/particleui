@@ -337,7 +337,7 @@ var initCmd = &cobra.Command{
 			
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err := Build(filepath.Join(".","build","app", "main.wasm"),nil)
+			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
 				fmt.Println("Error: Unable to build the default app.",err)
 				os.Exit(1)
@@ -350,7 +350,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default server.
 			// The output file should be in dev/build/server/csr/
-			err = Build(filepath.Join(".","build","server", "csr","main"),[]string{"server","csr"})
+			err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
 			if err != nil {
 				fmt.Println("Error: Unable to build the default server.")
 				os.Exit(1)
@@ -582,12 +582,14 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		}
 
 		// Ensure the output directory exists
-		//outputDir := filepath.Dir(outputPath)
+		outputDir := filepath.Dir(outputPath)
+		/*
 		outputDirRel,err := filepath.Rel(filepath.Join(".","dev"),outputPath)
 		if err!= nil{
 			return err
 		}
 		outputDir := filepath.Dir(outputDirRel)
+		*/
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}
@@ -623,7 +625,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".","dev")
+		cmd.Dir = filepath.Join(".")
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -631,7 +633,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			cmd.Env = append(cmd.Environ(),"GOOS=js", "GOARCH=wasm")
 		}
 
-		err = cmd.Run()
+		err := cmd.Run()
 		if err != nil {
 			return fmt.Errorf("build failed: %v", err)
 		}
