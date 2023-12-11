@@ -633,7 +633,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			cmd.Env = append(cmd.Environ(),"GOOS=js", "GOARCH=wasm")
 		}
 
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("build failed: %v", err)
 		}
