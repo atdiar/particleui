@@ -108,37 +108,37 @@ func Run(buildoptions ...string) error{
 		csr = true
 
 		err := Build(filepath.Join(".","dev","build","app", "main.wasm"), nil)
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
+		}
 
-			serverbinpath := filepath.Join(".","dev","build","server", "csr","main")
-			if releaseMode{
-				buildoptions = append(buildoptions, "release")
-			}
-			if nohmr{
-				buildoptions = append(buildoptions, "nohmr")
-			}
-			err = Build(serverbinpath,buildoptions)
-			if err != nil {
-				return err
-			}
+		serverbinpath := filepath.Join(".","dev","build","server", "csr","main")
+		if releaseMode{
+			buildoptions = append(buildoptions, "release")
+		}
+		if nohmr{
+			buildoptions = append(buildoptions, "nohmr")
+		}
+		err = Build(serverbinpath,append(buildoptions,"server","csr"))
+		if err != nil {
+			return err
+		}
 
-			if verbose{
-				fmt.Println("client and server built.")
-			}
+		if verbose{
+			fmt.Println("client and server built.")
+		}
 
-			// Let's run the default server.
-			cmd:= exec.Command(serverbinpath)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Dir = filepath.Join(".","dev","build","server", "csr")
-			err = cmd.Run()
-			if err != nil {
-				return err
-			}
+		// Let's run the default server.
+		cmd:= exec.Command(serverbinpath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Dir = filepath.Join(".","dev","build","server", "csr")
+		err = cmd.Run()
+		if err != nil {
+			return err
+		}
 
-			return nil
+		return nil
 	}
 
 	if On("terminal"){

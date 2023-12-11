@@ -588,7 +588,6 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			return err
 		}
 		outputDir := filepath.Dir(outputDirRel)
-		fmt.Println(outputDirRel, "***DEBUG***") //DEBUG
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}
