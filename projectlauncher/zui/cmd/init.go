@@ -191,8 +191,38 @@ var initCmd = &cobra.Command{
 				// project initialization logic
 				// should create the directories, basic template file, dev directory with dev server runnable source
 
+				// Check that the project directory is empty.
+				// If the project directory is not empty, 
+				// the only files that should be found are the go.mod file and if then,  go.sum
+				files, err := os.ReadDir(".")
+				if err != nil {
+					fmt.Println("Error: Unable to read project directory.")
+					os.Exit(1)
+					return
+				}
+				if len(files) > 0 {
+					var hasgomod bool
+					for _, file := range files {
+						if file.Name() == "go.mod" {
+							hasgomod = true
+							continue
+						} else if file.Name() == "go.sum" {
+							continue
+						} else {
+							fmt.Println("Error: Project directory is not empty.")
+							os.Exit(1)
+							return
+						}
+					}
+					if !hasgomod {
+						fmt.Println("Error: Project directory is not empty.")
+						os.Exit(1)
+						return
+					}
+				}
+
 				// Create dev directory if it doesn't already exists
-				err:= createDirectory(filepath.Join(".","dev"))
+				err= createDirectory(filepath.Join(".","dev"))
 				if err!= nil{
 					fmt.Println("Error: Unable to create dev directory.")
 					os.Exit(1)
@@ -232,40 +262,7 @@ var initCmd = &cobra.Command{
 				// Let's create the default main.go file in the dev directory.
 				// This will contain a default app that outputs a hello world, a game or something.
 				// The default app should be a module, so run go mod init in the current directory.
-				// The module name should be the project name.
-
-				// Check that the project directory is empty.
-				// If the project directory is not empty, 
-				// the only files that should be found are the go.mod file and if then,  go.sum
-				files, err := os.ReadDir(".")
-				if err != nil {
-					fmt.Println("Error: Unable to read project directory.")
-					os.Exit(1)
-					return
-				}
-				if len(files) > 0 {
-					var hasgomod bool
-					for _, file := range files {
-						if file.Name() == "go.mod" {
-							hasgomod = true
-							continue
-						} else if file.Name() == "go.sum" {
-							continue
-						} else {
-							fmt.Println("Error: Project directory is not empty.")
-							os.Exit(1)
-							return
-						}
-					}
-					if !hasgomod {
-						fmt.Println("Error: Project directory is not empty.")
-						os.Exit(1)
-						return
-					}
-				}
-
-
-						
+				// The module name should be the project name.						
 				
 				
 				err = createDirectory(filepath.Join(".","dev","build"))
