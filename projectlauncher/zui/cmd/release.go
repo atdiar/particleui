@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var release bool
+
 // releaseCmd represents the release command
 var releaseCmd = &cobra.Command{
 	Use:   "release",
@@ -32,6 +34,8 @@ to quickly create a Cobra application.`,
 
 func init() {
 	rootCmd.AddCommand(releaseCmd)
+
+	releaseCmd.Flags().BoolVarP(&release,"release","",false, "builds a production version of the project.")
 
 	// Here you will define your flags and configuration settings.
 
