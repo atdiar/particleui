@@ -807,7 +807,7 @@ func App() doc.Document {
 
 func main(){
 	ListenAndServe := doc.NewBuilder(App)
-	ListenAndServe(ctx.Background())
+	ListenAndServe(nil)
 }
 
 
