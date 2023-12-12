@@ -436,6 +436,10 @@ func On(platform string) bool{
 }
 
 func createDirectory(path string) error{
+	path,err := filepath.Rel(filepath.Join("."),path)
+	if err!= nil{
+		return err
+	}
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return err
 	}
@@ -446,11 +450,16 @@ func createDirectory(path string) error{
 }
 
 func createFile(path, content string) error {
+	path,err := filepath.Rel(filepath.Join("."), path)
+	if err!= nil{
+		return err
+	}
+
     // Convert the content string to a byte slice
     data := []byte(content)
 
     // Write the data to the path, os.WriteFile handles creating or truncating the file
-    err := os.WriteFile(path, data, 0644) // 0644 is a common permission setting for writable files
+    err = os.WriteFile(path, data, 0644) // 0644 is a common permission setting for writable files
     if err != nil {
         return err
     }
