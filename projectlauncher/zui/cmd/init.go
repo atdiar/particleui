@@ -334,10 +334,12 @@ var initCmd = &cobra.Command{
 				// TODO
 				// run $go new template_URL projectname
 			}
+
+			
 			
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+			err := Build(rel(filepath.Join(".","dev","build","app", "main.wasm")),nil)
 			if err != nil {
 				fmt.Println("Error: Unable to build the default app.",err)
 				os.Exit(1)
@@ -350,7 +352,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default server.
 			// The output file should be in dev/build/server/csr/
-			err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
+			err = Build(rel(filepath.Join(".","dev","build","server", "csr","main")),[]string{"server","csr"})
 			if err != nil {
 				fmt.Println("Error: Unable to build the default server.")
 				os.Exit(1)
@@ -428,6 +430,14 @@ var initCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},	
+}
+
+func rel (dest string) string{
+	p,err := filepath.Rel(filepath.Join("."),dest)
+	if err != nil{
+		panic(err)
+	}
+	return p
 }
 
 func On(platform string) bool{
