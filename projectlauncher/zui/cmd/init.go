@@ -339,7 +339,7 @@ var initCmd = &cobra.Command{
 			
 			// Let's build the default app.
 			// The output file should be in dev/build/app/main.wasm
-			err := Build(rel(filepath.Join(".","dev","build","app", "main.wasm")),nil)
+			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 			if err != nil {
 				fmt.Println("Error: Unable to build the default app.",err)
 				os.Exit(1)
@@ -352,7 +352,7 @@ var initCmd = &cobra.Command{
 
 			// Let's build the default server.
 			// The output file should be in dev/build/server/csr/
-			err = Build(rel(filepath.Join(".","dev","build","server", "csr","main")),[]string{"server","csr"})
+			err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
 			if err != nil {
 				fmt.Println("Error: Unable to build the default server.")
 				os.Exit(1)
@@ -430,14 +430,6 @@ var initCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},	
-}
-
-func rel (dest string) string{
-	p,err := filepath.Rel(filepath.Join("."),dest)
-	if err != nil{
-		panic(err)
-	}
-	return p
 }
 
 func On(platform string) bool{
@@ -644,7 +636,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".","dev")
+		cmd.Dir = filepath.Join(".")
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
