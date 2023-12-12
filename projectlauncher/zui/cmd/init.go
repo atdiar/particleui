@@ -594,7 +594,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Ensure the output directory exists
 		//outputDir := filepath.Dir(outputPath)
-		
+		/*
 		outputDirRel,err := filepath.Rel(filepath.Join("."),outputPath)
 		if err!= nil{
 			return err
@@ -604,6 +604,13 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("error creating output directory: %v", err)
 		}
+		*/
+
+		outputPath,err := filepath.Rel(filepath.Join(".","dev"),outputPath)
+		if err!= nil{
+			return err
+		}
+
 
 		args := []string{"build"}
 
