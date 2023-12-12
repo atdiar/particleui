@@ -113,7 +113,7 @@ func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	}
 }
 
-// modifyClient returns a round-tripper modiffied client that can forego the network and 
+// modifyClient returns a round-tripper modified client that can forego the network and 
 // generate the response as per the servemux when the host is the server it runs onto. 
 func modifyClient(c *http.Client) *http.Client{
 	if c == nil{
@@ -185,6 +185,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 	for _,m:= range buildEnvModifiers{
 		m()
 	}
+
+	ServeMux = http.NewServeMux()
+	Server.Handler = ServeMux
 
 
 	return func(ctx context.Context){
