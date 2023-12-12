@@ -113,6 +113,10 @@ func Run(buildoptions ...string) error{
 		}
 
 		serverbinpath := filepath.Join(".","dev","build","server", "csr","main")
+		serverbinpath,err = filepath.Rel(filepath.Join(".","dev"),serverbinpath)
+		if err!= nil{
+			return err
+		}
 		if releaseMode{
 			buildoptions = append(buildoptions, "release")
 		}
@@ -128,6 +132,8 @@ func Run(buildoptions ...string) error{
 			fmt.Println("client and server built.")
 		}
 
+
+
 		// Let's run the default server.
 		cmd:= exec.Command(serverbinpath)
 		cmd.Stdout = os.Stdout
@@ -141,11 +147,7 @@ func Run(buildoptions ...string) error{
 		}
 		*/
 		
-		if !release{
-			cmd.Dir = filepath.Join(".","dev")
-		} else{
-			cmd.Dir = filepath.Join(".","prod")
-		}
+		cmd.Dir = filepath.Join(".","dev")
 		err = cmd.Run()
 		if err != nil {
 			return err
