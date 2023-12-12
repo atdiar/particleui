@@ -129,14 +129,11 @@ func Run(buildoptions ...string) error{
 		}
 
 		// Let's run the default server.
-		cmd:= exec.Command(filepath.Join(".","main"))
+		cmd:= exec.Command(serverbinpath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		servbinpathrel, err := filepath.Rel(filepath.Join("."), serverbinpath)
-		if err != nil{
-			return err
-		}
-		cmd.Dir = filepath.Dir(servbinpathrel)
+		
+		cmd.Dir = filepath.Join(".")
 		err = cmd.Run()
 		if err != nil {
 			return err
