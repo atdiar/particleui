@@ -221,13 +221,14 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				log.Println(err)
 				panic("Can't find path to output directory ./dev/build/app")
 			}
+			log.Println("outputpath: ",outputPath) //DEBUG
 
 			srcDirPath,err := filepath.Rel(absCurrentPath,filepath.Join(".","dev"))
 			if err != nil{
 				log.Println(err)
 				log.Println("Unable to watch for changes in ./dev folder, couldn't find path.")
 			} else{
-
+				log.Println("srcDirPath: ",srcDirPath) //DEBUG
 				// watching for changes made to the source files which should be in the ./dev directory
 				// ie. ../../../dev
 				watcher, err := WatchDir(srcDirPath, func(event fsnotify.Event) {
@@ -268,23 +269,24 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 				if err != nil{
 					log.Println(err)
-					panic("Unable to watch for changes in ./dev folder.")
-				}
-				defer watcher.Close()
+					log.Println("Unable to watch for changes in ./dev folder.")
+				} else{
+					defer watcher.Close()
 
-				// watching for changes made to the output files which should be in the ./dev/build/app directory
-				// ie. ../../dev/build/app
-				wc, err := WatchDir(outputPath, func(event fsnotify.Event) {
-					// Send event to trigger a page reload
-					SSEChannel.SendEvent("reload",event.String(),"","")	
-				})
-				if err != nil{
-					log.Println(err)
-					panic("Unable to watch for changes in ./dev/build/app folder.")
-				} 
-				defer wc.Close()
-				activehmr = true				
-				ServeMux.Handle("/sse", SSEChannel)
+					// watching for changes made to the output files which should be in the ./dev/build/app directory
+					// ie. ../../dev/build/app
+					wc, err := WatchDir(outputPath, func(event fsnotify.Event) {
+						// Send event to trigger a page reload
+						SSEChannel.SendEvent("reload",event.String(),"","")	
+					})
+					if err != nil{
+						log.Println(err)
+						panic("Unable to watch for changes in ./dev/build/app folder.")
+					} 
+					defer wc.Close()
+					activehmr = true				
+					ServeMux.Handle("/sse", SSEChannel)
+				}
 			}
 		}
 
