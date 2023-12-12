@@ -636,7 +636,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".")
+		cmd.Dir = filepath.Join(".","dev")
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
