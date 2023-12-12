@@ -234,6 +234,38 @@ var initCmd = &cobra.Command{
 				// The default app should be a module, so run go mod init in the current directory.
 				// The module name should be the project name.
 
+				// Check that the project directory is empty.
+				// If the project directory is not empty, 
+				// the only files that should be found are the go.mod file and if then,  go.sum
+				files, err := os.ReadDir(".")
+				if err != nil {
+					fmt.Println("Error: Unable to read project directory.")
+					os.Exit(1)
+					return
+				}
+				if len(files) > 0 {
+					var hasgomod bool
+					for _, file := range files {
+						if file.Name() == "go.mod" {
+							hasgomod = true
+							continue
+						} else if file.Name() == "go.sum" {
+							continue
+						} else {
+							fmt.Println("Error: Project directory is not empty.")
+							os.Exit(1)
+							return
+						}
+					}
+					if !hasgomod {
+						fmt.Println("Error: Project directory is not empty.")
+						os.Exit(1)
+						return
+					}
+				}
+
+
+						
 				
 				
 				err = createDirectory(filepath.Join(".","dev","build"))
