@@ -39,11 +39,9 @@ var (
 	absIndexPath = filepath.Join(absStaticPath,"index.html")
 	absCurrentPath = filepath.Join(".","dev","build","server","csr")
 
-	StaticPath,_ = filepath.Rel(absCurrentPath,absStaticPath)
-	IndexPath,_ = filepath.Rel(absCurrentPath,absIndexPath)
 
-	host string
-	port string
+	host string = "localhost"
+	port string = "8888"
 
 	release bool
 	nohmr bool
@@ -158,6 +156,15 @@ func (w *responseRecorder) Result() *http.Response {
 // In Server Rendering mode (ssr or csr), it starts a server.
 // It accepts functions that can be used to modify the global state (environment) in which a document is built.
 func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
+	StaticPath,err := filepath.Rel(absCurrentPath,absStaticPath)
+	if err != nil{
+		panic(err)
+	}
+	IndexPath,err := filepath.Rel(absCurrentPath,absIndexPath)
+	if err != nil{
+		panic(err)
+	}
+
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
