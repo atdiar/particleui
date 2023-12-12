@@ -133,7 +133,7 @@ func Run(buildoptions ...string) error{
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		
-		cmd.Dir = filepath.Join(".")
+		//cmd.Dir = filepath.Join(".")
 		err = cmd.Run()
 		if err != nil {
 			return err
