@@ -188,6 +188,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 
 	return func(ctx context.Context){
+		if ctx == nil{
+			ctx = context.Background()
+		}
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
