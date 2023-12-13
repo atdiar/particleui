@@ -1020,7 +1020,7 @@ func mutationreplay(d *Document) error {
 
 	rh,ok:= e.Get("internals","mutationtrace")
 	if !ok{
-		panic("somehow recovering state failed. Unexpected error")
+		return nil
 	}
 	mutationtrace, ok:= rh.(ui.List)
 	if !ok{
