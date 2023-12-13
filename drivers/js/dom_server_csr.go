@@ -35,6 +35,7 @@ var (
 
 	DefaultPattern = "/"
 
+	SourcePath = filepath.Join(".","dev")
 	StaticPath = filepath.Join(".","dev","build","app")
 	IndexPath = filepath.Join(StaticPath,"index.html")
 
@@ -214,71 +215,62 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			// 2. Watch ./dev/build/app folder. If anything changed, send SSE message to frontend to reload the page.
 
 			// path to the directory containing the source files
-			
 
-			srcDirPath,err := filepath.Rel(StaticPath,filepath.Join(".","dev"))
+			watcher, err := WatchDir(SourcePath, func(event fsnotify.Event) {
+				// Only rebuild if the event is for a .go file
+				if filepath.Ext(event.Name) == ".go" {
+					// path to main.go
+					sourceFile := filepath.Join(SourcePath, "main.go")
+					// let's build main.go TODO: shouldn't rebuild the server.. might need to 
+					// review impl of zui (or not, here it should be agnostic so might as well 
+					// reimplement the logic with the few specific requirements)
+					// Ensure the output directory is already existing
+					if _, err := os.Stat(StaticPath); os.IsNotExist(err) {
+						panic("Output directory should already exist")
+					}
+					// add the relevant build and linker flags
+					args := []string{"build"}
+					ldflags:= ldflags()
+					if ldflags != "" {
+						args = append(args, "-ldflags", ldflags)	
+					}
+
+					args = append(args, "-o", StaticPath)
+
+					args = append(args, sourceFile)
+					cmd := exec.Command("go", args...)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					cmd.Dir = SourcePath
+					cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
+
+					err := cmd.Run()
+					if err == nil {
+						fmt.Println("main.wasm was rebuilt.")
+					}						
+				}
+			})
+
 			if err != nil{
 				log.Println(err)
-				log.Println("Unable to watch for changes in ./dev folder, couldn't find path.")
+				log.Println("Unable to watch for changes in ./dev folder.")
 			} else{
-				log.Println("srcDirPath: ",srcDirPath) //DEBUG
-				// watching for changes made to the source files which should be in the ./dev directory
-				// ie. ../../../dev
-				watcher, err := WatchDir(srcDirPath, func(event fsnotify.Event) {
-					// Only rebuild if the event is for a .go file
-					if filepath.Ext(event.Name) == ".go" {
-						// path to main.go
-						sourceFile := filepath.Join(srcDirPath, "main.go")
-						// let's build main.go TODO: shouldn't rebuild the server.. might need to 
-						// review impl of zui (or not, here it should be agnostic so might as well 
-						// reimplement the logic with the few specific requirements)
-						// Ensure the output directory is already existing
-						if _, err := os.Stat(StaticPath); os.IsNotExist(err) {
-							panic("Output directory should already exist")
-						}
-						// add the relevant build and linker flags
-						args := []string{"build"}
-						ldflags:= ldflags()
-						if ldflags != "" {
-							args = append(args, "-ldflags", ldflags)	
-						}
+				defer watcher.Close()
 
-						args = append(args, "-o", StaticPath)
-
-						args = append(args, sourceFile)
-						cmd := exec.Command("go", args...)
-						cmd.Stdout = os.Stdout
-						cmd.Stderr = os.Stderr
-						cmd.Dir = srcDirPath
-						cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
-
-						err := cmd.Run()
-						if err == nil {
-							fmt.Println("main.wasm was rebuilt.")
-						}						
-					}
+				// watching for changes made to the output files which should be in the ./dev/build/app directory
+				// ie. ../../dev/build/app
+				
+				wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
+					// Send event to trigger a page reload
+					SSEChannel.SendEvent("reload",event.String(),"","")	
 				})
-
 				if err != nil{
 					log.Println(err)
-					log.Println("Unable to watch for changes in ./dev folder.")
-				} else{
-					defer watcher.Close()
-
-					// watching for changes made to the output files which should be in the ./dev/build/app directory
-					// ie. ../../dev/build/app
-					wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
-						// Send event to trigger a page reload
-						SSEChannel.SendEvent("reload",event.String(),"","")	
-					})
-					if err != nil{
-						log.Println(err)
-						panic("Unable to watch for changes in ./dev/build/app folder.")
-					} 
-					defer wc.Close()
-					activehmr = true				
-					ServeMux.Handle("/sse", SSEChannel)
-				}
+					panic("Unable to watch for changes in ./dev/build/app folder.")
+				} 
+				defer wc.Close()
+				activehmr = true				
+				ServeMux.Handle("/sse", SSEChannel)
 			}
 		}
 

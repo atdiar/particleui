@@ -147,7 +147,7 @@ func Run(buildoptions ...string) error{
 		}
 		*/
 		
-		cmd.Dir = filepath.Join(".","dev")
+		cmd.Dir = filepath.Join(".","dev","build","app")
 		err = cmd.Run()
 		if err != nil {
 			return err
