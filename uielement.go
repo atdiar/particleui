@@ -1796,7 +1796,6 @@ func mutationreplaying(e *Element) bool{
 	}
 
 	if !e.Registered(){
-		DEBUG("element is not registered")
 		return false
 	}
 

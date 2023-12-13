@@ -33,7 +33,7 @@ func newCancelableNavContext()(context.Context, context.CancelFunc){
 func GetRouter(root AnyElement) *Router {
 	e:= root.AsElement()
 	if e.router == nil {
-		panic("FAILURE: trying to retrieve router before it has been created.")
+		DEBUG("FAILURE: trying to retrieve router before it has been created.")
 	}
 	return e.router
 }
