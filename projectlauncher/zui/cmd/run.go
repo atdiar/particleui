@@ -113,10 +113,7 @@ func Run(buildoptions ...string) error{
 		}
 
 		serverbinpath := filepath.Join(".","dev","build","server", "csr","main")
-		serverbinpath,err = filepath.Rel(filepath.Join(".","dev"),serverbinpath)
-		if err!= nil{
-			return err
-		}
+
 		if releaseMode{
 			buildoptions = append(buildoptions, "release")
 		}
@@ -138,16 +135,8 @@ func Run(buildoptions ...string) error{
 		cmd:= exec.Command(serverbinpath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-
-		//workDir := filepath.Join(".","dev","build","app")
-		/*
-		relpath,err:= filepath.Rel(filepath.Dir(serverbinpath),workDir)
-		if err != nil{
-			return err
-		}
-		*/
 		
-		cmd.Dir = filepath.Join(".","dev","build","app")
+		cmd.Dir = filepath.Join(".")
 		err = cmd.Run()
 		if err != nil {
 			return err
