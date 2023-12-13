@@ -452,7 +452,7 @@ var windowTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 func nativeDocumentAlreadyRendered() bool{
 	//  get native document status by looking for the ssr hint encoded in the page (data attribute)
 	// the data attribute should be removed once the document state is replayed.
-	statenode:= js.Global().Get("document)").Call("getElementById",SSRStateElementID )
+	statenode:= js.Global().Get("document").Call("getElementById",SSRStateElementID )
 	if !statenode.Truthy(){
 		// TODO: check if the document is already rendered, at least partially, still.
 		return false
