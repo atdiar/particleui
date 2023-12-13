@@ -1014,14 +1014,14 @@ var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool 
 func mutationreplay(d *Document) error {
 
 	e:= d.Element
-	if !e.ElementStore.MutationReplay || ! e.ElementStore.MutationCapture{
+	if !e.ElementStore.MutationReplay {
 		return nil
 	}
 
 
 	rh,ok:= e.Get("internals","mutationtrace")
 	if !ok{
-		return fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
+		return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
 	}
 	mutationtrace, ok:= rh.(ui.List)
 	if !ok{

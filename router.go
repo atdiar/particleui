@@ -31,11 +31,7 @@ func newCancelableNavContext()(context.Context, context.CancelFunc){
 // *Static because dynamic parts are fetched
 // If it has not yet, it panics.
 func GetRouter(root AnyElement) *Router {
-	e:= root.AsElement()
-	if e.router == nil {
-		DEBUG("FAILURE: trying to retrieve router before it has been created.")
-	}
-	return e.router
+	return root.AsElement().router
 }
 
 func(e *Element) OnRouterMounted(fn func(*Router)) {

@@ -38,6 +38,8 @@ var (
 // And the mutationtrace should replay once the document is ready.
 
 func init(){
+	DEBUG("devmode: ", DevMode)
+	DEBUG("HMR mode: ", HMRMode)
 	if DevMode != "false" && HMRMode != "false"{
 		Elements.EnableMutationCapture()
 	}
@@ -492,7 +494,7 @@ func ConnectNative(e *ui.Element, tag string){
 
 			e.WatchEvent("mutation-replayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
 				// TODO check value to see if replay  error or not?
-				e.ElementStore.MutationReplay = false
+				//e.ElementStore.MutationReplay = false
 				statenode.Call("remove")
 				evt.Origin().TriggerEvent("connect-native")
 				evt.Origin().ElementStore.Disconnected = false
