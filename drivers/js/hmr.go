@@ -9,6 +9,8 @@ import (
     "path/filepath"
     "net/http"
     "github.com/fsnotify/fsnotify"
+
+    "sync"
 )
 
 var SSEChannel = NewSSEController()
@@ -105,6 +107,7 @@ func valif[T any](condition bool, valueIfTrue T, valueIfFalse T) T {
 type SSEController struct{
     // The channel to send messages to the client
     Message chan string
+    Once sync.Once
 }
 
 func NewSSEController() *SSEController {
@@ -127,13 +130,14 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Connection", "keep-alive")
     w.Header().Set("Access-Control-Allow-Origin", "*")
 
-
     // Listen to the relevant channels for events
     for {
         select {
         case <-r.Context().Done():
             // Close the channel if the connection is closed
-            close(s.Message)
+            s.Once.Do(func(){
+                close(s.Message)
+            })
             return
         case msg := <-s.Message:
             // Send the message to the client
