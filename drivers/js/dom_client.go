@@ -92,11 +92,6 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		d.Head().AppendChild(scrIdleGC)
 
 
-		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			js.Global().Call("onWasmDone")
-			return false
-		}))
-
 		err := d.mutationRecorder().Replay()
 		if err != nil{
 			DEBUG(err)
@@ -105,12 +100,13 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			withNativejshelpers(&d)
 
 			d.Head().AppendChild(scrIdleGC)
-
-			d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				js.Global().Call("onWasmDone")
-				return false
-			}))			
+		
 		}
+
+		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			js.Global().Call("onWasmDone")
+			return false
+		}))
 
 		// sse support if hmr is enabled
 		if HMRMode != "false"{
