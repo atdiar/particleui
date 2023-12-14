@@ -875,7 +875,7 @@ func(m mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(&d)
 	if err != nil{
-		DEBUG("eror occured when replaying mutations")
+		DEBUG("error occured when replaying mutations")
 		return ui.ErrReplayFailure
 	}
 
