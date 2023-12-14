@@ -99,9 +99,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 		err := d.mutationRecorder().Replay()
 		if err != nil{
-			
+			DEBUG(err)
 			d=f()
-			d.mutationRecorder().Clear()
+			
 			withNativejshelpers(&d)
 
 			d.Head().AppendChild(scrIdleGC)
@@ -109,16 +109,18 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				js.Global().Call("onWasmDone")
 				return false
-			}))
-
-			DEBUG(err)
+			}))			
 		}
 
 		// sse support if hmr is enabled
 		if HMRMode != "false"{
 			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
-		d.mutationRecorder().Capture()
+		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			d.mutationRecorder().Capture()
+			return false
+		}))
+		
 
 		if !InBrowser(){ // SSR Mode only
 			err := CreateSitemap(d, filepath.Join(".","sitemap.xml"))
