@@ -164,7 +164,7 @@ func Run(buildoptions ...string) error{
 func ldflags() string {
 	flags := make(map[string]string)
 
-	if releaseMode {
+	if !releaseMode {
 		flags[uipkg + "/drivers/js.DevMode"] = "true"
 	}
 	if ssr {
@@ -173,7 +173,7 @@ func ldflags() string {
 	if ssg {
 		flags[uipkg + "/drivers/js.SSGMode"] = "true"
 	}
-	if nohmr {
+	if !nohmr {
 		flags[uipkg + "/drivers/js.HMRMode"] = "true"
 	}
 

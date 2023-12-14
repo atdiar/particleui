@@ -809,6 +809,7 @@ import (
 func App() doc.Document {
 
 	document:= doc.NewDocument("HelloWorld", doc.EnableScrollRestoration()).EnableWasm()
+	
 	var input *ui.Element 
 	var paragraph *ui.Element
 
