@@ -95,6 +95,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		err := d.mutationRecorder().Replay()
 		if err != nil{
 			DEBUG(err)
+			ui.Delete(d.AsElement())
 			d=f()
 			
 			withNativejshelpers(&d)

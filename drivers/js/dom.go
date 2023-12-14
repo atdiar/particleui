@@ -883,7 +883,7 @@ func(m mutationRecorder) Replay() error {
 	
 
 	if !complete{
-		DEBUG("replay list and record lsit don't match", replaylist, recordlist)
+		DEBUG("replay list and record list don't match", replaylist, recordlist)
 		return ui.ErrReplayFailure
 	}
 	d.Set("internals","mutation-replaying",ui.Bool(false))
