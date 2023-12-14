@@ -858,6 +858,7 @@ func(m mutationRecorder) Capture(){
 
 func(m mutationRecorder) Replay() error {
 	if !m.raw.ElementStore.MutationReplay{
+		DEBUG("mutationreplay mot enabled")
 		return ui.ErrReplayFailure
 	}
 
@@ -874,6 +875,7 @@ func(m mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(&d)
 	if err != nil{
+		DEBUG("eror occured when replaying mutations")
 		return ui.ErrReplayFailure
 	}
 
@@ -884,6 +886,7 @@ func(m mutationRecorder) Replay() error {
 	
 
 	if !complete{
+		DEBUG("replay list and record lsit don't match")
 		return ui.ErrReplayFailure
 	}
 	d.TriggerEvent("mutation-replayed")

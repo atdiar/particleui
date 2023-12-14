@@ -99,34 +99,11 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 
 		err := d.mutationRecorder().Replay()
 		if err != nil{
-			d.mutationRecorder().Clear()
+			
 			d=f()
+			d.mutationRecorder().Clear()
 			withNativejshelpers(&d)
 
-			scrIdleGC := d.Script().SetInnerHTML(`
-				let lastGC = Date.now();
-
-				function runGCDuringIdlePeriods(deadline) {
-
-					if (deadline.didTimeout || !deadline.timeRemaining()) {
-						setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
-						return;
-					}
-					
-					let now = Date.now();
-					if (now - lastGC >= 120000) { // Check if at least 2 minutes passed since last GC
-						window.triggerGC(); // Trigger GC
-						lastGC = now;
-					}
-
-					// Schedule a new callback for the next idle time, but not sooner than 2 minutes from now
-					setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
-				}
-
-				// Start the loop
-				window.requestIdleCallback(runGCDuringIdlePeriods);
-		
-			`)
 			d.Head().AppendChild(scrIdleGC)
 
 			d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
