@@ -930,9 +930,11 @@ func(d Document) ListenAndServe(ctx context.Context){
 		return false
 	}))
 
-	if d.Router() != nil{
-		d.Router().ListenAndServe(ctx,"popstate", d.Window())
+	if d.Router() == nil{
+		main:= ui.NewViewElement(d.AsElement())
+		ui.NewRouter(main)			
 	}
+	d.Router().ListenAndServe(ctx,"popstate", d.Window())
 }
 
 
