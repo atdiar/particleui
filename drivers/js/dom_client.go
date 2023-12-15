@@ -92,14 +92,6 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		d.Head().AppendChild(scrIdleGC)
 
 
-		err := d.mutationRecorder().Replay()
-		if err != nil{
-			d.mutationRecorder().Clear()
-			// Should reload the page
-			js.Global().Get("location").Call("reload")
-			return
-		}
-
 		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
 			return false
@@ -109,7 +101,15 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		if HMRMode != "false"{
 			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
+
 		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			err := d.mutationRecorder().Replay()
+			if err != nil{
+				d.mutationRecorder().Clear()
+				// Should reload the page
+				js.Global().Get("location").Call("reload")
+				return false
+			}
 			d.mutationRecorder().Capture()
 			return false
 		}))
