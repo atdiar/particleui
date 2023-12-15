@@ -931,7 +931,13 @@ func(d Document) ListenAndServe(ctx context.Context){
 	}))
 
 	if d.Router() == nil{
-		main:= ui.NewViewElement(d.AsElement())
+		var main ui.ViewElement
+		if d.AsElement().Children != nil{
+			main= ui.NewViewElement(d.AsElement()).ChangeDefaultView(d.AsElement().Children.List...)
+		} else{
+			main= ui.NewViewElement(d.AsElement()).ChangeDefaultView()
+		}
+		
 		ui.NewRouter(main)			
 	}
 	d.Router().ListenAndServe(ctx,"popstate", d.Window())
