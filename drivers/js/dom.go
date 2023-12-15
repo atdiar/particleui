@@ -1181,7 +1181,7 @@ func withNativejshelpers(d *Document) *Document{
 				});
 			})();
 
-			window.filterByValue(arr, valueToRemove) {
+			window.filterByValue = function(arr, valueToRemove) {
 				return arr.filter(item => item !== valueToRemove);
 			}
 			`,
