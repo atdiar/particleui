@@ -341,9 +341,6 @@ func (e *Element) activateView(name string) {
 		panic("this is likely to be a programmer error. View name inputs can not lead with a colon.")
 	}
 
-	if name == ""{
-		panic("framework error: view name can't be the empty string. This is reserved for default view and never 'activated'.")
-	}
 	if e.ActiveView == name {
 		e.EndTransition("activateview", String(name)) // already active
 		return
