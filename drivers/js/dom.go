@@ -858,7 +858,7 @@ func(m mutationRecorder) Capture(){
 
 func(m mutationRecorder) Replay() error {
 	if !m.raw.ElementStore.MutationReplay{
-		return ui.ErrReplayFailure
+		return nil
 	}
 
 	d:= GetDocument(m.raw)
@@ -872,7 +872,7 @@ func(m mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(&d)
 	if err != nil{
-		DEBUG("error occured when replaying mutations")
+		DEBUG("error occured when replaying mutations",err)
 		return ui.ErrReplayFailure
 	}
 
