@@ -892,17 +892,6 @@ func(m mutationRecorder) Clear(){
 	m.raw.SetData("mutationlist",ui.NewList().Commit())
 }
 
-func(m mutationRecorder) push(recval ui.Value){
-	var list ui.List
-	l,ok:= m.raw.GetData("mutationlist")
-	if !ok{
-		list = ui.NewList(recval).Commit()
-		m.raw.SetData("mutationlist",list)
-		return
-	}
-	m.raw.SetData("mutationlist", l.(ui.List).MakeCopy().Append(recval).Commit())
-}
-
 
 
 func (d Document) newMutationRecorder(options ...string) mutationRecorder{

@@ -1686,7 +1686,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 
 	if mutationcapturing(e){
-		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
+		if category == "data" && propname == "mutationlist"{ // TODO: make it less broad a condition
+			return
+		}
+
+		if category  == "event" && propname == "new-mutation"{
 			return
 		}
 		m:= NewObject()
