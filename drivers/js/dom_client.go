@@ -38,8 +38,6 @@ var (
 // And the mutationtrace should replay once the document is ready.
 
 func init(){
-	DEBUG("devmode: ", DevMode)
-	DEBUG("HMR mode: ", HMRMode)
 	if DevMode != "false" && HMRMode != "false"{
 		Elements.EnableMutationCapture()
 	}
@@ -106,6 +104,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			err := d.mutationRecorder().Replay()
 			if err != nil{
 				d.mutationRecorder().Clear()
+				PutInStorage(d.mutationRecorder().raw)
 				// Should reload the page
 				js.Global().Get("location").Call("reload")
 				return false
@@ -986,8 +985,8 @@ func SetInnerHTML(e *ui.Element, html string) *ui.Element {
 // If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
 // atribute, the props are loaded from this attribute instead.
 // abstractjs
-func LoadFromStorage(e *ui.Element) *ui.Element {
-
+func LoadFromStorage(a ui.AnyElement) *ui.Element {
+	e:= a.AsElement()
 	if e == nil {
 		panic("loading a nil element")
 	}
@@ -1007,7 +1006,8 @@ func LoadFromStorage(e *ui.Element) *ui.Element {
 }
 
 // PutInStorage stores an element data in storage (localstorage or sessionstorage).
-func PutInStorage(e *ui.Element) *ui.Element{
+func PutInStorage(a ui.AnyElement) *ui.Element{
+	e:= a.AsElement()
 	pmode := ui.PersistenceMode(e)
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]
 	if !ok{
@@ -1027,7 +1027,8 @@ func PutInStorage(e *ui.Element) *ui.Element{
 }
 
 // ClearFromStorage will clear an element properties from storage.
-func ClearFromStorage(e *ui.Element) *ui.Element{
+func ClearFromStorage(a ui.AnyElement) *ui.Element{
+	e:= a.AsElement()
 	pmode:=ui.PersistenceMode(e)
 
 	storage,ok:= e.ElementStore.PersistentStorer[pmode]

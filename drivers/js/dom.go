@@ -895,6 +895,7 @@ func(m mutationRecorder) Clear(){
 	m.raw.SetData("mutationlist",ui.NewList().Commit())
 	d:= GetDocument(m.raw)
 	d.Set("internals","mutationtrace",ui.NewList().Commit())
+	PutInStorage(m.raw)
 }
 
 
