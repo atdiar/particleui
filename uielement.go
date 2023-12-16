@@ -1693,96 +1693,12 @@ func (e *Element) Set(category string, propname string, value Value) {
 		m.Set("id",String(e.ID))
 		m.Set("cat",String(category))
 		m.Set("prop",String(propname))
-		n:= m.Commit()
 		m.Set("val",Copy(value))
-		l,ok:= e.Root.Get("internals","mutationtrace")
-		if !ok{
-			l=NewList(m.Commit()).Commit()
-			e.Root.Set("internals","mutationtrace",l)
-		} else {
-			list,ok:= l.(List)
-			if !ok{
-				list = NewList(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",list)
-			} else{
-				list = list.MakeCopy().Append(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",list)
-			}
-		}
-
-		e.Root.TriggerEvent("new-mutation",n)
-	}
-
-	if mutationreplaying(e){
-		if category == "internals" && (propname == "mutationtrace" || propname == "mutationlist"){ // TODO: make it less broad a condition
-			return
-		}
-
-		n:= NewObject().
-			Set("id",String(e.ID)).
-			Set("cat",String(category)).
-			Set("prop",String(propname)).
-		Commit()
-
-		t,ok:= e.Root.Get("internals","mutationlist")
-		if !ok{
-			t= NewList(n).Commit()
-			e.Root.Set("internals","mutationlist",t)
-		} else{
-			list,ok:= t.(List)
-			if !ok{
-				e.Root.Set("internals","mutationlist",NewList(n).Commit())
-			} else{
-				e.Root.Set("internals","mutationlist",list.MakeCopy().Append(n).Commit())
-			}	
-		}
+		e.Root.TriggerEvent("new-mutation",m.Commit())
 	}
 }
 
-// mutationReplay basically replays the trace of the program stored as a list of prop mutations of 
-// the UI tree. 
-func mutationReplay(root *Element) error{
-	l,ok:= root.Get("internals","mutationtrace")
-	if ok{
-		list,ok:= l.(List)
-		if !ok{
-			return nil
-		}
-		for _,m:= range list.UnsafelyUnwrap(){
-			obj:= m.(Object)
 
-			id,ok:= obj.Get("id")
-			if !ok{
-				return ErrReplayFailure
-			}
-
-			cat,ok:= obj.Get("cat")
-			if !ok{
-				return ErrReplayFailure
-			}
-
-			prop,ok := obj.Get("prop")
-			if !ok{
-				return ErrReplayFailure
-			}
-
-			val,ok:= obj.Get("val")
-			if !ok{
-				return ErrReplayFailure
-			}
-
-			e:= GetById(root,id.(String).String())
-			if e==nil{
-				return ErrReplayFailure
-			}
-			e.BindValue("event","mutationreplayed",root)
-			e.Set(cat.(String).String(),prop.(String).String(),val)	
-		}
-		root.Set("internals","mutationtrace",NewList().Commit())
-		root.TriggerEvent("mutationreplayed")
-	}
-	return nil
-}
 
 func mutationreplaying(e *Element) bool{
 	if e == nil{
@@ -1881,7 +1797,7 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 	e.Properties.Set("ui", propname, value)
 
 	
-	if e.ElementStore.MutationCapture{
+	if mutationcapturing(e){
 		if e.Registered(){
 			m:= NewObject()
 			m.Set("id",String(e.ID))
@@ -1889,19 +1805,7 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 			m.Set("prop",String(propname))
 			m.Set("val",value)
 			m.Set("sync",Bool(true))
-			l,ok:= e.Get("internals","mutationtrace")
-			if !ok{
-				l=NewList(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",l)
-			} else{
-				list:= l.(List)
-				list = list.
-					MakeCopy().
-						Append(m.Commit()).
-					Commit()
-
-				e.Root.Set("internals","mutationtrace",list)
-			}
+			e.Root.TriggerEvent("new-mutation",m.Commit())
 		}
 	}
 	return e
@@ -1975,7 +1879,7 @@ func (e *Element) SyncUISyncData(propname string, value Value) {
 	e.Properties.Set("ui", propname, value)
 
 	
-	if e.ElementStore.MutationCapture{
+	if mutationcapturing(e){
 		if e.Registered(){
 			m:= NewObject()
 			m.Set("id",String(e.ID))
@@ -1983,15 +1887,7 @@ func (e *Element) SyncUISyncData(propname string, value Value) {
 			m.Set("prop",String(propname))
 			m.Set("val",value)
 			m.Set("sync",Bool(true))
-			l,ok:= e.Get("internals","mutationtrace")
-			if !ok{
-				l=NewList(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",l)
-			} else{
-				list:= l.(List)
-				list = list.MakeCopy().Append(m.Commit()).Commit()
-				e.Root.Set("internals","mutationtrace",list)
-			}
+			e.Root.TriggerEvent("new-mutation",m.Commit())
 		}
 	} 
 

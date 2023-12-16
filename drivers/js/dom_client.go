@@ -431,20 +431,6 @@ func nativeDocumentAlreadyRendered() bool{
 		return false
 	}
 
-	/*
-	state:= statenode.Get("textContent").String()
-	v,err:= DeserializeStateHistory(state)
-	if err != nil{
-		panic(err)
-	}
-	
-	root.Set("internals","mutationtrace",v)	
-	root.WatchEvent("mutation-replayed",root,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		statenode.Call("remove")
-		return false
-	}))
-	*/
-
 	return true
 }
 
@@ -456,12 +442,8 @@ func ConnectNative(e *ui.Element, tag string){
 
 			statenode:= js.Global().Get("document)").Call("getElementById",SSRStateElementID )
 			state:= statenode.Get("textContent").String()
-			v,err:= DeserializeStateHistory(state)
-			if err != nil{
-				panic(err)
-			}
 			
-			e.Set("internals","mutationtrace",v)	
+			e.Set("internals","mutationtrace",ui.String(state))	
 
 			e.WatchEvent("mutation-replayed",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
 				// TODO check value to see if replay  error or not?

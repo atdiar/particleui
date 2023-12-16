@@ -86,8 +86,8 @@ var newID = newIDgenerator(16, uint64(time.Now().UnixNano()))
 
 
 func SerializeStateHistory(e *ui.Element) string{
-	d:= GetDocument(e).AsElement()
-	sth,ok:= d.Get("internals","mutationtrace")
+	m:= GetDocument(e).mutationRecorder().raw
+	sth,ok:= m.GetData("mutationlist")
 	if !ok{
 		return ""
 	}
@@ -821,9 +821,6 @@ func(s StyleSheet) Delete(){
 	ui.Delete(s.AsElement())
 }
 
-// TODO attach mutationrecorder to document on document creation
-// Make sure that it is sessionstorage enabled.
-// Think about the datastorage logic, (also when reseting the recorder)
 
 // mutationRecorder holds the log of the property mutations of a document.
 type mutationRecorder struct{
@@ -837,21 +834,31 @@ func(m mutationRecorder) Capture(){
 	d:= GetDocument(m.raw)
 	d.Set("internals","mutation-capturing",ui.Bool(true))
 
+	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			l,ok:= m.raw.GetData("mutationlist")
+		v:= evt.NewValue()
+		
+		l,ok:= m.raw.GetData("mutationlist")
+		if !ok{
+			m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+		} else{
+			list,ok:= l.(ui.List)
 			if !ok{
-				m.raw.SetData("mutationlist", ui.NewList(evt.NewValue()).Commit())
+				m.raw.SetData("mutationlist",ui.NewList(v).Commit())
 			} else{
-				list,ok:= l.(ui.List)
-				if !ok{
-					m.raw.SetData("mutationlist",ui.NewList(evt.NewValue()).Commit())
-				} else{
-					m.raw.SetData("mutationlist",list.MakeCopy().Append(evt.NewValue()).Commit())
-				}
+				m.raw.SetData("mutationlist",list.MakeCopy().Append(v).Commit())
 			}
+		}
 		return false
 	})
+
+	m.raw.Watch("internals","mutation-capturing", d, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		if !evt.NewValue().(ui.Bool){
+			m.raw.RemoveMutationHandler("event","new-mutation",d,h)
+		}
+		return false
+	}).RunOnce())
 
 	m.raw.WatchEvent("new-mutation",d, h)
 }
@@ -876,16 +883,6 @@ func(m mutationRecorder) Replay() error {
 		return ui.ErrReplayFailure
 	}
 
-	replaylist,_:= d.Get("internals","mutationtrace")
-	recordlist,_:= m.raw.GetData("mutationlist")
-
-	complete := ui.Equal(replaylist, recordlist)
-	
-
-	if !complete{
-		DEBUG("replay list and record list don't match", replaylist, recordlist)
-		return ui.ErrReplayFailure
-	}
 	d.Set("internals","mutation-replaying",ui.Bool(false))
 	d.TriggerEvent("mutation-replayed")
 	return nil
@@ -893,14 +890,32 @@ func(m mutationRecorder) Replay() error {
 
 func(m mutationRecorder) Clear(){
 	m.raw.SetData("mutationlist",ui.NewList().Commit())
-	d:= GetDocument(m.raw)
-	d.Set("internals","mutationtrace",ui.NewList().Commit())
+}
+
+func(m mutationRecorder) push(recval ui.Value){
+	var list ui.List
+	l,ok:= m.raw.GetData("mutationlist")
+	if !ok{
+		list = ui.NewList(recval).Commit()
+		m.raw.SetData("mutationlist",list)
+		return
+	}
+	m.raw.SetData("mutationlist", l.(ui.List).MakeCopy().Append(recval).Commit())
 }
 
 
 
 func (d Document) newMutationRecorder(options ...string) mutationRecorder{
 	m:= d.NewObservable("mutation-recorder", options...)
+	trace, ok:= d.Get("internals","mutationtrace")
+	if ok{
+		v,err:= DeserializeStateHistory(trace.(ui.String).String())
+		if err != nil{
+			panic(err)
+		}
+		m.AsElement().SetData("mutationlist",v)
+	}
+	
 	return mutationRecorder{m.AsElement()}
 }
 
@@ -1022,13 +1037,13 @@ var documentTitleHandler= ui.NewMutationHandler(func(evt ui.MutationEvent) bool 
 
 func mutationreplay(d *Document) error {
 
-	e:= d.Element
+	e:= d.mutationRecorder().raw
 	if !e.ElementStore.MutationReplay {
 		return nil
 	}
 
 
-	rh,ok:= e.Get("internals","mutationtrace")
+	rh,ok:= e.GetData("mutationlist")
 	if !ok{
 		return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
 	}
