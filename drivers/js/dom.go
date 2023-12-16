@@ -876,7 +876,7 @@ func(m mutationRecorder) Replay() error {
 		return ui.ErrReplayFailure
 	}
 
-	replaylist,_:= d.Get("internals","mutationlist")
+	replaylist,_:= d.Get("internals","mutationtrace")
 	recordlist,_:= m.raw.GetData("mutationlist")
 
 	complete := ui.Equal(replaylist, recordlist)
@@ -895,7 +895,6 @@ func(m mutationRecorder) Clear(){
 	m.raw.SetData("mutationlist",ui.NewList().Commit())
 	d:= GetDocument(m.raw)
 	d.Set("internals","mutationtrace",ui.NewList().Commit())
-	PutInStorage(m.raw)
 }
 
 
