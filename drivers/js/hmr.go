@@ -136,7 +136,10 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
         case <-r.Context().Done():
             // Close the channel if the connection is closed
             s.Once.Do(func(){
+                fmt.Fprintf(w, "SSE Channel closed")
+                fmt.Print("Connection closed. SSE channel will close as well")
                 close(s.Message)
+                fw.Flush()
             })
             return
         case msg := <-s.Message:

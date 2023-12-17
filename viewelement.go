@@ -253,7 +253,7 @@ func (v ViewElement) ActivateView(name string) error {
 }
 
 // OnParamChange registers a MutationHandler that will be triggered when a view parameter changes.
-// The view paraemeter holds the current name of the active, parametered, view.
+// The view parameter holds the current name of the active, parametered, view.
 func (v ViewElement) OnParamChange(h *MutationHandler) {
 	v.AsElement().Watch("ui", "viewparameter", v, h)
 }
