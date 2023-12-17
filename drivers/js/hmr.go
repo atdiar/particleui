@@ -108,6 +108,7 @@ type SSEController struct{
     // The channel to send messages to the client
     Message chan string
     Once sync.Once
+    off bool
 }
 
 func NewSSEController() *SSEController {
@@ -139,6 +140,7 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
                 fmt.Fprintf(w, "SSE Channel closed")
                 fmt.Print("Connection closed. SSE channel will close as well")
                 close(s.Message)
+                s.off = true
                 fw.Flush()
             })
             return
@@ -151,5 +153,10 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func(s *SSEController) SendEvent(event, data, id, retry string) {
-    s.Message <- Msg(event, data, id, retry).String()
+    if !s.off{
+        s.Message <- Msg(event, data, id, retry).String()
+    } else{
+        DEBUG("SSE Channel is closed. The brwoser connection is probably closed as well")
+    }
+    
 }

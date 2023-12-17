@@ -342,6 +342,9 @@ func (e *Element) activateView(name string) {
 	}
 
 	if e.ActiveView == name {
+		// TODO handle the case where name == "" and e.ActiveView == ""
+		// In thatr case, depending whether there is a default view,
+		// might want to activate it.
 		e.EndTransition("activateview", String(name)) // already active
 		return
 	}
@@ -375,9 +378,7 @@ func (e *Element) activateView(name string) {
 		view := e.InactiveViews[":"+p]
 		oldviewname := e.ActiveView
 		if oldviewname != "" {
-			oldview := NewView(oldviewname, e.Children.List...)
-			e.RemoveChildren()
-			e.AsElement().addView(oldview)
+			
 			/*for _, child := range e.Children.List {
 				finalize := detach(child)
 
@@ -404,11 +405,13 @@ func (e *Element) activateView(name string) {
 	var oldview View
 
 	if e.ActiveView == ""{
-		_,ok:= e.Get("internals", "defaultview")
-		if ok{
-			oldview = NewView(e.ActiveView, e.Children.List...)		
-			e.RemoveChildren()
-			e.addView(oldview)
+		if name != "" {
+			_,ok:= e.Get("internals", "defaultview")
+			if ok{
+				oldview = NewView(e.ActiveView, e.Children.List...)		
+				e.RemoveChildren()
+				e.addView(oldview)
+			}
 		}
 	}else{
 		oldview = NewView(e.ActiveView, e.Children.List...)
