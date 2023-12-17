@@ -832,6 +832,7 @@ func(m mutationRecorder) Capture(){
 		return
 	}
 	d:= GetDocument(m.raw)
+	d.Set("internals","mutation-replaying",ui.Bool(false))
 	d.Set("internals","mutation-capturing",ui.Bool(true))
 
 	// capture of the list of mutations
@@ -1041,6 +1042,8 @@ func mutationreplay(d *Document) error {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
 
+	DEBUG("trace: ", mutationtrace.UnsafelyUnwrap())
+	DEBUG("trace length: ", len(mutationtrace.UnsafelyUnwrap()))
 
 	for _,rawop:= range mutationtrace.UnsafelyUnwrap(){
 		op:= rawop.(ui.Object)

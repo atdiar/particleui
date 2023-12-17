@@ -1690,9 +1690,21 @@ func (e *Element) Set(category string, propname string, value Value) {
 			return
 		}
 
-		if category  == "event" && propname == "new-mutation"{
+		if category  == "event" {
+			if propname == "new-mutation"{
+				return 
+			}
 			return
 		}
+
+		if category  == "internals" && propname == "mutation-capturing"{
+			return
+		}
+
+		if category  == "internals" && propname == "mutation-replaying"{
+			return
+		}
+
 		m:= NewObject()
 		m.Set("id",String(e.ID))
 		m.Set("cat",String(category))
@@ -1812,6 +1824,7 @@ func(e *Element) SyncUI(propname string, value Value) *Element{
 			e.Root.TriggerEvent("new-mutation",m.Commit())
 		}
 	}
+	
 	return e
 }
 
@@ -1838,6 +1851,7 @@ func(e *Element) SyncData(propname string, value Value) *Element{
 			w.PropMutationHandlers.DispatchEvent(evt)
 		}
 	}
+
 	return e
 }
 
@@ -1867,6 +1881,17 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 		}
 	}
 
+	if mutationcapturing(e){
+		if e.Registered(){
+			m:= NewObject()
+			m.Set("id",String(e.ID))
+			m.Set("cat",String("data"))
+			m.Set("prop",String(propname))
+			m.Set("val",value)
+			e.Root.TriggerEvent("new-mutation",m.Commit())
+		}
+	} 
+
 	// Update UI representation, it shouldn't have any side-effects on the data so it's safe to do it 
 	// before the mutation event is triggered.
 	e.Set("ui", propname, value)
@@ -1880,21 +1905,7 @@ func (e *Element) SetDataSetUI(propname string, value Value) {
 //
 func (e *Element) SyncUISyncData(propname string, value Value) {
 
-	e.Properties.Set("ui", propname, value)
-
-	
-	if mutationcapturing(e){
-		if e.Registered(){
-			m:= NewObject()
-			m.Set("id",String(e.ID))
-			m.Set("cat",String("ui"))
-			m.Set("prop",String(propname))
-			m.Set("val",value)
-			m.Set("sync",Bool(true))
-			e.Root.TriggerEvent("new-mutation",m.Commit())
-		}
-	} 
-
+	e.SyncUI(propname,value) 
 	e.SyncData(propname, value)
 }
 
