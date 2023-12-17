@@ -930,20 +930,23 @@ func(d Document) ListenAndServe(ctx context.Context){
 		d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 			evt.Origin().TriggerEvent("document-ready")
 			return false
-		}).RunASAP())
+		}).RunASAP().RunOnce())
 		
 		return false
 	}))
 
 	if d.Router() == nil{
 		var main ui.ViewElement
-		if d.AsElement().Children != nil{
-			main= ui.NewViewElement(d.AsElement()).ChangeDefaultView(d.AsElement().Children.List...)
-		} else{
-			main= ui.NewViewElement(d.AsElement()).ChangeDefaultView()
-		}
+		b:= d.Body()
+		var c []*ui.Element
+		if b.Children != nil{
+			c = b.Children.List
+		} 
+		main = ui.NewViewElement(b).ChangeDefaultView(c...)
+		ui.NewRouter(main)
+		//main.ActivateView("")
 		
-		ui.NewRouter(main)			
+		// DEBUG("router not set")	
 	}
 	d.Router().ListenAndServe(ctx,"popstate", d.Window())
 }

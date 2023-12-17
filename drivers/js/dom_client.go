@@ -101,9 +101,10 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		}
 
 		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			err := d.mutationRecorder().Replay()
+			DEBUG("document is ready")
+			//err := d.mutationRecorder().Replay()
+			var err error
 			if err != nil{
-				DEBUG("Replay error: ",err)
 				d.mutationRecorder().Clear()
 				// Should reload the page
 				js.Global().Get("location").Call("reload")

@@ -108,18 +108,29 @@ var buildCmd = &cobra.Command{
 						fmt.Println("default app built.")
 					}
 
-					// Let's build the default server.
-					// The output file should be in dev/build/server/csr/
-					err = Build(filepath.Join(".","dev","build","server", "csr","main"), []string{"server", "csr"})
-					if err != nil {
-						fmt.Println("Error: unable to build the default server.")
-						os.Exit(1)
-						return
+					var buildall bool
+					for _, a:= range args{
+						if  a == "."{
+							buildall = true
+						}
 					}
 
-					if verbose{
-						fmt.Println("default server built.")
+					if buildall {
+						// Let's build the default server.
+						// The output file should be in dev/build/server/csr/
+						err = Build(filepath.Join(".","dev","build","server", "csr","main"), []string{"server", "csr"})
+						if err != nil {
+							fmt.Println("Error: unable to build the default server.")
+							os.Exit(1)
+							return
+						}
+						if verbose{
+							fmt.Println("default server built.")
+						}
 					}
+					
+
+					
 				} else if ssr{
 					err = Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
 					if err != nil {

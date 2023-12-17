@@ -1691,9 +1691,6 @@ func (e *Element) Set(category string, propname string, value Value) {
 		}
 
 		if category  == "event" {
-			if propname == "new-mutation"{
-				return 
-			}
 			return
 		}
 
