@@ -2990,7 +2990,7 @@ func SyncValueOnEnter(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Element
 	return func(e *ui.Element) *ui.Element{
 		e.AddEventListener("keyup", ui.NewEventHandler(func(evt ui.Event)bool{
 			event:= evt.(KeyboardEvent)
-			if event.key == "13"{
+			if event.key == "13" || event.key == "Enter"{
 				val:= evt.Value()
 				for _,f:= range valuemodifiers{
 					val = f(val)

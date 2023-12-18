@@ -28,7 +28,7 @@ func SetAttribute(name,value string) func(*ui.Element) *ui.Element{
 	}
 }
 
-func WithStringConv(val ui.Value) ui.Value{
+func WithStrConv(val ui.Value) ui.Value{
 	return val.(ui.Object).MustGetString("value")
 }
 
