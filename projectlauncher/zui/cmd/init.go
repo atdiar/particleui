@@ -818,7 +818,7 @@ func App() doc.Document {
 		Children(
 			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
 				Ref(&input),
-				doc.SyncValueOnChange(),
+				doc.SyncValueOnChange(WithStringConv),
 			),
 			E(document.Label().For(input.AsElement()).SetText("What's your name?")),
 			E(document.Paragraph().SetText("Hello!"),
