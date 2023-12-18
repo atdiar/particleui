@@ -2975,7 +2975,6 @@ func SyncValueOnChange(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Elemen
 			for _,f:= range valuemodifiers{
 				val = f(val)
 			}
-			DEBUG(val, evt.Target().ID, e.ID)
 			evt.Target().SyncUISyncData("value", val)
 			return false
 		}))
