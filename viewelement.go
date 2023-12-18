@@ -345,7 +345,26 @@ func (e *Element) activateView(name string) {
 		// TODO handle the case where name == "" and e.ActiveView == ""
 		// In thatr case, depending whether there is a default view,
 		// might want to activate it.
-		e.EndTransition("activateview", String(name)) // already active
+		if name != ""{
+			e.EndTransition("activateview", String(name)) // already active
+			return
+		}
+		newview, ok := e.InactiveViews[name]
+		if !ok {
+			// if there is a default view, then it is active, otherwise
+			// there must be a mistake.
+			_,ok:= e.Get("internals", "mountdefaultview")
+			if ok{
+				e.EndTransition("activateview", String(name)) // already active
+				return
+			}
+			// TODO panic or silently return? Or transition Error
+			e.ErrorTransition("activateview", String(name), String("no default view defined"))
+			return
+		}
+		e.SetChildren(newview.elements.List...)
+		delete(e.InactiveViews, name)
+		e.EndTransition("activateview", String(name))
 		return
 	}
 
@@ -353,6 +372,18 @@ func (e *Element) activateView(name string) {
 
 	newview, ok := e.InactiveViews[name]
 	if !ok {
+		if name == "" {
+			// TODO handle the case where there is no default
+			// view defined.
+			_,ok:= e.Get("internals", "mountdefaultview")
+			if ok{
+				e.EndTransition("activateview", String(name)) // already active
+				return
+			}
+			e.ErrorTransition("activateview", String(name), String("no default view defined"))
+			return
+		}
+
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
 			n, ok := e.Get("ui", "activeview")
@@ -376,22 +407,7 @@ func (e *Element) activateView(name string) {
 			return
 		}
 		view := e.InactiveViews[":"+p]
-		oldviewname := e.ActiveView
-		if oldviewname != "" {
-			
-			/*for _, child := range e.Children.List {
-				finalize := detach(child)
-
-				if e.Native != nil {
-					e.Native.RemoveChild(child)
-				}
-
-				//attach(e, child, false)
-				finalize()
-			}
-			e.Children.RemoveAll()
-			*/
-		}
+		//oldviewname := e.ActiveView
 		e.ActiveView = ":" + p
 
 		e.SetChildren(view.elements.List...)
@@ -402,23 +418,9 @@ func (e *Element) activateView(name string) {
 	}
 
 	// 1. replace the current view into e.InactiveViews
-	var oldview View
-
-	if e.ActiveView == ""{
-		if name != "" {
-			_,ok:= e.Get("internals", "defaultview")
-			if ok{
-				oldview = NewView(e.ActiveView, e.Children.List...)		
-				e.RemoveChildren()
-				e.addView(oldview)
-			}
-		}
-	}else{
-		oldview = NewView(e.ActiveView, e.Children.List...)
-		e.RemoveChildren()
-		e.addView(oldview)
-	}
-
+	oldview := NewView(e.ActiveView, e.Children.List...)
+	e.RemoveChildren()
+	e.addView(oldview)
 
 	// 2. mount the target view
 	e.ActiveView = name

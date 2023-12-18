@@ -262,7 +262,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				
 				wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
 					// Send event to trigger a page reload
-					SSEChannel.SendEvent("reload",event.String(),"","")	
+					mu.Lock()
+					SSEChannel.SendEvent("reload",event.String(),"","")
+					mu.Unlock()
 				})
 				if err != nil{
 					log.Println(err)
@@ -270,7 +272,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				} 
 				defer wc.Close()
 				activehmr = true				
-				ServeMux.Handle("/sse", SSEChannel)
+				ServeMux.Handle("/sse", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					NewSSEController().ServeHTTP(w, r)
+				}))
 			}
 		}
 

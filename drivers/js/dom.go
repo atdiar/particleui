@@ -941,13 +941,9 @@ func(d Document) ListenAndServe(ctx context.Context){
 		var c []*ui.Element
 		if b.Children != nil{
 			c = b.Children.List
-			DEBUG(len(c), c)
 		} 
 		main = ui.NewViewElement(b).ChangeDefaultView(c...)
 		ui.NewRouter(main)
-		main.ActivateView("")
-		
-		DEBUG("router not set")	
 	}
 	d.Router().ListenAndServe(ctx,"popstate", d.Window())
 }
@@ -2979,8 +2975,8 @@ func SyncValueOnChange(valuemodifiers ...func(ui.Value)ui.Value) func(*ui.Elemen
 			for _,f:= range valuemodifiers{
 				val = f(val)
 			}
+			DEBUG(val, evt.Target().ID, e.ID)
 			evt.Target().SyncUISyncData("value", val)
-			
 			return false
 		}))
 		return e

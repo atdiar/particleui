@@ -828,7 +828,7 @@ func App() doc.Document {
 	)
 
 	// The document observes the input for changes and update the paragraph accordingly.
-	document.Watch("data","text",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
 		return false
 	}))

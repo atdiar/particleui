@@ -13,7 +13,8 @@ import (
     "sync"
 )
 
-var SSEChannel = NewSSEController()
+var SSEChannel *SSEController
+var mu sync.Mutex
 
 // EventCallback is a function type for handling fsnotify events
 type EventCallback func(event fsnotify.Event)
@@ -107,14 +108,18 @@ func valif[T any](condition bool, valueIfTrue T, valueIfFalse T) T {
 type SSEController struct{
     // The channel to send messages to the client
     Message chan string
-    Once sync.Once
-    off bool
+    Once *sync.Once
 }
 
 func NewSSEController() *SSEController {
-    return &SSEController{
+    s:= &SSEController{
         Message: make(chan string),
+        Once: &sync.Once{},
     }
+    mu.Lock()
+    defer mu.Unlock()
+    SSEChannel = s
+    return s
 }
 
 func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -137,11 +142,7 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
         case <-r.Context().Done():
             // Close the channel if the connection is closed
             s.Once.Do(func(){
-                fmt.Fprintf(w, "SSE Channel closed")
-                fmt.Print("Connection closed. SSE channel will close as well")
                 close(s.Message)
-                s.off = true
-                fw.Flush()
             })
             return
         case msg := <-s.Message:
@@ -153,10 +154,5 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func(s *SSEController) SendEvent(event, data, id, retry string) {
-    if !s.off{
-        s.Message <- Msg(event, data, id, retry).String()
-    } else{
-        DEBUG("SSE Channel is closed. The brwoser connection is probably closed as well")
-    }
-    
+    s.Message <- Msg(event, data, id, retry).String()
 }
