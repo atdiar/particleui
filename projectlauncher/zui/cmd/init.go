@@ -26,6 +26,8 @@ var template string
 var web, desktop, terminal bool
 var mobile string 
 
+var build bool
+
 var config map[string]string
 const configFileName = "zui.config.json"
 
@@ -365,32 +367,34 @@ var initCmd = &cobra.Command{
 			}
 
 			
+			if build{
+				// Let's build the default app.
+				// The output file should be in dev/build/app/main.wasm
+				err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+				if err != nil {
+					fmt.Println("Error: Unable to build the default app.",err)
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("default app built.")
+				}
+
+				// Let's build the default server.
+				// The output file should be in dev/build/server/csr/
+				err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
+				if err != nil {
+					fmt.Println("Error: Unable to build the default server.")
+					os.Exit(1)
+					return
+				}
+
+				if verbose{
+					fmt.Println("default server built.")
+				}
+			}
 			
-			// Let's build the default app.
-			// The output file should be in dev/build/app/main.wasm
-			err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
-			if err != nil {
-				fmt.Println("Error: Unable to build the default app.",err)
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("default app built.")
-			}
-
-			// Let's build the default server.
-			// The output file should be in dev/build/server/csr/
-			err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
-			if err != nil {
-				fmt.Println("Error: Unable to build the default server.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose{
-				fmt.Println("default server built.")
-			}
 
 			// Config file should be valid now.
 			if err := SaveConfig(); err != nil {
@@ -788,6 +792,8 @@ func init() {
 	initCmd.Flags().BoolVarP(&graphic, "graphic", "g", false, "Run the command in graphic mode")
 	
 	initCmd.Flags().BoolVarP(&web, "web","w", false, "Specify a web target option (csr, ssr, ssg)")
+	initCmd.Flags().BoolVarP(&build, "build", "b", false, "Build the project")
+
 	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
 	initCmd.Flags().BoolVarP(&terminal, "terminal", "t",false, "Specify a terminal target option (any additional terminal option can be added here)")
@@ -818,7 +824,7 @@ func App() doc.Document {
 		Children(
 			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
 				Ref(&input),
-				doc.SyncValueOnChange(WithStrConv),
+				doc.SyncValueOnInput(WithStrConv),
 			),
 			E(document.Label().For(input.AsElement()).SetText("What's your name?")),
 			E(document.Paragraph().SetText("Hello!"),
