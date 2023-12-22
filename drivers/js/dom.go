@@ -2494,6 +2494,17 @@ func (a AnchorElement) FromLink(link ui.Link,  targetid ...string) AnchorElement
 		return false
 	}).RunASAP())
 
+	a.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		link.MonitorActivity(true)
+
+		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+			link.MonitorActivity(false)
+			return false
+		}).RunOnce())
+		
+		return false
+	}).RunASAP().RunOnce())
+
 	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetDataSetUI("active", evt.NewValue())
 		return false

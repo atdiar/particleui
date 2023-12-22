@@ -259,7 +259,9 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 }
 
 // OnActivated registers a MutationHandler that will be triggered each time a view has been activated.
-func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
+// MutationHanlders can be registered to handle the presence of potential
+// query parameters when a view is being activated on navigation.
+func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ...*MutationHandler) {
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {
@@ -275,6 +277,10 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
 		nh = nh.RunASAP()
 	}
 	v.AsElement().WatchEvent("viewactivated", v.AsElement(), nh)
+
+	for _,qh:= range onquery{
+		v.AsElement().Watch("navigation","query",v,qh)
+	}
 }
 
 func (v ViewElement) IsParameterizedView(viewname string) bool {

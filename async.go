@@ -929,31 +929,32 @@ func newResponseObject(u Value) (Value,error){
 
 // SyncUISyncDataOptimistically sets a data property optimistically on transition start.
 // If the transition doesn't end successfully (it was cancelled or errored out) the property is reverted
-// t its former value.
-// TODO: perhaps implement this as 
+// to its former value.
+// Since a new request always cancels the previous one, there should not be any clobbering of data updates.
+
 func(e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *http.Request, responsehandler ...func(*http.Response)(Value,error)){
 	oldv,_:= e.GetData(propname)
 	if Equal(oldv,value){
 		return
 	}
-	e.SyncUISyncData(propname,value)
+	e.SyncUI(propname,value)
 
 	e.OnRequestError(r,NewMutationHandler(func(evt MutationEvent)bool{
-		e.SetDataSetUI(propname,oldv)
+		e.SetUI(propname,oldv)
+		err:= NewObject().Set("prop",String(propname)).Set("value",value).Commit()
+		e.TriggerEvent("optimisticmutationerror",err)
 		return false
 	}).RunOnce())
 
 	e.OnRequestCancel(r,NewMutationHandler(func(evt MutationEvent)bool{
-		e.SetDataSetUI(propname,oldv)
+		e.SetUI(propname,oldv)
 		return false
 	}).RunOnce())
 
 	
 	e.OnRequestEnd(r,NewMutationHandler(func(evt MutationEvent)bool{
-		// TODO: modify this so that only represented data (there is a mutation handler for the same propname
-		// on the "ui" namespace, is assigned?)
-		truev,_:= e.GetData(propname)
-		e.SetDataSetUI(propname,truev)
+		truev,_:= e.GetUI(propname)
+		e.SetData(propname,truev)
 		return false
 	}).RunOnce())
 
@@ -962,6 +963,10 @@ func(e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *h
 	} else{
 		e.NewRequest(r, nil)
 	}
+}
+
+func(e *Element) OnOptimisticMutationError(h *MutationHandler){
+	e.WatchEvent("optimisticmutationerror",e,h)
 }
 
 
