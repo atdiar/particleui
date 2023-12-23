@@ -456,8 +456,38 @@ func( c *olgconstructor[T,U]) owner() *Document{
 
 
 
-// For olElement : it has a dedicated Document linked constructor as it has additional typ and offset arguments
+// For iframeElement: it has a dedicated Document linked constructor as it has an additional src argument
+type  idEnableriframe [T any] interface{
+	WithID(id string, src string, options ...string) T
+}
 
+type iframeconstiface[T any] interface{
+	~func() T
+	idEnableriframe[T]
+}
+
+type iframeconstructor[T ui.AnyElement, U iframeconstiface[T]] func()T
+
+func(c *iframeconstructor[T,U]) WithID(id string, src string,  options ...string) T{
+	var u U
+	e := u.WithID(id, src, options...)
+	d:= c.owner()
+	if d == nil{
+		panic("constructor should have an owner")
+	}
+	ui.RegisterElement(d.AsElement(),e.AsElement())
+
+	return e
+}
+
+func( c *iframeconstructor[T,U]) ownedBy(d *Document){
+	id := fmt.Sprintf("%v", *c)
+	constructorDocumentLinker[id] = d
+}
+
+func( c *iframeconstructor[T,U]) owner() *Document{
+	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+}
 
 type Document struct {
 	*ui.Element
@@ -529,6 +559,7 @@ type Document struct {
 	Progress gconstructor[ProgressElement, progressConstructor]
 	Select gconstructor[SelectElement, selectConstructor]
 	Form gconstructor[FormElement, formConstructor]
+	Iframe iframeconstructor[IframeElement, iframeConstructor]
 
 	StyleSheets map[string]StyleSheet
 	HttpClient *http.Client
@@ -1543,8 +1574,377 @@ func withStdConstructors(d Document) Document{
 	})
 	d.Table.ownedBy(&d)
 
+	d.Iframe = iframeconstructor[IframeElement, iframeConstructor](func() IframeElement {
+		e:=  IframeElement{newIframe(d.newID())}
+		ui.RegisterElement(d.Element,e.AsElement())
+		return e
+	})
+	d.Iframe.ownedBy(&d)
+
 	return d
 }
+// IframeELement is an HTML element that allows the embedding of external content in an HTML document.
+// When an id is provided, the element is intantiable with an external src fot its content.
+// Otherwise, the value for the src attribute is set to "about:blank" and is considered of same-origin.
+type IframeElement struct{
+	*ui.Element
+}
+
+var newIframe = Elements.NewConstructor("iframe",func(id string) *ui.Element{
+	
+	e := Elements.NewElement(id)
+	e = enableClasses(e)
+
+	ConnectNative(e, "iframe")
+	 // TODO define attribute setters optional functions
+	
+	withStringAttributeWatcher(e,"src")
+	withStringAttributeWatcher(e,"srcdoc")
+	withStringAttributeWatcher(e,"name")
+	withStringAttributeWatcher(e,"sandbox")
+	withStringAttributeWatcher(e,"allow")
+	withStringAttributeWatcher(e,"allowfullscreen")
+	withStringAttributeWatcher(e,"width")
+	withStringAttributeWatcher(e,"height")
+	withStringAttributeWatcher(e,"referrerpolicy")
+	withStringAttributeWatcher(e,"loading")
+
+	e.Watch("ui","sandboxmodifier",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		o:= evt.NewValue().(ui.List).UnsafelyUnwrap()
+		var res strings.Builder
+		for _,v:= range o{
+			res.WriteString(string(v.(ui.String)))
+			res.WriteString(" ")
+		}
+		e.SetUI("sandbox",ui.String(res.String()))
+		return false
+	}))
+
+	e.Watch("ui","allowmodifier",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		o:= evt.NewValue().(ui.Object)
+		// stringBuilder
+		var res strings.Builder
+		o.Range(func(k string, v ui.Value){
+			res.WriteString(k)
+			res.WriteString(" ")
+			v.(ui.List).Range(func(i int, v ui.Value){
+				res.WriteString(string(v.(ui.String)))
+				res.WriteString("; ")
+			})
+		})
+		e.SetUI("allow",ui.String(strings.TrimSuffix(res.String(),"; ")))
+		return false
+	}))
+
+
+
+	e.SetUI("src",ui.String("about:blank"))
+
+	return e
+}, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
+
+
+type iframeConstructor func() IframeElement
+func(c iframeConstructor) WithID(id string, src string, options ...string)IframeElement{
+	i:= IframeElement{newIframe(id, options...)}
+	SetAttribute(i.AsElement(), "src",src)
+	return i
+}
+
+type iframeModifier struct{}
+var IframeModifier iframeModifier
+
+func(m iframeModifier) Name(name string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("name",ui.String(name))
+		return e
+	}
+}
+
+func(m iframeModifier) Src(src string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("src",ui.String(src))
+		return e
+	}
+}
+
+func(m iframeModifier) SrcDoc(srcdoc string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("srcdoc",ui.String(srcdoc))
+		return e
+	}
+}
+
+// Sandbox allows the iframe to use a set of extra features.
+// This modifier returns a sandboxModifier object that holds the methods that specify the features to be enabled.
+func(m iframeModifier) Sandbox() iframeSandboxModifier{
+	return iframeSandboxModifier{}
+}
+
+func sandboxOption(name string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		v,ok := e.GetUI("sandboxmodifier")
+		if !ok{
+			v= ui.NewList(ui.String(name)).Commit()
+		} else{
+			v = v.(ui.List).MakeCopy().Append(ui.String(name)).Commit()
+		}
+		e.SetUI("sandboxmodifier",v)
+		return e
+	}
+}
+
+type iframeSandboxModifier struct{}
+
+func(i iframeSandboxModifier) AllowNothing() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element {
+		e.SetUI("sandbox",ui.String(""))
+		e.SyncUI("sandboxmodifier",ui.NewList().Commit())
+		return e
+	}
+}
+
+func(i iframeSandboxModifier) AllowDownloads() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-downloads")
+}
+
+func(i iframeSandboxModifier) AllowForms() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-forms")
+}
+
+func(i iframeSandboxModifier) AllowPointerLock() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-pointer-lock")
+}
+
+func(i iframeSandboxModifier) AllowPopups() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-popups")
+}
+
+func(i iframeSandboxModifier) AllowPopupsToEscapeSandbox() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-popups-to-escape-sandbox")
+}
+
+func(i iframeSandboxModifier) AllowPresentation() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-presentation")
+}
+
+func(i iframeSandboxModifier) AllowSameOrigin() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-same-origin")
+}
+
+func(i iframeSandboxModifier) AllowScripts() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-scripts")
+}
+
+func(i iframeSandboxModifier) AllowTopNavigation() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-top-navigation")
+}
+
+func(i iframeSandboxModifier) AllowTopNavigationByUserActivation() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-top-navigation-by-user-activation")
+}
+
+func(i iframeSandboxModifier) AllowModals() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-modals")
+}
+
+func(i iframeSandboxModifier) AllowOrientationLock() func(*ui.Element) *ui.Element{
+	return sandboxOption("allow-orientation-lock")
+}
+
+
+
+// Allow can be used to set the permission policy for an iframe.
+// This modifier returns an iframeAllowModifier object that holds the methods that specify the permissions to be enabled.
+//
+// Allowlist is a list of origins that are allowed to use the feature.
+// If the allowlist is empty, the feature is disabled for all origins.
+// If the allowlist is not provided, the feature is enabled for all origins.
+//
+// *: The feature will be allowed in this document, and all nested browsing contexts (<iframe>s) 
+// regardless of their origin.
+//
+// () (empty allowlist): The feature is disabled in top-level and nested browsing contexts. 
+// The equivalent for <iframe> allow attributes is 'none'.
+//
+// self: The feature will be allowed in this document, and in all nested browsing contexts (<iframe>s)
+// in the same origin only. The feature is not allowed in cross-origin documents in nested browsing 
+// contexts. self can be considered shorthand for https://your-site.example.com. 
+// The equivalent for <iframe> allow attributes is self.
+//
+// src: The feature will be allowed in this <iframe>, as long as the document loaded into it comes 
+// from the same origin as the URL in its src attribute. This value is only used in the <iframe> 
+// allow attribute, and is the default allowlist value in <iframe>s.
+//
+// "<origin>": The feature is allowed for specific origins (for example, "https://a.example.com"). 
+// Origins should be separated by spaces. Note that origins in <iframe> allow attributes are not quoted.
+func(m iframeModifier) Allow(allow string) iframeAllowModifier{
+	return iframeAllowModifier{}
+}
+
+func allowOption(name string, allowlist ...string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		al:= ui.NewList()
+		for _,v:= range allowlist{
+			al = al.Append(ui.String(v))
+		}
+
+		v,ok := e.GetUI("allowmodifier")
+		if !ok{
+			v= ui.NewObject().Set("name",ui.String(name)).Set("allowlist",al.Commit()).Commit()
+		} else{
+			v = v.(ui.Object).MakeCopy().Set("name",ui.String(name)).Set("allowlist",al.Commit()).Commit()
+		}
+		e.SetUI("allowmodifier",v)
+		return e
+	}
+}
+
+type iframeAllowModifier struct{}
+
+func(m iframeAllowModifier) None() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("allow",ui.String("none"))
+		e.SyncUI("allowmodifier",ui.NewObject().Commit())
+		return e
+	}
+}
+
+func(m iframeAllowModifier) DisplayCapture(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("display-capture",allowlist...)
+}
+
+func(m iframeAllowModifier) Geolocation(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("geolocation",allowlist...)
+}
+
+
+func(m iframeAllowModifier) PublickeyCredentialsGet(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("publickey-credentials-get",allowlist...)
+}
+
+func(m iframeAllowModifier) Fullscreen(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("fullscreen",allowlist...)
+}
+
+
+func(m iframeAllowModifier) Microphone(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("microphone",allowlist...)
+}
+
+func(m iframeAllowModifier) Payment(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("payment",allowlist...)
+}
+
+func(m iframeAllowModifier) WebShare(allowlist ...string) func(*ui.Element) *ui.Element{
+	return allowOption("web-share",allowlist...)
+}
+
+
+
+// Width sets the width of the iframe.
+func(m iframeModifier) Width(width string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("width",ui.String(width))
+		return e
+	}
+}
+
+// Height sets the height of the iframe.
+func(m iframeModifier) Height(height string) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("height",ui.String(height))
+		return e
+	}
+}
+
+func(m iframeModifier) ReferrerPolicy(referrerpolicy string) iframeReferrerPolicyModifier{
+	return iframeReferrerPolicyModifier{}
+}
+
+type iframeReferrerPolicyModifier struct{}
+
+func(m iframeReferrerPolicyModifier) NoReferrer() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("no-referrer"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) NoReferrerWhenDowngrade() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("no-referrer-when-downgrade"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) Origin() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("origin"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) OriginWhenCrossOrigin() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("origin-when-cross-origin"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) SameOrigin() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("same-origin"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) StrictOrigin() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("strict-origin"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) StrictOriginWhenCrossOrigin() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("strict-origin-when-cross-origin"))
+		return e
+	}
+}
+
+func(m iframeReferrerPolicyModifier) UnsafeUrl() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("referrerpolicy",ui.String("unsafe-url"))
+		return e
+	}
+}
+
+
+// Loading sets the loading strategy of the iframe.
+// The default value is "eager".
+// For more information, see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe
+func(m iframeModifier) Loading() iframeLoadingModifier{
+	return iframeLoadingModifier{}
+}
+
+type iframeLoadingModifier struct{}
+
+func(m iframeLoadingModifier) Lazy() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("loading",ui.String("lazy"))
+		return e
+	}
+}
+
+func(m iframeModifier) Eager() func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		e.SetUI("loading",ui.String("eager"))
+		return e
+	}
+}
+
+
 
 
 type BodyElement struct{
@@ -3033,7 +3433,6 @@ var newInput= Elements.NewConstructor("input", func(id string) *ui.Element {
 	withStringAttributeWatcher(e,"type")
 	withStringAttributeWatcher(e,"inputmode")
 
-	SetAttribute(e, "id", id)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, inputOption("radio"),
 	inputOption("button"), inputOption("checkbox"), inputOption("color"), inputOption("date"), 
@@ -3213,7 +3612,6 @@ var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 	tag:= "output"
 	ConnectNative(e, tag)
 
-	SetAttribute(e, "id", id) // TODO define attribute setters optional functions
 	withStringAttributeWatcher(e,"form")
 	withStringAttributeWatcher(e,"name")
 	withBoolAttributeWatcher(e,"disabled")
@@ -3590,8 +3988,6 @@ var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 	withBoolAttributeWatcher(e,"controls")
 
 	withMediaElementPropertyWatchers(e)
-
-	SetAttribute(e, "id", id)
 
 	return e
 },AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)

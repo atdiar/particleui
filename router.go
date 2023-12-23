@@ -1043,10 +1043,8 @@ func(l Link) MonitorActivity(b bool) Link{
 		return l
 	}
 	l.Raw.RemoveMutationHandler("ui","currentroute",l.Raw.Root,linkActivityMonitor)
+	return l
 }
-
-// TODO Link: add a way to set the query parameters.
-// canonicalize route before comparison (accounting for query parameters)
 
 // Path is a link modifying function that allows to link to a more deeply nested app state,
 // specified by the nested ViewElement and the corresponding name for the view that the latter

@@ -225,7 +225,6 @@ func (o Object) Size() int{
 func (o Object) Range(f func(key string, val Value)){
 	for k,v := range o.o{
 		if k == "zui_object_typ" || k == "zui_object_value" || k == "zui_object_raw"{continue}
-		//if f(k,v.(Value)){break}
 		f(k,v.(Value))
 	}
 }
@@ -529,6 +528,12 @@ func (l List) ValueType() string { return "List" }
 
 func(l List) Filter(validator func(Value)bool) List{
 	return List{l.l.Filter(validator),false}
+}
+
+func(l List) Range(f func(index int, val Value)){
+	for i,v := range l.l{
+		f(i,v)
+	}
 }
 
 func(l *TempList) Append(val ...Value) *TempList{
