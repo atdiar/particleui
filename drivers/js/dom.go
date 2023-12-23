@@ -1663,7 +1663,15 @@ func(m iframeModifier) Name(name string) func(*ui.Element) *ui.Element{
 
 func(m iframeModifier) Src(src string) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element) *ui.Element{
-		e.SetUI("src",ui.String(src))
+		if e.Parent == nil{
+			e.SetUI("src",ui.String(src))
+			return e
+		}
+		d:= GetDocument(e)
+		newiframe:= d.Iframe()
+		newiframe.SetUI("src",ui.String(src))
+		e.Native = newiframe.Native
+		SetAttribute(newiframe.AsElement(),"id",e.ID)
 		return e
 	}
 }
