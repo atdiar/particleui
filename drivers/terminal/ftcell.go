@@ -253,11 +253,9 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 				val:= ui.ValueFrom(rawvalue)
 
 				ui.LoadProperty(e, category, propname, val)
-				if category == "data"{
+				if category == "ui"{
 					uiloaders = append(uiloaders, func(){
-						if e.IsRenderData(propname){
-							e.SetUI(propname, val)
-						}
+						e.SetUI(propname, val)
 					})
 				}
 				//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG

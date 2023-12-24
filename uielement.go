@@ -1398,18 +1398,6 @@ func(e *Element) watchOnce(category string, propname string, owner Watchable, h 
 	return e.Watch(category,propname,owner,g)
 }
 
-// IsRenderData indicates whether some data stored as a property of an element has its representation used
-// to create the User Interface.
-// It simply checks that he representation of the data that is stored in the "ui" category/namespace 
-// under the same property name is being watched for mutations
-func (e *Element) IsRenderData(propname string) bool{
-	p,ok:= e.Properties.Categories["ui"]
-	if !ok{
-		return ok
-	}
-	return p.Watched(propname)
-}
-
 // removeHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of 
 func (e *Element) RemoveMutationHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
@@ -1467,6 +1455,42 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 		evt.Origin().RemoveEventListener(event, handler)
 		return false
 	}))
+
+	return e
+}
+
+func SwapNative(e *Element, newNative NativeElement) *Element {
+	e.Native = newNative
+
+	nativebinding:= NativeEventBridge
+	if l:=e.EventHandlers.list; l != nil{
+		for event,handlers:= range l{
+			if handlers != nil{
+				if handlerlist:= handlers.List; handlerlist != nil{
+					for _, handler:= range handlerlist{
+						h := NewMutationHandler(func(evt MutationEvent) bool {
+							if nativebinding != nil {
+								nativebinding(event, evt.Origin(), handler.Capture)
+							}
+							return false
+						})
+						e.OnMounted(h.RunASAP().RunOnce())
+
+						e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+							if NativeEventBridge != nil{
+								if e.NativeEventUnlisteners.List != nil {
+									e.NativeEventUnlisteners.Apply(event)
+								}
+							}
+							return false
+						}))
+					}
+				}
+				
+			}
+
+		}
+	}
 
 	return e
 }

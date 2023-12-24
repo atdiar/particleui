@@ -1670,9 +1670,10 @@ func(m iframeModifier) Src(src string) func(*ui.Element) *ui.Element{
 		d:= GetDocument(e)
 		newiframe:= d.Iframe()
 		newiframe.SetUI("src",ui.String(src))
-		e.Native = newiframe.Native
+		ui.SwapNative(e, newiframe.Native)
 		SetAttribute(newiframe.AsElement(),"id",e.ID)
-		return e
+	
+		return ui.Rerender(e)
 	}
 }
 
