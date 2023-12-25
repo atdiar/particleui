@@ -33,7 +33,6 @@ var (
 
 	uipkg = "github.com/atdiar/particleui"
 
-	DefaultPattern = "/"
 
 	SourcePath = filepath.Join(".","dev")
 	StaticPath = filepath.Join(".","dev","build","app")
@@ -53,6 +52,8 @@ var (
 	RenderHTMLhandler http.Handler
 
 )
+
+// NOTE: the default entry path is stored in the BasePath variable stored in dom.go
 
 func init(){
 	flag.StringVar(&host,"host", "localhost", "Host name for the server")
@@ -160,6 +161,10 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		if HMRMode != "false" || !nohmr {
+			w.Header().Set("Cache-Control","no-cache")
+		}
+		
 		path, err := filepath.Abs(r.URL.Path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -196,7 +201,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
-		ServeMux.Handle(DefaultPattern,RenderHTMLhandler)
+		ServeMux.Handle(BasePath,RenderHTMLhandler)
 		
 		if DevMode != "false"{
 			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

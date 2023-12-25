@@ -32,7 +32,6 @@ var (
 	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
 
 	uipkg = "github.com/atdiar/particleui"
-	DefaultPattern = "/"
 
 	absStaticPath = filepath.Join(".","dev","build","server","ssg","static")
 	absIndexPath = filepath.Join(absStaticPath,"index.html")
@@ -58,6 +57,7 @@ var (
 
 )
 
+// NOTE: the default entry path is stored in the BasePath variable stored in dom.go
 
 func init(){
 	flag.StringVar(&host,"host", "localhost", "Host name for the server")
@@ -239,7 +239,7 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
-		ServeMux.Handle(DefaultPattern,RenderHTMLhandler)
+		ServeMux.Handle(BasePath,RenderHTMLhandler)
 		
 		if DevMode != "false"{
 			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

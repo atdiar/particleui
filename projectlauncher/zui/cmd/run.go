@@ -177,6 +177,10 @@ func ldflags() string {
 		flags[uipkg + "/drivers/js.HMRMode"] = "true"
 	}
 
+	if basepath != "/"{
+		flags[uipkg + "/drivers/js.BasePath"] = basepath
+	}
+
 	var ldflags []string
 	for key, value := range flags {
 		ldflags = append(ldflags, fmt.Sprintf("-X %s=%s", key, value))

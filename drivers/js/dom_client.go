@@ -12,6 +12,7 @@ import (
 	//"github.com/segmentio/encoding/json"
 	"errors"
 	"log"
+	"net/url"
 	"strings"
 	"syscall/js"
 	"runtime"
@@ -89,6 +90,8 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		`)
 		d.Head().AppendChild(scrIdleGC)
 
+		
+
 
 		d.AfterEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
@@ -101,9 +104,14 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		}
 
 		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			DEBUG("document is ready")
-			//err := d.mutationRecorder().Replay()
-			var err error
+			// let's recover the baseURL from the document
+			baseURI := js.Global().Get("document").Get("baseURI").String()
+			bpath,err := url.Parse(baseURI)
+			if err != nil{
+				panic(err)
+			}
+			BasePath = bpath.Path
+			err = d.mutationRecorder().Replay()
 			if err != nil{
 				d.mutationRecorder().Clear()
 				// Should reload the page

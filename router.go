@@ -73,7 +73,6 @@ type Router struct {
 }
 
 // NewRouter takes an Element object which should be the entry point of the router.
-// By default, the router basepath is initialized to "/".
 func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 	if rootview.AsElement().Root.router != nil {
 		panic("A router has already been created")

@@ -31,7 +31,6 @@ var (
 	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
 
 	uipkg = "github.com/atdiar/particleui"
-	DefaultPattern = "/"
 
 	absStaticPath = filepath.Join(".","dev","build","app")
 	absIndexPath = filepath.Join(absStaticPath,"index.html")
@@ -231,7 +230,292 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
-		ServeMux.Handle(DefaultPattern,RenderHTMLhandler)
+		ServeMux.Handle(var (
+	// DOCTYPE holds the document doctype.
+	DOCTYPE = "html"
+	// Elements stores wasm-generated HTML ui.Element constructors.
+	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
+
+	uipkg = "github.com/atdiar/particleui"
+
+	DefaultPattern = "/"
+
+	SourcePath = filepath.Join(".","dev")
+	StaticPath = filepath.Join(".","dev","build","app")
+	IndexPath = filepath.Join(StaticPath,"index.html")
+
+
+	host string = "localhost"
+	port string = "8888"
+
+	release bool
+	nohmr bool
+
+	ServeMux *http.ServeMux
+	Server *http.Server = newDefaultServer()
+	
+	
+	RenderHTMLhandler http.Handler
+
+)
+
+func init(){
+	flag.StringVar(&host,"host", "localhost", "Host name for the server")
+	flag.StringVar(&port, "port", "8888", "Port number for the server")
+
+	flag.BoolVar(&release, "release", false, "Build the app in release mode")
+	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	
+	flag.Parse()
+
+	if !release{
+		DevMode = "true"
+	}
+
+	if !nohmr{
+		HMRMode = "true"
+	}
+
+}
+
+
+func newDefaultServer() *http.Server{
+	return &http.Server{
+		Addr:    host + ":" + port,
+		Handler: ServeMux,
+	}
+}
+
+
+
+type customRoundTripper struct {
+	mux      *http.ServeMux
+	transport http.RoundTripper
+}
+
+func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	host, _, err := net.SplitHostPort(r.URL.Host)
+	if err != nil {
+		// handle error
+		panic(err)
+	}
+
+	serverHost, _, err := net.SplitHostPort(Server.Addr)
+	if err != nil {
+		panic(err)
+	}
+
+	if host == serverHost {
+		// Dispatch the request to the local ServeMux
+		w := &responseRecorder{}
+		Server.Handler.ServeHTTP(w, r)
+		return w.Result(), nil
+	} else {
+		// Forward the request to the remote server using the custom transport
+		return rt.transport.RoundTrip(r)
+	}
+}
+
+// modifyClient returns a round-tripper modified client that can forego the network and 
+// generate the response as per the servemux when the host is the server it runs onto. 
+func modifyClient(c *http.Client) *http.Client{
+	if c == nil{
+		c = &http.Client{}
+	}
+	if c.Transport == nil{
+		c.Transport = &http.Transport{}
+	}
+
+	c.Transport = &customRoundTripper{ServeMux, c.Transport}
+
+	return c
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+	body       []byte
+}
+
+func (w *responseRecorder) Write(b []byte) (int, error) {
+	w.body = append(w.body, b...)
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *responseRecorder) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *responseRecorder) Result() *http.Response {
+	return &http.Response{
+		Status:     http.StatusText(w.statusCode),
+		StatusCode: w.statusCode,
+		Body:       io.NopCloser(bytes.NewReader(w.body)),
+		Header:     w.Header(),
+	}
+}
+
+
+// NewBuilder registers a new document building function. 
+// In Server Rendering mode (ssr or csr), it starts a server.
+// It accepts functions that can be used to modify the global state (environment) in which a document is built.
+func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
+
+	fileServer := http.FileServer(http.Dir(StaticPath))
+
+	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		path, err := filepath.Abs(r.URL.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		path = filepath.Join(StaticPath, r.URL.Path)
+
+		_, err = os.Stat(path)
+		if os.IsNotExist(err) {
+			// file does not exist, serve index.html
+			http.ServeFile(w, r, filepath.Join(StaticPath, IndexPath))
+			return
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fileServer.ServeHTTP(w, r)
+	})
+
+	for _,m:= range buildEnvModifiers{
+		m()
+	}
+
+	ServeMux = http.NewServeMux()
+	Server.Handler = ServeMux
+
+
+	return func(ctx context.Context){
+		if ctx == nil{
+			ctx = context.Background()
+		}
+		ctx, shutdown := context.WithCancel(ctx)
+		var activehmr bool
+
+		ServeMux.Handle(BasePath,RenderHTMLhandler)
+		
+		if DevMode != "false"{
+			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Trigger server shutdown logic
+				shutdown()
+				fmt.Fprintln(w, "Server is shutting down...")
+			}))
+		}
+
+		if HMRMode == "true"{
+			// TODO: Implement Server-Sent Event logic for browser reload
+			// Implement filesystem watching and trigger compile on change
+			// (in another goroutine) if it's a go file. If any file change, send SSE message to frontend
+			//
+			// 1. Watch ./dev/*.go files. If any is modified, try to recompile. IF not successful nothing happens of course.
+			// 2. Watch ./dev/build/app folder. If anything changed, send SSE message to frontend to reload the page.
+
+			// path to the directory containing the source files
+
+			watcher, err := WatchDir(SourcePath, func(event fsnotify.Event) {
+				// Only rebuild if the event is for a .go file
+				if filepath.Ext(event.Name) == ".go" {
+					// path to main.go
+					sourceFile := filepath.Join(SourcePath, "main.go")
+					// let's build main.go TODO: shouldn't rebuild the server.. might need to 
+					// review impl of zui (or not, here it should be agnostic so might as well 
+					// reimplement the logic with the few specific requirements)
+					// Ensure the output directory is already existing
+					if _, err := os.Stat(StaticPath); os.IsNotExist(err) {
+						panic("Output directory should already exist")
+					}
+					// add the relevant build and linker flags
+					args := []string{"build"}
+					ldflags:= ldflags()
+					if ldflags != "" {
+						args = append(args, "-ldflags", ldflags)	
+					}
+
+					args = append(args, "-o", StaticPath)
+
+					args = append(args, sourceFile)
+					cmd := exec.Command("go", args...)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					cmd.Dir = SourcePath
+					cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
+
+					err := cmd.Run()
+					if err == nil {
+						fmt.Println("main.wasm was rebuilt.")
+					}						
+				}
+			})
+
+			if err != nil{
+				log.Println(err)
+				log.Println("Unable to watch for changes in ./dev folder.")
+			} else{
+				defer watcher.Close()
+
+				// watching for changes made to the output files which should be in the ./dev/build/app directory
+				// ie. ../../dev/build/app
+				
+				wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
+					// Send event to trigger a page reload
+					mu.Lock()
+					SSEChannel.SendEvent("reload",event.String(),"","")
+					mu.Unlock()
+				})
+				if err != nil{
+					log.Println(err)
+					panic("Unable to watch for changes in ./dev/build/app folder.")
+				} 
+				defer wc.Close()
+				activehmr = true				
+				ServeMux.Handle("/sse", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					NewSSEController().ServeHTTP(w, r)
+				}))
+			}
+		}
+
+		// return server info including whether hmr is active
+		ServeMux.Handle("/info",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, "Server is running on port "+port)
+			fmt.Fprintln(w, "HMR status active: ", activehmr)
+		}))
+
+		go func(){ // allows for graceful shutdown signaling
+			if Server.TLSConfig == nil{
+				if err:=Server.ListenAndServe(); err!= nil && err != http.ErrServerClosed{
+					log.Fatal(err)
+				}
+			} else{
+				if err:= Server.ListenAndServeTLS("",""); err!= nil && err != http.ErrServerClosed{
+					log.Fatal(err)
+				}
+			}		
+		}()
+
+		log.Print("Listening on: "+Server.Addr)
+
+		for{
+			select{
+			case <-ctx.Done():
+				err:= Server.Shutdown(ctx)
+				if err!= nil{
+					panic(err)
+				}
+				log.Printf("Server shutdown")
+				os.Exit(0)
+			}
+		}	
+	}	
+},RenderHTMLhandler)
 		
 		if DevMode != "false"{
 			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

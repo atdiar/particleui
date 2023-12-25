@@ -38,6 +38,8 @@ var(
 	HMRMode = "false"
 	SSRMode = "false"
 	SSGMode = "false"
+
+	BasePath = "/"
 )
 
 
