@@ -848,7 +848,9 @@ func App() doc.Document {
 	// The document displays the current time, updating every second.
 	var DateDisplayHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		// Displays the local date and time
-		doc.ParagraphElement{clock}.SetText("The time is: "+time.Now().Format("2006-01-02 15:04:05\n"))
+		doc.ParagraphElement{clock}.SetText("Today is: "+time.Now().Format("2006-01-02 15:04:05")+"\n"),
+		Ref(&paragraph),
+	),
 
 
 		return false
@@ -861,9 +863,8 @@ func main(){
 	ListenAndServe := doc.NewBuilder(App)
 	ListenAndServe(nil)
 }
-
-
 `
+
 var defaultindexfile = `
 <!doctype html>
 <html>
