@@ -3176,16 +3176,19 @@ func (l LabelElement) SetText(s string) LabelElement {
 	return l
 }
 
-func (l LabelElement) For(e *ui.Element) LabelElement {
+func (l LabelElement) For(p **ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		d:= evt.Origin().Root
+		d:= GetDocument(evt.Origin())
 		
-		evt.Origin().WatchEvent("navigation-end",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		evt.Origin().WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			e:= *p
 			if e.Mounted(){
 				l.AsElement().SetDataSetUI("for", ui.String(e.ID))
+			} else{
+				DEBUG("label for attributes couldb't be set") // panic instead?
 			}
 			return false
-		}).RunOnce())
+		}).RunOnce().RunASAP())
 		return false
 	}).RunOnce())
 	return l

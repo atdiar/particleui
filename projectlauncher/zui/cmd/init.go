@@ -834,7 +834,7 @@ func App() doc.Document {
 				Ref(&clock),
 				doc.Modifier.OnTick(1* time.Second, DateDisplayHandler),
 			),
-			E(document.Label().For(input.AsElement()).SetText("What's your name?\n")),
+			E(document.Label().For(&input).SetText("What's your name?\n")),
 			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
 				Ref(&input),
 				doc.SyncValueOnInput(WithStrConv),
