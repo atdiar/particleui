@@ -207,13 +207,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				path  := js.Global().Get("location").Get("pathname").String()
 				path = strings.TrimPrefix(path,strings.TrimSuffix(BasePath,"/"))
 				rv.Set("value",ui.String(path))
-
-				/*u,err:= url.ParseRequestURI(value)
-				if err!= nil{
-					value = ""
-				} else{
-					value = u.Path
-				}*/
 	
 				// Given that events are not handled concurrently
 				// but triggered sequentially, we can Set the value of the history state
@@ -237,12 +230,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 				
 			}
 	
-
-			if v:=jstarget.Get("value"); v.Truthy(){
+			v:=jstarget.Get("value");
+			if v.Truthy(){
 				rv.Set("value",ui.String(v.String()))
-				if typ == "popsate" {
-					panic("popstate value is being overwritten")
-				}
 			}
 
 			jsUIEvent:= js.Global().Get("UIEvent")
@@ -259,6 +249,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			if evt.InstanceOf(jsInputEvent){
 				rv = rv.Set("data",ui.String(evt.Get("data").String()))
 				rv = rv.Set("inputType", ui.String(evt.Get("inputType").String()))
+				if !v.Truthy(){
+					rv = rv.Set("value", ui.String(""))
+				}
 				goevt = ui.NewEvent(typ, bubbles, cancancel, target, currentTarget, nevt, rv.Commit())
 				goevt.SetPhase(phase)
 
