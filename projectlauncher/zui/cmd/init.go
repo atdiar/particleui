@@ -810,6 +810,7 @@ import (
 	"github.com/atdiar/particleui"
 	"github.com/atdiar/particleui/drivers/js"
 	. "github.com/atdiar/particleui/drivers/js/declarative"
+	"time
 )
 
 func App() doc.Document {
@@ -818,15 +819,20 @@ func App() doc.Document {
 	
 	var input *ui.Element 
 	var paragraph *ui.Element
+	var clock *ui.Element
 
 
 	E(document.Body(),
 		Children(
+			E(document.Paragraph(),
+				Ref(&clock),
+				doc.Modifier.OnTick(1* time.Second, DateDisplayHandler)
+			),
+			E(document.Label().For(input.AsElement()).SetText("What's your name?\n")),
 			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
 				Ref(&input),
 				doc.SyncValueOnInput(WithStrConv),
 			),
-			E(document.Label().For(input.AsElement()).SetText("What's your name?")),
 			E(document.Paragraph().SetText("Hello!"),
 				Ref(&paragraph),
 			),
@@ -838,6 +844,16 @@ func App() doc.Document {
 		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
 		return false
 	}))
+
+	// The document displays the current time, updating every second.
+	var DateDisplayHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		// Displays the local date and time
+		doc.ParagraphElement{clock}.SetText("The time is: "+time.Now().Format("2006-01-02 15:04:05\n"))
+
+
+		return false
+	})
+	}
 	return document
 }
 
