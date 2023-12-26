@@ -5257,7 +5257,65 @@ func(c formConstructor) WithID(id string, options ...string)FormElement{
 	return FormElement{newForm(id, options...)}
 }
 
+type modifier struct{}
 
+var Modifier modifier
+
+func(m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *ui.Element)*ui.Element{
+	return func(e *ui.Element)*ui.Element{
+		tickname:= "ticker-" + interval.String()
+
+		// Let's check if the ticker has already been initialized.
+		if _,ok:= e.GetEventValue(tickname);ok{
+			e.WatchEvent(tickname, e,h)
+			return e
+		}
+		
+		var t *time.Ticker
+
+		t = time.NewTicker(interval)
+		
+
+		initticker := ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+			e.TriggerEvent(tickname) // for init purposes
+			
+			evt.Origin().OnMounted(ui.NewMutationHandler(func(ui.MutationEvent)bool{
+				t.Reset(interval)
+				return false
+			}))
+
+			evt.Origin().OnUnmounted(ui.NewMutationHandler(func(event ui.MutationEvent)bool{
+				t.Stop()
+				return false
+			}))
+
+			var stop chan struct{}
+			evt.Origin().OnDeleted(ui.NewMutationHandler(func(ui.MutationEvent)bool{
+				close(stop)
+				return false
+			}).RunOnce())
+
+			ui.DoAsync(nil,func(ctx context.Context){
+				for {
+					select{
+					case <-t.C:
+						ui.DoSync(func() {
+							e.TriggerEvent(tickname)
+						})
+					case <-stop:
+						return
+					}
+				}
+			})
+			return false
+		}).RunOnce().RunASAP()
+		  
+		e.OnMounted(initticker)
+
+		e.WatchEvent(tickname, e,h)
+		return e
+	}
+}
 
 
 func AddClass(target *ui.Element, classname string) {

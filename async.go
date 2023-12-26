@@ -84,7 +84,6 @@ func DoAsync(e *Element, f func(context.Context)) {
 		select {
 		case <-ctxchan:
 			cancel()
-			return
 		default:
 			f(executionCtx)
 		}
@@ -821,13 +820,13 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 			e.Properties.Delete("event", "request-error-"+requestID(r))
 
 			DoAsync(e, func(execution context.Context) {
+				
 				DoSync(func() {
 					go func(){
 						select{
 						case <-execution.Done():
 							cancelFn()
 						case <-ctx.Done():
-							// the goroutine should be done now
 						}
 					}()
 				})
