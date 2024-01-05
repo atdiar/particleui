@@ -821,21 +821,28 @@ func App() doc.Document {
 	var paragraph *ui.Element
 	var clock *ui.Element
 
-	// The document displays the current time, updating every second.
+	// The document observes the input for changes and update the paragraph accordingly.
+	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
+		return false
+	}))
+
+	// the clock element is a ParagraphElement updating every second and which displays the current date.
 	var DisplayDate = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		// Displays the local date and time
-		doc.ParagraphElement{clock}.SetText("Today is: "+time.Now().Format("2006-01-02 15:04:05")+"\n")
+		doc.ParagraphElement{evt.Origin()}.SetText("Today is: "+time.Now().Format("2006-01-02 15:04:05")+"\n")
 		return false
 	})
+	
 
 	E(document.Body(),
-		Children(
+		Children( 
 			E(document.Paragraph(),
 				Ref(&clock),
 				doc.Modifier.OnTick(1* time.Second, DisplayDate),
 			),
 			E(document.Label().For(&input).SetText("What's your name?\n")),
-			E(document.Input.WithID("input", "text").SetAttribute("type","text"),
+			E(document.Input.WithID("input", "text"),
 				Ref(&input),
 				doc.SyncValueOnInput(WithStrConv),
 			),
@@ -845,11 +852,7 @@ func App() doc.Document {
 		),
 	)
 
-	// The document observes the input for changes and update the paragraph accordingly.
-	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
-		return false
-	}))
+	
 	
 	return document
 }

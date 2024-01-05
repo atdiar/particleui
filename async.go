@@ -36,39 +36,35 @@ func newwork(f func(), signalDone chan struct{}) func() {
 
 // DoAsync pushes a function onto a goroutine for execution.
 // Instead of launching goroutines raw by using the 'go' statement, one should use this wrapper for
-//  any concurrent processing.
 //
-// The first argument is used to provide the execution context ( of type context.Context):
-// - any registered element provide the current navigation context which means 
-// that upon navigation cancellation, the function might not be called or its execution might be
-// cancelled if cancelable.
+//	any concurrent processing.
+//
+// If nil is passed as the *ui.Element argument, the function will not be cancelled if the navigation
+// changes. Otherwise, async function execution is cancellable by new navigation events.
 //
 // e.g. a fetch might be cancelled if it's not done before the user navigates away from the current route.
 // meaning that each time a new navigation event is triggered, unfinished fetch for the document
 // are cancelled.
 //
-// The execution context for the function might also be provided by a navigation-agnostic element 
-// such as a Window object (or nil).
-// In that case, function execution will simply ignore any change in navigation
+// If after the concurrent task has been handled, the UI tree needs to be updated,
+// the function should employ a DoSync to push the changes back to the main goroutine.
 //
-//
-// A *ui.Element must not be accessed in a DoAsync without calling DoSync, which  is used to push
-// changes back to the main goroutine, solely in charge of modifying the UI tree.
-// In genral, in such case, all changes to the UI tree should belong to a single
-// critical section so as to appear somewhat atomic.
-// In other terms, only one DoSync should be in charge of mutating the UI tree *Element.
+// It is necessary to use only one DoSync per such function, in order for every
+// goroutine to see the fully updated tree and not a partially updated one.
+// (reminder that a DoSync represent a critical section for the UI tree and in-between calls
+// the UI goroutine is preemptable).
 func DoAsync(e *Element, f func(context.Context)) {
 	var executionCtx context.Context
 	var cancel context.CancelFunc
 
 	var ctxchan <-chan struct{}
 
-	if e != nil{
+	if e != nil {
 		if e.Root != nil {
 			if r := e.Root.router; r != nil {
 				ctxchan = r.NavContext.Done()
 				executionCtx, cancel = context.WithCancel(r.NavContext)
-			} else{
+			} else {
 				executionCtx = context.Background()
 				cancel = func() {}
 			}
@@ -78,13 +74,51 @@ func DoAsync(e *Element, f func(context.Context)) {
 			return
 		}
 	}
-	
 
 	go func() {
 		select {
 		case <-ctxchan:
 			cancel()
 		default:
+			f(executionCtx)
+		}
+	}()
+}
+
+// DoAfter schedules a function to be executed after a certain duration.
+// Similarly to DoAfter, if attached to a regsitered Element,
+// the function is cancellable when navigating.
+// When f is supposed to update the UI tree, it needs to use a single DoSync call when it does so.
+func DoAfter(d time.Duration, e *Element, f func(ectx context.Context)) {
+	t := time.NewTimer(d)
+
+	var executionCtx context.Context
+	var cancel context.CancelFunc
+
+	var ctxchan <-chan struct{}
+
+	if e != nil {
+		if e.Root != nil {
+			if r := e.Root.router; r != nil {
+				ctxchan = r.NavContext.Done()
+				executionCtx, cancel = context.WithCancel(r.NavContext)
+			} else {
+				executionCtx = context.Background()
+				cancel = func() {}
+			}
+		} else {
+			executionCtx = context.Background()
+			cancel = func() {}
+			return
+		}
+	}
+
+	go func() {
+		select {
+		case <-ctxchan:
+			cancel()
+			return
+		case <-t.C:
 			f(executionCtx)
 		}
 	}()
@@ -301,12 +335,11 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 		e.cancelPrefetch(propname)
 	}
 
-
 	DoAsync(e, func(execution context.Context) {
 
 		DoSync(func() {
-			go func(){
-				select{
+			go func() {
+				select {
 				case <-execution.Done():
 					cancelFn()
 				case <-r.Context().Done():
@@ -820,10 +853,10 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 			e.Properties.Delete("event", "request-error-"+requestID(r))
 
 			DoAsync(e, func(execution context.Context) {
-				
+
 				DoSync(func() {
-					go func(){
-						select{
+					go func() {
+						select {
 						case <-execution.Done():
 							cancelFn()
 						case <-ctx.Done():

@@ -1710,10 +1710,14 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 
 	if mutationcapturing(e){
+		if category != "data" || category != "ui"{
+			return
+		}
 		if category == "data" && propname == "mutationlist"{ // TODO: make it less broad a condition
 			return
 		}
 
+		/*
 		if category  == "event" {
 			return
 		}
@@ -1725,6 +1729,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 		if category  == "internals" && propname == "mutation-replaying"{
 			return
 		}
+		*/
 
 		m:= NewObject()
 		m.Set("id",String(e.ID))

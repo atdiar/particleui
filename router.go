@@ -157,9 +157,9 @@ func canonicalizeRoute(route string) (path string, queryparams *Object) {
 
 }
 
-func compareRoutes(r1, r2 string) bool{
-	r1,_ = canonicalizeRoute(r1)
-	r2,_ = canonicalizeRoute(r2)
+func compareRoutes(r1, r2 string) bool {
+	r1, _ = canonicalizeRoute(r1)
+	r2, _ = canonicalizeRoute(r2)
 	return r1 == r2
 }
 
@@ -814,8 +814,8 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 			activations = append(activations, a)
 
 			// TODO set queryparams object as a property of the last view
-			if queryparams != nil && i == viewcount{
-				r.ViewElement.AsElement().Set("navigation","query",*queryparams)
+			if queryparams != nil && i == viewcount {
+				r.ViewElement.AsElement().Set("navigation", "query", *queryparams)
 			}
 
 			if !ok {
@@ -982,21 +982,21 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	}).RunASAP())
 
 	/*
-	// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable DEBUG trying data instead of ui layer
-	// check the performance. Might want to only setup this only for visible links.
-	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
-		route := evt.NewValue().(String).String()
-		lnk, _ := e.GetUI("uri")
-		link := lnk.(String).String()
+		// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable DEBUG trying data instead of ui layer
+		// check the performance. Might want to only setup this only for visible links.
+		e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+			route := evt.NewValue().(String).String()
+			lnk, _ := e.GetUI("uri")
+			link := lnk.(String).String()
 
-		if compareRoutes(route, link) {
-			e.SetUI("active", Bool(true))
-		} else {
-			e.SetUI("active", Bool(false))
-		}
+			if compareRoutes(route, link) {
+				e.SetUI("active", Bool(true))
+			} else {
+				e.SetUI("active", Bool(false))
+			}
 
-		return false
-	}))
+			return false
+		}))
 	*/
 
 	r.Links[l.URI()] = l
@@ -1022,8 +1022,8 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	return l
 }
 
-var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent)bool{
-	e:= evt.Origin()
+var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
+	e := evt.Origin()
 	route := evt.NewValue().(String).String()
 	lnk, _ := e.GetUI("uri")
 	link := lnk.(String).String()
@@ -1036,12 +1036,12 @@ var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent)bool{
 	return false
 })
 
-func(l Link) MonitorActivity(b bool) Link{
-	if b{
-		l.Raw.Watch("ui","currentroute", l.Raw.Root, linkActivityMonitor)
+func (l Link) MonitorActivity(b bool) Link {
+	if b {
+		l.Raw.Watch("ui", "currentroute", l.Raw.Root, linkActivityMonitor)
 		return l
 	}
-	l.Raw.RemoveMutationHandler("ui","currentroute",l.Raw.Root,linkActivityMonitor)
+	l.Raw.RemoveMutationHandler("ui", "currentroute", l.Raw.Root, linkActivityMonitor)
 	return l
 }
 
