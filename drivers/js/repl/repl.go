@@ -16,13 +16,205 @@ type ReplElement struct {
 	*ui.Element
 }
 
-func Repl(d *Document) *ReplElement {
-	e := d.Div()
-	// TODO append the gcversion script with the value attriobute set to the go compiler version in use
-
-
-	return &ReplElement{e.AsElement()}
+// TextArea returns the textarea element that holds the code input
+func(r ReplElement) TextArea() TextAreaElement{
+    return TextAreaElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-textarea")}
 }
+
+// Output returns the div element that holds the output status of the code execution
+func(r ReplElement) Output() DivElement{
+    return DivElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-div")}
+}
+
+// Iframe returns the iframe element that holds the rendered output from loading the wasm file.
+func(r ReplElement) Iframe() IframeElement{
+    return IframeElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-iframe")}
+}
+
+// BtnRun returns the button element that triggers the code execution
+func(r ReplElement) BtnRun() ButtonElement{
+    return ButtonElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-run")}
+}
+
+// BtnFmt returns the button element that triggers the code formatting
+func(r ReplElement) BtnFmt() ButtonElement{
+    return ButtonElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-fmt")}
+}
+
+// CodeInputContainer returns the div element that holds the textarea and the buttons
+func(r ReplElement) CodeInputContainer() DivElement{
+    return DivElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-codeinput")}
+}
+
+// ButtonsContainer returns the div element that holds the buttons
+func(r ReplElement) ButtonsContainer() DivElement{
+    return DivElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID+ "-buttons")}
+}
+
+// Repl returns a ReplElement which is able to compile and render UI code in the browser locally.
+func Repl(d *Document, id string, compilerversion string, options ...string) ReplElement {
+	repl := d.Div.WithID(id, options...)
+	// TODO append the gcversion script with the value attribute set to the go compiler version in use
+    textarea:= d.TextArea.WithID(id+"-textarea")
+    outputfield:= d.Div.WithID(id+"-div")
+    iframeresult:= d.Iframe.WithID(id+"-iframe", "about:blank")
+
+    btnRun := d.Button.WithID(id +"-run", "input")
+    btnFmt := d.Button.WithID(id+"-fmt", "input")
+
+    // double binding between repl and textarea subcomponent.
+    // on sync mutation event, the repl top div gets synced as well. (caused by input events for instance)
+    // if the repl's code is set from somewhere however, the textarea will get set to the same value too.
+    repl.Watch("data","value", textarea, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+        repl.SyncData("value",evt.NewValue())
+        return false
+    }).OnSync())
+
+    repl.Watch("data","value",repl,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+        TextAreaModifier.Value(evt.NewValue().(ui.String).String())(textarea.AsElement())
+        return false
+    }).RunASAP())
+
+    E(repl,
+        Children(
+            E(iframeresult),
+            E(d.Div.WithID(id+"-codeinput"),
+                Children(
+                    E(d.Div.WithID(id+"-buttons"),
+                        Children(
+                            E(btnRun),
+                            E(btnFmt),
+                        ),   
+                    ),
+                    E(textarea,
+                        Listen("keydown", ui.NewEventHandler(func(evt ui.Event) bool{
+                            if evt.(KeyboardEvent).Key() == "Tab"{
+                                evt.PreventDefault()
+                                evt.StopPropagation()
+                                TextAreaModifier.Value(textarea.Text() + "\t")(textarea.AsElement())
+                                return false
+                            }
+                            return false
+                        })),
+                        Listen("input", ui.NewEventHandler(func(evt ui.Event) bool{
+                            // DEBUG TODO check that the value corresponds to the value of the element,
+                            // even in case where it has been modified somehow sucha as is the case when tabbing.
+                            evt.CurrentTarget().SyncUISyncData("value",WithStrConv(evt.Value()))
+                            return false
+                        })),
+                    ),
+                    E(outputfield),
+                ),
+            ),
+        ),
+    )
+
+    // Let's add the event listeners for the buttons and the textarea
+    // The textarea should be hijacked to prevent the default behavior of the tab key
+    // which is to move the focus to the next element in the document.
+    
+
+
+
+    // let's add the scripts for the virtual filesystem and the compiler suite loader
+    // if they haven't already been added to the document Head.
+    // A script with id "gcversion" that holds the compiler version string should also be appended.
+     
+    if _,ok:= d.GetEventValue("replInitialized"); !ok{
+        h:= d.Head()
+
+        // gcversion script
+        s:= d.Script.WithID("gcversion")
+        SetAttribute(s.AsElement(),"value",compilerversion)
+        h.AppendChild(s)
+
+        // virtual file system script
+        v:= d.Script().SetInnerHTML(vfs)
+        h.AppendChild(v)
+
+        // compiler suite loader script
+        c:= d.Script().SetInnerHTML(loaderscript)
+        h.AppendChild(c)
+
+        d.TriggerEvent("replInitialized")
+    }
+
+	return ReplElement{repl.AsElement()}
+}
+
+type replModifier struct{}
+var ReplModifier replModifier
+
+func(r replModifier) TextArea(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.TextArea().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) Output(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.Output().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) Iframe(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.Iframe().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) BtnRun(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.BtnRun().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) BtnFmt(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.BtnFmt().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) CodeInputContainer(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.CodeInputContainer().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
+func(r replModifier) ButtonsContainer(modifiers ...func(*ui.Element)*ui.Element) func(*ui.Element)*ui.Element{
+    return func(e *ui.Element) *ui.Element{
+        t:= ReplElement{e}.ButtonsContainer().AsElement()
+        for _,m:= range modifiers{
+            m(t)
+        }
+        return e
+    }
+}
+
 
 
 var vfs = `

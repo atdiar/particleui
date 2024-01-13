@@ -1,6 +1,5 @@
 //go:build server && ssg
 
-
 package doc
 
 import (
@@ -9,58 +8,49 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
+	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"time"
 	"path/filepath"
-	"log"
-	
-	"github.com/fsnotify/fsnotify"
+	"strings"
+
 	"github.com/atdiar/particleui"
+	"github.com/atdiar/particleui/drivers/js/compat"
 
 	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
+	//"golang.org/x/net/html/atom"
 )
 
 var (
-	// DOCTYPE holds the document doctype.
-	DOCTYPE = "html"
-	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
-
 	uipkg = "github.com/atdiar/particleui"
 
-	absStaticPath = filepath.Join(".","dev","build","server","ssg","static")
-	absIndexPath = filepath.Join(absStaticPath,"index.html")
-	absCurrentPath = filepath.Join(".","dev","build","server","ssg")
+	absStaticPath  = filepath.Join(".", "dev", "build", "server", "ssg", "static")
+	absIndexPath   = filepath.Join(absStaticPath, "index.html")
+	absCurrentPath = filepath.Join(".", "dev", "build", "server", "ssg")
 
-	StaticPath,_ = filepath.Rel(absCurrentPath,absStaticPath)
-	IndexPath,_ = filepath.Rel(absCurrentPath,absIndexPath)
+	StaticPath, _ = filepath.Rel(absCurrentPath, absStaticPath)
+	IndexPath, _  = filepath.Rel(absCurrentPath, absIndexPath)
 
 	host string
 	port string
 
-	release bool
-	nohmr bool
+	release  bool
+	nohmr    bool
 	noserver bool
 
 	ServeMux *http.ServeMux
-	Server *http.Server = newDefaultServer()
-	
-	
+	Server   *http.Server = newDefaultServer()
+
 	RenderHTMLhandler http.Handler
 
 	verbose bool
-
 )
 
 // NOTE: the default entry path is stored in the BasePath variable stored in dom.go
 
-func init(){
-	flag.StringVar(&host,"host", "localhost", "Host name for the server")
+func init() {
+	flag.StringVar(&host, "host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&noserver, "noserver", false, "Generate the pages without starting a server")
@@ -70,28 +60,38 @@ func init(){
 	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
 	flag.Parse()
 
-	if !release{
+	if !release {
 		DevMode = "true"
 	}
 
-	if !nohmr{
+	if !nohmr {
 		HMRMode = "true"
 	}
 
 }
 
+func (n NativeElement) SetChildren(children ...*ui.Element) {
+	// should delete all children and add the new ones
+	n.Value.Get("children").Call("remove")
 
-func newDefaultServer() *http.Server{
+	for _, child := range children {
+		v, ok := child.Native.(NativeElement)
+		if !ok {
+			return
+		}
+		n.Value.Call("append", v.Value)
+	}
+}
+
+func newDefaultServer() *http.Server {
 	return &http.Server{
 		Addr:    host + ":" + port,
 		Handler: ServeMux,
 	}
 }
 
-
-
 type customRoundTripper struct {
-	mux      *http.ServeMux
+	mux       *http.ServeMux
 	transport http.RoundTripper
 }
 
@@ -118,13 +118,13 @@ func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	}
 }
 
-// modifyClient returns a round-tripper modiffied client that can forego the network and 
-// generate the response as per the servemux when the host is the server it runs onto. 
-func modifyClient(c *http.Client) *http.Client{
-	if c == nil{
+// modifyClient returns a round-tripper modiffied client that can forego the network and
+// generate the response as per the servemux when the host is the server it runs onto.
+func modifyClient(c *http.Client) *http.Client {
+	if c == nil {
 		c = &http.Client{}
 	}
-	if c.Transport == nil{
+	if c.Transport == nil {
 		c.Transport = &http.Transport{}
 	}
 
@@ -158,33 +158,32 @@ func (w *responseRecorder) Result() *http.Response {
 	}
 }
 
-
-// NewBuilder registers a new document building function. 
+// NewBuilder registers a new document building function.
 // In Server Rendering mode (ssr or csr), it starts a server.
 // It accepts functions that can be used to modify the global state (environment) in which a document is built.
-func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
+func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(ctx context.Context)) {
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
 	// First we need to create the document and render the pages
 	// ssg is basically about atomically serving a prenavigated app.
-	document:= f()
+	document := f()
 	withNativejshelpers(&document)
-	
+
 	err := document.mutationRecorder().Replay()
-	if err != nil{
+	if err != nil {
 		panic(err)
 	}
 	document.mutationRecorder().Capture()
 
 	// Creating the sitemap.xml file and putting it under the static directory
 	// that should have been created in the output directory.
-	err = CreateSitemap(document, filepath.Join(StaticPath,"sitemap.xml"))
-	if err != nil{
+	err = CreateSitemap(document, filepath.Join(StaticPath, "sitemap.xml"))
+	if err != nil {
 		panic(err)
 	}
 
-	go func(){
-		document.ListenAndServe(nil)	// launches a new UI thread
+	go func() {
+		document.ListenAndServe(nil) // launches a new UI thread
 	}()
 
 	// Should generate the file system based structure of the website.
@@ -195,14 +194,13 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		if err != nil {
 			fmt.Printf("Error creating pages: %v\n", err)
 		} else {
-			if verbose{
+			if verbose {
 				fmt.Printf("Created %d pages\n", numPages)
 			}
-		}	
+		}
 	})
 
-
-	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path, err := filepath.Abs(r.URL.Path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -228,616 +226,185 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		m()
 	}
 
-	if noserver{
-		return func(ctx context.Context){
+	if noserver {
+		return func(ctx context.Context) {
 		}
 	}
 
 	// TODO modify HMR mode to accouunt for ssg structural changes. (no wasm etc, different output directory etc.)
 	// ******************************
-	return func(ctx context.Context){
+	return func(ctx context.Context) {
 		ctx, shutdown := context.WithCancel(ctx)
-		var activehmr bool
 
-		ServeMux.Handle(BasePath,RenderHTMLhandler)
-		
-		if DevMode != "false"{
-			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeMux.Handle(BasePath, RenderHTMLhandler)
+
+		if DevMode != "false" {
+			ServeMux.Handle("/stop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Trigger server shutdown logic
 				shutdown()
 				fmt.Fprintln(w, "Server is shutting down...")
 			}))
 		}
 
-
-		go func(){ // allows for graceful shutdown signaling
-			if Server.TLSConfig == nil{
-				if err:=Server.ListenAndServe(); err!= nil && err != http.ErrServerClosed{
+		go func() { // allows for graceful shutdown signaling
+			if Server.TLSConfig == nil {
+				if err := Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					log.Fatal(err)
 				}
-			} else{
-				if err:= Server.ListenAndServeTLS("",""); err!= nil && err != http.ErrServerClosed{
+			} else {
+				if err := Server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 					log.Fatal(err)
 				}
-			}		
+			}
 		}()
 
-		log.Print("Listening on: "+Server.Addr)
+		log.Print("Listening on: " + Server.Addr)
 
-		for{
-			select{
+		for {
+			select {
 			case <-ctx.Done():
-				err:= Server.Shutdown(ctx)
-				if err!= nil{
+				err := Server.Shutdown(ctx)
+				if err != nil {
 					panic(err)
 				}
 				log.Printf("Server shutdown")
 				os.Exit(0)
 			}
 		}
-		
-	}
-	
-}
-
-
-func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
-	return observable
-}
-
-var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
-	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
-	return false
-})
-
-var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{ // abstractjs
-	return false
-})
-
-var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
-	return false
-})
-
-var checkDOMready = NoopMutationHandler
-
-// SetInnerHTML sets the innerHTML property of HTML elements.
-// Please note that it is unsafe to sets client submitted HTML inputs.
-func SetInnerHTML(e *ui.Element, innerhtml string) *ui.Element {
-	p,err:= html.Parse(strings.NewReader(innerhtml))
-	if err!=nil{
-		panic(err)
 
 	}
-	e.Native.(NativeElement).SetChildren(nil)
-	e.Native.(NativeElement).Value.AppendChild(p)
-	return e
-}
-
-// setTextContent sets the textContent of HTML elements.
-func setTextContent(e *ui.Element, text string) *ui.Element {
-
-	n:= e.Native.(NativeElement).Value
-	f:= n.FirstChild
-	c:= f
-	for c != nil{
-		if c.Type == html.TextNode{
-			c.Data = text
-			return e
-		}
-		c = f.NextSibling
-	}
-	n.AppendChild(textNode(text))
-	return e
-}
-
-func textNode(s string) *html.Node{
-	return &html.Node{Type: html.TextNode,Data: s}
-}
-
-// LoadFromStorage will load an element properties.
-// If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
-// atribute, the props are loaded from this attribute instead.
-// abstractjs
-func LoadFromStorage(e *ui.Element) *ui.Element {
-	return e
-}
-
-// PutInStorage stores an element properties in storage (localstorage or sessionstorage).
-func PutInStorage(e *ui.Element) *ui.Element{
-	return e
-}
-
-// ClearFromStorage will clear an element properties from storage.
-func ClearFromStorage(e *ui.Element) *ui.Element{
-	return e
-}
-
-func isPersisted(e *ui.Element) bool{
-	return false
-}
-
-func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
-	if tag == "window"{
-		return  NewNativeElementWrapper(nil), true
-	}
-
-	n := &html.Node{}
-	n.Type = html.ElementNode
-	n.Data = tag
-	n.DataAtom = atom.Lookup([]byte(tag))
-
-	return NewNativeElementWrapper(n), true
-}
-
-// NativeElement defines a wrapper around a *html.Node that implements the
-// ui.NativeElementWrapper interface.
-type NativeElement struct {
-	Value *html.Node
-}
-
-func NewNativeElementWrapper(n *html.Node) NativeElement {
-	return NativeElement{n}
-}
-
-func (n NativeElement) AppendChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	n.Value.AppendChild(c)
-}
-
-func (n NativeElement) PrependChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	n.Value.InsertBefore(c, n.Value.FirstChild)
-	
-}
-
-func (n NativeElement) InsertChild(child *ui.Element, index int) {
-	if index < 0{
-		panic("index must be a positive integer")
-	}
-	if n.Value.FirstChild == nil{
-		n.AppendChild(child)
-		return
-	}
-
-	var currentAtIndex = n.Value.FirstChild
-	var idx int
-	
-	
-	for i:= 0; i<= index;i++{
-		if currentAtIndex.NextSibling == nil{
-			if i < index{
-				currentAtIndex = n.Value.LastChild
-				idx = -1
-			}
-			break
-		}
-		currentAtIndex = currentAtIndex.NextSibling
-		idx++
-	}
-
-	if idx == -1{
-		n.AppendChild(child)
-		return 
-	}
-
-	n.Value.InsertBefore(child.Native.(NativeElement).Value, currentAtIndex)
 
 }
-
-func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
-	oldc:= old.Native.(NativeElement).Value
-	newc:= new.Native.(NativeElement).Value
-	if oldc.Parent == n.Value {
-		n.Value.InsertBefore(newc,oldc)
-		n.Value.RemoveChild(oldc)
-	}
-}
-
-func (n NativeElement) RemoveChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	if c.Parent == n.Value{
-		n.Value.RemoveChild(c)
-	}
-}
-
-func (n NativeElement) SetChildren(children ...*ui.Element) {
-	// first we need to delete children if there are any
-	var stop bool
-	var current = n.Value.FirstChild
-
-	if current != nil{
-		for !stop{
-			next := current.NextSibling
-			if next == nil{
-				stop = true
-			}
-			n.Value.RemoveChild(current)
-			current = next
-		}
-	}
-
-	for _,c:= range children{
-		n.AppendChild(c)
-	}
-}
-
-func activityStateSupport (e *ui.Element) *ui.Element{return e}
-
-var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	return e
-})
-
-func Focus(e ui.AnyElement, scrollintoview bool){}
-
-func IsInViewPort(e *ui.Element) bool{
-	return true
-}
-
-func TrapFocus(e *ui.Element) *ui.Element{ return e}
-
-func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		return e
-	}
-}
-
-
-func (i InputElement) Blur() {}
-
-func (i InputElement) Focus() {}
-
-func (i InputElement) Clear() {}
-
-
-
-func newTimeRanges() jsTimeRanges{
-	var j = ui.NewObject()
-
-	var length int
-	
-	j.Set("length",ui.Number(length))
-
-	j.Set("start",ui.NewList().Commit())
-	j.Set("end",ui.NewList().Commit())
-	return jsTimeRanges(j.Commit())
-}
-
-
-func(a AudioElement) Buffered() jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(a AudioElement)CurrentTime() time.Duration{
-	return 0
-}
-
-func(a AudioElement)Duration() time.Duration{
-	return  0
-}
-
-func(a AudioElement)PlayBackRate() float64{
-	return 0
-}
-
-func(a AudioElement)Ended() bool{
-	return false
-}
-
-func(a AudioElement)ReadyState() float64{
-	return 0
-}
-
-func(a AudioElement)Seekable()  jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(a AudioElement) Volume() float64{
-	return  0
-}
-
-
-func(a AudioElement) Muted() bool{
-	return false
-}
-
-func(a AudioElement) Paused() bool{
-
-	return false
-}
-
-func(a AudioElement) Loop() bool{
-	// TODO get from attr ?
-	return false
-}
-
-
-
-func(v VideoElement) Buffered() jsTimeRanges{
-	// TODO get from attr ?
-	return newTimeRanges()
-}
-
-func(v VideoElement)CurrentTime() time.Duration{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Duration() time.Duration{
-	// TODO get from attr ?
-	return  0
-}
-
-func(v VideoElement)PlayBackRate() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Ended() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement)ReadyState() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Seekable()  jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(v VideoElement) Volume() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-
-func(v VideoElement) Muted() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement) Paused() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement) Loop() bool{
-	// TODO get from attr ?
-	return false
-}
-
-
-
-func enableClasses(e *ui.Element) *ui.Element {
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		target := evt.Origin()
-		_, ok := target.Native.(NativeElement)
-		if !ok {
-			log.Print("wrong type for native element or native element does not exist")
-			return true
-		}
-		classes, ok := evt.NewValue().(ui.String)
-		if !ok {
-			log.Print("new value of non-string type. Unable to use as css class(es)")
-			return true
-		}
-
-		if len(strings.TrimSpace(string(classes))) != 0 {
-			SetAttribute(evt.Origin(),"class",string(classes))
-			return false
-		}
-		RemoveAttribute(evt.Origin(),"class")
-		return false
-	})
-	e.Watch("css", "class", e, h)
-	return e
-}
-
-func GetAttribute(target *ui.Element, name string) string {
-	for _,a:= range target.Native.(NativeElement).Value.Attr{
-		if a.Key == name{
-			return a.Val
-		}
-		continue
-	}
-	return ""
-}
-
-func SetAttribute(target *ui.Element, name string, value string) {
-	Attrs:= target.Native.(NativeElement).Value.Attr
-
-	for _,a:= range Attrs{
-		if a.Key == name{
-			a.Val = value
-			return
-		}
-		continue
-	}
-	Attrs = append(Attrs,html.Attribute{"",name,value})
-
-}
-
-// abstractjs
-func RemoveAttribute(target *ui.Element, name string) {
-	Attrs:= target.Native.(NativeElement).Value.Attr
-	var index = -1
-
-	for i,a:= range Attrs{
-		if a.Key == name{
-			index = i
-			break
-		}
-		continue
-	}
-	if index > -1{
-		copy(Attrs[:index],Attrs[index+1:])
-		Attrs[len(Attrs)-1]=html.Attribute{}
-		Attrs = Attrs[:len(Attrs)-1]
-	}
-
-}
-
-
-var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	str := string(evt.NewValue().(ui.String))
-	setTextContent(evt.Origin(),str)
-	return false
-})
-
-var paragraphTextHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
-	return false
-})
-
-func numericPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-func boolPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-func stringPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-
-func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 func (d Document) Render(w io.Writer) error {
-	return html.Render(w, newHTMLDocument(d))
+	return html.Render(w, newHTMLDocument(d).Node())
 }
 
-func newHTMLDocument(document Document) *html.Node {
+func newHTMLDocument(document Document) js.Value {
 	doc := document.AsElement()
-	h:= &html.Node{Type: html.DoctypeNode}
-	n:= doc.Native.(NativeElement).Value
-	h.AppendChild(n)
-	statenode:= generateStateHistoryRecordElement(doc) // TODO review all this logic
-	if statenode != nil{
-		document.Head().AsElement().Native.(NativeElement).Value.AppendChild(statenode)
+	h := js.ValueOf(&html.Node{Type: html.DoctypeNode})
+	n := doc.Native.(NativeElement).Value
+	h.Call("appendChild", n)
+	statenode := generateStateHistoryRecordElement(doc) // TODO review all this logic
+	if statenode != nil {
+		document.Head().AsElement().Native.(NativeElement).Value.Call("appendChild", statenode)
 	}
 
 	return h
 }
 
-func generateStateHistoryRecordElement(root *ui.Element) *html.Node{
-	state:=  SerializeStateHistory(root)
-	script:= `<script id='` + SSRStateElementID+`' type="application/json">
+func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
+	state := SerializeStateHistory(root)
+	script := `<script id='` + SSRStateElementID + `' type="application/json">
 	` + state + `
 	<script>`
-	scriptNode, err:= html.Parse(strings.NewReader(script))
-	if err!= nil{
+	scriptNode, err := html.Parse(strings.NewReader(script))
+	if err != nil {
 		panic(err)
 	}
 	return scriptNode
 }
 
-func recoverStateHistory(){}
+func recoverStateHistory() {}
+
 var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func CreatePages(doc Document) (int, error) {
-    basePath := "/dev/build/server/ssg"
+	basePath := "/dev/build/server/ssg"
 	router := doc.Router() // Retrieve the router from the document
-	if router == nil{
-		err := d.CreatePage("/")
-		if err != nil{
-			return 0,err
+	if router == nil {
+		err := doc.CreatePage("/")
+		if err != nil {
+			return 0, err
 		}
-		return 1,nil
+		return 1, nil
 	}
 
-    routes := router.RouteList()
-    
+	routes := router.RouteList()
 
-    var count int
-    for _, route := range routes {
-        fullPath := filepath.Join(basePath, route, "index.html")
-		if verbose{
+	var count int
+	for _, route := range routes {
+		fullPath := filepath.Join(basePath, route, "index.html")
+		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
 		}
 		doc.Router().GoTo(route)
-        if err := doc.CreatePage(fullPath); err != nil {
-            return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
-        }
-        count++
-    }
-    return count, nil
+		if err := doc.CreatePage(fullPath); err != nil {
+			return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
+		}
+		count++
+	}
+	return count, nil
 }
 
 // CreatePage creates a single page for the document at the specified filePath.
 func (d Document) CreatePage(filePath string) error {
-    // Create the directory if it doesn't exist
-    dirPath := filepath.Dir(filePath)
-    if err := os.MkdirAll(dirPath, 0755); err != nil {
-        return err
-    }
+	// Create the directory if it doesn't exist
+	dirPath := filepath.Dir(filePath)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return err
+	}
 
 	// Determine the path for the CSS file
-    cssFilePath := filepath.Join(dirPath, "style.css")
+	cssFilePath := filepath.Join(dirPath, "style.css")
 
-    // Generate the stylesheet for this page
-    if err := d.CreateStylesheet(cssFilePath); err != nil {
-        return fmt.Errorf("error creating stylesheet: %w", err)
-    }
-	if verbose{
+	// Generate the stylesheet for this page
+	if err := d.CreateStylesheet(cssFilePath); err != nil {
+		return fmt.Errorf("error creating stylesheet: %w", err)
+	}
+	if verbose {
 		fmt.Printf("Created stylesheet at '%s'\n", cssFilePath)
 	}
 
 	// Append stylesheet link to the document head
-    link := d.Link().SetAttribute("href", cssFilePath).SetAttribute("rel", "stylesheet")
-    d.Head().AppendChild(link)
+	link := d.Link().SetAttribute("href", cssFilePath).SetAttribute("rel", "stylesheet")
+	d.Head().AppendChild(link)
 
-    // Create and open the file
-    file, err := os.Create(filePath)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
+	// Create and open the file
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-    // Render the document
-    if err := d.Render(file); err != nil {
-        return err
-    }
+	// Render the document
+	if err := d.Render(file); err != nil {
+		return err
+	}
 
-    return nil
+	return nil
 }
 
-func(d Document) CreateStylesheet(cssFilePath string) error {
-	rl,ok:= d.Get("internals","activestylesheets")
-	if !ok{
+func (d Document) CreateStylesheet(cssFilePath string) error {
+	rl, ok := d.Get("internals", "activestylesheets")
+	if !ok {
 		return fmt.Errorf("no active stylesheets found")
 	}
 	l := rl.(ui.List) // list of stylesheetIDs in the order they should be applied
 
-    var cssContent strings.Builder
+	var cssContent strings.Builder
 
-    for _, sheetID := range l.UnsafelyUnwrap() {
-        sheet,ok := d.GetStyleSheet(sheetID.(ui.String).String())
-		if  !ok{
+	for _, sheetID := range l.UnsafelyUnwrap() {
+		sheet, ok := d.GetStyleSheet(sheetID.(ui.String).String())
+		if !ok {
 			panic("stylesheet not found")
 		}
-        cssContent.WriteString(sheet.String())
-    
-    }
+		cssContent.WriteString(sheet.String())
 
-    return os.WriteFile(cssFilePath, []byte(cssContent.String()), 0644)
+	}
+
+	return os.WriteFile(cssFilePath, []byte(cssContent.String()), 0644)
 }
-
 
 func ldflags() string {
 	flags := make(map[string]string)
 
-	flags[uipkg + "/drivers/js.DevMode"] = DevMode
-	flags[uipkg + "/drivers/js.SSGMode"] = SSGMode
-	flags[uipkg + "/drivers/js.SSRMode"] = SSRMode
-	flags[uipkg + "/drivers/js.HMRMode"]= HMRMode
+	flags[uipkg+"/drivers/js.DevMode"] = DevMode
+	flags[uipkg+"/drivers/js.SSGMode"] = SSGMode
+	flags[uipkg+"/drivers/js.SSRMode"] = SSRMode
+	flags[uipkg+"/drivers/js.HMRMode"] = HMRMode
 
 	var ldflags []string
 	for key, value := range flags {
