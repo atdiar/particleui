@@ -2962,12 +2962,11 @@ func (d Document) EnableWasm() Document {
 				}
 			
 				window.addEventListener('load', () => {
-					console.log("load event fired...");
 					loadEventResolver();
 				});
 			
 				const go = new Go();
-				WebAssembly.instantiateStreaming(fetch("/app.wasm"), go.importObject)
+				WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject)
 				.then((result) => {
 					go.run(result.instance);
 				});
