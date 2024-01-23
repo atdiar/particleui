@@ -1,18 +1,17 @@
 /*
 Copyright © 2023 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"os"
 	"os/exec"
-	"encoding/json"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -24,11 +23,12 @@ var projectName string
 var template string
 
 var web, desktop, terminal bool
-var mobile string 
+var mobile string
 
 var build bool
 
 var config map[string]string
+
 const configFileName = "zui.config.json"
 
 func configExists() bool {
@@ -36,7 +36,7 @@ func configExists() bool {
 	return !os.IsNotExist(err)
 }
 
-//  Check that config is valid, i.e. it has at least the projectName and platform keys.
+// Check that config is valid, i.e. it has at least the projectName and platform keys.
 func configIsValid() bool {
 	if _, ok := config["projectName"]; !ok {
 		return false
@@ -77,7 +77,6 @@ func SaveConfig() error {
 	encoder.SetIndent("", "  ") // Setting indentation for formatted output
 	return encoder.Encode(config)
 }
-
 
 // initCmd represents the init command
 var initCmd = &cobra.Command{
@@ -140,9 +139,9 @@ var initCmd = &cobra.Command{
 			fmt.Println("Error: Project name is required.")
 			return
 		}
-	
+
 		platformsSpecified := 0
-	
+
 		if web {
 			platformsSpecified++
 		}
@@ -155,10 +154,10 @@ var initCmd = &cobra.Command{
 		if terminal {
 			platformsSpecified++
 		}
-	
+
 		if platformsSpecified > 1 {
 			fmt.Println("Error: Please specify only one platform (web, mobile, desktop, terminal).")
-			fmt.Print(platformsSpecified, web,mobile,desktop,terminal)
+			fmt.Print(platformsSpecified, web, mobile, desktop, terminal)
 			os.Exit(1)
 			return
 		}
@@ -176,11 +175,11 @@ var initCmd = &cobra.Command{
 		// git should ignore the release directory
 		// TODO remove this?
 		/*
-		createFile(".gitignore", `
-			/release
-			/dev/build/*
-			!/dev/build/app
-		`)
+			createFile(".gitignore", `
+				/release
+				/dev/build/*
+				!/dev/build/app
+			`)
 		*/
 
 		if web {
@@ -188,13 +187,13 @@ var initCmd = &cobra.Command{
 			config["projectName"] = projectName
 			config["platform"] = "web"
 			config["web"] = ""
-			
-			if template == ""{
+
+			if template == "" {
 				// project initialization logic
 				// should create the directories, basic template file, dev directory with dev server runnable source
 
 				// Check that the project directory is empty.
-				// If the project directory is not empty, 
+				// If the project directory is not empty,
 				// the only files that should be found are the go.mod file and if then,  go.sum
 				files, err := os.ReadDir(".")
 				if err != nil {
@@ -224,8 +223,8 @@ var initCmd = &cobra.Command{
 				}
 
 				// Create dev directory if it doesn't already exists
-				err= createDirectory(filepath.Join(".","dev"))
-				if err!= nil{
+				err = createDirectory(filepath.Join(".", "dev"))
+				if err != nil {
 					fmt.Println("Error: Unable to create dev directory.")
 					os.Exit(1)
 					return
@@ -254,7 +253,7 @@ var initCmd = &cobra.Command{
 				// -port might be an option for the dev server.
 				//
 
-				// Default build: on project initialization, a default project is 
+				// Default build: on project initialization, a default project is
 				// created in the dev directory.
 				// A sort of hello world app that can be run with zui run -dev.
 				//
@@ -264,69 +263,68 @@ var initCmd = &cobra.Command{
 				// Let's create the default main.go file in the dev directory.
 				// This will contain a default app that outputs a hello world, a game or something.
 				// The default app should be a module, so run go mod init in the current directory.
-				// The module name should be the project name.						
-				
-				
-				err = createDirectory(filepath.Join(".","dev","build"))
-				if err!= nil{
-					fmt.Println("Error: unable to create dev/build directory.",err)
+				// The module name should be the project name.
+
+				err = createDirectory(filepath.Join(".", "dev", "build"))
+				if err != nil {
+					fmt.Println("Error: unable to create dev/build directory.", err)
 					os.Exit(1)
 					return
 				}
 
-				err = createDirectory(filepath.Join(".","dev","build","app"))
-				if err!= nil{
+				err = createDirectory(filepath.Join(".", "dev", "build", "app"))
+				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app directory.")
 					os.Exit(1)
 					return
 				}
 
 				// Default main.go file
-				err = createFile(filepath.Join(".","dev","main.go"), defaultprojectfile)
-				if err!= nil{
+				err = createFile(filepath.Join(".", "dev", "main.go"), defaultprojectfile)
+				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/main.go file.")
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("default main.go file created.")
 				}
 
 				// Default index.html file
-				err = createFile(filepath.Join(".","dev","build","app","index.html"), defaultindexfile)
-				if err!= nil{
+				err = createFile(filepath.Join(".", "dev", "build", "app", "index.html"), defaultindexfile)
+				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/index.html file.")
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("default index.html file created.")
 				}
 
 				// copy wasm_exec.js to the ./dev/build/app directory
-				err = CopyWasmExecJs(filepath.Join(".","dev","build","app"))
-				if err!= nil{
-					fmt.Println("Error: Unable to copy wasm_exec.js file.",err)
+				err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app"))
+				if err != nil {
+					fmt.Println("Error: Unable to copy wasm_exec.js file.", err)
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("wasm_exec.js file copied from Go distribution.")
 				}
 
 				// Create asset folder and put a default favicon.ico in it
-				err = createDirectory(filepath.Join(".","dev","build","app","assets"))
-				if err!= nil{
+				err = createDirectory(filepath.Join(".", "dev", "build", "app", "assets"))
+				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/assets directory.")
 					os.Exit(1)
 					return
 				}
 
-				err = createFile(filepath.Join(".","dev","build","app","assets","favicon.ico"), "")
-				if err!= nil{
+				err = createFile(filepath.Join(".", "dev", "build", "app", "assets", "favicon.ico"), "")
+				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/assets/favicon.ico file.")
 					os.Exit(1)
 					return
@@ -335,66 +333,63 @@ var initCmd = &cobra.Command{
 				// Create directory for the HMR source code that can then be run
 				// to watch over the app files and recompile
 
-
 				// This should be a module, so run go mod init in the current directory.
 				// The module name should be the project name.
 				err = initGoModule(projectName)
-				if err!= nil{
-					fmt.Println("Error: Unable to initialize go module.",err)
+				if err != nil {
+					fmt.Println("Error: Unable to initialize go module.", err)
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("go module initialized.")
 				}
 
 				// Add the current directory to the workspace if GOWORK is set
 				err = tryAddToWorkspace()
-				if err!= nil{
-					fmt.Println("Error: Unable to add to workspace.",err)
+				if err != nil {
+					fmt.Println("Error: Unable to add to workspace.", err)
 					os.Exit(1)
 					return
 				}
-				
-				if verbose{
+
+				if verbose {
 					fmt.Println("added the project module to workspace.")
 				}
 
-			} else{
+			} else {
 				// TODO
 				// run $go new template_URL projectname
 			}
 
-			
-			if build{
+			if build {
 				// Let's build the default app.
 				// The output file should be in dev/build/app/main.wasm
-				err := Build(filepath.Join(".","dev","build","app", "main.wasm"),nil)
+				err := Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
 				if err != nil {
-					fmt.Println("Error: Unable to build the default app.",err)
+					fmt.Println("Error: Unable to build the default app.", err)
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("default app built.")
 				}
 
 				// Let's build the default server.
 				// The output file should be in dev/build/server/csr/
-				err = Build(filepath.Join(".","dev","build","server", "csr","main"),[]string{"server","csr"})
+				err = Build(filepath.Join(".", "dev", "build", "server", "csr", "main"), []string{"server", "csr"})
 				if err != nil {
 					fmt.Println("Error: Unable to build the default server.")
 					os.Exit(1)
 					return
 				}
 
-				if verbose{
+				if verbose {
 					fmt.Println("default server built.")
 				}
 			}
-			
 
 			// Config file should be valid now.
 			if err := SaveConfig(); err != nil {
@@ -402,12 +397,9 @@ var initCmd = &cobra.Command{
 				os.Exit(1)
 				return
 			}
-			if verbose{
+			if verbose {
 				fmt.Println("SUCCESS! Your web project has been initialized.")
 			}
-
-
-
 
 			// Process webOptions further
 		} else if mobile != "" {
@@ -423,17 +415,17 @@ var initCmd = &cobra.Command{
 			// Process mobileOptions further TODO
 			if template != "" {
 				// TODO
-			} else{
+			} else {
 				// TODO
 			}
 			fmt.Println("Mobile platform not yet implemented.")
 			os.Exit(1)
-		} else if desktop{
-		
+		} else if desktop {
+
 			// Process desktopOptions further
 			if template != "" {
 				// TODO
-			} else{
+			} else {
 				// TODO
 			}
 
@@ -447,7 +439,7 @@ var initCmd = &cobra.Command{
 			config["terminal"] = ""
 			if template != "" {
 				// TODO
-			} else{
+			} else {
 				// TODO
 			}
 			if err := SaveConfig(); err != nil {
@@ -455,24 +447,24 @@ var initCmd = &cobra.Command{
 				os.Exit(1)
 				return
 			}
-			if verbose{
+			if verbose {
 				fmt.Println("SUCCESS! Your terminal project has been initialized.")
 			}
 		} else {
 			fmt.Println("Error: A platform (web, mobile, desktop, terminal) must be specified.")
 			os.Exit(1)
 		}
-	},	
+	},
 }
 
-func On(platform string) bool{
-	_,ok:= config[platform]
+func On(platform string) bool {
+	_, ok := config[platform]
 	return ok
 }
 
-func createDirectory(path string) error{
-	path,err := filepath.Rel(filepath.Join("."),path)
-	if err!= nil{
+func createDirectory(path string) error {
+	path, err := filepath.Rel(filepath.Join("."), path)
+	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -485,27 +477,26 @@ func createDirectory(path string) error{
 }
 
 func createFile(path, content string) error {
-	path,err := filepath.Rel(filepath.Join("."), path)
-	if err!= nil{
+	path, err := filepath.Rel(filepath.Join("."), path)
+	if err != nil {
 		return err
 	}
 
-    // Convert the content string to a byte slice
-    data := []byte(content)
+	// Convert the content string to a byte slice
+	data := []byte(content)
 
-    // Write the data to the path, os.WriteFile handles creating or truncating the file
-    err = os.WriteFile(path, data, 0644) // 0644 is a common permission setting for writable files
-    if err != nil {
-        return err
-    }
+	// Write the data to the path, os.WriteFile handles creating or truncating the file
+	err = os.WriteFile(path, data, 0644) // 0644 is a common permission setting for writable files
+	if err != nil {
+		return err
+	}
 
-    // Verbose output
-    if verbose {
-        fmt.Printf("%s file created or overwritten.\n", path)
-    }
-    return nil
+	// Verbose output
+	if verbose {
+		fmt.Printf("%s file created or overwritten.\n", path)
+	}
+	return nil
 }
-
 
 // CopyWasmExecJs copies the wasm_exec.js file from the Go distribution to the specified destination directory.
 func CopyWasmExecJs(destinationDir string) error {
@@ -537,7 +528,7 @@ func initGoModule(moduleName string) error {
 	// Check if the current directory is already a go module
 	_, err := os.Stat("go.mod")
 	if err == nil {
-		if verbose{
+		if verbose {
 			fmt.Println("go.mod already exists, skipping module initialization")
 		}
 		return err
@@ -547,10 +538,10 @@ func initGoModule(moduleName string) error {
 	if err != nil {
 		return fmt.Errorf("error initializing go module: %s, output: %s", err, output)
 	}
-	if verbose{
+	if verbose {
 		fmt.Printf("Successfully initialized go module: %s\n", moduleName)
 	}
-	
+
 	return nil
 }
 
@@ -577,40 +568,40 @@ func copyFile(src, dst string) error {
 }
 
 func tryAddToWorkspace() error {
-	ok,err := isGoWorkSet()
-	if err != nil{
+	ok, err := isGoWorkSet()
+	if err != nil {
 		return err
 	}
-    if ok {
-        // Attempt to add the current directory to the workspace
-        cmd := exec.Command("go", "work", "use", "-r", ".")
-        output, err := cmd.CombinedOutput()
-		if err != nil{
+	if ok {
+		// Attempt to add the current directory to the workspace
+		cmd := exec.Command("go", "work", "use", "-r", ".")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
 			return fmt.Errorf("error adding to workspace: %s, output: %s", err, output)
 		}
-    
-		if verbose{
+
+		if verbose {
 			fmt.Println("Successfully added to Go workspace")
 		}
 
-    } else {
-		if verbose{
+	} else {
+		if verbose {
 			fmt.Println("GOWORK is not set, skipping workspace addition")
 		}
-    }
-    return nil
+	}
+	return nil
 }
 
 func isGoWorkSet() (bool, error) {
-    out, err := exec.Command("go", "env", "GOWORK").Output()
-    if err != nil {
-        return false, err
-    }
-    return strings.TrimSpace(string(out)) != "", nil
+	out, err := exec.Command("go", "env", "GOWORK").Output()
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) != "", nil
 }
 
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
-	if On("web"){
+	if On("web") {
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
 
@@ -628,89 +619,87 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		// Ensure the output directory exists
 		//outputDir := filepath.Dir(outputPath)
 		/*
-		outputDirRel,err := filepath.Rel(filepath.Join("."),outputPath)
-		if err!= nil{
-			return err
-		}
-		outputDir := filepath.Dir(outputDirRel)
-		
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			return fmt.Errorf("error creating output directory: %v", err)
-		}
+			outputDirRel,err := filepath.Rel(filepath.Join("."),outputPath)
+			if err!= nil{
+				return err
+			}
+			outputDir := filepath.Dir(outputDirRel)
+
+			if err := os.MkdirAll(outputDir, 0755); err != nil {
+				return fmt.Errorf("error creating output directory: %v", err)
+			}
 		*/
 
-		outputPath,err := filepath.Rel(filepath.Join(".","dev"),outputPath)
-		if err!= nil{
+		outputPath, err := filepath.Rel(filepath.Join(".", "dev"), outputPath)
+		if err != nil {
 			return err
 		}
-
 
 		args := []string{"build"}
 
 		// add ldflags if any relevant
-		ldflags:= ldflags()
+		ldflags := ldflags()
 		if ldflags != "" {
-			args = append(args, "-ldflags", ldflags)	
+			args = append(args, "-ldflags", ldflags)
 		}
 
-		 // Add build tags if provided
+		// Add build tags if provided
 		if len(buildTags) > 0 {
 			args = append(args, "-tags", strings.Join(buildTags, " "))
 		}
-	
+
 		// Add additional command-line arguments if provided
 		if len(cmdArgs) > 0 {
 			args = append(args, cmdArgs...)
 		}
-	
+
 		// Set the output file
 		args = append(args, "-o", outputPath)
-	
+
 		// Specify the source file
 		sourceFile := "."
 		args = append(args, sourceFile)
 
-		if verbose{
-			fmt.Println("Running go build",args)
+		if verbose {
+			fmt.Println("Running go build", args)
 		}
 
 		// Execute the build command
 		cmd := exec.Command("go", args...)
-		cmd.Dir = filepath.Join(".","dev")		
+		cmd.Dir = filepath.Join(".", "dev")
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		if isWasm{
-			cmd.Env = append(cmd.Environ(),"GOOS=js", "GOARCH=wasm")
+		if isWasm {
+			cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 		}
 
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("build failed: %v", err)
 		}
-		
+
 		return nil
 	}
 
-	if On("mobile"){
+	if On("mobile") {
 		// TODO
 		// target aware (android vs ios)
 		return fmt.Errorf("mobile platform not yet implemented")
 	}
 
-	if On("desktop"){
+	if On("desktop") {
 		// TODO
 		return fmt.Errorf("desktop platform not yet implemented")
 	}
 
-	if On("terminal"){
+	if On("terminal") {
 		// TODO
 		return fmt.Errorf("terminal platform not yet implemented")
 	}
 
 	return fmt.Errorf("unknown platform")
 }
-
 
 func runInteractiveMode() {
 	var input string
@@ -719,7 +708,7 @@ func runInteractiveMode() {
 
 	// Prompt for project name
 	fmt.Print("Project name: ")
-	_,err:= fmt.Scanln(&input)
+	_, err := fmt.Scanln(&input)
 	if err != nil {
 		fmt.Println("Error: Unable to read project name input.")
 		os.Exit(1)
@@ -727,8 +716,8 @@ func runInteractiveMode() {
 	}
 	projectName = input
 
-	iloop:
-	for{
+iloop:
+	for {
 		// Prompt for platform
 		fmt.Print(`
 		Choose a platform (1,2,3, or 4): 
@@ -738,7 +727,7 @@ func runInteractiveMode() {
 			4. terminal
 			
 		`)
-		_,err = fmt.Scanln(&platform)
+		_, err = fmt.Scanln(&platform)
 		if err != nil {
 			fmt.Println("Error: Unable to read platform input.")
 			os.Exit(1)
@@ -750,19 +739,21 @@ func runInteractiveMode() {
 			web = true
 			break iloop
 		case 2:
-			platformloop:
+		platformloop:
 			for {
 				fmt.Print("Choose a target for mobile (1 for android, 2 for iOS): ")
-				_,err = fmt.Scanln(&target)
+				_, err = fmt.Scanln(&target)
 				if err != nil {
 					fmt.Println("Error: Unable to read mobile target input.")
 					os.Exit(1)
 					return
 				}
 				switch target {
-				case 1: mobile = "android"
+				case 1:
+					mobile = "android"
 					break platformloop
-				case 2: mobile = "ios"
+				case 2:
+					mobile = "ios"
 					break platformloop
 				default:
 					fmt.Println("Invalid mobile target selected. Try again.")
@@ -790,32 +781,30 @@ func runGraphicMode() {
 func init() {
 	initCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Run the command in interactive mode")
 	initCmd.Flags().BoolVarP(&graphic, "graphic", "g", false, "Run the command in graphic mode")
-	
-	initCmd.Flags().BoolVarP(&web, "web","w", false, "Specify a web target option (csr, ssr, ssg)")
+
+	initCmd.Flags().BoolVarP(&web, "web", "w", false, "Specify a web target option (csr, ssr, ssg)")
 	initCmd.Flags().BoolVarP(&build, "build", "b", false, "Build the project")
 
 	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
-	initCmd.Flags().BoolVarP(&terminal, "terminal", "t",false, "Specify a terminal target option (any additional terminal option can be added here)")
+	initCmd.Flags().BoolVarP(&terminal, "terminal", "t", false, "Specify a terminal target option (any additional terminal option can be added here)")
 	initCmd.Flags().StringVar(&template, "template", "", "Specify a template URL to initialize the project from")
-	
+
 	rootCmd.AddCommand(initCmd)
 }
-
 
 var defaultprojectfile = `
 package main
 
 import (
 	"github.com/atdiar/particleui"
-	"github.com/atdiar/particleui/drivers/js"
-	. "github.com/atdiar/particleui/drivers/js/declarative"
+	. "github.com/atdiar/particleui/drivers/js"
 	"time"
 )
 
-func App() doc.Document {
+func App() Document {
 
-	document:= doc.NewDocument("HelloWorld", doc.EnableScrollRestoration()).EnableWasm()
+	document:= NewDocument("HelloWorld", EnableScrollRestoration()).EnableWasm()
 	
 	var input *ui.Element 
 	var paragraph *ui.Element
@@ -823,14 +812,14 @@ func App() doc.Document {
 
 	// The document observes the input for changes and update the paragraph accordingly.
 	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		doc.ParagraphElement{paragraph}.SetText("Hello, "+evt.NewValue().(ui.String).String()+"!")
+		ParagraphElement{paragraph}.SetText("Hello, "+ evt.NewValue().(ui.String).String() + "!")
 		return false
 	}))
 
 	// the clock element is a ParagraphElement updating every second and which displays the current date.
 	var DisplayDate = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		// Displays the local date and time
-		doc.ParagraphElement{evt.Origin()}.SetText("Today is: "+time.Now().Format("2006-01-02 15:04:05")+"\n")
+		ParagraphElement{evt.Origin()}.SetText("Today is: "+time.Now().Format("2006-01-02 15:04:05")+"\n")
 		return false
 	})
 	
@@ -839,12 +828,12 @@ func App() doc.Document {
 		Children( 
 			E(document.Paragraph(),
 				Ref(&clock),
-				doc.Modifier.OnTick(1* time.Second, DisplayDate),
+				Modifier.OnTick(1* time.Second, DisplayDate),
 			),
 			E(document.Label().For(&input).SetText("What's your name?\n")),
 			E(document.Input.WithID("input", "text"),
 				Ref(&input),
-				doc.SyncValueOnInput(WithStrConv),
+				SyncValueOnInput(WithStrConv),
 			),
 			E(document.Paragraph().SetText("Hello!"),
 				Ref(&paragraph),
@@ -858,7 +847,7 @@ func App() doc.Document {
 }
 
 func main(){
-	ListenAndServe := doc.NewBuilder(App)
+	ListenAndServe := NewBuilder(App)
 	ListenAndServe(nil)
 }
 `

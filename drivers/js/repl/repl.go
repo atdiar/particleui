@@ -327,566 +327,585 @@ var vfs = `
 `
 
 var loaderscript = `
-    globalThis.compiledWasmModules = globalThis.compiledWasmModules || {};
-    const enc = new TextEncoder("utf-8");
-    const dec = new TextDecoder("utf-8");
-
-    globalThis.goStdout = '';
-    globalThis.goStderr = '';
-
-    // working directory should be base? (DEBUG TODO)
-    let wd = '/';
-
-    const process = globalThis.process;
-    process.cwd = () => wd;
-    process.chdir = (dir) => {
-        wd = dir;
-    };
-
-
-	let cmds = {};
-	const manifestUrl = '${PkgDirURL}/manifest.txt'; // Assuming the manifest file is at this URL
- 
-
-    const absPath = (path) => {
-        // if path is absolute, this is noop
-        // if path is relative, prepend the working directory
-        return path.startsWith('/') ? path : wd + path;
-    };
-
-    const isDirectory = (path) => {
-        return path.endsWith('/');
-    };
-
-	const exec = (wasm, args) => new Promise((resolve, reject) => {
-		const go = new Go();
-		go.exit = resolve;
-		go.argv = go.argv.concat(args || ["main.go"]);
-		WebAssembly.instantiate(wasm, go.importObject).then((result) => go.run(result.instance)).catch(reject);
-	});
-
-	const cache = new IndexedDBFileCache();
-    const vfs = globalThis.fs;
-
-    let nextFd = 42; // Start from 42 because 0, 1, and 2 are usually reserved for stdin, stdout, and stderr
-    const openFiles = new Map(); // Map of file descriptors
-
-    const updateParentDirectory = (filePath) => {
-        const parentDir = getParentDirectory(filePath);
-        if (!parentDir) return; // If there's no parent directory, nothing to update
+    "use strict";
     
-        if (!filesystem[parentDir]) {
-            console.warn("Parent directory does not exist for", filePath);
-            return;
-        }
-    
-        const fileName = filePath.split('/').pop(); // Extract the file or directory name
-        if (!filesystem[parentDir].contents.includes(fileName)) {
-            filesystem[parentDir].contents.push(fileName);
-        }
-    };
-    
-    const getParentDirectory = (filePath) => {
-        if (!filePath.includes('/')) return ''; // No parent directory
-    
-        const pathParts = filePath.split('/');
-        pathParts.pop(); // Remove the last part (file or directory name)
-        return pathParts.join('/') + (pathParts.length > 1 ? '/' : ''); // Rejoin the path
-    };
-    
+    (function() {
+        globalThis.compiledWasmModules = globalThis.compiledWasmModules || {};
+        const enc = new TextEncoder("utf-8");
+        const dec = new TextDecoder("utf-8");
 
-    // Constants for open flags
-    const O_CREAT = 1; // Binary 001
-    const O_RDONLY = 2; // Binary 010
-    const O_WRONLY = 4; // Binary 100
-    const O_RDWR = 6;   // Binary 110
-    const O_TRUNC = 8;  // Binary 1000
-    const O_APPEND = 16; // Binary 10000
-
-    fs.open = (path, flags, mode, callback) => {
-        path = absPath(path);
-    
-        // Handle file creation if O_CREAT is set
-        if (flags & O_CREAT && !filesystem[path]) {
-            filesystem[path] = { content: '' }; // Create a new file with empty content
-            updateParentDirectory(path);
-        }
-    
-        // If file doesn't exist and O_CREAT is not set, return an error
-        if (!filesystem[path]) {
-            callback(new Error("ENOENT")); // No such file or directory
-            return;
-        }
-    
-        // Handle file truncation if O_TRUNC is set
-        if (flags & O_TRUNC) {
-            filesystem[path].content = ''; // Truncate the file content
-        }
-    
-        // Create and store the file descriptor
-        const fd = nextFd++;
-        const fileDetails = {
-            path: path,
-            flags: flags,
-            position: (flags & O_APPEND) ? filesystem[path].content.length : 0, // Set position for append mode
-        };
-        openFiles.set(fd, fileDetails);
-    
-        callback(null, fd);
-    };
-
-    fs.close = (fd, callback) => {
-        if (!openFiles.has(fd)) {
-            callback(new Error('Invalid file descriptor'));
-            return;
-        }
-        openFiles.delete(fd);
-        callback(null);
-    };
-
-    fs.read = (fd, buffer, offset, length, position, callback) => {
-        if (!openFiles.has(fd)) {
-            callback(new Error('Invalid file descriptor'));
-            return;
-        }
-
-        const file = openFiles.get(fd);
-        if (!(file.flags & O_RDONLY)) {
-            callback(new Error('File not opened with read access'));
-            return;
-        }
-
-        const fileContent = filesystem[file.path].content;
-        if (position !== null) {
-            file.position = position;
-        }
-        const bytesRead = Math.min(Buffer.from(fileContent).copy(buffer, offset, file.position, file.position + length), length);
-        file.position += bytesRead;
-        callback(null, bytesRead, buffer);
-    };
-
-    fs.write = (fd, buffer, offset, length, position, callback) => {
-        if (!openFiles.has(fd)) {
-            callback(new Error('Invalid file descriptor'));
-            return;
-        }
-    
-        const file = openFiles.get(fd);
-
-        if (fd === 1 || fd === 2) { // Handle stdout and stderr
-            const output = Buffer.from(buffer, offset, length).toString('utf8');
-            if (fd === 1) {
-                globalThis.goStdout += output;  // Append to global stdout
-            } else {
-                globalThis.goStderr += output;  // Append to global stderr
-            }
-            callback(null, length, buffer);
-            return;
-        }
-    
-
-        if (!(file.flags & O_WRONLY)) {
-            callback(new Error('File not opened with write access'));
-            return;
-        }
-
-        const data = Buffer.from(buffer).toString('utf8', offset, offset + length);
-        if (position !== null) {
-            file.position = position;
-        }
-        if (file.flags & O_APPEND) {
-            file.position = filesystem[file.path].content.length; // Append to the end
-        }
-        const bytesWritten = data.length;
-        filesystem[file.path].content = filesystem[file.path].content.slice(0, file.position) + data + filesystem[file.path].content.slice(file.position + bytesWritten);
-        file.position += bytesWritten;
-        callback(null, bytesWritten, buffer);
-    };
-
-    fs.writeSync = (fd, buffer) => {
-        if (!openFiles.has(fd)) {
-            throw new Error('Invalid file descriptor');
-        }
-
-        const file = openFiles.get(fd);
-
-        // Handle stdout and stderr
-        if (fd === 1 || fd === 2) {
-            const output = Buffer.from(buffer).toString('utf8');
-            if (fd === 1) { // stdout
-                globalThis.goStdout += output;  // Append to global stdout
-            } else { // stderr
-                globalThis.goStderr += output;  // Append to global stderr
-            }
-            return buffer.length;
-        }
-
-        if (!(file.flags & O_WRONLY)) {
-            throw new Error('File not opened with write access');
-        }
-
-        const data = Buffer.from(buffer).toString('utf8');
-        if (file.flags & O_APPEND) {
-            file.position = filesystem[file.path].content.length; // Append to the end
-        }
-        const bytesWritten = data.length;
-        filesystem[file.path].content = filesystem[file.path].content.slice(0, file.position) + data + filesystem[file.path].content.slice(file.position + bytesWritten);
-        file.position += bytesWritten;
-        return bytesWritten;
-    };    
-    
-
-    fs.mkdir = (path, perm, callback, createIntermediateDirs = false) => {
-        path = absPath(path);
-        if (!path.endsWith('/')) {
-            path += '/'; // Ensure path ends with a slash
-        }
-
-        const pathParts = path.split('/').filter(p => p);
-        let currentPath = '/';
-
-        for (const part of pathParts) {
-            currentPath += part + '/';
-            if (!filesystem[currentPath]) {
-                if (createIntermediateDirs) {
-                    // Create intermediate directory
-                    filesystem[currentPath] = { contents: [] };
-                    updateParentDirectory(currentPath);
-                } else {
-                    callback(new Error("ENOENT")); // No such file or directory
-                    return;
-                }
-            }
-        }
-        callback(null);
-    };
-
-    
-    
-
-    fs.rmdir = (path, callback) => {
-        path = absPath(path);
-        if (!isDirectory(path) || !filesystem[path]) {
-            callback(new Error('ENOTDIR')); // Not a directory or does not exist
-        } else {
-            delete filesystem[path]; // Remove the directory
-            callback(null);
-        }
-    };
-    
-
-    fs.unlink = (path, callback) => {
-        path = absPath(path);
-        if (isDirectory(path) || !filesystem[path]) {
-            callback(new Error('EISDIR')); // Is a directory or does not exist
-        } else {
-            delete filesystem[path]; // Remove the file
-            callback(null);
-        }
-    };
-    
-
-    fs.rename = (oldPath, newPath, callback) => {
-        oldPath = absPath(oldPath);
-        newPath = absPath(newPath);
-        if (!filesystem[oldPath]) {
-            callback(new Error('ENOENT')); // Source does not exist
-        } else if (filesystem[newPath]) {
-            callback(new Error('EEXIST')); // Destination already exists
-        } else {
-            filesystem[newPath] = filesystem[oldPath]; // Rename/move
-            delete filesystem[oldPath];
-            callback(null);
-        }
-    };
-
-    fs.utimes = (path, atime, mtime, callback) => {
-        path = absPath(path);
-        if (!filesystem[path]) {
-            callback(new Error('ENOENT')); // No such file or directory
-            return;
-        }
-    
-        if (!filesystem[path].metadata) {
-            filesystem[path].metadata = {};
-        }
-    
-        filesystem[path].metadata.atime = atime;
-        filesystem[path].metadata.mtime = mtime;
-    
-        callback(null);
-    };
-
-    fs.stat = fs.lstat = (path, callback) => {
-        path = absPath(path);
-        const file = filesystem[path];
-    
-        if (file === undefined) {
-            const err = new Error('no such file');
-            err.code = 'ENOENT';
-            callback(err);
-            return;
-        }
-    
-        // Determine if the path is a directory
-        const isDirectory = path.endsWith('/');
-    
-        // Set mode bits: 0o40000 for directories, 0o10000 for files
-        let mode = isDirectory ? 0o40000 : 0o10000;
-    
-        callback(null, {
-            mode: mode,
-            dev: 0,
-            ino: 0,
-            nlink: 0,
-            uid: 0,
-            gid: 0,
-            rdev: 0,
-            size: isDirectory ? 0 : file.content.length,
-            blksize: 0,
-            blocks: 0,
-            atimeMs: file.metadata?.atime?.getTime() || Date.now(),
-            mtimeMs: file.metadata?.mtime?.getTime() || Date.now(),
-            ctimeMs: file.metadata?.ctime?.getTime() || Date.now(),
-            isDirectory: () => isDirectory,
-        });
-    };
-    
-
-    fs.fstat = (fd, callback) => {
-        if (!openFiles.has(fd)) {
-            callback(new Error('Invalid file descriptor'));
-            return;
-        }
-    
-        const file = openFiles.get(fd);
-        const filePath = file.path;
-        const fileData = filesystem[filePath];
-    
-        if (!fileData) {
-            callback(new Error('File does not exist'));
-            return;
-        }
-    
-        const isDirectory = filePath.endsWith('/');
-        const mode = isDirectory ? 0o40000 : 0o10000; // Directory or regular file
-    
-        callback(null, {
-            mode: mode,
-            size: isDirectory ? 0 : fileData.content.length,
-            atimeMs: fileData.metadata?.atime?.getTime() || Date.now(),
-            mtimeMs: fileData.metadata?.mtime?.getTime() || Date.now(),
-            ctimeMs: fileData.metadata?.ctime?.getTime() || Date.now(),
-            isDirectory: () => isDirectory,
-            // Other properties as in stat
-        });
-    };
-    
-    
-    
-    
-
-    const readFromGoFS = (path) => {
-        path = absPath(path);
-        return fs[path];
-    };
-
-    const writeToGoFS = (path, data) => {
-        path = absPath(path);
-        if typeof data === 'string' {
-            data = enc.encode(data);
-        }
-        fs[path] = data;
-    };
-
-
-	var gcversionScript = document.getElementById('gcversion');
-	newCompilerVersion = gcversionScript ? (gcversionScript.getAttribute('value') || 0) : 0;
-
-	function getPackageName(path) {
-		const parts = path.split(/[\/.]/);
-		return parts.slice(1, parts.length - 1).join('/');
-	}
-
-	cache.checkAndUpdateVersion(newCompilerVersion, (err) => {
-		if (err) {
-			console.error('Error updating version:', err);
-			return;
-		}
-
-		// Fetch and parse the manifest file
-		fetch(manifestUrl)
-			.then(response => response.text())
-			.then(text => {
-				const manifest = {};
-				text.split("\\n").forEach(line => {
-					const [src, dst] = line.split(" -> ");
-					if (src && dst) {
-						manifest[src] = dst;
-					}
-				});
-				return manifest;
-			})
-			.then(manifest => {
-				const packagePaths = Object.values(manifest);
-                return Promise.all(packagePaths.map(path => cache.fetchAndCacheFile(path)));
-
-				/*
-                Promise.all(
-					packagePaths.map((path) => cache.fetchAndCacheFile(path))
-					.concat(
-						['compile', 'link', 'gofmt'].map(cmd => 
-							cache.fetchAndCacheFile('cmd/' + cmd + '.wasm').then(buf => {
-								cmds[cmd] = new Uint8Array(buf);
-							})
-						)
-					)
-                */
-
-				).then(() => {
-                    // ... populate the in-memory filesystem
-
-					// Dynamically create the contents of /importcfg
-					const importcfgContent = packagePaths.map(p => ` + "`" + `packagefile ${getPackageName(p)}=${p}` + "`" + `).join("\\n");
-					writeToGoFS('/importcfg', enc.encode(importcfgContent));
-
-					// Dynamically create the contents of /importcfg.link
-					const importcfgLinkContent = "packagefile command-line-arguments=main.a\\n" + importcfgContent;
-					writeToGoFS('/importcfg.link', enc.encode(importcfgLinkContent));
-				})
-                .catch(error => console.error('Error processing manifest:', error));
-			});
-	});
-
-    function formatGoCode(replElementID, timeout = 30000) {
-        const textareaID = replElementID + "-textarea";
-        const outputID = replElementID + "-output";
-        let timeoutReached = false;
-        let formatPromise;
         globalThis.goStdout = '';
         globalThis.goStderr = '';
+
+        // working directory should be base? (DEBUG TODO)
+        let wd = '/';
+
+        const process = globalThis.process;
+        process.cwd = () => wd;
+        process.chdir = (dir) => {
+            wd = dir;
+        };
+
+
+        let cmds = {};
+        const manifestUrl = '${PkgDirURL}/manifest.txt'; // Assuming the manifest file is at this URL
     
-        // Timeout handler
-        const timeoutHandler = setTimeout(() => {
-            timeoutReached = true;
-            document.getElementById(outputID).textContent = 'Formatting exceeded the time limit.';
-            if (formatPromise && formatPromise.cancel) {
-                formatPromise.cancel();
+
+        const absPath = (path) => {
+            // if path is absolute, this is noop
+            // if path is relative, prepend the working directory
+            return path.startsWith('/') ? path : wd + path;
+        };
+
+        const isDirectory = (path) => {
+            return path.endsWith('/');
+        };
+
+        const exec = (wasm, args) => new Promise((resolve, reject) => {
+            const go = new Go();
+            go.exit = resolve;
+            go.argv = go.argv.concat(args || ["main.go"]);
+            WebAssembly.instantiate(wasm, go.importObject).then((result) => go.run(result.instance)).catch(reject);
+        });
+
+        const ENOENT = () => {
+            const err = new Error('no such file or directory');
+            err.code = 'ENOENT';
+            return err;
+        }
+
+        const ENOSYS = () => {
+            const err = new Error('function not implemented');
+            err.code = 'ENOSYS';
+            return err;
+        }
+
+        const EEXIST = () => {
+            const err = new Error('file already exists');
+            err.code = 'EEXIST';
+            return err;
+        }
+
+        const cache = new IndexedDBFileCache();
+        const vfs = globalThis.fs;
+
+        let nextFd = 42; // Start from 42 because 0, 1, and 2 are usually reserved for stdin, stdout, and stderr
+        const openFiles = new Map(); // Map of file descriptors
+
+        const updateParentDirectory = (filePath) => {
+            const parentDir = getParentDirectory(filePath);
+            if (!parentDir) return; // If there's no parent directory, nothing to update
+        
+            if (!filesystem[parentDir]) {
+                console.warn("Parent directory does not exist for", filePath);
+                return;
             }
-        }, timeout);
-    
-        formatPromise = new Promise((resolve, reject) => {
-            const goCode = document.getElementById(textareaID).value;
-            writeToGoFS('/main.go', enc.encode(goCode)); // Assuming writeToGoFS is defined
-            exec(cmds['gofmt'], ['-w', '/main.go'])
+        
+            const fileName = filePath.split('/').pop(); // Extract the file or directory name
+            if (!filesystem[parentDir].contents.includes(fileName)) {
+                filesystem[parentDir].contents.push(fileName);
+            }
+        };
+        
+        const getParentDirectory = (filePath) => {
+            if (!filePath.includes('/')) return ''; // No parent directory
+        
+            const pathParts = filePath.split('/');
+            pathParts.pop(); // Remove the last part (file or directory name)
+            return pathParts.join('/') + (pathParts.length > 1 ? '/' : ''); // Rejoin the path
+        };
+        
+
+        // Constants for open flags
+        const O_CREAT = 1; // Binary 001
+        const O_RDONLY = 2; // Binary 010
+        const O_WRONLY = 4; // Binary 100
+        const O_RDWR = 6;   // Binary 110
+        const O_TRUNC = 8;  // Binary 1000
+        const O_APPEND = 16; // Binary 10000
+
+        fs.open = (path, flags, mode, callback) => {
+            path = absPath(path);
+        
+            // Handle file creation if O_CREAT is set
+            if (flags & O_CREAT && !filesystem[path]) {
+                filesystem[path] = { content: '' }; // Create a new file with empty content
+                updateParentDirectory(path);
+            }
+        
+            // If file doesn't exist and O_CREAT is not set, return an error
+            if (!filesystem[path]) {
+                callback(ENOENT()); // No such file or directory
+                return;
+            }
+        
+            // Handle file truncation if O_TRUNC is set
+            if (flags & O_TRUNC) {
+                filesystem[path].content = ''; // Truncate the file content
+            }
+        
+            // Create and store the file descriptor
+            const fd = nextFd++;
+            const fileDetails = {
+                path: path,
+                flags: flags,
+                position: (flags & O_APPEND) ? filesystem[path].content.length : 0, // Set position for append mode
+            };
+            openFiles.set(fd, fileDetails);
+        
+            callback(null, fd);
+        };
+
+        fs.close = (fd, callback) => {
+            if (!openFiles.has(fd)) {
+                callback(new Error('Invalid file descriptor'));
+                return;
+            }
+            openFiles.delete(fd);
+            callback(null);
+        };
+
+        fs.read = (fd, buffer, offset, length, position, callback) => {
+            if (!openFiles.has(fd)) {
+                callback(new Error('Invalid file descriptor'));
+                return;
+            }
+
+            const file = openFiles.get(fd);
+            if (!(file.flags & O_RDONLY)) {
+                callback(new Error('File not opened with read access'));
+                return;
+            }
+
+            const fileContent = filesystem[file.path].content;
+            if (position !== null) {
+                file.position = position;
+            }
+            const bytesRead = Math.min(Buffer.from(fileContent).copy(buffer, offset, file.position, file.position + length), length);
+            file.position += bytesRead;
+            callback(null, bytesRead, buffer);
+        };
+
+        fs.write = (fd, buffer, offset, length, position, callback) => {
+            if (!openFiles.has(fd)) {
+                callback(new Error('Invalid file descriptor'));
+                return;
+            }
+        
+            const file = openFiles.get(fd);
+
+            if (fd === 1 || fd === 2) { // Handle stdout and stderr
+                const output = Buffer.from(buffer, offset, length).toString('utf8');
+                if (fd === 1) {
+                    globalThis.goStdout += output;  // Append to global stdout
+                } else {
+                    globalThis.goStderr += output;  // Append to global stderr
+                }
+                callback(null, length, buffer);
+                return;
+            }
+        
+
+            if (!(file.flags & O_WRONLY)) {
+                callback(new Error('File not opened with write access'));
+                return;
+            }
+
+            const data = Buffer.from(buffer).toString('utf8', offset, offset + length);
+            if (position !== null) {
+                file.position = position;
+            }
+            if (file.flags & O_APPEND) {
+                file.position = filesystem[file.path].content.length; // Append to the end
+            }
+            const bytesWritten = data.length;
+            filesystem[file.path].content = filesystem[file.path].content.slice(0, file.position) + data + filesystem[file.path].content.slice(file.position + bytesWritten);
+            file.position += bytesWritten;
+            callback(null, bytesWritten, buffer);
+        };
+
+        fs.writeSync = (fd, buffer) => {
+            if (!openFiles.has(fd)) {
+                throw new Error('Invalid file descriptor');
+            }
+
+            const file = openFiles.get(fd);
+
+            // Handle stdout and stderr
+            if (fd === 1 || fd === 2) {
+                const output = Buffer.from(buffer).toString('utf8');
+                if (fd === 1) { // stdout
+                    globalThis.goStdout += output;  // Append to global stdout
+                } else { // stderr
+                    globalThis.goStderr += output;  // Append to global stderr
+                }
+                return buffer.length;
+            }
+
+            if (!(file.flags & O_WRONLY)) {
+                throw new Error('File not opened with write access');
+            }
+
+            const data = Buffer.from(buffer).toString('utf8');
+            if (file.flags & O_APPEND) {
+                file.position = filesystem[file.path].content.length; // Append to the end
+            }
+            const bytesWritten = data.length;
+            filesystem[file.path].content = filesystem[file.path].content.slice(0, file.position) + data + filesystem[file.path].content.slice(file.position + bytesWritten);
+            file.position += bytesWritten;
+            return bytesWritten;
+        };    
+        
+
+        fs.mkdir = (path, perm, callback, createIntermediateDirs = false) => {
+            path = absPath(path);
+            if (!path.endsWith('/')) {
+                path += '/'; // Ensure path ends with a slash
+            }
+
+            const pathParts = path.split('/').filter(p => p);
+            let currentPath = '/';
+
+            for (const part of pathParts) {
+                currentPath += part + '/';
+                if (!filesystem[currentPath]) {
+                    if (createIntermediateDirs) {
+                        // Create intermediate directory
+                        filesystem[currentPath] = { contents: [] };
+                        updateParentDirectory(currentPath);
+                    } else {
+                        callback(ENOENT()); // No such file or directory
+                        return;
+                    }
+                }
+            }
+            callback(null);
+        };
+
+        
+        
+
+        fs.rmdir = (path, callback) => {
+            path = absPath(path);
+            if (!isDirectory(path) || !filesystem[path]) {
+                callback(new Error('ENOTDIR')); // Not a directory or does not exist
+            } else {
+                delete filesystem[path]; // Remove the directory
+                callback(null);
+            }
+        };
+        
+
+        fs.unlink = (path, callback) => {
+            path = absPath(path);
+            if (isDirectory(path) || !filesystem[path]) {
+                callback(new Error('EISDIR')); // Is a directory or does not exist
+            } else {
+                delete filesystem[path]; // Remove the file
+                callback(null);
+            }
+        };
+        
+
+        fs.rename = (oldPath, newPath, callback) => {
+            oldPath = absPath(oldPath);
+            newPath = absPath(newPath);
+            if (!filesystem[oldPath]) {
+                callback(ENOENT())); // Source does not exist
+            } else if (filesystem[newPath]) {
+                callback(EEXIST()); // Destination already exists
+            } else {
+                filesystem[newPath] = filesystem[oldPath]; // Rename/move
+                delete filesystem[oldPath];
+                callback(null);
+            }
+        };
+
+        fs.utimes = (path, atime, mtime, callback) => {
+            path = absPath(path);
+            if (!filesystem[path]) {
+                callback(ENOENT()); // No such file or directory
+                return;
+            }
+        
+            if (!filesystem[path].metadata) {
+                filesystem[path].metadata = {};
+            }
+        
+            filesystem[path].metadata.atime = atime;
+            filesystem[path].metadata.mtime = mtime;
+        
+            callback(null);
+        };
+
+        fs.stat = fs.lstat = (path, callback) => {
+            path = absPath(path);
+            const file = filesystem[path];
+        
+            if (file === undefined) {
+                callback(ENOENT());
+                return;
+            }
+        
+            // Determine if the path is a directory
+            const isDirectory = path.endsWith('/');
+        
+            // Set mode bits: 0o40000 for directories, 0o10000 for files
+            let mode = isDirectory ? 0o40000 : 0o10000;
+        
+            callback(null, {
+                mode: mode,
+                dev: 0,
+                ino: 0,
+                nlink: 0,
+                uid: 0,
+                gid: 0,
+                rdev: 0,
+                size: isDirectory ? 0 : file.content.length,
+                blksize: 0,
+                blocks: 0,
+                atimeMs: file.metadata?.atime?.getTime() || Date.now(),
+                mtimeMs: file.metadata?.mtime?.getTime() || Date.now(),
+                ctimeMs: file.metadata?.ctime?.getTime() || Date.now(),
+                isDirectory: () => isDirectory,
+            });
+        };
+        
+
+        fs.fstat = (fd, callback) => {
+            if (!openFiles.has(fd)) {
+                callback(new Error('Invalid file descriptor'));
+                return;
+            }
+        
+            const file = openFiles.get(fd);
+            const filePath = file.path;
+            const fileData = filesystem[filePath];
+        
+            if (!fileData) {
+                callback(new Error('File does not exist'));
+                return;
+            }
+        
+            const isDirectory = filePath.endsWith('/');
+            const mode = isDirectory ? 0o40000 : 0o10000; // Directory or regular file
+        
+            callback(null, {
+                mode: mode,
+                size: isDirectory ? 0 : fileData.content.length,
+                atimeMs: fileData.metadata?.atime?.getTime() || Date.now(),
+                mtimeMs: fileData.metadata?.mtime?.getTime() || Date.now(),
+                ctimeMs: fileData.metadata?.ctime?.getTime() || Date.now(),
+                isDirectory: () => isDirectory,
+                // Other properties as in stat
+            });
+        };
+        
+        
+        
+        
+
+        const readFromGoFS = (path) => {
+            path = absPath(path);
+            return fs[path];
+        };
+
+        const writeToGoFS = (path, data) => {
+            path = absPath(path);
+            if typeof data === 'string' {
+                data = enc.encode(data);
+            }
+            fs[path] = data;
+        };
+
+
+        var gcversionScript = document.getElementById('gcversion');
+        newCompilerVersion = gcversionScript ? (gcversionScript.getAttribute('value') || 0) : 0;
+
+        function getPackageName(path) {
+            const parts = path.split(/[\/.]/);
+            return parts.slice(1, parts.length - 1).join('/');
+        }
+
+        cache.checkAndUpdateVersion(newCompilerVersion, (err) => {
+            if (err) {
+                console.error('Error updating version:', err);
+                return;
+            }
+
+            // Fetch and parse the manifest file
+            fetch(manifestUrl)
+                .then(response => response.text())
+                .then(text => {
+                    const manifest = {};
+                    text.split("\\n").forEach(line => {
+                        const [src, dst] = line.split(" -> ");
+                        if (src && dst) {
+                            manifest[src] = dst;
+                        }
+                    });
+                    return manifest;
+                })
+                .then(manifest => {
+                    const packagePaths = Object.values(manifest);
+                    return Promise.all(packagePaths.map(path => cache.fetchAndCacheFile(path)));
+
+                    /*
+                    Promise.all(
+                        packagePaths.map((path) => cache.fetchAndCacheFile(path))
+                        .concat(
+                            ['compile', 'link', 'gofmt'].map(cmd => 
+                                cache.fetchAndCacheFile('cmd/' + cmd + '.wasm').then(buf => {
+                                    cmds[cmd] = new Uint8Array(buf);
+                                })
+                            )
+                        )
+                    */
+
+                    ).then(() => {
+                        // ... populate the in-memory filesystem
+
+                        // Dynamically create the contents of /importcfg
+                        const importcfgContent = packagePaths.map(p => ` + "`" + `packagefile ${getPackageName(p)}=${p}` + "`" + `).join("\\n");
+                        writeToGoFS('/importcfg', enc.encode(importcfgContent));
+
+                        // Dynamically create the contents of /importcfg.link
+                        const importcfgLinkContent = "packagefile command-line-arguments=main.a\\n" + importcfgContent;
+                        writeToGoFS('/importcfg.link', enc.encode(importcfgLinkContent));
+                    })
+                    .catch(error => console.error('Error processing manifest:', error));
+                });
+        });
+
+        function formatGoCode(replElementID, timeout = 30000) {
+            const textareaID = replElementID + "-textarea";
+            const outputID = replElementID + "-output";
+            let timeoutReached = false;
+            let formatPromise;
+            globalThis.goStdout = '';
+            globalThis.goStderr = '';
+        
+            // Timeout handler
+            const timeoutHandler = setTimeout(() => {
+                timeoutReached = true;
+                document.getElementById(outputID).textContent = 'Formatting exceeded the time limit.';
+                if (formatPromise && formatPromise.cancel) {
+                    formatPromise.cancel();
+                }
+            }, timeout);
+        
+            formatPromise = new Promise((resolve, reject) => {
+                const goCode = document.getElementById(textareaID).value;
+                writeToGoFS('/main.go', enc.encode(goCode)); // Assuming writeToGoFS is defined
+                exec(cmds['gofmt'], ['-w', '/main.go'])
+                    .then(() => {
+                        if (!timeoutReached) {
+                            clearTimeout(timeoutHandler);
+        
+                            if (globalThis.goStderr) {
+                                document.getElementById(outputID).textContent = globalThis.goStderr;
+                                reject(new Error('Formatting failed'));
+                                return;
+                            }
+        
+                            let formattedCode = readFromGoFS('/main.go'); 
+                            document.getElementById(textareaID).value = dec.decode(formattedCode); 
+                            resolve();
+                        }
+                    })
+                    .catch(error => {
+                        if (!timeoutReached) {
+                            clearTimeout(timeoutHandler);
+                            document.getElementById(outputID).textContent = 'Formatting failed: ' + error;
+                            reject(error);
+                        }
+                    });
+            });
+        
+            return formatPromise;
+        }
+        
+
+        function runGoCode(replElementID, timeout = 30000) {
+            const textareaID = replElementID + "-textarea";
+            const outputID = replElementID + "-output";
+            const iframeID = replElementID + "-iframe";
+            let timeoutReached = false;
+            let compilationPromise;
+            globalThis.goStdout = '';
+            globalThis.goStderr = '';
+        
+            // Clear the output area
+            document.getElementById(outputID).textContent = '';
+        
+            // Timeout handler
+            const timeoutHandler = setTimeout(() => {
+                timeoutReached = true;
+                document.getElementById(outputID).textContent = 'Compilation exceeded the time limit.';
+                if (compilationPromise && compilationPromise.cancel) {
+                    compilationPromise.cancel();
+                }
+            }, timeout);
+        
+            compilationPromise = new Promise((resolve, reject) => {
+                const goCode = document.getElementById(textareaID).value;
+                writeToGoFS('/main.go', enc.encode(goCode));
+                exec(cmds['compile'], ['-o', '/main.wasm', '/main.go'])
                 .then(() => {
+                    if (globalThis.goStderr) {
+                        document.getElementById(outputID).textContent = globalThis.goStderr;
+                        reject(new Error('Compilation failed'));
+                        return;
+                    }
+
+                    // Reset stdout and stderr before linking
+                    globalThis.goStdout = '';
+                    globalThis.goStderr = '';
+
+                    return exec(cmds['link'], ['-o', '/main.wasm', '/main.o']);
+                })
+                .then(output => {
+                    if (globalThis.goStderr) {
+                        document.getElementById(outputID).textContent = globalThis.goStderr;
+                        reject(new Error('Linking failed'));
+                        return;
+                    }
+
                     if (!timeoutReached) {
                         clearTimeout(timeoutHandler);
-    
-                        if (globalThis.goStderr) {
-                            document.getElementById(outputID).textContent = globalThis.goStderr;
-                            reject(new Error('Formatting failed'));
-                            return;
+                        if (output) {
+                            // Display compilation errors
+                            document.getElementById(outputID).textContent = new TextDecoder().decode(output);
+                            reject();
+                        } else {
+                            // Handle successful compilation
+                            loadWasmInIframe(iframeID, output);
+                            resolve();
                         }
-    
-                        let formattedCode = readFromGoFS('/main.go'); 
-                        document.getElementById(textareaID).value = dec.decode(formattedCode); 
-                        resolve();
                     }
                 })
                 .catch(error => {
                     if (!timeoutReached) {
                         clearTimeout(timeoutHandler);
-                        document.getElementById(outputID).textContent = 'Formatting failed: ' + error;
-                        reject(error);
+                        document.getElementById(outputID).textContent = 'Compilation failed: ' + error;
+                        reject();
                     }
                 });
-        });
-    
-        return formatPromise;
-    }
-    
-
-    function runGoCode(replElementID, timeout = 30000) {
-        const textareaID = replElementID + "-textarea";
-        const outputID = replElementID + "-output";
-        const iframeID = replElementID + "-iframe";
-        let timeoutReached = false;
-        let compilationPromise;
-        globalThis.goStdout = '';
-        globalThis.goStderr = '';
-    
-        // Clear the output area
-        document.getElementById(outputID).textContent = '';
-    
-        // Timeout handler
-        const timeoutHandler = setTimeout(() => {
-            timeoutReached = true;
-            document.getElementById(outputID).textContent = 'Compilation exceeded the time limit.';
-            if (compilationPromise && compilationPromise.cancel) {
-                compilationPromise.cancel();
-            }
-        }, timeout);
-    
-        compilationPromise = new Promise((resolve, reject) => {
-            const goCode = document.getElementById(textareaID).value;
-            writeToGoFS('/main.go', enc.encode(goCode));
-            exec(cmds['compile'], ['-o', '/main.wasm', '/main.go'])
-            .then(() => {
-                if (globalThis.goStderr) {
-                    document.getElementById(outputID).textContent = globalThis.goStderr;
-                    reject(new Error('Compilation failed'));
-                    return;
-                }
-
-                // Reset stdout and stderr before linking
-                globalThis.goStdout = '';
-                globalThis.goStderr = '';
-
-                return exec(cmds['link'], ['-o', '/main.wasm', '/main.o']);
-            })
-            .then(output => {
-                if (globalThis.goStderr) {
-                    document.getElementById(outputID).textContent = globalThis.goStderr;
-                    reject(new Error('Linking failed'));
-                    return;
-                }
-
-                if (!timeoutReached) {
-                    clearTimeout(timeoutHandler);
-                    if (output) {
-                        // Display compilation errors
-                        document.getElementById(outputID).textContent = new TextDecoder().decode(output);
-                        reject();
-                    } else {
-                        // Handle successful compilation
-                        loadWasmInIframe(iframeID, output);
-                        resolve();
-                    }
-                }
-            })
-            .catch(error => {
-                if (!timeoutReached) {
-                    clearTimeout(timeoutHandler);
-                    document.getElementById(outputID).textContent = 'Compilation failed: ' + error;
-                    reject();
-                }
             });
-        });
-        return formatGoCode(replElementID).then(() => compilationPromise);
-    }
-    
-    function loadWasmInIframe(iframeID, output) {
-        // Create an HTML string that includes the necessary logic to load and run the main.wasm
-        globalThis.compiledWasmModules[iframeID] = output;
-        const html = ` + "`" + iframepage + "`;" + `
+            return formatGoCode(replElementID).then(() => compilationPromise);
+        }
         
-        // Let's set the src doc of the iframe to the html string
-        document.getElementById(iframeID).srcdoc = html;
-    }
+        function loadWasmInIframe(iframeID, output) {
+            // Create an HTML string that includes the necessary logic to load and run the main.wasm
+            globalThis.compiledWasmModules[iframeID] = output;
+            const html = ` + "`" + iframepage + "`;" + `
+            
+            // Let's set the src doc of the iframe to the html string
+            document.getElementById(iframeID).srcdoc = html;
+        }
     
     
-
+    })();
 `
 var iframepage = `
                     <!DOCTYPE html>
@@ -924,5 +943,3 @@ var iframepage = `
                         </body>
                     </html>
                 `
-
-

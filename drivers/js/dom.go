@@ -1673,8 +1673,8 @@ func mutationreplay(d *Document) error {
 // Focus support (includes focus restoration support)
 //
 
-// Focus triggers the focus event asynchronously on the JS side.
-func Focus(e ui.AnyElement, scrollintoview bool) {
+// SetFocus triggers the focus event asynchronously on the JS side.
+func SetFocus(e ui.AnyElement, scrollintoview bool) {
 	if !e.AsElement().Mounted() {
 		return
 	}
@@ -1814,7 +1814,7 @@ func Autofocus(e *ui.Element) *ui.Element {
 		if !r.History.CurrentEntryIsNew() {
 			return false
 		}
-		Focus(e, true)
+		SetFocus(e, true)
 		return false
 	}))
 	return e
@@ -2223,7 +2223,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 			el := getDocumentRef(e).GetElementById(elid)
 
 			if el != nil && el.Mounted() {
-				Focus(el, false)
+				SetFocus(el, false)
 				if newpageaccess {
 					if !partiallyVisible(el) {
 						n.Call("scrollIntoView")
@@ -2237,7 +2237,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 
 			if el != nil && el.Mounted() {
 
-				Focus(el, false)
+				SetFocus(el, false)
 				if newpageaccess {
 					if !partiallyVisible(el) {
 						n.Call("scrollIntoView")

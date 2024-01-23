@@ -29,6 +29,13 @@ to quickly create a Cobra application.`,
 		// And any other potential optimization
 
 		// Add -tinygo flag to build with the tu=inygo compiler if present
+
+		// remove debug info from wasm binary by using ldlflags="-s -w" (TODO)
+
+		// if bynaryen wasm-opt is present, use it to optimize the wasm file (TODO)
+		// On project init check if wasm-opt is present, set a flag on the project manifest
+		// to notify that it can be optimnized with wasm-opt
+		// otherwise, there should be an option to install it from our mirror
 	},
 }
 
