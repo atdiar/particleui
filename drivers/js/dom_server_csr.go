@@ -14,23 +14,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"time"
 	"path/filepath"
 	"log"
+	"sync"
 	
 	"github.com/fsnotify/fsnotify"
 	"github.com/atdiar/particleui"
 
 	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
+	//"golang.org/x/net/html/atom"
 )
 
 var (
-	// DOCTYPE holds the document doctype.
-	DOCTYPE = "html"
-	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE).ApplyGlobalOption(allowDataFetching).EnableMutationCapture()
-
 	uipkg = "github.com/atdiar/particleui"
 
 
@@ -153,10 +148,12 @@ func (w *responseRecorder) Result() *http.Response {
 }
 
 
-// NewBuilder registers a new document building function. 
-// In Server Rendering mode (ssr or csr), it starts a server.
-// It accepts functions that can be used to modify the global state (environment) in which a document is built.
-func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
+// NewBuilder accepts a function that builds a document as a UI tree and returns a function
+// that enables event listening for this document.
+// On the client, these are client side javascrip events.
+// On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
+// for the document.
+var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
 
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
@@ -201,6 +198,9 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
+		var SSEChannel *SSEController
+		var mu  = &sync.Mutex{}
+
 		ServeMux.Handle(BasePath,RenderHTMLhandler)
 		
 		if DevMode != "false"{
@@ -224,15 +224,21 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 			watcher, err := WatchDir(SourcePath, func(event fsnotify.Event) {
 				// Only rebuild if the event is for a .go file
 				if filepath.Ext(event.Name) == ".go" {
-					// path to main.go
-					sourceFile := filepath.Join(SourcePath, "main.go")
-					// let's build main.go TODO: shouldn't rebuild the server.. might need to 
-					// review impl of zui (or not, here it should be agnostic so might as well 
-					// reimplement the logic with the few specific requirements)
+					// file name: main.go
+					sourceFile := "main.go"
+					
 					// Ensure the output directory is already existing
 					if _, err := os.Stat(StaticPath); os.IsNotExist(err) {
 						panic("Output directory should already exist")
 					}
+
+
+					targetPath, err:= filepath.Rel(SourcePath,StaticPath)
+					if err != nil{
+						panic(err)
+					}
+					targetPath = filepath.Join(targetPath,"main.wasm")
+
 					// add the relevant build and linker flags
 					args := []string{"build"}
 					ldflags:= ldflags()
@@ -240,16 +246,15 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 						args = append(args, "-ldflags", ldflags)	
 					}
 
-					args = append(args, "-o", StaticPath)
+					args = append(args, "-o", targetPath, sourceFile)
 
-					args = append(args, sourceFile)
 					cmd := exec.Command("go", args...)
 					cmd.Stdout = os.Stdout
 					cmd.Stderr = os.Stderr
-					cmd.Dir = SourcePath
+					cmd.Dir = SourcePath // current directory where the build command is run
 					cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 
-					err := cmd.Run()
+					err = cmd.Run()
 					if err == nil {
 						fmt.Println("main.wasm was rebuilt.")
 					}						
@@ -267,8 +272,10 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				
 				wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
 					// Send event to trigger a page reload
+					log.Println("Something changed: ", event.String()) // DEBUG
 					mu.Lock()
 					SSEChannel.SendEvent("reload",event.String(),"","")
+					log.Println("reload Event sent to frontend") // DEBUG
 					mu.Unlock()
 				})
 				if err != nil{
@@ -278,7 +285,12 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 				defer wc.Close()
 				activehmr = true				
 				ServeMux.Handle("/sse", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					NewSSEController().ServeHTTP(w, r)
+					log.Println("SSE connection established")
+					s:= NewSSEController()
+					mu.Lock()
+					SSEChannel = s
+					mu.Unlock()
+					s.ServeHTTP(w, r)
 				}))
 			}
 		}
@@ -318,432 +330,6 @@ func NewBuilder(f func()Document, buildEnvModifiers ...func())(ListenAndServe fu
 }
 
 
-func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
-	return observable
-}
-
-var titleElementChangeHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // abstractjs
-	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
-	return false
-})
-
-var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{ // abstractjs
-	return false
-})
-
-var navinitHandler =  ui.NewMutationHandler(func(evt ui.MutationEvent) bool {// abstractjs
-	return false
-})
-
-var checkDOMready = NoopMutationHandler
-
-// SetInnerHTML sets the innerHTML property of HTML elements.
-// Please note that it is unsafe to sets client submitted HTML inputs.
-func SetInnerHTML(e *ui.Element, innerhtml string) *ui.Element {
-	p,err:= html.Parse(strings.NewReader(innerhtml))
-	if err!=nil{
-		panic(err)
-
-	}
-	e.Native.(NativeElement).SetChildren(nil)
-	e.Native.(NativeElement).Value.AppendChild(p)
-	return e
-}
-
-// setTextContent sets the textContent of HTML elements.
-func setTextContent(e *ui.Element, text string) *ui.Element {
-
-	n:= e.Native.(NativeElement).Value
-	f:= n.FirstChild
-	c:= f
-	for c != nil{
-		if c.Type == html.TextNode{
-			c.Data = text
-			return e
-		}
-		c = f.NextSibling
-	}
-	n.AppendChild(textNode(text))
-	return e
-}
-
-func textNode(s string) *html.Node{
-	return &html.Node{Type: html.TextNode,Data: s}
-}
-
-// LoadFromStorage will load an element properties.
-// If the corresponding native DOM Element is marked for hydration, by the presence of a data-hydrate
-// atribute, the props are loaded from this attribute instead.
-// abstractjs
-func LoadFromStorage(e *ui.Element) *ui.Element {
-	return e
-}
-
-// PutInStorage stores an element properties in storage (localstorage or sessionstorage).
-func PutInStorage(e *ui.Element) *ui.Element{
-	return e
-}
-
-// ClearFromStorage will clear an element properties from storage.
-func ClearFromStorage(e *ui.Element) *ui.Element{
-	return e
-}
-
-func isPersisted(e *ui.Element) bool{
-	return false
-}
-
-func ConnectNative(e *ui.Element, tag string) (ui.NativeElement,bool){
-	if tag == "window"{
-		return  NewNativeElementWrapper(nil), true
-	}
-
-	n := &html.Node{}
-	n.Type = html.ElementNode
-	n.Data = tag
-	n.DataAtom = atom.Lookup([]byte(tag))
-
-	return NewNativeElementWrapper(n), true
-}
-
-// NativeElement defines a wrapper around a *html.Node that implements the
-// ui.NativeElementWrapper interface.
-type NativeElement struct {
-	Value *html.Node
-}
-
-func NewNativeElementWrapper(n *html.Node) NativeElement {
-	return NativeElement{n}
-}
-
-func (n NativeElement) AppendChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	n.Value.AppendChild(c)
-}
-
-func (n NativeElement) PrependChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	n.Value.InsertBefore(c, n.Value.FirstChild)
-	
-}
-
-func (n NativeElement) InsertChild(child *ui.Element, index int) {
-	if index < 0{
-		panic("index must be a positive integer")
-	}
-	if n.Value.FirstChild == nil{
-		n.AppendChild(child)
-		return
-	}
-
-	var currentAtIndex = n.Value.FirstChild
-	var idx int
-	
-	
-	for i:= 0; i<= index;i++{
-		if currentAtIndex.NextSibling == nil{
-			if i < index{
-				currentAtIndex = n.Value.LastChild
-				idx = -1
-			}
-			break
-		}
-		currentAtIndex = currentAtIndex.NextSibling
-		idx++
-	}
-
-	if idx == -1{
-		n.AppendChild(child)
-		return 
-	}
-
-	n.Value.InsertBefore(child.Native.(NativeElement).Value, currentAtIndex)
-
-}
-
-func (n NativeElement) ReplaceChild(old *ui.Element, new *ui.Element) {
-	oldc:= old.Native.(NativeElement).Value
-	newc:= new.Native.(NativeElement).Value
-	if oldc.Parent == n.Value {
-		n.Value.InsertBefore(newc,oldc)
-		n.Value.RemoveChild(oldc)
-	}
-}
-
-func (n NativeElement) RemoveChild(child *ui.Element) {
-	c:= child.Native.(NativeElement).Value
-	if c.Parent == n.Value{
-		n.Value.RemoveChild(c)
-	}
-}
-
-func (n NativeElement) SetChildren(children ...*ui.Element) {
-	// first we need to delete children if there are any
-	var stop bool
-	var current = n.Value.FirstChild
-
-	if current != nil{
-		for !stop{
-			next := current.NextSibling
-			if next == nil{
-				stop = true
-			}
-			n.Value.RemoveChild(current)
-			current = next
-		}
-	}
-
-	for _,c:= range children{
-		n.AppendChild(c)
-	}
-}
-
-func activityStateSupport (e *ui.Element) *ui.Element{return e}
-
-var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e *ui.Element) *ui.Element {
-	return e
-})
-
-func Focus(e ui.AnyElement, scrollintoview bool){}
-
-func IsInViewPort(e *ui.Element) bool{
-	return true
-}
-
-func TrapFocus(e *ui.Element) *ui.Element{ return e}
-
-func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element) *ui.Element {
-	return func(e *ui.Element) *ui.Element {
-		return e
-	}
-}
-
-
-func (i InputElement) Blur() {}
-
-func (i InputElement) Focus() {}
-
-func (i InputElement) Clear() {}
-
-
-
-func newTimeRanges() jsTimeRanges{
-	var j = ui.NewObject()
-
-	var length int
-	
-	j.Set("length",ui.Number(length))
-
-	j.Set("start",ui.NewList().Commit())
-	j.Set("end",ui.NewList().Commit())
-	return jsTimeRanges(j.Commit())
-}
-
-
-func(a AudioElement) Buffered() jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(a AudioElement)CurrentTime() time.Duration{
-	return 0
-}
-
-func(a AudioElement)Duration() time.Duration{
-	return  0
-}
-
-func(a AudioElement)PlayBackRate() float64{
-	return 0
-}
-
-func(a AudioElement)Ended() bool{
-	return false
-}
-
-func(a AudioElement)ReadyState() float64{
-	return 0
-}
-
-func(a AudioElement)Seekable()  jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(a AudioElement) Volume() float64{
-	return  0
-}
-
-
-func(a AudioElement) Muted() bool{
-	return false
-}
-
-func(a AudioElement) Paused() bool{
-
-	return false
-}
-
-func(a AudioElement) Loop() bool{
-	// TODO get from attr ?
-	return false
-}
-
-
-
-func(v VideoElement) Buffered() jsTimeRanges{
-	// TODO get from attr ?
-	return newTimeRanges()
-}
-
-func(v VideoElement)CurrentTime() time.Duration{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Duration() time.Duration{
-	// TODO get from attr ?
-	return  0
-}
-
-func(v VideoElement)PlayBackRate() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Ended() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement)ReadyState() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-func(v VideoElement)Seekable()  jsTimeRanges{
-	return newTimeRanges()
-}
-
-func(v VideoElement) Volume() float64{
-	// TODO get from attr ?
-	return 0
-}
-
-
-func(v VideoElement) Muted() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement) Paused() bool{
-	// TODO get from attr ?
-	return false
-}
-
-func(v VideoElement) Loop() bool{
-	// TODO get from attr ?
-	return false
-}
-
-
-
-func enableClasses(e *ui.Element) *ui.Element {
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		target := evt.Origin()
-		_, ok := target.Native.(NativeElement)
-		if !ok {
-			log.Print("wrong type for native element or native element does not exist")
-			return true
-		}
-		classes, ok := evt.NewValue().(ui.String)
-		if !ok {
-			log.Print("new value of non-string type. Unable to use as css class(es)")
-			return true
-		}
-
-		if len(strings.TrimSpace(string(classes))) != 0 {
-			SetAttribute(evt.Origin(),"class",string(classes))
-			return false
-		}
-		RemoveAttribute(evt.Origin(),"class")
-		return false
-	})
-	e.Watch("css", "class", e, h)
-	return e
-}
-
-func GetAttribute(target *ui.Element, name string) string {
-	for _,a:= range target.Native.(NativeElement).Value.Attr{
-		if a.Key == name{
-			return a.Val
-		}
-		continue
-	}
-	return ""
-}
-
-func SetAttribute(target *ui.Element, name string, value string) {
-	Attrs:= target.Native.(NativeElement).Value.Attr
-
-	for _,a:= range Attrs{
-		if a.Key == name{
-			a.Val = value
-			return
-		}
-		continue
-	}
-	Attrs = append(Attrs,html.Attribute{"",name,value})
-
-}
-
-// abstractjs
-func RemoveAttribute(target *ui.Element, name string) {
-	Attrs:= target.Native.(NativeElement).Value.Attr
-	var index = -1
-
-	for i,a:= range Attrs{
-		if a.Key == name{
-			index = i
-			break
-		}
-		continue
-	}
-	if index > -1{
-		copy(Attrs[:index],Attrs[index+1:])
-		Attrs[len(Attrs)-1]=html.Attribute{}
-		Attrs = Attrs[:len(Attrs)-1]
-	}
-
-}
-
-
-var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	str := string(evt.NewValue().(ui.String))
-	setTextContent(evt.Origin(),str)
-	return false
-})
-
-var paragraphTextHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	setTextContent(evt.Origin(),string(evt.NewValue().(ui.String)))
-	return false
-})
-
-func numericPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-func boolPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-func stringPropertyWatcher(propname string) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
-
-func clampedValueWatcher(propname string, min int,max int) *ui.MutationHandler{
-	return ui.NoopMutationHandler
-}
-
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -754,11 +340,11 @@ func (d Document) Render(w io.Writer) error {
 func newHTMLDocument(document Document) *html.Node {
 	doc := document.AsElement()
 	h:= &html.Node{Type: html.DoctypeNode}
-	n:= doc.Native.(NativeElement).Value
+	n:= doc.Native.(NativeElement).Value.Node()
 	h.AppendChild(n)
 	statenode:= generateStateHistoryRecordElement(doc) // TODO review all this logic
 	if statenode != nil{
-		document.Head().AsElement().Native.(NativeElement).Value.AppendChild(statenode)
+		document.Head().AsElement().Native.(NativeElement).Value.Call("appenChild",statenode)
 	}
 
 	return h

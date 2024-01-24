@@ -62,7 +62,6 @@ var SSEscript = `
 
 	// Listen for the 'reload' event
 	eventSource.addEventListener('reload', function(event) {
-		console.log('Reload event received, refreshing the page');
 		window.location.reload(); // Reload the browser
 	});
 
@@ -249,7 +248,7 @@ func (n NativeElement) Delete(child *ui.Element) {
 	}
 }
 
-// JSValue retrieves the js.Value corresponding to the Element submmitted as
+// JSValue retrieves the js.Value corresponding to the Element submitted as
 // argument.
 func JSValue(el ui.AnyElement) (js.Value, bool) { // TODO  unexport
 	e := el.AsElement()
@@ -668,6 +667,10 @@ func (w Window) SetTitle(title string) {
 	w.AsElement().SetDataSetUI("title", ui.String(title))
 }
 
+func (w Window) Reload() {
+	w.Raw.TriggerEvent("reload")
+}
+
 // TODO see if can get height width of window view port, etc.
 
 var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui.Element {
@@ -676,6 +679,14 @@ var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui
 	e.ElementStore = Elements
 	e.Parent = e
 	ConnectNative(e, "window")
+
+	e.AfterEvent("reload", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		j,ok:= JSValue(evt.Origin())
+		if ok{
+			j.Call("location","reload")
+		}
+		return false
+	}))
 
 	return e
 })
@@ -707,6 +718,7 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 		PutInStorage(e)
 		return false
 	}))
+
 	return e
 })
 
@@ -1230,6 +1242,13 @@ func (d Document) SetFavicon(href string) {
 	d.AsElement().SetDataSetUI("favicon", ui.String(href))
 }
 
+// NewBuilder accepts a function that builds a document as a UI tree and returns a function
+// that enables event listening for this document.
+// On the client, these are client side javascrip events.
+// On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
+// for the document.
+// var NewBuilder func(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context))
+
 // Document styles in stylesheet
 
 type StyleSheet struct {
@@ -1476,7 +1495,7 @@ func (m mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(&d)
 	if err != nil {
-		DEBUG("error occured when replaying mutations", err)
+		DEBUG("error occured when replaying mutations: ", err)
 		return ui.ErrReplayFailure
 	}
 
@@ -1630,8 +1649,7 @@ func mutationreplay(d *Document) error {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
 
-	DEBUG("trace: ", mutationtrace.UnsafelyUnwrap())
-	DEBUG("trace length: ", len(mutationtrace.UnsafelyUnwrap()))
+	DEBUG(mutationtrace)
 
 	for _, rawop := range mutationtrace.UnsafelyUnwrap() {
 		op := rawop.(ui.Object)
@@ -1657,6 +1675,7 @@ func mutationreplay(d *Document) error {
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
+			DEBUG("Unable to recover state for this element id. Element  doesn't exist", id, cat, prop, val)
 			return ui.ErrReplayFailure
 		}
 
@@ -1876,7 +1895,6 @@ func withNativejshelpers(d *Document) *Document {
 				x = x || 0;
 				y = y || 0;
 				queueMicrotask(() => window.scrollToElement(element, x, y));
-				console.log('scrolling to element',x,y);
 			};
 
 			(function() {
@@ -1887,14 +1905,12 @@ func withNativejshelpers(d *Document) *Document {
 	
 				// Proxy the scrollTo method
 				window.scrollTo = function() {
-					console.log('scrollTo', arguments);
 					return originalScrollTo.apply(this, arguments);
 				};
 	
 				// Proxy scrollTop
 				Object.defineProperty(Element.prototype, 'scrollTop', {
 					set: function(value) {
-						console.log('scrollTop', value);
 						originalScrollTopSetter.call(this, value);
 					}
 				});
@@ -1902,7 +1918,6 @@ func withNativejshelpers(d *Document) *Document {
 				// Proxy scrollLeft
 				Object.defineProperty(Element.prototype, 'scrollLeft', {
 					set: function(value) {
-						console.log('scrollLeft', value);
 						originalScrollLeftSetter.call(this, value);
 					}
 				});
@@ -2038,7 +2053,10 @@ var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 })
 
 func activityStateSupport(e *ui.Element) *ui.Element {
-	GetDocument(e).Window().AsElement().AddEventListener("pagehide", ui.NewEventHandler(func(evt ui.Event) bool {
+	d:= GetDocument(e)
+	w:= d.Window().AsElement()
+
+	w.AddEventListener("pagehide", ui.NewEventHandler(func(evt ui.Event) bool {
 		e.TriggerEvent("before-unactive")
 		return false
 	}))
@@ -2049,6 +2067,12 @@ func activityStateSupport(e *ui.Element) *ui.Element {
 		if visibilityState == "hidden" {
 			e.TriggerEvent("before-unactive")
 		}
+		return false
+	}))
+
+	
+	d.WatchEvent("reload", w, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.TriggerEvent("before-unactive")
 		return false
 	}))
 
@@ -6432,55 +6456,60 @@ var Modifier modifier
 
 func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		tickname := strings.Join([]string{"ticker", interval.String(), time.Now().String()}, "-")
+		GetDocument(e).OnReady(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+			tickname := strings.Join([]string{"ticker", interval.String(), time.Now().String()}, "-")
 
-		// Let's check if the ticker has already been initialized.
-		if _, ok := e.GetEventValue(tickname); ok {
-			e.WatchEvent(tickname, e, h)
-			return e
-		}
-
-		var t *time.Ticker
-
-		t = time.NewTicker(interval)
-
-		initticker := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			e.TriggerEvent(tickname) // for init purposes
-
-			evt.Origin().OnMounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
-				t.Reset(interval)
+			// Let's check if the ticker has already been initialized.
+			if _, ok := e.GetEventValue(tickname); ok {
+				e.WatchEvent(tickname, e, h)
 				return false
-			}))
+			}
 
-			evt.Origin().OnUnmounted(ui.NewMutationHandler(func(event ui.MutationEvent) bool {
-				t.Stop()
-				return false
-			}))
+			var t *time.Ticker
 
-			var stop chan struct{}
-			evt.Origin().OnDeleted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
-				close(stop)
-				return false
-			}).RunOnce())
+			t = time.NewTicker(interval)
 
-			ui.DoAsync(nil, func(ctx context.Context) {
-				for {
-					select {
-					case <-t.C:
-						ui.DoSync(func() {
-							e.TriggerEvent(tickname)
-						})
-					case <-stop:
-						return
+			initticker := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				e.TriggerEvent(tickname) // for init purposes
+
+				evt.Origin().OnMounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+					t.Reset(interval)
+					return false
+				}))
+
+				evt.Origin().OnUnmounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+					t.Stop()
+					return false
+				}))
+
+				var stop chan struct{}
+				evt.Origin().OnDeleted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+					close(stop)
+					return false
+				}).RunOnce())
+
+				ui.DoAsync(nil, func(ctx context.Context) {
+					for {
+						select {
+						case <-t.C:
+							ui.DoSync(func() {
+								e.TriggerEvent(tickname)
+							})
+						case <-stop:
+							return
+						}
 					}
-				}
-			})
+				})
+				return false
+			}).RunOnce().RunASAP()
+
+			e.OnMounted(initticker)
+
+			e.WatchEvent(tickname, e, h)
+			
 			return false
-		}).RunOnce().RunASAP()
-
-		e.OnMounted(initticker)
-
-		e.WatchEvent(tickname, e, h)
+		}).RunASAP())
+		
 		return e
 	}
 }

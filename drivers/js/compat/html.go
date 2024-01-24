@@ -119,7 +119,6 @@ func (v Value) Call(method string, args ...interface{}) Value {
 		return Undefined()
 
 	case "createElement":
-		node := v.Node() // This will panic if v is not a Node
 		if len(args) == 1 {
 			if tagName, ok := args[0].(string); ok {
 				newNode := &html.Node{
@@ -132,7 +131,6 @@ func (v Value) Call(method string, args ...interface{}) Value {
 		return Undefined()
 
 	case "createTextNode":
-		node := v.Node() // This will panic if v is not a Node
 		if len(args) == 1 {
 			if text, ok := args[0].(string); ok {
 				newNode := &html.Node{
@@ -257,7 +255,9 @@ func (v Value) Call(method string, args ...interface{}) Value {
 		nodes := v.nodes()
 		if nodes != nil {
 			for _, node := range nodes {
-				node.Call("remove")
+				if node.Parent != nil {
+					node.Parent.RemoveChild(node)
+				}
 			}
 			return Undefined()
 		}

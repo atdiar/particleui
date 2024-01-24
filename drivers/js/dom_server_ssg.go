@@ -158,9 +158,11 @@ func (w *responseRecorder) Result() *http.Response {
 	}
 }
 
-// NewBuilder registers a new document building function.
-// In Server Rendering mode (ssr or csr), it starts a server.
-// It accepts functions that can be used to modify the global state (environment) in which a document is built.
+// NewBuilder accepts a function that builds a document as a UI tree and returns a function
+// that enables event listening for this document.
+// On the client, these are client side javascrip events.
+// On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
+// for the document.
 func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(ctx context.Context)) {
 	fileServer := http.FileServer(http.Dir(StaticPath))
 

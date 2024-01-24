@@ -11,10 +11,8 @@ import (
     "github.com/fsnotify/fsnotify"
 
     "sync"
+    "time"
 )
-
-var SSEChannel *SSEController
-var mu sync.Mutex
 
 // EventCallback is a function type for handling fsnotify events
 type EventCallback func(event fsnotify.Event)
@@ -47,21 +45,41 @@ func WatchDir(root string, callback func(event fsnotify.Event)) (*fsnotify.Watch
 
     // Goroutine for handling all events
     go func() {
+        var debounceTimer *time.Timer
+        debounceDuration := 30 * time.Millisecond // Set your debounce duration
+        var mu sync.Mutex
+        var lastEvent fsnotify.Event
+    
+        triggerCallback := func() {
+            mu.Lock()
+            defer mu.Unlock()
+            callback(lastEvent)
+            debounceTimer = nil
+        }
+    
         for {
             select {
             case event, ok := <-watcher.Events:
                 if !ok {
                     return
                 }
+    
                 // Automatically add newly created directories to the watcher
-                if event.Op&fsnotify.Create == fsnotify.Create {
+                if event.Has(fsnotify.Create) {
                     info, err := os.Stat(event.Name)
                     if err == nil && info.IsDir() {
                         watcher.Add(event.Name)
                     }
                 }
-                callback(event) // Invoke the callback for every event
-
+                log.Println("New fs event:", event) // DEBUG
+                mu.Lock()
+                lastEvent = event // Update the last event
+                if debounceTimer != nil {
+                    debounceTimer.Stop()
+                }
+                debounceTimer = time.AfterFunc(debounceDuration, triggerCallback)
+                mu.Unlock()
+    
             case err, ok := <-watcher.Errors:
                 if !ok {
                     return
@@ -70,7 +88,7 @@ func WatchDir(root string, callback func(event fsnotify.Event)) (*fsnotify.Watch
             }
         }
     }()
-
+    
     return watcher, nil
 }
 
@@ -93,12 +111,12 @@ func (m message) String() string {
     idstr := "id: " + m.id + "\n"
     retrystr := "retry: " + m.retry + "\n"
     endstr := "\n\n"
-    msgstr := valif(m.event != "", eventstr, "") + valif(m.data != "" || (m.event != "" && m.data == ""), datastr, "") + valif(m.id != "", idstr, "") + valif(m.retry != "", retrystr, "") + endstr
+    msgstr := condVal(m.event != "", eventstr, "") + condVal(m.data != "" || (m.event != "" && m.data == ""), datastr, "") + condVal(m.id != "", idstr, "") + condVal(m.retry != "", retrystr, "") + endstr
     return msgstr
 }
 
 
-func valif[T any](condition bool, valueIfTrue T, valueIfFalse T) T {
+func condVal[T any](condition bool, valueIfTrue T, valueIfFalse T) T {
     if condition {
         return valueIfTrue
     }
@@ -112,14 +130,10 @@ type SSEController struct{
 }
 
 func NewSSEController() *SSEController {
-    s:= &SSEController{
+    return &SSEController{
         Message: make(chan string),
         Once: &sync.Once{},
     }
-    mu.Lock()
-    defer mu.Unlock()
-    SSEChannel = s
-    return s
 }
 
 func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -130,25 +144,43 @@ func(s *SSEController) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+    fmt.Println("New client connected, ready to receive messages...")
+
     // Set the headers related to SSE
     w.Header().Set("Content-Type", "text/event-stream")
     w.Header().Set("Cache-Control", "no-cache")
     w.Header().Set("Connection", "keep-alive")
     w.Header().Set("Access-Control-Allow-Origin", "*")
 
-    // Listen to the relevant channels for events
+    clientMsgChan := make(chan string)
+    clientClosed := make(chan struct{})
+
+    // Goroutine to handle sending messages to this client
+    go func() {
+        for {
+            select {
+            case msg, ok := <-clientMsgChan:
+                if !ok {
+                    return // Exit goroutine if channel is closed
+                }
+                fmt.Fprintf(w, "%s", msg)
+                fw.Flush()
+            case <-clientClosed:
+                return // Exit goroutine if client is disconnected
+            }
+        }
+    }()
+
     for {
         select {
         case <-r.Context().Done():
-            // Close the channel if the connection is closed
-            s.Once.Do(func(){
-                close(s.Message)
-            })
+            fmt.Println("Connection closed from client")
+            close(clientClosed) // Notify the sending goroutine to stop
+            close(clientMsgChan) // Close the channel to stop sending messages
             return
         case msg := <-s.Message:
-            // Send the message to the client
-            fmt.Fprintf(w, "%s", msg)
-            fw.Flush()
+            // Send the message to the client-specific channel
+            clientMsgChan <- msg
         }
     }
 }

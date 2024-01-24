@@ -810,12 +810,7 @@ func App() Document {
 	var paragraph *ui.Element
 	var clock *ui.Element
 
-	// The document observes the input for changes and update the paragraph accordingly.
-	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-		ParagraphElement{paragraph}.SetText("Hello, "+ evt.NewValue().(ui.String).String() + "!")
-		return false
-	}))
-
+	
 	// the clock element is a ParagraphElement updating every second and which displays the current date.
 	var DisplayDate = ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
 		// Displays the local date and time
@@ -841,7 +836,11 @@ func App() Document {
 		),
 	)
 
-	
+	// The document observes the input for changes and update the paragraph accordingly.
+	document.Watch("data","value",input, ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+		ParagraphElement{paragraph}.SetText("Hello, "+ evt.NewValue().(ui.String).String() + "!")
+		return false
+	}))
 	
 	return document
 }
