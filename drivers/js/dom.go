@@ -4,9 +4,7 @@ package doc
 
 import (
 	"context"
-	crand "crypto/rand"
-	"encoding/base64"
-	"encoding/binary"
+	//crand "crypto/rand"
 	"encoding/json"
 	"encoding/xml"
 	//"errors"
@@ -16,15 +14,16 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"hash/fnv"
 
-	//"math/rand"
+	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"runtime"
 	"time"
 
-	"golang.org/x/exp/rand"
+	//"golang.org/x/exp/rand"
 
 	"github.com/atdiar/particleui"
 )
@@ -93,9 +92,11 @@ func InBrowser() bool {
 	return false
 }
 
+/*
 // newIDgenerator returns a function used to create new IDs. It uses
 // a Pseudo-Random Number Generator (PRNG) as it is desirable to generate deterministic sequences.
-// Evidently, as users navigate the app differently and may create new Elements
+// Evidently, as users navigate the app differently and may create new Elements with those assigned IDs,
+// element IDs may be differ from one run to the other unless the app state evolution is being replayed faithfully.
 func newIDgenerator(charlen int, seed uint64) func() string {
 	source := rand.NewSource(seed)
 	r := rand.New(source)
@@ -110,7 +111,9 @@ func newIDgenerator(charlen int, seed uint64) func() string {
 	}
 }
 
-var newID = newIDgenerator(16, uint64(time.Now().UnixNano()))
+//var newID = newIDgenerator(16, uint64(time.Now().UnixNano()))
+
+*/
 
 func SerializeStateHistory(e *ui.Element) string {
 	m := GetDocument(e).mutationRecorder().raw
@@ -683,7 +686,7 @@ var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui
 	e.AfterEvent("reload", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		j,ok:= JSValue(evt.Origin())
 		if ok{
-			j.Call("location","reload")
+			j.Get("location").Call("reload")
 		}
 		return false
 	}))
@@ -1003,7 +1006,6 @@ type Document struct {
 	// id generator with serializable state
 	// used to generate unique ids for elements
 	rng *rand.Rand
-	src *rand.PCGSource
 
 	// Document should hold the list of all element constructors such as Meta, Title, Div, San etc.
 	body      gconstructor[BodyElement, bodyConstructor]
@@ -1073,56 +1075,22 @@ type Document struct {
 	HttpClient  *http.Client
 }
 
+/*
 func (d *Document) initializeIDgenerator() {
 	var seed uint64
+	h := fnv.New64a()
+    h.Write([]byte(d.AsElement().ID))
+	seed = h.Sum64()
+
 	err := binary.Read(crand.Reader, binary.LittleEndian, &seed)
 	if err != nil {
 		panic(err)
 	}
 	d.src = &rand.PCGSource{}
-	d.src.Seed(seed)
 	d.rng = rand.New(d.src)
-	d.saveIDgeneratorState() // saves the initial state. Useful when replaying the app mutaton trace.
-
-	d.Watch("internals", "PCGSate", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		// pcgstate should be a ui.String. We should recover the PCGSOurce from it by using UnmarshalBinary.
-		pcgstr := evt.NewValue().(ui.String).String()
-		pcg, err := base64.StdEncoding.DecodeString(pcgstr)
-		if err != nil {
-			panic(err)
-		}
-		d.src = &rand.PCGSource{}
-		d.src.UnmarshalBinary(pcg)
-		d.rng = rand.New(d.src)
-		return false
-	}))
+	d.rng.Seed(seed)
 }
-
-func (d *Document) tryLoadIDgeneratorState() {
-	pcgstate, ok := d.Get("internals", "PCGSate")
-	if !ok {
-		panic("failed to find ID generator state")
-	}
-	// pcgstate should be a ui.String. We should recover the PCGSOurce from it by using UnmarshalBinary.
-	pcgstr := pcgstate.(ui.String).String()
-	pcg, err := base64.StdEncoding.DecodeString(pcgstr)
-	if err != nil {
-		panic(err)
-	}
-	d.src = &rand.PCGSource{}
-	d.src.UnmarshalBinary(pcg)
-	d.rng = rand.New(d.src)
-
-}
-
-func (d *Document) saveIDgeneratorState() {
-	pcg, err := d.src.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	pcgstr := base64.StdEncoding.EncodeToString(pcg)
-	d.Set("internals", "PCGSate", ui.String(pcgstr))
-}
+*/
 
 func (d Document) Window() Window {
 	w := d.GetElementById("window")
@@ -1142,18 +1110,13 @@ func (d Document) GetElementById(id string) *ui.Element {
 }
 
 func (d Document) newID() string {
-	/*
-
-		var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-		l:= len(charset)
-		b := make([]rune, 32)
-		for i := range b {
-			b[i] = charset[d.rng.Intn(l)]
-		}
-		return string(b)
-
-	*/
-	return newID() // DEBUG
+	var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	l:= len(charset)
+	b := make([]rune, 32)
+	for i := range b {
+		b[i] = charset[d.rng.Intn(l)]
+	}
+	return string(b)
 }
 
 // NewObservable returns a new ui.Observable element after registering it for the document.
@@ -1585,8 +1548,6 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	ConnectNative(e, "html")
 
-	getDocumentRef(e).initializeIDgenerator()
-
 	e.Watch("ui", "lang", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), "lang", string(evt.NewValue().(ui.String)))
 		return false
@@ -1648,8 +1609,6 @@ func mutationreplay(d *Document) error {
 	if !ok {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
-
-	DEBUG(mutationtrace)
 
 	for _, rawop := range mutationtrace.UnsafelyUnwrap() {
 		op := rawop.(ui.Object)
@@ -1944,6 +1903,13 @@ var constructorDocumentLinker = make(map[string]*Document)
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
 	d := Document{Element: newDocument(id, options...)}
+	
+	// creating the pseudo-random number generator that will create unique ids for elements
+	// which are not provided with any.
+	h := fnv.New64a()
+    h.Write([]byte(id))
+	seed := h.Sum64()
+	d.rng = rand.New(rand.NewSource(int64(seed)))
 
 	d = withStdConstructors(d)
 

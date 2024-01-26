@@ -68,7 +68,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		d := f()
 		withNativejshelpers(&d)
 
-		scrIdleGC := d.Script().SetInnerHTML(`
+		scrIdleGC := d.Script.WithID("idleGC").SetInnerHTML(`
 			let lastGC = Date.now();
 
 			function runGCDuringIdlePeriods(deadline) {
