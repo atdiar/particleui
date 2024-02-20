@@ -1,8 +1,14 @@
 package repl
 
 import (
-	"github.com/atdiar/particleui"
+    "strings"
+    "os"
+    "fmt"
+    "bufio"
+
+    "github.com/atdiar/particleui"
 	. "github.com/atdiar/particleui/drivers/js"
+    "github.com/atdiar/particleui/drivers/js/compat"
 )
 
 var (
@@ -133,10 +139,98 @@ func Repl(d *Document, id string, compilerversion string, options ...string) Rep
 		c := d.Script().SetInnerHTML(loaderscript)
 		h.AppendChild(c)
 
+        importcfglinkGen := js.FuncOf(func(this js.Value, args []js.Value) any {
+            mainFilePath := args[0].String()
+            importCfgPath := args[1].String()
+            outputFilePath := args[2].String()
+            return generateImportCfgLink(mainFilePath, importCfgPath, outputFilePath)
+        })
+
+        js.Global().Set("generateImportCfgLink", importcfglinkGen)
+
 		d.TriggerEvent("replInitialized")
 	}
 
 	return ReplElement{repl.AsElement()}
+}
+
+
+// generateImportCfgLink generates the importcfg.link file.
+// This is necessary to be able to link the main package with its precompiled dependencies.
+func generateImportCfgLink(mainFilePath, importCfgPath, outputFilePath string) error {
+    imports, err := extractImports(mainFilePath)
+    if err != nil {
+        return err
+    }
+
+    importCfg, err := os.ReadFile(importCfgPath)
+    if err != nil {
+        return err
+    }
+
+    lines := strings.Split(string(importCfg), "\n")
+    importMap := make(map[string]string)
+    for _, line := range lines {
+        parts := strings.Split(line, "=")
+        if len(parts) == 2 {
+            importMap[parts[0][12:]] = parts[1] // Remove "packagefile " prefix
+        }
+    }
+
+    outputFile, err := os.Create(outputFilePath)
+    if err != nil {
+        return err
+    }
+    defer outputFile.Close()
+
+    // Write the special first line for the main package
+    _, err = outputFile.WriteString("packagefile command-line-arguments=main.a\n")
+    if err != nil {
+        return err
+    }
+
+    // Write the dependencies
+    for _, imp := range imports {
+        if path, exists := importMap[imp]; exists {
+            _, err := outputFile.WriteString(fmt.Sprintf("packagefile %s=%s\n", imp, path))
+            if err != nil {
+                return err
+            }
+        }
+    }
+
+    return nil
+}
+
+// extractImports parses the main.go file and extracts import paths.
+func extractImports(filePath string) ([]string, error) {
+    file, err := os.Open(filePath)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    var imports []string
+    scanner := bufio.NewScanner(file)
+    inImportBlock := false
+    for scanner.Scan() {
+        line := scanner.Text()
+        if strings.Contains(line, "import (") {
+            inImportBlock = true
+            continue
+        } else if inImportBlock && strings.Contains(line, ")") {
+            break
+        }
+
+        if inImportBlock || strings.HasPrefix(strings.TrimSpace(line), "import ") {
+            trimmed := strings.Trim(line, "\t \"")
+            if trimmed != "" && trimmed != "import" {
+                imports = append(imports, trimmed)
+            }
+        }
+    }
+
+    return imports, scanner.Err()
 }
 
 type replModifier struct{}

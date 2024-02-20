@@ -4,202 +4,452 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	//"io"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
+var (
+	library string
+	verbose bool
+	debug   bool
+	v       *bool
+	d       *bool
+
+	importcfgpath string
+)
+
+func init() {
+	flag.StringVar(&library, "library", library, "Library to compile")
+	flag.BoolVar(&verbose, "verbose", verbose, "Verbose output")
+	flag.BoolVar(&debug, "debug", debug, "Debug output")
+	d = flag.Bool("d", false, "Debug output")
+	v = flag.Bool("v", false, "Verbose output")
+
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		showUsageAndExit()
+
+	flag.Parse()
+
+	if *v {
+		verbose = true
+	}
+	version, err := getGoVersion()
+	if err != nil {
+		panic(err)
 	}
 
-	switch os.Args[1] {
-	case "precompile":
-		handlePrecompileCommand(os.Args[2:])
-	default:
-		showUsageAndExit()
-	}
-}
-
-func showUsageAndExit() {
-	fmt.Println("Usage: gowasm <command> [arguments]")
-	fmt.Println("Commands: precompile")
-	os.Exit(1)
-}
-
-func handlePrecompileCommand(args []string) {
-	precompileCmd := flag.NewFlagSet("precompile", flag.ExitOnError)
-	stdLibFlag := precompileCmd.Bool("std", false, "Compile all standard library packages")
-	packagePath := precompileCmd.String("package", "", "Specify a non-standard library package to compile")
-	manifestFile := precompileCmd.String("manifest-file", "manifest.txt", "Manifest file name")
-
-	precompileCmd.Parse(args)
-
-	goroot := os.Getenv("GOROOT")
-	gopath := os.Getenv("GOPATH")
-
-	var packages []string
-	if *stdLibFlag {
-		packages = getStandardLibraryPackages(goroot)
-	} else if *packagePath != "" {
-		packages = []string{*packagePath}
-		fetchPackage(*packagePath, gopath)
-	} else {
-		fmt.Println("No package specified.")
-		os.Exit(1)
+	// Incorporate Go version into compiledDir path
+	compiledDir, err := filepath.Abs("./lib_prec_" + version)
+	if err != nil {
+		panic(err)
 	}
 
-	processed := make(map[string]bool)
-	for _, pkg := range packages {
-		err := processPackage(pkg, processed, goroot, gopath, *manifestFile)
-		if err != nil {
-			fmt.Printf("Error processing package %s: %v\n", pkg, err)
+	// Load or initialize importmap
+	importcfgpath := filepath.Join(compiledDir, "importcfg")
+	importmap, err := loadImportMap(importcfgpath)
+	if err != nil {
+		panic(err)
+	}
+
+	if importmap == nil {
+		importmap = make(map[string]string)
+		// we need to compile the standard library
+
+		// Compile the standard library
+		if err := compileStandardLibrary(compiledDir); err != nil {
+			panic(err)
+		}
+
+		if err = generateImportCfg(compiledDir, &importmap); err != nil {
+			panic(err)
 		}
 	}
-}
 
-func getStandardLibraryPackages(goroot string) []string {
-	cmd := exec.Command("go", "list", "std")
-	if goroot != "" {
-		cmd.Env = append(os.Environ(), "GOROOT="+goroot)
+	if library != "" {
+		if err := compileNonStdImports(library, compiledDir, importmap); err != nil {
+			panic(err)
+		}
 	}
 
-	output, err := cmd.Output()
+	// Let's compilte the toolchain for wasm
+	err = compileGoToolForWASM("compile", compiledDir)
 	if err != nil {
-		fmt.Printf("Error listing standard library packages: %v\n", err)
+		fmt.Errorf("failed to compile go tool compile: %v", err)
 		os.Exit(1)
 	}
 
-	return strings.Fields(string(output))
+	err = compileGoToolForWASM("link", compiledDir)
+	if err != nil {
+		fmt.Errorf("failed to compile go tool link: %v", err)
+		os.Exit(1)
+	}
+
+	err = compileGoToolForWASM("gofmt", compiledDir)
+	if err != nil {
+		fmt.Errorf("failed to compile go tool fmt: %v", err)
+		os.Exit(1)
+	}
+
+	if verbose {
+		fmt.Printf("Compilation complete, files are in: %s\n", compiledDir)
+	}
 }
 
-func fetchPackage(packagePath, gopath string) {
-	fmt.Printf("Fetching package: %s\n", packagePath)
-	cmd := exec.Command("go", "get", packagePath)
-	if gopath != "" {
-		cmd.Env = append(os.Environ(), "GOPATH="+gopath)
+func compileStandardLibrary(targetDir string) error {
+	if verbose {
+		fmt.Println("Compiling standard library...")
 	}
 
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error fetching package %s: %v\n", packagePath, err)
-	}
-}
-
-func processPackage(packagePath string, processed map[string]bool, goroot, gopath, manifestFile string) error {
-	if processed[packagePath] {
-		return nil
+	// Use go install with the -pkgdir flag to specify the output directory for .a files
+	args := []string{"install", "-a"}
+	if verbose {
+		args = append(args, "-v")
 	}
 
-	output, workDir, err := compileAndExtractWorkDir(packagePath, goroot, gopath)
+	if debug {
+		//args = append(args, "-n")
+		args = append(args, "-work")
+	}
+	args = append(args, "-pkgdir", targetDir, "std")
+
+	cmd := exec.Command("go", args...)
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js", "GODEBUG=installgoroot=all")
+
+	// Capture output for debugging
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("compilation error: %v\nOutput: %s", err, output)
+		fmt.Println("Error compiling stdlib:", err)
+		return err
 	}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("error getting current directory: %v", err)
-	}
-
-	err = processCompiledPackages(workDir, dir, packagePath, manifestFile)
-	if err != nil {
-		return fmt.Errorf("error processing compiled packages: %v", err)
-	}
-
-	processed[packagePath] = true
+	fmt.Println("Successfully compiled stdlib to", targetDir)
 	return nil
 }
 
-func compileAndExtractWorkDir(packagePath, goroot, gopath string) (string, string, error) {
-	cmd := exec.Command("go", "install", "-work", "-a", packagePath)
-	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
-	if goroot != "" {
-		cmd.Env = append(cmd.Env, "GOROOT="+goroot)
-	}
-	if gopath != "" {
-		cmd.Env = append(cmd.Env, "GOPATH="+gopath)
+// compileNonStdImports compiles a given library and its transtitive dependencies.
+func compileNonStdImports(library, targetDir string, importmap map[string]string) error {
+	// Compile your library and its dependencies
+	if verbose {
+		fmt.Println("Compiling library and its dependencies...")
 	}
 
-	outputBytes, err := cmd.CombinedOutput()
-	output := string(outputBytes)
-	if err != nil {
-		return output, "", err
-	}
-
-	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(line, "WORK=") {
-			workDir := strings.TrimPrefix(line, "WORK=")
-			return output, workDir, nil
-		}
-	}
-
-	return output, "", fmt.Errorf("work directory not found in output")
-}
-
-func processCompiledPackages(workDir, targetDir, packagePath, manifestFile string) error {
-	importCfgPaths, err := filepath.Glob(filepath.Join(workDir, "*", "importcfg"))
+	// Get dependencies of the library
+	deps, err := getDependencies(library)
 	if err != nil {
 		return err
 	}
 
-	for _, cfgPath := range importCfgPaths {
-		err := processImportCfg(cfgPath, workDir, targetDir, manifestFile)
+	// Open the importcfg file for modification, appending at the end, or create it if it doesn't exist
+	importcfg, err := os.OpenFile(importcfgpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open importcfg file: %v", err)
+	}
+	defer importcfg.Close()
+
+	// Compile each package in the dependency list
+	for _, pkg := range deps {
+		if _, exists := importmap[pkg]; !exists { // Check if already compiled
+			if err := compilePackage(pkg, targetDir, importmap); err != nil {
+				fmt.Printf("Failed to compile %s: %v\n", pkg, err)
+			}
+			// append to importcfg
+			importPath := strings.Replace(pkg, filepath.Dir(targetDir)+string(os.PathSeparator), "", 1)
+			importPath = strings.Replace(importPath, string(os.PathSeparator), "/", -1)
+			entry := fmt.Sprintf("packagefile %s=%s\n", importPath, importmap[pkg])
+			if verbose {
+				fmt.Printf("Adding to importcfg: %s", entry)
+			}
+			_, err = importcfg.WriteString(entry)
+			if err != nil {
+				return fmt.Errorf("failed to write to importcfg file: %v", err)
+			}
+
+		}
+	}
+	return nil
+}
+
+func getDependencies(pkg string) ([]string, error) {
+	cmd := exec.Command("go", "list", "-deps", pkg)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(strings.TrimSpace(string(stdout)), "\n"), nil
+}
+
+func compilePackage(pkg string, targetDir string, importmap map[string]string) error {
+	// Find source files for the package
+	srcFiles, err := getSourceFiles(pkg)
+	if err != nil {
+		return err
+	}
+
+	if len(srcFiles) == 0 {
+		return nil // No source files, skip package
+	}
+
+	// Compile the package
+	pkgDir := filepath.Join(targetDir, pkg)
+	err = os.MkdirAll(pkgDir, 0777)
+	if err != nil {
+		return err
+	}
+
+	output := filepath.Join(pkgDir, filepath.Base(pkg)+".a")
+	args := append([]string{"tool", "compile", "-std", "-o", output, "-p", pkg}, srcFiles...)
+	cmd := exec.Command("go", args...)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Update importmap upon successful compilation
+	importmap[pkg] = output
+
+	if verbose {
+		fmt.Printf("Compiled %s\n", pkg)
+	}
+
+	return nil
+}
+
+func getSourceFiles(pkg string) ([]string, error) {
+	// 'go list -f "{{.GoFiles}}" pkg' to get source files
+	cmd := exec.Command("go", "list", "-f", "{{range .GoFiles}}{{$.Dir}}/{{.}} {{end}}", pkg)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	files := strings.Fields(strings.TrimSpace(string(stdout)))
+	return files, nil
+}
+
+func defaultGOROOT() string {
+	cmd := exec.Command("go", "env", "GOROOT")
+	stdout, err := cmd.Output()
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimSpace(string(stdout))
+}
+
+// Walks through the directory to find all .a files and maps them.
+func generateImportMap(targetDir string) (map[string]string, error) {
+	importMap := make(map[string]string)
+
+	err := filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-	}
+		if filepath.Ext(path) == ".a" {
+			// Generate the import path key
+			relPath, err := filepath.Rel(targetDir, path)
+			if err != nil {
+				return err
+			}
+			importPath := strings.TrimSuffix(relPath, ".a")
+			importPath = strings.ReplaceAll(importPath, string(filepath.Separator), "/")
+			importMap[importPath] = relPath
+		}
+		return nil
+	})
 
-	mainPackageFile := filepath.Join(workDir, "b001", "_pkg_.a")
-	targetMainPath := filepath.Join(targetDir, "pkg", packagePath+".a")
-	return copyFile(mainPackageFile, targetMainPath, manifestFile)
+	return importMap, err
 }
 
-func processImportCfg(cfgPath, workDir, targetDir, manifestFile string) error {
-	file, err := os.Open(cfgPath)
+// Generates an importcfg file from the .a files in targetDir.
+func generateImportCfg(targetDir string, pImportmap *map[string]string) error {
+	importMap, err := generateImportMap(targetDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("error generating import map: %v", err)
+	}
+	imap := *pImportmap
+	for k, v := range importMap {
+		imap[k] = v
+	}
+
+	// Write the importcfg file
+	importcfgPath := filepath.Join(targetDir, "importcfg")
+	file, err := os.Create(importcfgPath)
+	if err != nil {
+		return fmt.Errorf("failed to create importcfg file: %v", err)
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), " ")
-		if len(parts) == 2 && parts[0] == "packagefile" {
-			name, path := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
-			targetPath := filepath.Join(targetDir, "pkg", name+".a")
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-				return err
+	for importPath, relPath := range importMap {
+		entry := fmt.Sprintf("packagefile %s=%s\n", importPath, relPath)
+		_, err = file.WriteString(entry)
+		if err != nil {
+			return fmt.Errorf("failed to write to importcfg file: %v", err)
+		}
+	}
+
+	fmt.Println("importcfg file generated successfully at:", importcfgPath)
+	return nil
+}
+
+func loadImportMap(importcfgpath string) (map[string]string, error) {
+	var importmap map[string]string
+
+	// Check if importcfg exists
+	if _, err := os.Stat(importcfgpath); os.IsNotExist(err) {
+		return importmap, nil // No existing importcfg, return empty map
+	}
+
+	// Load existing importcfg
+	content, err := os.ReadFile(importcfgpath)
+	if err != nil {
+		return importmap, err
+	}
+
+	importmap = make(map[string]string)
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "packagefile ") {
+			parts := strings.Split(line, "=")
+			if len(parts) == 2 {
+				pkgPath := parts[0][12:] // Remove "packagefile " prefix
+				binaryPath := parts[1]
+				importmap[pkgPath] = binaryPath
 			}
-			if err := copyFile(path, targetPath, manifestFile); err != nil {
+		}
+	}
+
+	return importmap, nil
+}
+
+func getGoVersion() (string, error) {
+	cmd := exec.Command("go", "version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	// Example output: go version go1.15.2 linux/amd64
+	// We extract and return the version part: "go1.15.2"
+	fields := strings.Fields(string(output))
+	if len(fields) < 3 {
+		return "", errors.New("unexpected go version format")
+	}
+
+	version := fields[2] // The version part
+	return version, nil
+}
+
+func compileGoToolForWASM(toolName string, targetDir string) error {
+	goroot := runtime.GOROOT()
+	toolPath := filepath.Join(goroot, "src", "cmd", toolName)
+
+	cmd := exec.Command("go", "build", "-o", filepath.Join(targetDir,fmt.Sprintf("%s.wasm", toolName)), ".")
+	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
+	cmd.Dir = toolPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Failed to compile %s: %s\n", toolName, string(output))
+		fmt.Print(err)
+		return err
+	}
+
+	fmt.Printf("%s compiled successfully to %s.wasm\n", toolName, toolName)
+	return nil
+}
+
+// GenerateImportCfgLink generates the importcfg.link file.
+func GenerateImportCfgLink(mainFilePath, importcfgpath, outputFilePath string) error {
+	imports, err := ExtractImports(mainFilePath)
+	if err != nil {
+		return err
+	}
+
+	importCfg, err := os.ReadFile(importcfgpath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(importCfg), "\n")
+	importMap := make(map[string]string)
+	for _, line := range lines {
+		parts := strings.Split(line, "=")
+		if len(parts) == 2 {
+			importMap[parts[0][12:]] = parts[1] // Remove "packagefile " prefix
+		}
+	}
+
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	// Write the special first line for the main package
+	_, err = outputFile.WriteString("packagefile command-line-arguments=main.a\n")
+	if err != nil {
+		return err
+	}
+
+	// Write the dependencies
+	for _, imp := range imports {
+		if path, exists := importMap[imp]; exists {
+			_, err := outputFile.WriteString(fmt.Sprintf("packagefile %s=%s\n", imp, path))
+			if err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }
 
-func copyFile(src, dst, manifestFile string) error {
-	input, err := os.ReadFile(src)
+// ExtractImports parses the main.go file and extracts import paths.
+func ExtractImports(filePath string) ([]string, error) {
+	file, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	defer file.Close()
+
+	var imports []string
+	scanner := bufio.NewScanner(file)
+	inImportBlock := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "import (") {
+			inImportBlock = true
+			continue
+		} else if inImportBlock && strings.Contains(line, ")") {
+			break
+		}
+
+		if inImportBlock || strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			trimmed := strings.Trim(line, "\t \"")
+			if trimmed != "" && trimmed != "import" {
+				imports = append(imports, trimmed)
+			}
+		}
 	}
 
-	err = os.WriteFile(dst, input, 0644)
-	if err != nil {
-		return err
-	}
-
-	return updateManifest(manifestFile, src, dst)
+	return imports, scanner.Err()
 }
 
-func updateManifest(manifestFile, src, dst string) error {
-	f, err := os.OpenFile(manifestFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = f.WriteString(fmt.Sprintf("%s -> %s\n", src, dst))
-	return err
+/*
+func main() {
+    // Adjust these paths as necessary for your setup
+    err := GenerateImportCfgLink("main.go", "importcfg", "importcfg.link")
+    if err != nil {
+        fmt.Printf("Error generating importcfg.link: %v\n", err)
+    } else {
+        fmt.Println("Successfully generated importcfg.link")
+    }
 }
+*/

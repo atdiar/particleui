@@ -1710,7 +1710,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 
 	if mutationcapturing(e){
-		if category != "data" || category != "ui"{
+		if category != "data" && category != "ui"{
 			return
 		}
 		if category == "data" && propname == "mutationlist"{ // TODO: make it less broad a condition

@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"syscall/js"
+	"github.com/atdiar/particleui/drivers/js/compat"
 )
 
 // TODO on init, Apply EnableMutationCapture to Elements if ldlflags -X tag is set for the buildtype variable to "dev"

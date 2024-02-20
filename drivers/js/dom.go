@@ -33,6 +33,10 @@ func init() {
 	ui.NativeDispatch = NativeDispatch
 }
 
+const(
+	CaptureLimit = 1000000
+)
+
 var (
 	DevMode = "false"
 	HMRMode = "false"
@@ -1428,6 +1432,10 @@ func (m mutationRecorder) Capture() {
 			if !ok {
 				m.raw.SetData("mutationlist", ui.NewList(v).Commit())
 			} else {
+				if len(list.UnsafelyUnwrap()) > CaptureLimit {
+					DEBUG("mutation capture limit reached")
+					return false
+				}
 				m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
 			}
 		}
