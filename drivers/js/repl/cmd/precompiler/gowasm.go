@@ -43,6 +43,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	
 
 	// Incorporate Go version into compiledDir path
 	compiledDir, err := filepath.Abs("./lib_prec_" + version)
@@ -198,6 +199,8 @@ func compilePackage(pkg string, targetDir string, importmap map[string]string) e
 		return nil // No source files, skip package
 	}
 
+	baseDir := filepath.Base(targetDir)
+
 	// Compile the package
 	pkgDir := filepath.Join(targetDir, pkg)
 	err = os.MkdirAll(pkgDir, 0777)
@@ -213,7 +216,7 @@ func compilePackage(pkg string, targetDir string, importmap map[string]string) e
 	}
 
 	// Update importmap upon successful compilation
-	importmap[pkg] = output
+	importmap[pkg] = filepath.Join(baseDir,output)
 
 	if verbose {
 		fmt.Printf("Compiled %s\n", pkg)
@@ -245,6 +248,7 @@ func defaultGOROOT() string {
 // Walks through the directory to find all .a files and maps them.
 func generateImportMap(targetDir string) (map[string]string, error) {
 	importMap := make(map[string]string)
+	baseDir:= filepath.Base(targetDir)
 
 	err := filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -258,7 +262,7 @@ func generateImportMap(targetDir string) (map[string]string, error) {
 			}
 			importPath := strings.TrimSuffix(relPath, ".a")
 			importPath = strings.ReplaceAll(importPath, string(filepath.Separator), "/")
-			importMap[importPath] = relPath
+			importMap[importPath] = filepath.Join(baseDir, relPath)
 		}
 		return nil
 	})

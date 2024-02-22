@@ -56,3 +56,99 @@ func init() {
 }
 
 
+/*
+
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// promptUser prompts the user with a question and returns true for "y" and false for "n".
+// It repeats the prompt until a valid input is received.
+func promptUser(question string) bool {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print(question)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading response. Please try again.")
+			continue
+		}
+		response = strings.TrimSpace(response)
+		if response == "y" {
+			return true
+		} else if response == "n" {
+			return false
+		} else {
+			fmt.Println("Invalid input. Please answer 'y' or 'n'.")
+		}
+	}
+}
+
+// checkAndInstallWasmOpt checks if wasm-opt is installed.
+// If not, it prompts the user to install binaryen, ensuring at least version 116.
+func checkAndInstallWasmOpt(installerPkg string, minVersion int) bool {
+	// Check if wasm-opt is available
+	if _, err := exec.LookPath("wasm-opt"); err == nil {
+		fmt.Println("wasm-opt is already installed.")
+		return true
+	}
+
+	fmt.Println("wasm-opt is not available.")
+	if promptUser("Do you want to install binaryen to get wasm-opt? (y/n): ") {
+		// User agreed to install
+		return installBinaryen(installerPkg, minVersion)
+	}
+
+	// wasm-opt not installed or user chose not to install
+	fmt.Println("Installation aborted.")
+	return false
+}
+
+// installBinaryen uses go install to install the specified Go package as an installer,
+// then runs the installed binary with the version as an argument.
+func installBinaryen(installerPkg string, version int) bool {
+	// Ensure the version is at least 116
+	if version < 116 {
+		version = 116
+	}
+
+	// Install the Go package (installer)
+	cmdGet := exec.Command("go", "install", fmt.Sprintf("%s@latest", installerPkg))
+	if err := cmdGet.Run(); err != nil {
+		fmt.Printf("Failed to install the installer: %v\n", err)
+		return false
+	}
+
+	// Extract the binary name from the package path
+	installerName := installerPkg[strings.LastIndex(installerPkg, "/")+1:]
+	// Assuming the GOPATH/bin or GOBIN is in PATH, execute the installer with the version argument
+	cmdRun := exec.Command(installerName, fmt.Sprintf("%d", version))
+	if err := cmdRun.Run(); err != nil {
+		fmt.Printf("Failed to execute the installer with version argument: %v\n", err)
+		return false
+	}
+
+	fmt.Println("binaryen installation completed.")
+	return true
+}
+
+func main() {
+	installerPkg := "github.com/your/repo/path" // Replace with the actual Go package path
+	minVersion := 116 // The minimum required version of binaryen
+	if checkAndInstallWasmOpt(installerPkg, minVersion) {
+		fmt.Println("wasm-opt is ready to use.")
+	} else {
+		fmt.Println("wasm-opt is not available.")
+	}
+}
+
+
+
+
+*/
