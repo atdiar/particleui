@@ -25,6 +25,8 @@ var (
 	importcfgpath string
 	DefaultDeps   = []string{
 		"github.com/atdiar/particleui",
+		"github.com/atdiar/particleui/drivers/js",
+		"github.com/atdiar/particleui/drivers/js/compat",
 	}
 )
 
@@ -138,13 +140,16 @@ func main() {
 	// This is a way to reduce the time it takes to load the application.
 	var prefetchList = make(map[string]string)
 	for _, dep := range DefaultDeps {
-		// TODO if dep == "unsafe"{ continue } 
+		 
 		d, err := getDependencies(dep)
 		if err != nil {
 			fmt.Printf("Unable to generate prefetch list: failed to get dependencies for %s: %v", dep, err)
 			os.Exit(1)
 		}
 		for pkg := range d {
+			if pkg == "unsafe"{
+				continue
+			}
 			pkgpath, ok := importmap[pkg]
 			if !ok {
 				panic("The package " + pkg + " is not in the importmap in spite of being a dependency of the compiled package" + dep)
@@ -161,7 +166,14 @@ func main() {
 	}
 	defer file.Close()
 
-	err = json.NewEncoder(file).Encode(prefetchList)
+	indentedJson, err := json.MarshalIndent(prefetchList, "", "    ")
+	if err != nil {
+		fmt.Printf("Failed to marshal into JSON: %v", err)
+		os.Exit(1)
+	}
+
+	// Write the indented JSON to the file
+	_, err = file.Write(indentedJson)
 	if err != nil {
 		fmt.Printf("Unable to encode prefetchlist: %v", err)
 		os.Exit(1)
@@ -186,7 +198,14 @@ func main() {
 	}
 	defer file.Close()
 
-	err = json.NewEncoder(file).Encode(manifest)
+	indentedJson, err = json.MarshalIndent(manifest, "", "    ")
+	if err != nil {
+		fmt.Printf("Failed to marshal into JSON: %v", err)
+		os.Exit(1)
+	}
+
+	// Write the indented JSON to the file
+	_, err = file.Write(indentedJson)
 	if err != nil {
 		fmt.Printf("Unable to encode manifest: %v", err)
 		os.Exit(1)
@@ -359,12 +378,13 @@ func cwdInWorkspace() bool {
 
 func getDependencies(pkg string) (map[string]struct{}, error) {
 	cmd := exec.Command("go", "list", "-deps", pkg)
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
+
 	stdout, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
-
+	
 	pkgs:= strings.Split(strings.TrimSpace(string(stdout)), "\n")
 	dependencies := make(map[string]struct{})
 	for _, dep := range pkgs {
@@ -376,11 +396,12 @@ func getDependencies(pkg string) (map[string]struct{}, error) {
 // stdlist lists all the standard library packages
 func stdlist() (map[string]struct{}, error) {
 	cmd := exec.Command("go", "list", "std")
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
+
 	stdout, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
 
 	pkgs:= strings.Split(strings.TrimSpace(string(stdout)), "\n")
 	stdPackages := make(map[string]struct{})
