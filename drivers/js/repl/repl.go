@@ -405,7 +405,7 @@ var vfs = `
             const versionKey = 'cache-version';
             return this.retrieveFile(versionKey).then(data => {
                 const currentVersion = data ? parseInt(new TextDecoder().decode(data), 10) : 0;
-                if (newVersion !== currentVersion) {
+                if (newVersion > currentVersion) {
                     // Invalidate cache and update version
                     return this.clearCache().then(() => {
                         return this.cacheFile(versionKey, new TextEncoder().encode(newVersion.toString()));
@@ -442,7 +442,7 @@ var loaderscript = `
 
 
         let cmds = {};
-        const manifestUrl = '${PkgDirURL}/manifest.txt'; // Assuming the manifest file is at this URL
+        const manifestUrl = '${PkgDirURL}/'; // Assuming the manifest file is at this URL
     
 
         const absPath = (path) => {
@@ -821,18 +821,18 @@ var loaderscript = `
             return parts.slice(1, parts.length - 1).join('/');
         }
 
-        cache.checkAndUpdateVersion(newCompilerVersion, (err) => {
+        checkAndUpdateVersion(newCompilerVersion, (err) => {
             if (err) {
                 console.error('Error updating version:', err);
                 return;
             }
 
-            // Fetch and parse the manifest file
+            // Fetch and parse the manifest file // TODO no need for a manifest, use importcfg instead
             fetch(manifestUrl)
                 .then(response => response.text())
                 .then(text => {
                     const manifest = {};
-                    text.split("\\n").forEach(line => {
+                    text.split("\n").forEach(line => {
                         const [src, dst] = line.split(" -> ");
                         if (src && dst) {
                             manifest[src] = dst;
@@ -910,7 +910,7 @@ var loaderscript = `
                     .catch(error => {
                         if (!timeoutReached) {
                             clearTimeout(timeoutHandler);
-                            document.getElementById(outputID).textContent = 'Formatting failed: ' + error;
+                            // document.getElementById(outputID).textContent = 'Formatting failed: ' + error;
                             reject(error);
                         }
                     });

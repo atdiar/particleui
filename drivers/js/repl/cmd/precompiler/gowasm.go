@@ -25,8 +25,6 @@ var (
 	importcfgpath string
 	DefaultDeps   = []string{
 		"github.com/atdiar/particleui",
-		"github.com/atdiar/particleui/drivers/js/compat",
-		"github.com/atdiar/particleui/drivers/js",
 	}
 )
 
@@ -92,14 +90,14 @@ func main() {
 
 	// TODO make sure that the compilation occurs with build tag !server
 	for _, dep := range DefaultDeps {
-		if err = compileNonStandardPkg(dep, libDir); err != nil {
+		if err = buildPkg(dep, libDir); err != nil {
 			fmt.Printf("failed to compile %s: %v", dep, err)
 			os.Exit(1)
 		}
 	}
 
 	if library != "" {
-		if err := compileNonStandardPkg(library, libDir); err != nil {
+		if err := buildPkg(library, libDir); err != nil {
 			fmt.Printf("failed to compile %s: %v", library, err)
 			os.Exit(1)
 		}
@@ -140,12 +138,13 @@ func main() {
 	// This is a way to reduce the time it takes to load the application.
 	var prefetchList = make(map[string]string)
 	for _, dep := range DefaultDeps {
+		// TODO if dep == "unsafe"{ continue } 
 		d, err := getDependencies(dep)
 		if err != nil {
 			fmt.Printf("Unable to generate prefetch list: failed to get dependencies for %s: %v", dep, err)
 			os.Exit(1)
 		}
-		for _, pkg := range d {
+		for pkg := range d {
 			pkgpath, ok := importmap[pkg]
 			if !ok {
 				panic("The package " + pkg + " is not in the importmap in spite of being a dependency of the compiled package" + dep)
@@ -238,10 +237,21 @@ func compileStandardLibrary(targetDir string) error {
 	return nil
 }
 
+/*
 func compileNonStandardPkg(library, targetDir string) error {
 	if verbose {
 		fmt.Printf("Compiling %s and its dependencies...\n", library)
 	}
+	libraryname := library
+
+	if !cwdInWorkspace() {
+		if !strings.HasSuffix("@latest", library) {
+			libraryname += "@latest"
+		} else{
+			library = strings.TrimSuffix(library, "@latest")
+		}
+	}
+	
 
 	// Transform the library import path into a directory structure
 	libraryPath := filepath.Join(targetDir, filepath.FromSlash(library))
@@ -260,7 +270,7 @@ func compileNonStandardPkg(library, targetDir string) error {
 		args = append(args, "-work")
 	}
 	 // filepath.Dir(libraryPath) // ??
-	args = append(args, "-tags", "!server", "-pkgdir", targetDir, library)
+	args = append(args, "-tags", "'!server'", "-pkgdir", filepath.Dir(libraryPath), libraryname)
 
 	cmd := exec.Command("go", args...)
 	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js", "GODEBUG=installgoroot=all")
@@ -276,17 +286,131 @@ func compileNonStandardPkg(library, targetDir string) error {
 	}
 	return nil
 }
+*/
 
-func getDependencies(pkg string) ([]string, error) {
+// buildPkg builds a package and returns a non-nil error if the build fails.
+// It uses getNonStdDependencies to find the non standard library dependencies of the package.
+// Once the set is obtained, it calls buildDep on each of the dependencies, output the .a files to the targetDir.
+func buildPkg(pkg, targetDir string) error {
+	nonStdDeps, err := getNonStdDependencies(pkg)
+	if err != nil {
+		return fmt.Errorf("failed to get non standard library dependencies for %s: %v", pkg, err)
+	}
+
+	for dep := range nonStdDeps {
+		if err := buildDep(dep, targetDir); err != nil {
+			return fmt.Errorf("failed to build dependency %s: %v", dep, err)
+		}
+	}
+
+	if verbose{
+		fmt.Printf("Successfully compiled %s and its dependencies to %s\n", pkg, targetDir)
+	}
+
+	return nil
+}
+
+// buildDep builds a non standard library package and returns the path to the .a file
+func buildDep(pkg, targetDir string) error {
+	// Transform the library import path into a directory structure
+	libraryPath := filepath.Join(targetDir, filepath.FromSlash(pkg))
+	// Ensure that the directory structure exists
+	if err := os.MkdirAll(libraryPath, 0755); err != nil {
+		return fmt.Errorf("failed to create directory structure for %s: %v", pkg, err)
+	}
+	args := []string{"build", "-buildmode=archive", "-o", libraryPath + ".a"}
+	if verbose {
+		args = append(args, "-v")
+	}
+
+	if debug {
+		//args = append(args, "-n")
+		args = append(args, "-work")
+	}
+	// filepath.Dir(libraryPath) // ??
+	args = append(args, "-tags", "'!server'",pkg)
+
+	cmd := exec.Command("go", args...)
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to compile %s: %v", pkg, err)
+	}
+
+	if verbose {
+		fmt.Printf("Successfully compiled %s to %s\n", pkg, libraryPath)
+	}
+	return nil
+}
+
+// cwdInWorkspace checks if the current working directory belongs to a workspace.
+func cwdInWorkspace() bool {
+	cmd := exec.Command("go", "env", "GOWORK")
+	cmd.Dir = filepath.Join(".")
+	stdout, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	workspace := strings.TrimSpace(string(stdout))
+	return  workspace != ""
+}
+
+func getDependencies(pkg string) (map[string]struct{}, error) {
 	cmd := exec.Command("go", "list", "-deps", pkg)
 	stdout, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	// DEBUG
-	fmt.Println("the list of dependencies for", pkg, "is", string(stdout))
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
 
-	return strings.Split(strings.TrimSpace(string(stdout)), "\n"), nil
+	pkgs:= strings.Split(strings.TrimSpace(string(stdout)), "\n")
+	dependencies := make(map[string]struct{})
+	for _, dep := range pkgs {
+		dependencies[dep] = struct{}{}
+	}
+	return dependencies, nil
+}
+
+// stdlist lists all the standard library packages
+func stdlist() (map[string]struct{}, error) {
+	cmd := exec.Command("go", "list", "std")
+	stdout, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = append(os.Environ(), "GOARCH=wasm", "GOOS=js")
+
+	pkgs:= strings.Split(strings.TrimSpace(string(stdout)), "\n")
+	stdPackages := make(map[string]struct{})
+	for _, pkg := range pkgs {
+		stdPackages[pkg] = struct{}{}
+	}
+	return stdPackages, nil
+}
+
+// getNonStdDependencies returns the set of non standard library dependencies of a package
+func getNonStdDependencies(pkg string) (map[string]struct{}, error) {
+	dependencies, err := getDependencies(pkg)
+	if err != nil {
+		return nil, err
+	}
+
+	stdPackages, err := stdlist()
+	if err != nil {
+		return nil, err
+	}
+
+	nonStdDeps := make(map[string]struct{})
+	for dep := range dependencies {
+		if _, ok := stdPackages[dep]; !ok {
+			nonStdDeps[dep] = struct{}{}
+		}
+	}
+
+	return nonStdDeps, nil
+
 }
 
 // Walks through the directory to find all .a files and maps them.
