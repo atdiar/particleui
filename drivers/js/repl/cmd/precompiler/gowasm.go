@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 
-	//"io"
+	"io"
 	"errors"
 	"os"
 	"os/exec"
@@ -179,6 +179,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create the minlibrary directory which will contain the minimum list of dependencies required
+	// that shall be prefetched.
+	err = createAndCopyFiles(libDir, filepath.Join(dir,"min_library"),prefetchList)
+
 	// let's create manifest.json
 	manifest := map[string]string{
 		"goversion":    version,
@@ -220,6 +224,64 @@ func main() {
 	}
 
 }
+
+
+// Helper functions *****************************************************************************************************
+
+func copyFile(src, dst string) error {
+    srcFd, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer srcFd.Close()
+
+    dstFd, err := os.Create(dst)
+    if err != nil {
+        return err
+    }
+    defer dstFd.Close()
+
+    if _, err := io.Copy(dstFd, srcFd); err != nil {
+        return err
+    }
+
+    srcInfo, err := srcFd.Stat()
+    if err != nil {
+        return err
+    }
+
+    return os.Chmod(dst, srcInfo.Mode())
+}
+
+// createAndCopyFiles remains the same, creating a directory and copying all files into it.
+func createAndCopyFiles(baseDir, targetDir string, prefetchList map[string]string) error {
+    // Create target directory if it doesn't exist
+    if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
+        return err
+    }
+
+    for _, srcPath := range prefetchList {
+        // Calculate relative path based on a common base directory
+        relPath, err := filepath.Rel(baseDir, srcPath)
+        if err != nil {
+            return err
+        }
+        
+        dstPath := filepath.Join(targetDir, relPath)
+        
+        // Ensure the directory of the dstPath exists
+        if err := os.MkdirAll(filepath.Dir(dstPath), os.ModePerm); err != nil {
+            return err
+        }
+
+        if err := copyFile(srcPath, dstPath); err != nil {
+            return err
+        }
+    }
+
+    return nil
+}
+
 
 func compileStandardLibrary(targetDir string) error {
 	if verbose {
