@@ -1,14 +1,17 @@
 package repl
 
 import (
-    "strings"
-    "os"
-    "fmt"
-    "bufio"
+	"archive/zip"
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 
-    "github.com/atdiar/particleui"
+	"github.com/atdiar/particleui"
 	. "github.com/atdiar/particleui/drivers/js"
-    "github.com/atdiar/particleui/drivers/js/compat"
+	"github.com/atdiar/particleui/drivers/js/compat"
 )
 
 var (
@@ -17,6 +20,47 @@ var (
 	GofmtWasmURL   string
 	PkgDirURL      string
 )
+
+// decompressArchive takes a Uint8Array containing a zip archive, decompresses it,
+// and returns a map of file paths to Uint8Array of their contents.
+func decompressArchive(this js.Value, inputs []js.Value) interface{} {
+	if len(inputs) < 1 {
+		return map[string]interface{}{"error": "No input provided"}
+	}
+
+	inputJS := inputs[0] // The first argument is the Uint8Array from JavaScript
+
+	// Prepare a Go byte slice with the same length as the input Uint8Array
+	inputData := make([]byte, inputJS.Length())
+	js.CopyBytesToGo(inputData, inputJS) // Copy the data into Go's memory space
+
+	// Use the zip package to read the archive from the inputData byte slice
+	zipReader, err := zip.NewReader(bytes.NewReader(inputData), int64(len(inputData)))
+	if err != nil {
+		return map[string]interface{}{"error": err.Error()}
+	}
+
+	files := make(map[string]interface{})
+	for _, zipFile := range zipReader.File {
+		fileReader, err := zipFile.Open()
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}
+		}
+
+		fileContent, err := io.ReadAll(fileReader)
+		fileReader.Close() // Make sure to close the reader to avoid resource leaks
+		if err != nil {
+			return map[string]interface{}{"error": err.Error()}
+		}
+
+		// Here we directly create a new Uint8Array in JavaScript context for each file's content.
+		jsFileContent := js.Global().Get("Uint8Array").New(len(fileContent))
+		js.CopyBytesToJS(jsFileContent, fileContent)
+		files[zipFile.Name] = jsFileContent
+	}
+
+	return files
+}
 
 type ReplElement struct {
 	*ui.Element
@@ -47,7 +91,7 @@ func (r ReplElement) BtnFmt() ButtonElement {
 	return ButtonElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID + "-fmt")}
 }
 
-// CodeInputContainer returns the div element that holds the textarea and the buttons
+// CodeInputContainer returns the div element that holds the contentarea and the buttons
 func (r ReplElement) CodeInputContainer() DivElement {
 	return DivElement{GetDocument(r.AsElement()).GetElementById(r.AsElement().ID + "-codeinput")}
 }
@@ -58,7 +102,7 @@ func (r ReplElement) ButtonsContainer() DivElement {
 }
 
 // Repl returns a ReplElement which is able to compile and render UI code in the browser locally.
-func Repl(d *Document, id string, compilerversion string, options ...string) ReplElement {
+func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...string) ReplElement {
 	repl := d.Div.WithID(id, options...)
 	// TODO append the gcversion script with the value attribute set to the go compiler version in use
 	textarea := d.TextArea.WithID(id + "-textarea")
@@ -68,9 +112,9 @@ func Repl(d *Document, id string, compilerversion string, options ...string) Rep
 	btnRun := d.Button.WithID(id+"-run", "input")
 	btnFmt := d.Button.WithID(id+"-fmt", "input")
 
-	// double binding between repl and textarea subcomponent.
+	// double binding between repl and contentarea subcomponent.
 	// on sync mutation event, the repl top div gets synced as well. (caused by input events for instance)
-	// if the repl's code is set from somewhere however, the textarea will get set to the same value too.
+	// if the repl's code is set from somewhere however, the contentarea will get set to the same value too.
 	repl.Watch("data", "value", textarea, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		repl.SyncData("value", evt.NewValue())
 		return false
@@ -115,8 +159,8 @@ func Repl(d *Document, id string, compilerversion string, options ...string) Rep
 		),
 	)
 
-	// Let's add the event listeners for the buttons and the textarea
-	// The textarea should be hijacked to prevent the default behavior of the tab key
+	// Let's add the event listeners for the buttons and the contentarea
+	// The contentarea should be hijacked to prevent the default behavior of the tab key
 	// which is to move the focus to the next element in the document.
 
 	// let's add the scripts for the virtual filesystem and the compiler suite loader
@@ -126,10 +170,47 @@ func Repl(d *Document, id string, compilerversion string, options ...string) Rep
 	if _, ok := d.GetEventValue("replInitialized"); !ok {
 		h := d.Head()
 
-		// gcversion script
-		s := d.Script.WithID("gcversion")
-		SetAttribute(s.AsElement(), "value", compilerversion)
-		h.AppendChild(s)
+		/*
+					// gcversion script
+					s := d.Script.WithID("gcversion")
+			        // the go version should be present in the assetURI. e.g. /wasmgc_1.16.3/
+			        // the version is the last part of the path.
+					SetAttribute(s.AsElement(), "value", compilerversion)
+					h.AppendChild(s)
+		*/
+
+		/*
+		   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+		   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+		   <!-- Include the Go mode for CodeMirror -->
+		   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/go/go.min.js"></script>
+
+
+		*/
+
+		// add code mirror script with go mode
+		cm := d.Script.WithID("codemirror")
+		SetAttribute(cm.AsElement(), "src", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js")
+		h.AppendChild(cm)
+
+		// add go mode for code mirror
+		gomode := d.Script.WithID("gomode")
+		SetAttribute(gomode.AsElement(), "src", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/go/go.min.js")
+		h.AppendChild(gomode)
+
+		// add code mirror css
+		cmcss := d.Link.WithID("codemirrorcss")
+		SetAttribute(cmcss.AsElement(), "rel", "stylesheet")
+		SetAttribute(cmcss.AsElement(), "href", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css")
+		h.AppendChild(cmcss)
+
+		// css class for compile error line highlighting
+		lineerrorcss := d.Style().SetInnerHTML(`
+            .cm-error-line {
+                background-color: #fdd;
+            }
+        `)
+		h.AppendChild(lineerrorcss)
 
 		// virtual file system script
 		v := d.Script().SetInnerHTML(vfs)
@@ -139,98 +220,121 @@ func Repl(d *Document, id string, compilerversion string, options ...string) Rep
 		c := d.Script().SetInnerHTML(loaderscript)
 		h.AppendChild(c)
 
-        importcfglinkGen := js.FuncOf(func(this js.Value, args []js.Value) any {
-            mainFilePath := args[0].String()
-            importCfgPath := args[1].String()
-            outputFilePath := args[2].String()
-            return generateImportCfgLink(mainFilePath, importCfgPath, outputFilePath)
-        })
+		importcfglinkGen := js.FuncOf(func(this js.Value, args []js.Value) any {
+			mainFilePath := args[0].String()
+			importCfgPath := args[1].String()
+			outputFilePath := args[2].String()
+			return generateImportCfgLink(mainFilePath, importCfgPath, outputFilePath)
+		})
 
-        js.Global().Set("generateImportCfgLink", importcfglinkGen)
+		js.Global().Set("decompressArchive", js.FuncOf(decompressArchive))
+
+		js.Global().Set("generateImportCfgLink", importcfglinkGen)
+
+		// prefetch the minimum compiler suite in the background
 
 		d.TriggerEvent("replInitialized")
 	}
 
-	return ReplElement{repl.AsElement()}
+	return ReplElement{repl.AsElement()}.activatecontentarea()
 }
 
+// Let's add the event listeners for the text content of the editable div
+func (r ReplElement) activatecontentarea() ReplElement {
+	// The contentarea should be hijacked to prevent the default behavior of the tab key
+	r.TextArea().AddEventListener("keydown", ui.NewEventHandler(func(evt ui.Event) bool {
+		if evt.(KeyboardEvent).Key() == "Tab" {
+			evt.PreventDefault()
+			r.TextArea().SyncUISyncData("value", WithStrConv(ui.String(r.TextArea().Text()+"\t")))
+			return false
+		}
+		return false
+	}))
 
-// generateImportCfgLink generates the importcfg.link file.
+	// the contentarea should retrieve the text and store it in the text property of the div element
+	r.TextArea().AddEventListener("input", ui.NewEventHandler(func(evt ui.Event) bool {
+		r.TextArea().SyncUISyncData("value", WithStrConv(evt.Value()))
+		return false
+	}))
+
+	return r
+}
+
+// generateImportCfgLink generates the importcfg.lnk file.
 // This is necessary to be able to link the main package with its precompiled dependencies.
 func generateImportCfgLink(mainFilePath, importCfgPath, outputFilePath string) error {
-    imports, err := extractImports(mainFilePath)
-    if err != nil {
-        return err
-    }
+	imports, err := extractImports(mainFilePath)
+	if err != nil {
+		return err
+	}
+	importCfg, err := os.ReadFile(importCfgPath)
+	if err != nil {
+		return err
+	}
 
-    importCfg, err := os.ReadFile(importCfgPath)
-    if err != nil {
-        return err
-    }
+	lines := strings.Split(string(importCfg), "\n")
+	importMap := make(map[string]string)
+	for _, line := range lines {
+		parts := strings.Split(line, "=")
+		if len(parts) == 2 {
+			importMap[parts[0][12:]] = parts[1] // Remove "packagefile " prefix
+		}
+	}
 
-    lines := strings.Split(string(importCfg), "\n")
-    importMap := make(map[string]string)
-    for _, line := range lines {
-        parts := strings.Split(line, "=")
-        if len(parts) == 2 {
-            importMap[parts[0][12:]] = parts[1] // Remove "packagefile " prefix
-        }
-    }
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
 
-    outputFile, err := os.Create(outputFilePath)
-    if err != nil {
-        return err
-    }
-    defer outputFile.Close()
+	// Write the special first line for the main package
+	_, err = outputFile.WriteString("packagefile command-line-arguments=main.a\n")
+	if err != nil {
+		return err
+	}
 
-    // Write the special first line for the main package
-    _, err = outputFile.WriteString("packagefile command-line-arguments=main.a\n")
-    if err != nil {
-        return err
-    }
+	// Write the dependencies
+	for _, imp := range imports {
+		if path, exists := importMap[imp]; exists {
+			_, err := outputFile.WriteString(fmt.Sprintf("packagefile %s=%s\n", imp, path))
+			if err != nil {
+				return err
+			}
+		}
+	}
 
-    // Write the dependencies
-    for _, imp := range imports {
-        if path, exists := importMap[imp]; exists {
-            _, err := outputFile.WriteString(fmt.Sprintf("packagefile %s=%s\n", imp, path))
-            if err != nil {
-                return err
-            }
-        }
-    }
-
-    return nil
+	return nil
 }
 
 // extractImports parses the main.go file and extracts import paths.
 func extractImports(filePath string) ([]string, error) {
-    file, err := os.Open(filePath)
-    if err != nil {
-        return nil, err
-    }
-    defer file.Close()
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-    var imports []string
-    scanner := bufio.NewScanner(file)
-    inImportBlock := false
-    for scanner.Scan() {
-        line := scanner.Text()
-        if strings.Contains(line, "import (") {
-            inImportBlock = true
-            continue
-        } else if inImportBlock && strings.Contains(line, ")") {
-            break
-        }
+	var imports []string
+	scanner := bufio.NewScanner(file)
+	inImportBlock := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "import (") {
+			inImportBlock = true
+			continue
+		} else if inImportBlock && strings.Contains(line, ")") {
+			break
+		}
 
-        if inImportBlock || strings.HasPrefix(strings.TrimSpace(line), "import ") {
-            trimmed := strings.Trim(line, "\t \"")
-            if trimmed != "" && trimmed != "import" {
-                imports = append(imports, trimmed)
-            }
-        }
-    }
+		if inImportBlock || strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			trimmed := strings.Trim(line, "\t \"")
+			if trimmed != "" && trimmed != "import" {
+				imports = append(imports, trimmed)
+			}
+		}
+	}
 
-    return imports, scanner.Err()
+	return imports, scanner.Err()
 }
 
 type replModifier struct{}
@@ -310,7 +414,6 @@ func (r replModifier) ButtonsContainer(modifiers ...func(*ui.Element) *ui.Elemen
 var vfs = `
 
     class IndexedDBFileCache {
-        constructor(dbName = 'fileCacheDB', storeName = 'files') {
             this.dbName = dbName;
             this.storeName = storeName;
             this.db = null;
@@ -374,49 +477,79 @@ var vfs = `
             });
         }
 
-        fetchAndCacheFile(path) {
-            return this.retrieveFile(path).then(data => {
-                if (data) {
-                    return data; // File is already in cache
-                } else {
+        async fetchAndCacheFile(path) {
+            try {
+                const data = await this.retrieveFile(path);
+                if (!data) {
                     // File not in cache, fetch from server
-                    return fetch(path).then(response => {
-                        if (!response.ok) {
-                            // Invalidate the cache if a critical file fetch fails
-                            this.invalidateCache().then(() => {
-                                // Optionally set the version to an invalid value
-                                const invalidVersion = -1;
-                                return this.cacheFile('cache-version', new TextEncoder().encode(invalidVersion.toString()));
-                            }).then(() => {
-                                throw new Error(` + "`" + `Network response was not ok for ${path}` + "`" + `);
-                            });
-                        }
-                        return response.arrayBuffer();
-                    }).then(buffer => {
-                        return this.cacheFile(path, new Uint8Array(buffer)).then(() => buffer);
-                    });
+                    const response = await fetch(path);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch file at ' + path + ': ' + response.statusText);
+                    }
+                    const buffer = await response.arrayBuffer();
+                    await this.cacheFile(path, new Uint8Array(buffer));
                 }
-            });
-        }
-        
-        
-    
-        checkAndUpdateVersion(newVersion) {
-            const versionKey = 'cache-version';
-            return this.retrieveFile(versionKey).then(data => {
-                const currentVersion = data ? parseInt(new TextDecoder().decode(data), 10) : 0;
-                if (newVersion > currentVersion) {
-                    // Invalidate cache and update version
-                    return this.clearCache().then(() => {
-                        return this.cacheFile(versionKey, new TextEncoder().encode(newVersion.toString()));
-                    });
-                }
-            });
-        }
+            } catch (error) {
+                // If there's an error in fetching or caching, rethrow to make it visible to the caller
+                throw new Error('Error in fetching and caching file at ' + path + ': ' + error);
+            }
+        } 
     }
 
+    async function prefetchAndCacheGoPackagesWithVersion() {
+        const manifestUrl = '/wasmgc/manifest.json';
     
+        try {
+            const manifestResponse = await fetch(manifestUrl);
+            if (!manifestResponse.ok) {
+                throw new Error('Failed to fetch ' + manifestUrl + ': ' + manifestResponse.statusText);
+            }
+            const manifest = await manifestResponse.json();
+            const goVersion = manifest.goversion;
+            const cacheDbName = 'goPackagesCacheDB_' + goVersion.replace(/\./g, '_');
+            const cache = new IndexedDBFileCache(cacheDbName, 'goFiles');
     
+            const minLibraryUrl = '/' + manifest.min_library + '.zip';
+            const zipResponse = await fetch(minLibraryUrl);
+            if (!zipResponse.ok) {
+                throw new Error('Failed to download min_library.zip');
+            }
+            const zipArrayBuffer = await zipResponse.arrayBuffer();
+            const decompressedFiles = await window.decompressArchive(new Uint8Array(zipArrayBuffer));
+    
+            const cacheTasks = Object.keys(decompressedFiles).map(async (filename) => {
+                const fileData = decompressedFiles[filename];
+                await cache.cacheFile('/' + manifest.library + '/' + filename, fileData);
+            });
+    
+            const wasmFilenames = ['compile', 'gofmt', 'link'];
+            const wasmTasks = wasmFilenames.map(async (key) => {
+                const wasmUrl = '/' + manifest[key];
+                const response = await fetch(wasmUrl);
+                if (!response.ok) {
+                    throw new Error('Failed to download ' + wasmUrl);
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                await cache.cacheFile(wasmUrl, new Uint8Array(arrayBuffer));
+            });
+
+            // Fetch and cache the importcfg file
+            const importcfgUrl = '/' + manifest.importcfg;
+            const importcfgResponse = await fetch(importcfgUrl);
+            if (!importcfgResponse.ok) {
+                throw new Error('Failed to download ' + importcfgUrl);
+            }
+            const importcfgArrayBuffer = await importcfgResponse.arrayBuffer();
+            const importcfgTask = cache.cacheFile(importcfgUrl, new Uint8Array(importcfgArrayBuffer));
+        
+            await Promise.all([...cacheTasks, ...wasmTasks, importcfgTask]);
+
+            globalThis.goVersion = goVersion;
+
+        } catch (error) {
+            console.error('Error prefetching Go packages:', error);
+        }
+    }       
 }
 `
 
@@ -733,13 +866,24 @@ var loaderscript = `
         };
 
         fs.stat = fs.lstat = (path, callback) => {
-            path = absPath(path);
+            path = absPath(path);if (e.keyCode == 13) { // enter
+                if (e.shiftKey) { // +shift
+                  run();
+                  e.preventDefault();
+                  return false;
+                } if (e.ctrlKey) { // +control
+                  fmt();
+                  e.preventDefault();
+                } else {
+                  autoindent(e.target);
+                }
+              }
             const file = filesystem[path];
         
             if (file === undefined) {
                 callback(ENOENT());
                 return;
-            }
+            }l
         
             // Determine if the path is a directory
             const isDirectory = path.endsWith('/');
@@ -796,80 +940,72 @@ var loaderscript = `
         };
         
         
-        
-        
+        // check status of cache and update if necessary via  prefetchAndCacheGoPackagesWithVersion()
+        // Modify readFromGoFS and writeToGoFS to use the cache.
+        // Unlike traditional cache, this is reversed:
+        //     - check if the file is in the vfs first
+        //     - if it is, return it
+        //     - if it is not, check the cache
+        //     - if it is, put it in the vfs and return it
+        //     - if it is not and this is a compiler resource, fetch it, put it in the cache and in the vfs and return it
+        //     - if it is not and this is not a compiler asset resource, return an error.
 
-        const readFromGoFS = (path) => {
+        const readFromGoFS = async (path) => {
             path = absPath(path);
-            return fs[path];
+            // Check if the file is in the vfs first
+            if (fs.hasOwnProperty(path)) {
+                return fs[path];
+            } else {
+                // If it is not in the vfs, check the cache
+                try {
+                    const data = await cache.retrieveFile(path);
+                    if (data) {
+                        // If it is in the cache, put it in the vfs and return it
+                        fs[path] = data;
+                        return data;
+                    } else {
+                        // If it is not in the cache and this is a compiler resource
+                        if (isCompilerAsset(path)) {
+                            // Fetch it, put it in the cache and in the vfs, and return it
+                            const fetchedData = await fetchAndCacheFile(path); // Assumes fetchAndCacheFile is implemented to fetch and cache
+                            fs[path] = fetchedData;
+                            return fetchedData;
+                        } else {
+                            // If it is not and this is not a compiler asset resource, throw an error
+                            throw new Error('File not found and is not a compiler asset resource: ' + path);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error reading from GoFS:', error);
+                    throw error; // Rethrow or handle as needed
+                }
+            }
         };
 
         const writeToGoFS = (path, data) => {
             path = absPath(path);
-            if typeof data === 'string' {
-                data = enc.encode(data);
+            if (typeof data === 'string') {
+                data = enc.encode(data); // Assuming 'enc' is previously defined for encoding strings
             }
+            // Simply write to the vfs
             fs[path] = data;
         };
 
-
-        var gcversionScript = document.getElementById('gcversion');
-        newCompilerVersion = gcversionScript ? (gcversionScript.getAttribute('value') || 0) : 0;
+        // Helper function to determine if a path belongs to compiler assets
+        function isCompilerAsset(path) {
+            // Implement logic to determine if the path belongs to compiler assets
+            // For simplicity, let's assume anything under '/wasmgc/' is a compiler asset
+            return path.startsWith('/wasmgc/');
+        }
 
         function getPackageName(path) {
             const parts = path.split(/[\/.]/);
             return parts.slice(1, parts.length - 1).join('/');
         }
 
-        checkAndUpdateVersion(newCompilerVersion, (err) => {
-            if (err) {
-                console.error('Error updating version:', err);
-                return;
-            }
+        
 
-            // Fetch and parse the manifest file // TODO no need for a manifest, use importcfg instead
-            fetch(manifestUrl)
-                .then(response => response.text())
-                .then(text => {
-                    const manifest = {};
-                    text.split("\n").forEach(line => {
-                        const [src, dst] = line.split(" -> ");
-                        if (src && dst) {
-                            manifest[src] = dst;
-                        }
-                    });
-                    return manifest;
-                })
-                .then(manifest => {
-                    const packagePaths = Object.values(manifest);
-                    return Promise.all(packagePaths.map(path => cache.fetchAndCacheFile(path)));
-
-                    /*
-                    Promise.all(
-                        packagePaths.map((path) => cache.fetchAndCacheFile(path))
-                        .concat(
-                            ['compile', 'link', 'gofmt'].map(cmd => 
-                                cache.fetchAndCacheFile('cmd/' + cmd + '.wasm').then(buf => {
-                                    cmds[cmd] = new Uint8Array(buf);
-                                })
-                            )
-                        )
-                    */
-
-                    ).then(() => {
-                        // ... populate the in-memory filesystem
-
-                        // Dynamically create the contents of /importcfg
-                        const importcfgContent = packagePaths.map(p => ` + "`" + `packagefile ${getPackageName(p)}=${p}` + "`" + `).join("\\n");
-                        writeToGoFS('/importcfg', enc.encode(importcfgContent));
-
-                        // Dynamically create the contents of /importcfg.link
-                        const importcfgLinkContent = "packagefile command-line-arguments=main.a\\n" + importcfgContent;
-                        writeToGoFS('/importcfg.link', enc.encode(importcfgLinkContent));
-                    })
-                    .catch(error => console.error('Error processing manifest:', error));
-                });
-        });
+        // TODO Need to generate importcfg.link: the function should already be registered from wasm go
 
         function formatGoCode(replElementID, timeout = 30000) {
             const textareaID = replElementID + "-textarea";
@@ -930,6 +1066,7 @@ var loaderscript = `
             globalThis.goStderr = '';
         
             // Clear the output area
+            clearHighlights(CodeMirrorInstances[textareaID]);
             document.getElementById(outputID).textContent = '';
         
             // Timeout handler
@@ -944,11 +1081,12 @@ var loaderscript = `
             compilationPromise = new Promise((resolve, reject) => {
                 const goCode = document.getElementById(textareaID).value;
                 writeToGoFS('/main.go', enc.encode(goCode));
-                exec(cmds['compile'], ['-o', '/main.wasm', '/main.go'])
+                exec(cmds['compile'], ['-p', 'main', '-complete', '-dwarf=false', '-pack', '-importcfg', '/wasmgc/importcfg', 'main.go'])
                 .then(() => {
                     if (globalThis.goStderr) {
                         document.getElementById(outputID).textContent = globalThis.goStderr;
                         reject(new Error('Compilation failed'));
+                        processAndHighlightErrors(globalThis.goStderr, replElementID);
                         return;
                     }
 
@@ -956,12 +1094,15 @@ var loaderscript = `
                     globalThis.goStdout = '';
                     globalThis.goStderr = '';
 
-                    return exec(cmds['link'], ['-o', '/main.wasm', '/main.o']);
+                    globalThis.generateImportCfgLink('/main.go', '/wasmgc/importcfg', '/wasmgc/importcfg.link');
+
+                    return exec(cmds['link'], ['-importcfg', '/wasmgc/importcfg.link', '-buildmode=exe', 'main.a']);
                 })
                 .then(output => {
                     if (globalThis.goStderr) {
                         document.getElementById(outputID).textContent = globalThis.goStderr;
                         reject(new Error('Linking failed'));
+                        processAndHighlightErrors(globalThis.goStderr, replElementID);
                         return;
                     }
 
@@ -1000,6 +1141,70 @@ var loaderscript = `
     
     
     })();
+
+    function createGoEditor(replElementID) {
+        textareaID = replElementID + "-textarea";
+        var editor = CodeMirror.fromTextArea(document.getElementById(textareaID), {
+            mode: "text/x-go",
+            lineNumbers: true,
+            indentUnit: 4,
+            matchBrackets: true,
+            autoCloseBrackets: true,
+            theme: "default"
+        });
+    
+        // Set up keydown event listener
+        editor.on("keydown", function(editor, e) {
+            if (e.keyCode === 13) { // Enter key
+                if (e.shiftKey) {
+                    RunGoCode(replElementID);
+                    e.preventDefault(); // Prevent the default action (new line)
+                    return false;
+                } else if (e.ctrlKey) {
+                    // Format the code
+                    formatGoCode(replElementID);
+                    e.preventDefault(); // Prevent the default action (new line)
+                }
+            }
+        });
+
+        // let's store the editor instance in a map on the globalThis object
+        globalThis.cmgoEditors = globalThis.goEditors || {};
+        globalThis.cmgoEditors[replElementID] = editor;
+            
+        return editor;
+    }
+    
+    
+    // Highlight error lines
+    function lineHighlight(error, editorInstance) {
+        var regex = /.*?:(\d+):\d+: .*/g;
+        var match;
+        while ((match = regex.exec(error)) !== null) {
+            editorInstance.addLineClass(parseInt(match[1])-1, 'background', 'lineerror');
+        }
+    }
+    
+    // Clear error highlights
+    function clearHighlights(editorInstance) {
+        editorInstance.eachLine((line) => {
+            editorInstance.removeLineClass(line, 'background', 'lineerror');
+        });
+    }
+
+    // Function to highlight errors and clear previous highlights
+    function processAndHighlightErrors(gcStdErr, replElementID) {
+        // Assuming you can access the CodeMirror instance directly
+        // If you store it globally or in a way that's accessible here
+        const editorInstance = globalThis.cmgoEditors[replElementID]; // Example access method
+
+        // Clear previous error highlights
+        clearHighlights(editorInstance);
+
+        // Highlight new errors
+        lineHighlight(gcStdErr, editorInstance);
+    }
+    
 `
 var iframepage = `
                     <!DOCTYPE html>

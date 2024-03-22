@@ -154,7 +154,7 @@ func main() {
 			if !ok {
 				panic("The package " + pkg + " is not in the importmap in spite of being a dependency of the compiled package" + dep)
 			}
-			prefetchList[pkg] = pkgpath
+			prefetchList[pkg] = filepath.Join(dir, strings.TrimPrefix(pkgpath, libDir))
 		}
 	}
 	// Write the prefetch list to a json file
@@ -191,7 +191,8 @@ func main() {
 		"compile":      filepath.Join(dir, "compile.wasm"),
 		"link":         filepath.Join(dir, "link.wasm"),
 		"gofmt":        filepath.Join(dir, "gofmt.wasm"),
-		"libraries":    libDir,
+		"library":    libDir,
+		"min_library":  filepath.Join(dir, "min_library"),
 	}
 
 	manifestPath := filepath.Join(dir, "manifest.json")

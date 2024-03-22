@@ -10,11 +10,11 @@ import (
 	//"errors"
 	"fmt"
 	"github.com/atdiar/particleui/drivers/js/compat"
+	"hash/fnv"
 	"log"
 	"os"
 	"strconv"
 	"strings"
-	"hash/fnv"
 
 	"math/rand"
 	"net/http"
@@ -33,7 +33,7 @@ func init() {
 	ui.NativeDispatch = NativeDispatch
 }
 
-const(
+const (
 	CaptureLimit = 1000000
 )
 
@@ -688,8 +688,8 @@ var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui
 	ConnectNative(e, "window")
 
 	e.AfterEvent("reload", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		j,ok:= JSValue(evt.Origin())
-		if ok{
+		j, ok := JSValue(evt.Origin())
+		if ok {
 			j.Get("location").Call("reload")
 		}
 		return false
@@ -1017,6 +1017,7 @@ type Document struct {
 	Meta      gconstructor[MetaElement, metaConstructor]
 	Title     gconstructor[TitleElement, titleConstructor]
 	Script    gconstructor[ScriptElement, scriptConstructor]
+	Style     gconstructor[StyleElement, styleConstructor]
 	Base      gconstructor[BaseElement, baseConstructor]
 	NoScript  gconstructor[NoScriptElement, noscriptConstructor]
 	Link      gconstructor[LinkElement, linkConstructor]
@@ -1115,7 +1116,7 @@ func (d Document) GetElementById(id string) *ui.Element {
 
 func (d Document) newID() string {
 	var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	l:= len(charset)
+	l := len(charset)
 	b := make([]rune, 32)
 	for i := range b {
 		b[i] = charset[d.rng.Intn(l)]
@@ -1911,11 +1912,11 @@ var constructorDocumentLinker = make(map[string]*Document)
 // Options such as the location of persisted data can be passed to the constructor of an instance.
 func NewDocument(id string, options ...string) Document {
 	d := Document{Element: newDocument(id, options...)}
-	
+
 	// creating the pseudo-random number generator that will create unique ids for elements
 	// which are not provided with any.
 	h := fnv.New64a()
-    h.Write([]byte(id))
+	h.Write([]byte(id))
 	seed := h.Sum64()
 	d.rng = rand.New(rand.NewSource(int64(seed)))
 
@@ -2027,8 +2028,8 @@ var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 })
 
 func activityStateSupport(e *ui.Element) *ui.Element {
-	d:= GetDocument(e)
-	w:= d.Window().AsElement()
+	d := GetDocument(e)
+	w := d.Window().AsElement()
 
 	w.AddEventListener("pagehide", ui.NewEventHandler(func(evt ui.Event) bool {
 		e.TriggerEvent("before-unactive")
@@ -2044,7 +2045,6 @@ func activityStateSupport(e *ui.Element) *ui.Element {
 		return false
 	}))
 
-	
 	d.WatchEvent("reload", w, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		d.TriggerEvent("before-unactive")
 		return false
@@ -2287,6 +2287,13 @@ func withStdConstructors(d Document) Document {
 
 	d.Script = gconstructor[ScriptElement, scriptConstructor](func() ScriptElement {
 		e := ScriptElement{newScript(d.newID())}
+		ui.RegisterElement(d.Element, e.AsElement())
+		return e
+	})
+	d.Script.ownedBy(&d)
+
+	d.Style = gconstructor[StyleElement, styleConstructor](func() StyleElement {
+		e := StyleElement{newStyle(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
@@ -3114,6 +3121,33 @@ func (c scriptConstructor) WithID(id string, options ...string) ScriptElement {
 	return ScriptElement{newScript(id, options...)}
 }
 
+// StyleElement is an Element that allows to define css styles for the document.
+type StyleElement struct {
+	*ui.Element
+}
+
+func (s StyleElement) SetInnerHTML(content string) StyleElement {
+	SetInnerHTML(s.AsElement(), content)
+	return s
+}
+
+var newStyle = Elements.NewConstructor("style", func(id string) *ui.Element {
+
+	e := Elements.NewElement(id)
+	e = enableClasses(e)
+
+	tag := "style"
+	ConnectNative(e, tag)
+
+	return e
+})
+
+type styleConstructor func() StyleElement
+
+func (c styleConstructor) WithID(id string, options ...string) StyleElement {
+	return StyleElement{newStyle(id, options...)}
+}
+
 // BaseElement allows to define the baseurl or the basepath for the links within a page.
 // In our current use-case, it will mostly be used when generating HTML (SSR or SSG).
 // It is then mostly a build-time concern.
@@ -3223,6 +3257,18 @@ func (d DivElement) Contenteditable(b bool) DivElement {
 func (d DivElement) SetText(str string) DivElement {
 	d.AsElement().SetDataSetUI("text", ui.String(str))
 	return d
+}
+
+func (d DivElement) Text() string {
+	v, ok := d.AsElement().GetData("text")
+	if !ok {
+		return ""
+	}
+	text, ok := v.(ui.String)
+	if !ok {
+		return ""
+	}
+	return string(text)
 }
 
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
@@ -6480,10 +6526,10 @@ func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *
 			e.OnMounted(initticker)
 
 			e.WatchEvent(tickname, e, h)
-			
+
 			return false
 		}).RunASAP())
-		
+
 		return e
 	}
 }
