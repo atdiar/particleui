@@ -1078,6 +1078,7 @@ type Document struct {
 
 	StyleSheets map[string]StyleSheet
 	HttpClient  *http.Client
+	DBConnections map[string]js.Value
 }
 
 /*
@@ -1123,6 +1124,171 @@ func (d Document) newID() string {
 	}
 	return string(b)
 }
+
+// Let's add document storage capabilities in IndexedDB
+// We should be able to persist, retrieve, update, delete data under fthe form of blob or JSON is serializable.
+// ensureDBOpen ensures that a database connection is opened and cached.
+
+func (d Document) ensureDBOpen(dbname string) (js.Value, error) {
+    db, exists := d.DBConnections[dbname]
+    if exists {
+        return db, nil
+    }
+
+    done := make(chan js.Value)
+    errChan := make(chan error)
+
+    // Encapsulate the setup in a single conceptual block.
+    setupIndexedDBOpen := func() {
+        openRequest := js.Global().Get("indexedDB").Call("open", dbname, 1)
+
+        successCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            db := openRequest.Get("result")
+            d.DBConnections[dbname] = db
+            done <- db
+            return nil
+        })
+        defer successCallback.Release()
+
+        errorCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            errChan <- js.Error{Value: openRequest.Get("error")}
+            return nil
+        })
+        defer errorCallback.Release()
+
+        upgradeCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            db := args[0].Get("target").Get("result")
+            if !db.Call("objectStoreNames").Call("contains", "store").Bool() {
+                db.Call("createObjectStore", "store", map[string]interface{}{"keyPath": "key"})
+            }
+            return nil
+        })
+        defer upgradeCallback.Release()
+
+        openRequest.Set("onsuccess", successCallback)
+        openRequest.Set("onerror", errorCallback)
+        openRequest.Set("onupgradeneeded", upgradeCallback)
+    }
+
+    // Execute the setup function.
+    setupIndexedDBOpen()
+
+    // Wait for the async operation to complete.
+    select {
+    case db := <-done:
+        return db, nil
+    case err := <-errChan:
+        return js.Null(), err
+    }
+}
+
+
+func (d Document) StoreIDB(dbname, key string, value []byte) error {
+    db, err := d.ensureDBOpen(dbname)
+    if err != nil {
+        return err
+    }
+
+    done := make(chan error)
+
+    storeData := func() {
+        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
+        store := tx.Call("objectStore", "store")
+        putRequest := store.Call("put", js.ValueOf(map[string]interface{}{"key": key, "value": js.Global().Get("Uint8Array").New(value)}))
+        
+        putRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            done <- nil
+            return nil
+        }))
+
+        putRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            done <- js.Error{Value: putRequest.Get("error")}
+            return nil
+        }))
+    }
+
+    // Execute the storage operation.
+    storeData()
+
+    return <-done
+}
+
+func (d Document) RetrieveIDB(dbname, key string) ([]byte, error) {
+    db, err := d.ensureDBOpen(dbname)
+    if err != nil {
+        return nil, err
+    }
+
+    done := make(chan []byte)
+    errChan := make(chan error)
+
+    retrieveData := func() {
+        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readonly")
+        store := tx.Call("objectStore", "store")
+        getRequest := store.Call("get", key)
+        
+        getRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            result := getRequest.Get("result")
+            if !result.Truthy() {
+                done <- nil
+            } else {
+                value := make([]byte, result.Get("value").Get("length").Int())
+                js.CopyBytesToGo(value, result.Get("value"))
+                done <- value
+            }
+            return nil
+        }))
+
+        getRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            errChan <- js.Error{Value: getRequest.Get("error")}
+            return nil
+        }))
+    }
+
+    // Execute the retrieval operation.
+    retrieveData()
+
+    select {
+    case data := <-done:
+        return data, nil
+    case err := <-errChan:
+        return nil, err
+    }
+}
+
+func (d Document) DeleteIDB(dbname, key string) error {
+    db, err := d.ensureDBOpen(dbname)
+    if err != nil {
+        return err
+    }
+
+    done := make(chan error)
+
+    deleteData := func() {
+        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
+        store := tx.Call("objectStore", "store")
+        deleteRequest := store.Call("delete", key)
+        
+        deleteRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            done <- nil
+            return nil
+        }))
+
+        deleteRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+            done <- js.Error{Value: deleteRequest.Get("error")}
+            return nil
+        }))
+    }
+
+    // Execute the deletion operation.
+    deleteData()
+
+    return <-done
+}
+
+
+
+
 
 // NewObservable returns a new ui.Observable element after registering it for the document.
 // If the observable alreadys exiswted for this id, it is returns as is.
@@ -1929,6 +2095,8 @@ func NewDocument(id string, options ...string) Document {
 		panic(err)
 	}
 	d.HttpClient.Jar = jar
+
+	d.DBConnections = make(map[string]js.Value)
 
 	d.newMutationRecorder(EnableSessionPersistence())
 

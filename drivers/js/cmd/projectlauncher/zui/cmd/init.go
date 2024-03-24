@@ -602,6 +602,16 @@ func isGoWorkSet() (bool, error) {
 
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
+		toolchain:= "go"
+		if tinygo{
+			// let's check whether the tinygo toolchain is available, otherwise error out
+			_, err := exec.LookPath("tinygo")
+			if err != nil{
+				return fmt.Errorf("tinygo toolchain not found")
+			}
+			toolchain = "tinygo"
+		}
+
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
 
@@ -665,7 +675,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		}
 
 		// Execute the build command
-		cmd := exec.Command("go", args...)
+		cmd := exec.Command(toolchain, args...)
 		cmd.Dir = filepath.Join(".", "dev")
 
 		cmd.Stdout = os.Stdout

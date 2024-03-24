@@ -11,6 +11,7 @@ import (
 
 	"github.com/atdiar/particleui"
 	. "github.com/atdiar/particleui/drivers/js"
+	doc "github.com/atdiar/particleui/drivers/js"
 	"github.com/atdiar/particleui/drivers/js/compat"
 )
 
@@ -104,6 +105,7 @@ func (r ReplElement) ButtonsContainer() DivElement {
 // Repl returns a ReplElement which is able to compile and render UI code in the browser locally.
 func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...string) ReplElement {
 	repl := d.Div.WithID(id, options...)
+    doc.SyncOnDataMutation(repl.AsElement(), "text")
 	// TODO append the gcversion script with the value attribute set to the go compiler version in use
 	textarea := d.TextArea.WithID(id + "-textarea")
 	outputfield := d.Div.WithID(id + "-output")
@@ -1181,14 +1183,14 @@ var loaderscript = `
         var regex = /.*?:(\d+):\d+: .*/g;
         var match;
         while ((match = regex.exec(error)) !== null) {
-            editorInstance.addLineClass(parseInt(match[1])-1, 'background', 'lineerror');
+            editorInstance.addLineClass(parseInt(match[1])-1, 'background', 'cm-error-line');
         }
     }
     
     // Clear error highlights
     function clearHighlights(editorInstance) {
         editorInstance.eachLine((line) => {
-            editorInstance.removeLineClass(line, 'background', 'lineerror');
+            editorInstance.removeLineClass(line, 'background', 'cm-error-line');
         });
     }
 
