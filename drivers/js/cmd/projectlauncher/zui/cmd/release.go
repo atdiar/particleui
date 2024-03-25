@@ -18,6 +18,11 @@ import (
 var tinygo bool
 var release bool
 
+var tinygoinstallerURL string = "github.com/atdiar/particleui/drivers/js/cmd/tinygoinstall"
+var binaryeninstallerURL string = "github.com/atdiar/particleui/drivers/js/cmd/binaryeninstall"
+
+// TODO update the URL for the installers once the project is moved to its final location. (DEBUG)
+
 // releaseCmd represents the release command
 var releaseCmd = &cobra.Command{
 	Use:   "release",
@@ -173,6 +178,33 @@ var releaseCmd = &cobra.Command{
 				os.Exit(1)
 				return
 			}
+
+			// Now we may want to try and optimize the output file  with binaryen's wasm-opt.
+			// First, let's check whether binaryen's wasm-opt is installed.
+			// If not, let's install it:
+			if _, err := exec.LookPath("wasm-opt"); err != nil {
+				// wasm-opt is not available
+				if err := installBinaryenGo(verbose); err != nil {
+					fmt.Println(err)
+					os.Exit(1)
+					return
+				}
+			}
+
+			// Now we can optimize the wasm file with wasm-opt
+			// wasm-opt -Oz -o main.wasm main.wasm
+			cmd := exec.Command("wasm-opt", "-Oz", "-o", filepath.Join(".", "dev", "build", "app", "main.wasm"), filepath.Join(".", "dev", "build", "app", "main.wasm"))
+			err = cmd.Run()
+			if err != nil {
+				fmt.Println("Error: unable to optimize the wasm file.")
+				os.Exit(1)
+				return
+			}
+
+			if verbose {
+				fmt.Println("wasm file optimized.")
+			}
+			
 		} else if On("mobile") {
 			// TODO
 			// Make sure that only acceptable flags have been passed.
@@ -197,7 +229,6 @@ var releaseCmd = &cobra.Command{
 		// And any other potential optimization
 
 		// Add -tinygo flag to build with the tinygo compiler if present
-		// perhaps that in case it is not present, the user may be prompted to install it
 
 		// remove debug info from wasm binary by using ldlflags="-s -w" (TODO)
 
@@ -206,6 +237,46 @@ var releaseCmd = &cobra.Command{
 		// to notify that it can be optimnized with wasm-opt
 		// otherwise, there should be an option to install it from our mirror
 	},
+}
+
+func installBinaryenGo(verbosity bool) error {
+	var response string
+	fmt.Print("Would you like to install the binaryen toolchain? (y/n): ")
+	_, err := fmt.Scan(&response)
+	if err != nil {
+		return fmt.Errorf("error reading input: %v", err)
+	}
+
+	if response == "y" {
+		// Prepare the command for installing binaryen
+		installCmdArgs := []string{"install"}
+		if verbosity {
+			// Append the verbosity flag based on the verbosity argument
+			installCmdArgs = append(installCmdArgs, "-verbose")
+		}
+		installCmdArgs = append(installCmdArgs, binaryeninstallerURL)
+		cmd := exec.Command("go", installCmdArgs...)
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error installing binaryen: %v", err)
+		}
+
+		// Prepare the command to run the binaryen installer, assuming it also accepts a verbosity flag
+		binaryenInstallCmd := []string{"binaryeninstall"}
+		if verbosity {
+			// Append the verbosity flag based on the verbosity argument
+			binaryenInstallCmd = append(binaryenInstallCmd, "-verbose")
+		}
+		cmd = exec.Command(binaryenInstallCmd[0], binaryenInstallCmd[1:]...)
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error running binaryen installer: %v", err)
+		}
+	} else {
+		return fmt.Errorf("binaryen toolchain installation aborted")
+	}
+
+	return nil
 }
 
 func init() {

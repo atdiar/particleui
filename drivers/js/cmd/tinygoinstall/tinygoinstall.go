@@ -106,6 +106,8 @@ func installTinyGoLinux(latestVersion string) error {
 				return fmt.Errorf("failed to install TinyGo with dpkg: %w", err)
 			}
 		case "fedora":
+
+			// TODO use dnf to install tinygo (DEBUG)
 			tarURL := fmt.Sprintf("https://github.com/tinygo-org/tinygo/releases/download/%s/tinygo_%s_linux_amd64.tar.gz", latestVersion, latestVersion)
 			tarPath := filepath.Join(os.TempDir(), "tinygo.tar.gz")
 		

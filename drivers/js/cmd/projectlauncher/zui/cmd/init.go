@@ -600,6 +600,47 @@ func isGoWorkSet() (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+func installTinyGo(verbosity bool) error {
+	var response string
+	fmt.Print("Would you like to install the tinygo toolchain? (y/n): ")
+	_, err := fmt.Scan(&response)
+	if err != nil {
+		return fmt.Errorf("error reading input: %v", err)
+	}
+
+	if response == "y" {
+		tinygoinstallerURL := "your/tinygo/installer/url" // Define your installer URL or correct command
+		// Prepare the command for installing tinygo
+		installCmdArgs := []string{"install"}
+		if verbosity {
+			// Append the verbosity flag based on the verbosity argument
+			installCmdArgs = append(installCmdArgs, "-verbose")
+		}
+		installCmdArgs = append(installCmdArgs, tinygoinstallerURL)
+		cmd := exec.Command("go", installCmdArgs...)
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error installing tinygo: %v", err)
+		}
+
+		// Prepare the command to run the tinygo installer, assuming it also accepts a verbosity flag
+		tinyGoInstallCmd := []string{"tinygoinstall"}
+		if verbosity {
+			// Append the verbosity flag based on the verbosity argument
+			tinyGoInstallCmd = append(tinyGoInstallCmd, "-verbose")
+		}
+		cmd = exec.Command(tinyGoInstallCmd[0], tinyGoInstallCmd[1:]...)
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error running tinygo installer: %v", err)
+		}
+	} else {
+		return fmt.Errorf("tinygo toolchain installation aborted")
+	}
+
+	return nil
+}
+
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
 		toolchain:= "go"
@@ -607,7 +648,14 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			// let's check whether the tinygo toolchain is available, otherwise error out
 			_, err := exec.LookPath("tinygo")
 			if err != nil{
-				return fmt.Errorf("tinygo toolchain not found")
+				err := installTinyGo(verbose)
+				if err != nil{
+					fmt.Printf("error installing tinygo: %v", err)
+					os.Exit(1)
+				} 
+				if verbose{
+					fmt.Println("tinygo installed successfully.")
+				}
 			}
 			toolchain = "tinygo"
 		}
