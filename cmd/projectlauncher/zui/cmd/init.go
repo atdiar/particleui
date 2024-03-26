@@ -609,7 +609,6 @@ func installTinyGo(verbosity bool) error {
 	}
 
 	if response == "y" {
-		tinygoinstallerURL := "your/tinygo/installer/url" // Define your installer URL or correct command
 		// Prepare the command for installing tinygo
 		installCmdArgs := []string{"install"}
 		if verbosity {
