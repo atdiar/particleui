@@ -18,8 +18,8 @@ import (
 var tinygo bool
 var release bool
 
-var tinygoinstallerURL string = "github.com/atdiar/particleui/drivers/js/cmd/tinygoinstall"
-var binaryeninstallerURL string = "github.com/atdiar/particleui/drivers/js/cmd/binaryeninstall"
+var tinygoinstallerURL string = "github.com/atdiar/particleui/cmd/tinygoinstall"
+var binaryeninstallerURL string = "github.com/atdiar/particleui/cmd/binaryeninstall"
 
 // TODO update the URL for the installers once the project is moved to its final location. (DEBUG)
 
