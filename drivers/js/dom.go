@@ -1973,6 +1973,108 @@ func Autofocus(e *ui.Element) *ui.Element {
 	return e
 }
 
+
+// ScrollIntoView scrolls the element's ancestor containers such that the element on which it is 
+// called is visible to the user.
+func(d Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
+	var m map[string]any
+	if len(options) > 0 {
+		m = make(map[string]any)
+		for _, o := range options {
+			o(m)
+		}
+	}
+
+	n, ok := JSValue(e)
+	if !ok {
+		return
+	}
+	if m != nil {
+		n.Call("scrollIntoView", m)
+		return
+	}
+	n.Call("scrollIntoView")
+}
+
+type ScrollOption func(map[string]any)
+
+func AlignToTop() ScrollOption{
+	return func(m map[string]any) {
+		m["block"] = "start"
+		m["inline"] = "nearest"
+	}
+}
+
+type ScrollIntoViewOptions struct{}
+func(s ScrollIntoViewOptions) Smooth() ScrollOption {
+	return func(m map[string]any) {
+		m["behavior"] = "smooth"
+	}
+}
+
+func(s ScrollIntoViewOptions) Instant() ScrollOption {
+	return func(m map[string]any) {
+		m["behavior"] = "instant"
+	}
+}
+
+func(s ScrollIntoViewOptions) Auto() ScrollOption {
+	return func(m map[string]any) {
+		m["behavior"] = "auto"
+	}
+}
+
+func(s ScrollIntoViewOptions) BlockStart() ScrollOption {
+	return func(m map[string]any) {
+		m["block"] = "start"
+	}
+}
+
+func(s ScrollIntoViewOptions) BlockCenter() ScrollOption {
+	return func(m map[string]any) {
+		m["block"] = "center"
+	}
+}
+
+func(s ScrollIntoViewOptions) BlockEnd() ScrollOption {
+	return func(m map[string]any) {
+		m["block"] = "end"
+	}
+}
+
+func(s ScrollIntoViewOptions) InlineStart() ScrollOption {
+	return func(m map[string]any) {
+		m["inline"] = "start"
+	}
+}
+
+func(s ScrollIntoViewOptions) InlineCenter() ScrollOption {
+	return func(m map[string]any) {
+		m["inline"] = "center"
+	}
+}
+
+func(s ScrollIntoViewOptions) InlineEnd() ScrollOption {
+	return func(m map[string]any) {
+		m["inline"] = "end"
+	}
+}
+
+func(s ScrollIntoViewOptions) BlockNearest() ScrollOption {
+	return func(m map[string]any) {
+		m["block"] = "nearest"
+	}
+}
+
+func(s ScrollIntoViewOptions) InlineNearest() ScrollOption {
+	return func(m map[string]any) {
+		m["inline"] = "nearest"
+	}
+}
+
+
+
+
 // withNativejshelpers returns a modifier that appends a script in which naive js functions to be called
 // from Go are defined
 func withNativejshelpers(d *Document) *Document {

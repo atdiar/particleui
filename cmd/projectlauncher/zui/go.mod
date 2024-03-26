@@ -1,4 +1,4 @@
-module github.com/atdiar/particleui/projectlauncher/zui
+module github.com/atdiar/particleui/cmd/projectlauncher/zui
 
 go 1.20
 
