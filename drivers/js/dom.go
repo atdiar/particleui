@@ -1416,11 +1416,12 @@ func (s StyleSheet) String() string {
 	rules := r.(ui.List).UnsafelyUnwrap()
 	for _, rule := range rules {
 		o := rule.(ui.Object)
-		o.Range(func(k string, v ui.Value) {
+		o.Range(func(k string, v ui.Value) bool{
 			res.WriteString(k)
 			res.WriteString("{")
 			res.WriteString(v.(ui.String).String())
 			res.WriteString("}\n") // TODO check carriage return necessity
+			return false
 		})
 	}
 	return res.String()
@@ -2854,13 +2855,15 @@ var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 		o := evt.NewValue().(ui.Object)
 		// stringBuilder
 		var res strings.Builder
-		o.Range(func(k string, v ui.Value) {
+		o.Range(func(k string, v ui.Value) bool {
 			res.WriteString(k)
 			res.WriteString(" ")
-			v.(ui.List).Range(func(i int, v ui.Value) {
+			v.(ui.List).Range(func(i int, v ui.Value) bool {
 				res.WriteString(string(v.(ui.String)))
 				res.WriteString("; ")
+				return false
 			})
+			return false
 		})
 		e.SetUI("allow", ui.String(strings.TrimSuffix(res.String(), "; ")))
 		return false

@@ -37,7 +37,7 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 			return e
 		}
 		ruleset := rls.(ui.Object)
-		ruleset.Range(func(pseudoclass string, rulelist ui.Value){
+		ruleset.Range(func(pseudoclass string, rulelist ui.Value) bool{
 			for _, rule := range rulelist.(ui.List).UnsafelyUnwrap(){
 				ruleobj := rule.(ui.Object)
 				property := ruleobj.MustGetString("property")
@@ -47,6 +47,7 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 				rulestr:= property.String()+":"+value.String()+";"
 				s.InsertRule(selector,rulestr)
 			}
+			return false
 		})
 		return e
 	}

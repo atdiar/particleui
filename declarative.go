@@ -61,4 +61,53 @@ func Ref(vref **Element) func(*Element) *Element{
 		return e
 	}
 }
+// Switch is an *Element modifier that applies to an element and allows to conditionally set its children
+// based on the value of a property:
+// 
+//	Switch("ui","display").
+//		Case(String("small"), A).
+//		Case(String("large"), B).
+//		Case(String("medium"), C).
+//	Default(nil),
+//
+// In the above example, the children of the element will be set to A if the value of the property "display" is "small",
+// to B if it is "large", to C if it is "medium" and to nothing if it is anything else.
+// The Default method is used to set the children of the element when the property value does not match any of the cases.
+func Switch(category, propname string) elementSwitch{
+	return elementSwitch{category:category, propname:propname, cases: []Value{}, elements: []*Element{}}
+}
+
+type elementSwitch struct{
+	category string
+	propname string
+	cases []Value
+	elements []*Element
+}
+
+func(e elementSwitch) Case(val Value, elem *Element) elementSwitch{
+	e.cases = append(e.cases,val)
+	e.elements = append(e.elements,elem)
+	return e
+}
+
+func (e elementSwitch) Default(elem *Element) func(*Element)*Element{
+	for i:=0;i<len(e.cases);i++{
+		if Equal(e.cases[i],(String("zui-default"))){
+			panic("Default case already defined")
+		}
+	}
+	e.cases= append(e.cases,String("zui-default"))
+	e.elements= append(e.elements,elem)
+	return func(el *Element) *Element{
+		for i:=0;i<len(e.cases);i++{
+			el.Watch(e.category,e.propname,el, NewMutationHandler(func(evt MutationEvent)bool{
+				if Equal(evt.NewValue(),e.cases[i]){
+					el.SetChildren(e.elements[i])
+				}
+				return false
+			}))
+		}
+		return el
+	}
+}
 

@@ -14,6 +14,7 @@ import(
 // That means that calling Style multiple times on the same element will only replace the previous style.
 // The categorisation in different stylesheet could allow for instance to 
 // differentiate styles for light and dark mode.
+// Style are functions and as such are composable. This also means that a style can be modified by composition.
 func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element) *ui.Element{
 		if styled(stylesheetID,e){
@@ -36,8 +37,8 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 			return e
 		}
 		ruleset := rls.(ui.Object)
-		ruleset.Range(func(pseudoclass string, rulelist ui.Value){
-			for _, rule := range rulelist.(ui.List).UnsafelyUnwrap(){
+		ruleset.Range(func(pseudoclass string, rulelist ui.Value) bool{
+			rulelist.(ui.List).Range(func(i int, rule ui.Value) bool{
 				ruleobj := rule.(ui.Object)
 				property := ruleobj.MustGetString("property")
 				value := ruleobj.MustGetString("value")
@@ -45,7 +46,9 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 				selector:= "#"+e.ID+pseudoclass
 				rulestr:= property.String()+":"+value.String()+";"
 				s.InsertRule(selector,rulestr)
-			}
+				return false
+			})
+			return false
 		})
 		return e
 	}

@@ -3,6 +3,9 @@ package ui
 
 import (
 //"strings"
+	"reflect"
+	"fmt"
+	"encoding/json"
 )
 
 type discriminant string // just here to pin the definition of the Value interface to this package
@@ -222,10 +225,11 @@ func (o Object) Size() int{
 }
 
 
-func (o Object) Range(f func(key string, val Value)){
+func (o Object) Range(f func(key string, val Value) (done bool)){
 	for k,v := range o.o{
 		if k == "zui_object_typ" || k == "zui_object_value" || k == "zui_object_raw"{continue}
-		f(k,v.(Value))
+		done := f(k,v.(Value))
+		if done {break}
 	}
 }
 // Unwrap returnis the underlying map that is used to store the object values.
@@ -530,9 +534,10 @@ func(l List) Filter(validator func(Value)bool) List{
 	return List{l.l.Filter(validator),false}
 }
 
-func(l List) Range(f func(index int, val Value)){
+func(l List) Range(f func(index int, val Value) (done bool)){
 	for i,v := range l.l{
-		f(i,v)
+		done := f(i,v)
+		if done {break}
 	}
 }
 
@@ -821,3 +826,205 @@ func Equal(v Value, w Value) bool {
 	panic("Equality is not specified for this Value type")
 }
 
+// Polymorphic Serialization/Deserialization functions:
+// These functions are used to serialize and deserialize values of arbitrary go types.
+// Should enable easy interfacing with the Value type for storage or retrieval of data to/from the UI tree.
+
+// Serialize converts a Go value to a Value.
+// The value must be of a type that doesn't contain unserializable types like functions or channels.
+// Not even as map values or slice or array elements.
+// The function returns an error if the value is not serializable.
+func Serialize(v interface{}) (Value, error) {
+    rv := reflect.ValueOf(v)
+    if !rv.IsValid() {
+        return nil, fmt.Errorf("invalid value")
+    }
+
+    switch rv.Kind() {
+	case reflect.Ptr:
+		if rv.IsNil() {
+            // Explicitly handle nil pointers by returning a nil Value without error.
+            return nil, nil
+        }
+        // Dereference non-nil pointers to serialize the actual value they point to.
+        rv = rv.Elem()
+        return Serialize(rv.Interface())
+    case reflect.Bool:
+        return Bool(rv.Bool()), nil
+    case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+        reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+        reflect.Float32, reflect.Float64:
+        return Number(rv.Convert(reflect.TypeOf(float64(0))).Float()), nil
+    case reflect.String:
+        return String(rv.String()), nil
+    case reflect.Slice, reflect.Array:
+        list := NewList()
+        for i := 0; i < rv.Len(); i++ {
+            elem, err := Serialize(rv.Index(i).Interface())
+            if err != nil {
+                return nil, err
+            }
+            list.Append(elem)
+        }
+        return list.Commit(), nil
+    case reflect.Map, reflect.Struct:
+        obj := NewObject()
+        if rv.Kind() == reflect.Map {
+            for _, key := range rv.MapKeys() {
+                keyStr, err := mapKeyToString(key)
+                if err != nil {
+                    return nil, err
+                }
+                value, err := Serialize(rv.MapIndex(key).Interface())
+                if err != nil {
+                    return nil, err
+                }
+                obj.Set(keyStr, value)
+            }
+        } else if rv.Kind() == reflect.Struct {
+            for i := 0; i < rv.NumField(); i++ {
+                field := rv.Field(i)
+                fieldName := rv.Type().Field(i).Name
+                fieldValue, err := Serialize(field.Interface())
+                if err != nil {
+                    return nil, err
+                }
+                obj.Set(fieldName, fieldValue)
+            }
+        }
+        return obj.Commit(), nil
+    default:
+        return nil, fmt.Errorf("unsupported type: %s", rv.Kind())
+    }
+}
+
+// mapKeyToString converts complex map keys to a string using JSON encoding.
+func mapKeyToString(key reflect.Value) (string, error) {
+    if key.Kind() == reflect.String {
+        return key.String(), nil
+    }
+    keyData, err := json.Marshal(key.Interface())
+    if err != nil {
+        return "", err
+    }
+    return string(keyData), nil
+}
+
+// Deserialize converts a serialized Value back to a Go value.
+func Deserialize[T any](v Value, ptr *T) error {
+    if ptr == nil {
+        return fmt.Errorf("nil pointer passed to Deserialize")
+    }
+    return deserialize(v, ptr)
+}
+
+// deserialize is an intermediary function that handles the actual deserialization logic.
+func deserialize(v Value, target any) error {
+    targetValue := reflect.ValueOf(target)
+    if targetValue.Kind() != reflect.Ptr {
+        return fmt.Errorf("target must be a pointer")
+    }
+    targetValue = targetValue.Elem()
+
+    switch val := v.(type) {
+    case Bool:
+        if targetValue.Kind() == reflect.Bool {
+            targetValue.SetBool(bool(val))
+        } else {
+            return fmt.Errorf("type mismatch: expected bool, got %T", val)
+        }
+    case Number:
+        // Example for handling ui.Number conversion to various Go numeric types.
+        if !setNumber(targetValue, float64(val)) {
+            return fmt.Errorf("type mismatch: expected numeric type, got %T", val)
+        }
+    case String:
+        if targetValue.Kind() == reflect.String {
+            targetValue.SetString(string(val))
+        } else {
+            return fmt.Errorf("type mismatch: expected string, got %T", val)
+        }
+    case List:
+        if targetValue.Kind() != reflect.Slice {
+            return fmt.Errorf("expected a slice for List deserialization, got %s", targetValue.Kind())
+        }
+        return deserializeList(val, targetValue)
+    case Object:
+        if targetValue.Kind() == reflect.Struct {
+            return deserializeObject(val, targetValue)
+        } else if targetValue.Kind() == reflect.Map {
+            return deserializeMap(val, targetValue)
+        } else {
+            return fmt.Errorf("expected a struct or map for Object deserialization, got %s", targetValue.Kind())
+        }
+    default:
+        return fmt.Errorf("unsupported Value type: %T", v)
+    }
+
+    return nil
+}
+
+// setNumber attempts to set a target reflect.Value with a numeric value, adjusting for the target's kind.
+func setNumber(target reflect.Value, num float64) bool {
+    switch target.Kind() {
+    case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+        target.SetInt(int64(num))
+    case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+        target.SetUint(uint64(num))
+    case reflect.Float32, reflect.Float64:
+        target.SetFloat(num)
+    default:
+        return false
+    }
+    return true
+}
+
+// deserializeList handles the deserialization of a ui.List into a Go slice.
+func deserializeList(list List, target reflect.Value) error {
+    elemType := target.Type().Elem()
+	var Err error
+    list.Range(func(i int, elem Value) bool {
+		newElemPtr := reflect.New(elemType).Interface()
+        if err := deserialize(elem, newElemPtr); err != nil {
+            Err = err
+			return true
+        }
+        target.Set(reflect.Append(target, reflect.ValueOf(newElemPtr).Elem()))
+		return false
+    })
+    return Err
+}
+
+// deserializeObject handles the deserialization of a ui.Object into a Go struct.
+func deserializeObject(obj Object, target reflect.Value) error {
+    for i := 0; i < target.NumField(); i++ {
+        field := target.Type().Field(i)
+        if val, ok := obj.Get(field.Name); ok {
+            fieldValue := target.Field(i)
+            if err := deserialize(val, fieldValue.Addr().Interface()); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
+// deserializeMap handles the deserialization of a ui.Object into a Go map.
+func deserializeMap(obj Object, target reflect.Value) error {
+    // Example implementation assumes map[string]interface{} for simplicity.
+    // Adjust as necessary for other map types.
+	var Err error
+    target.Set(reflect.MakeMap(target.Type()))
+    obj.Range(func(key string, val Value) bool {
+        keyVal := reflect.ValueOf(key)
+        elemPtr := reflect.New(target.Type().Elem()).Interface()
+		
+        if err := deserialize(val, elemPtr); err != nil {
+            Err = err
+			return true
+        }
+        target.SetMapIndex(keyVal, reflect.ValueOf(elemPtr).Elem())
+		return false
+    })
+    return Err
+}
