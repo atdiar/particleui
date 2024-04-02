@@ -1175,6 +1175,9 @@ func (e *Element) SetChildren(any ...*Element) *Element {
 
 		newchildrenIdList :=  stringsPool.Get()
 		for _, el := range any {
+			if el == nil{
+				continue
+			}
 			if e.DocType != el.DocType {
 				log.Printf("Doctypes do not match. Parent has %s while child Element has %s", e.DocType, el.DocType)
 				panic("SetChildren failed: wrong doctype")
@@ -1182,7 +1185,7 @@ func (e *Element) SetChildren(any ...*Element) *Element {
 			allChildren[el.ID] = el
 			newchildrenIdList = append(newchildrenIdList, el.ID)
 		}
-
+ 
 		// calculate myers-diff that generates the edit trace
 		editscript := MyersDiff(oldchildrenIdList, newchildrenIdList)
 		finalize:= applyEdits(e, editscript, allChildren)
@@ -1203,6 +1206,9 @@ func (e *Element) SetChildren(any ...*Element) *Element {
 
 	e.RemoveChildren()
 	for _, el := range any {
+		if el == nil{
+			continue
+		}
 		e.AppendChild(el)
 	}
 

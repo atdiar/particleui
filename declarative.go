@@ -177,18 +177,16 @@ func ForEachIn(uiprop string, f func(int, Value) *Element, link ...func(parent *
 			case List:
 				w := v.Unwrap()
 				length := len(w)
-				var newchildren = make([]*Element,0, length)
+				var newchildren = make([]*Element,length)
 				g := func(k int, val Value) bool {
 					ne := f(k, val)
 					if ne != nil{
-						if link != nil{
-							for _, l := range link{
-								if l != nil{
-									l(e, ne)
-								}
+						for _, l := range link{
+							if l != nil{
+								l(e, ne)
 							}
 						}
-						newchildren = append(newchildren, ne)
+						newchildren[k] = ne
 					}
 					return false
 				}
@@ -197,6 +195,11 @@ func ForEachIn(uiprop string, f func(int, Value) *Element, link ...func(parent *
 			default:
 				el:= f(0, v)
 				if el != nil{
+					for _, l := range link{
+						if l != nil{
+							l(e, el)
+						}
+					}
 					e.SetChildren(el)
 				}
 			}
