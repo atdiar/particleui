@@ -1076,8 +1076,8 @@ type Document struct {
 	Form      gconstructor[FormElement, formConstructor]
 	Iframe    iframeconstructor[IframeElement, iframeConstructor]
 
-	StyleSheets map[string]StyleSheet
-	HttpClient  *http.Client
+	StyleSheets   map[string]StyleSheet
+	HttpClient    *http.Client
 	DBConnections map[string]js.Value
 }
 
@@ -1130,165 +1130,160 @@ func (d Document) newID() string {
 // ensureDBOpen ensures that a database connection is opened and cached.
 
 func (d Document) ensureDBOpen(dbname string) (js.Value, error) {
-    db, exists := d.DBConnections[dbname]
-    if exists {
-        return db, nil
-    }
+	db, exists := d.DBConnections[dbname]
+	if exists {
+		return db, nil
+	}
 
-    done := make(chan js.Value)
-    errChan := make(chan error)
+	done := make(chan js.Value)
+	errChan := make(chan error)
 
-    // Encapsulate the setup in a single conceptual block.
-    setupIndexedDBOpen := func() {
-        openRequest := js.Global().Get("indexedDB").Call("open", dbname, 1)
+	// Encapsulate the setup in a single conceptual block.
+	setupIndexedDBOpen := func() {
+		openRequest := js.Global().Get("indexedDB").Call("open", dbname, 1)
 
-        successCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            db := openRequest.Get("result")
-            d.DBConnections[dbname] = db
-            done <- db
-            return nil
-        })
-        defer successCallback.Release()
+		successCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			db := openRequest.Get("result")
+			d.DBConnections[dbname] = db
+			done <- db
+			return nil
+		})
+		defer successCallback.Release()
 
-        errorCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            errChan <- js.Error{Value: openRequest.Get("error")}
-            return nil
-        })
-        defer errorCallback.Release()
+		errorCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			errChan <- js.Error{Value: openRequest.Get("error")}
+			return nil
+		})
+		defer errorCallback.Release()
 
-        upgradeCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            db := args[0].Get("target").Get("result")
-            if !db.Call("objectStoreNames").Call("contains", "store").Bool() {
-                db.Call("createObjectStore", "store", map[string]interface{}{"keyPath": "key"})
-            }
-            return nil
-        })
-        defer upgradeCallback.Release()
+		upgradeCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			db := args[0].Get("target").Get("result")
+			if !db.Call("objectStoreNames").Call("contains", "store").Bool() {
+				db.Call("createObjectStore", "store", map[string]interface{}{"keyPath": "key"})
+			}
+			return nil
+		})
+		defer upgradeCallback.Release()
 
-        openRequest.Set("onsuccess", successCallback)
-        openRequest.Set("onerror", errorCallback)
-        openRequest.Set("onupgradeneeded", upgradeCallback)
-    }
+		openRequest.Set("onsuccess", successCallback)
+		openRequest.Set("onerror", errorCallback)
+		openRequest.Set("onupgradeneeded", upgradeCallback)
+	}
 
-    // Execute the setup function.
-    setupIndexedDBOpen()
+	// Execute the setup function.
+	setupIndexedDBOpen()
 
-    // Wait for the async operation to complete.
-    select {
-    case db := <-done:
-        return db, nil
-    case err := <-errChan:
-        return js.Null(), err
-    }
+	// Wait for the async operation to complete.
+	select {
+	case db := <-done:
+		return db, nil
+	case err := <-errChan:
+		return js.Null(), err
+	}
 }
 
-
 func (d Document) StoreIDB(dbname, key string, value []byte) error {
-    db, err := d.ensureDBOpen(dbname)
-    if err != nil {
-        return err
-    }
+	db, err := d.ensureDBOpen(dbname)
+	if err != nil {
+		return err
+	}
 
-    done := make(chan error)
+	done := make(chan error)
 
-    storeData := func() {
-        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
-        store := tx.Call("objectStore", "store")
-        putRequest := store.Call("put", js.ValueOf(map[string]interface{}{"key": key, "value": js.Global().Get("Uint8Array").New(value)}))
-        
-        putRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            done <- nil
-            return nil
-        }))
+	storeData := func() {
+		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
+		store := tx.Call("objectStore", "store")
+		putRequest := store.Call("put", js.ValueOf(map[string]interface{}{"key": key, "value": js.Global().Get("Uint8Array").New(value)}))
 
-        putRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            done <- js.Error{Value: putRequest.Get("error")}
-            return nil
-        }))
-    }
+		putRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			done <- nil
+			return nil
+		}))
 
-    // Execute the storage operation.
-    storeData()
+		putRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			done <- js.Error{Value: putRequest.Get("error")}
+			return nil
+		}))
+	}
 
-    return <-done
+	// Execute the storage operation.
+	storeData()
+
+	return <-done
 }
 
 func (d Document) RetrieveIDB(dbname, key string) ([]byte, error) {
-    db, err := d.ensureDBOpen(dbname)
-    if err != nil {
-        return nil, err
-    }
+	db, err := d.ensureDBOpen(dbname)
+	if err != nil {
+		return nil, err
+	}
 
-    done := make(chan []byte)
-    errChan := make(chan error)
+	done := make(chan []byte)
+	errChan := make(chan error)
 
-    retrieveData := func() {
-        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readonly")
-        store := tx.Call("objectStore", "store")
-        getRequest := store.Call("get", key)
-        
-        getRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            result := getRequest.Get("result")
-            if !result.Truthy() {
-                done <- nil
-            } else {
-                value := make([]byte, result.Get("value").Get("length").Int())
-                js.CopyBytesToGo(value, result.Get("value"))
-                done <- value
-            }
-            return nil
-        }))
+	retrieveData := func() {
+		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readonly")
+		store := tx.Call("objectStore", "store")
+		getRequest := store.Call("get", key)
 
-        getRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            errChan <- js.Error{Value: getRequest.Get("error")}
-            return nil
-        }))
-    }
+		getRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			result := getRequest.Get("result")
+			if !result.Truthy() {
+				done <- nil
+			} else {
+				value := make([]byte, result.Get("value").Get("length").Int())
+				js.CopyBytesToGo(value, result.Get("value"))
+				done <- value
+			}
+			return nil
+		}))
 
-    // Execute the retrieval operation.
-    retrieveData()
+		getRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			errChan <- js.Error{Value: getRequest.Get("error")}
+			return nil
+		}))
+	}
 
-    select {
-    case data := <-done:
-        return data, nil
-    case err := <-errChan:
-        return nil, err
-    }
+	// Execute the retrieval operation.
+	retrieveData()
+
+	select {
+	case data := <-done:
+		return data, nil
+	case err := <-errChan:
+		return nil, err
+	}
 }
 
 func (d Document) DeleteIDB(dbname, key string) error {
-    db, err := d.ensureDBOpen(dbname)
-    if err != nil {
-        return err
-    }
+	db, err := d.ensureDBOpen(dbname)
+	if err != nil {
+		return err
+	}
 
-    done := make(chan error)
+	done := make(chan error)
 
-    deleteData := func() {
-        tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
-        store := tx.Call("objectStore", "store")
-        deleteRequest := store.Call("delete", key)
-        
-        deleteRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            done <- nil
-            return nil
-        }))
+	deleteData := func() {
+		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
+		store := tx.Call("objectStore", "store")
+		deleteRequest := store.Call("delete", key)
 
-        deleteRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-            done <- js.Error{Value: deleteRequest.Get("error")}
-            return nil
-        }))
-    }
+		deleteRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			done <- nil
+			return nil
+		}))
 
-    // Execute the deletion operation.
-    deleteData()
+		deleteRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			done <- js.Error{Value: deleteRequest.Get("error")}
+			return nil
+		}))
+	}
 
-    return <-done
+	// Execute the deletion operation.
+	deleteData()
+
+	return <-done
 }
-
-
-
-
 
 // NewObservable returns a new ui.Observable element after registering it for the document.
 // If the observable alreadys exiswted for this id, it is returns as is.
@@ -1416,7 +1411,7 @@ func (s StyleSheet) String() string {
 	rules := r.(ui.List).UnsafelyUnwrap()
 	for _, rule := range rules {
 		o := rule.(ui.Object)
-		o.Range(func(k string, v ui.Value) bool{
+		o.Range(func(k string, v ui.Value) bool {
 			res.WriteString(k)
 			res.WriteString("{")
 			res.WriteString(v.(ui.String).String())
@@ -1974,10 +1969,9 @@ func Autofocus(e *ui.Element) *ui.Element {
 	return e
 }
 
-
-// ScrollIntoView scrolls the element's ancestor containers such that the element on which it is 
+// ScrollIntoView scrolls the element's ancestor containers such that the element on which it is
 // called is visible to the user.
-func(d Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
+func (d Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
 	var m map[string]any
 	if len(options) > 0 {
 		m = make(map[string]any)
@@ -1999,7 +1993,7 @@ func(d Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
 
 type ScrollOption func(map[string]any)
 
-func AlignToTop() ScrollOption{
+func AlignToTop() ScrollOption {
 	return func(m map[string]any) {
 		m["block"] = "start"
 		m["inline"] = "nearest"
@@ -2007,74 +2001,72 @@ func AlignToTop() ScrollOption{
 }
 
 type ScrollIntoViewOptions struct{}
-func(s ScrollIntoViewOptions) Smooth() ScrollOption {
+
+func (s ScrollIntoViewOptions) Smooth() ScrollOption {
 	return func(m map[string]any) {
 		m["behavior"] = "smooth"
 	}
 }
 
-func(s ScrollIntoViewOptions) Instant() ScrollOption {
+func (s ScrollIntoViewOptions) Instant() ScrollOption {
 	return func(m map[string]any) {
 		m["behavior"] = "instant"
 	}
 }
 
-func(s ScrollIntoViewOptions) Auto() ScrollOption {
+func (s ScrollIntoViewOptions) Auto() ScrollOption {
 	return func(m map[string]any) {
 		m["behavior"] = "auto"
 	}
 }
 
-func(s ScrollIntoViewOptions) BlockStart() ScrollOption {
+func (s ScrollIntoViewOptions) BlockStart() ScrollOption {
 	return func(m map[string]any) {
 		m["block"] = "start"
 	}
 }
 
-func(s ScrollIntoViewOptions) BlockCenter() ScrollOption {
+func (s ScrollIntoViewOptions) BlockCenter() ScrollOption {
 	return func(m map[string]any) {
 		m["block"] = "center"
 	}
 }
 
-func(s ScrollIntoViewOptions) BlockEnd() ScrollOption {
+func (s ScrollIntoViewOptions) BlockEnd() ScrollOption {
 	return func(m map[string]any) {
 		m["block"] = "end"
 	}
 }
 
-func(s ScrollIntoViewOptions) InlineStart() ScrollOption {
+func (s ScrollIntoViewOptions) InlineStart() ScrollOption {
 	return func(m map[string]any) {
 		m["inline"] = "start"
 	}
 }
 
-func(s ScrollIntoViewOptions) InlineCenter() ScrollOption {
+func (s ScrollIntoViewOptions) InlineCenter() ScrollOption {
 	return func(m map[string]any) {
 		m["inline"] = "center"
 	}
 }
 
-func(s ScrollIntoViewOptions) InlineEnd() ScrollOption {
+func (s ScrollIntoViewOptions) InlineEnd() ScrollOption {
 	return func(m map[string]any) {
 		m["inline"] = "end"
 	}
 }
 
-func(s ScrollIntoViewOptions) BlockNearest() ScrollOption {
+func (s ScrollIntoViewOptions) BlockNearest() ScrollOption {
 	return func(m map[string]any) {
 		m["block"] = "nearest"
 	}
 }
 
-func(s ScrollIntoViewOptions) InlineNearest() ScrollOption {
+func (s ScrollIntoViewOptions) InlineNearest() ScrollOption {
 	return func(m map[string]any) {
 		m["inline"] = "nearest"
 	}
 }
-
-
-
 
 // withNativejshelpers returns a modifier that appends a script in which naive js functions to be called
 // from Go are defined

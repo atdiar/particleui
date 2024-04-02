@@ -8,14 +8,29 @@ import(
 //  Styling is defined per element it applies on (so by its unique ID)
 //  and per pseudoclass (hover, active, focus, visited, link, first-child, last-child, checked, disabled, enabled)
 
+
+type styleFn func(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element
+func(s styleFn) ForAllStylesheets(stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
+	return func(e *ui.Element) *ui.Element{
+		d:= GetDocument(e)
+		for stylesheetID:= range d.StyleSheets{
+			s(stylesheetID,stylefns...)(e)
+		}
+		return e
+	}
+}
+
 // Style allows to define a style for an element, namespaced by stylesheet ID.
 // Each call to style clears any previous style, allowing to specify a new one for
 // that specific element, for a given stylesheet.
 // That means that calling Style multiple times on the same element will only replace the previous style.
 // The categorisation in different stylesheet could allow for instance to 
 // differentiate styles for light and dark mode.
-// Style are functions and as such are composable. This also means that a style can be modified by composition.
-func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
+// Style are functions and as such are composable. 
+// This means that a modfied version of a style can merely be created by composition, using the
+// base style as the first stylefns argument.
+// It has a ForAllStylesheets method that applies the style to all stylesheets of the document. 
+var Style styleFn = func (stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
 	return func(e *ui.Element) *ui.Element{
 		if styled(stylesheetID,e){
 			panic("Element already styled for this stylesheet")
@@ -60,6 +75,7 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 // For instance, to change the background color of a container to red,
 // one would use CSS.Container.Style.BackgroundColor.Value("red").
 // To center the content of an element, one would use CSS.Content.Layout.AlignItems.Center (for Flex items)
+// Now we can center a div? 
 var CSS = struct{Container; Content}{*newContainer(), *newContent()}
 
 func css(pseudoclass string, property,value string) func(*ui.Element) *ui.Element{

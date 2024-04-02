@@ -74,7 +74,7 @@ func Ref(vref **Element) func(*Element) *Element{
 // to B if it is "large", to C if it is "medium" and to nothing if it is anything else.
 // The Default method is used to set the children of the element when the property value does not match any of the cases.
 func Switch(category, propname string) elementSwitch{
-	return elementSwitch{category:category, propname:propname, cases: []Value{}, elements: []*Element{}}
+	return elementSwitch{category:category, propname:propname, cases: []Value{}, elements: []*Element{}, boundDataProps: []string{}}
 }
 
 type elementSwitch struct{
@@ -82,11 +82,17 @@ type elementSwitch struct{
 	propname string
 	cases []Value
 	elements []*Element
+	boundDataProps []string
 }
 
 func(e elementSwitch) Case(val Value, elem *Element) elementSwitch{
 	e.cases = append(e.cases,val)
 	e.elements = append(e.elements,elem)
+	return e
+}
+
+func(e elementSwitch) WithSharedData(propname string) elementSwitch{
+	e.boundDataProps = append(e.boundDataProps, propname)
 	return e
 }
 
@@ -106,8 +112,97 @@ func (e elementSwitch) Default(elem *Element) func(*Element)*Element{
 				}
 				return false
 			}))
+
+			e.elements[i].ShareLifetimeOf(el)
 		}
+
+		for _,propname:= range e.boundDataProps{
+			el.Watch("data",propname,el, NewMutationHandler(func(evt MutationEvent)bool{
+				for _,elm:=range e.elements{
+					elm.SetDataSetUI(propname,evt.NewValue())
+				}
+				return false
+			}))
+
+			for _,elm:=range e.elements{
+				el.Watch("data",propname,elm, NewMutationHandler(func(evt MutationEvent)bool{
+					for _,element:=range e.elements{
+						if element.ID == elm.ID{
+							continue
+						}
+						element.SetDataSetUI(propname,evt.NewValue())
+					}
+					el.SyncUISyncData(propname,evt.NewValue())
+
+					return false
+				}).OnSync())
+			}
+		}
+
 		return el
 	}
 }
 
+/* Example of a reactive datepicker Element implemented using the Switch modifier:
+
+	var smallDatepicker *Element /// Reference to the small datepicker element, here just to provide a more realistic example
+
+	E(document.Div.WithID("uuid-datepicker"),
+		Switch("ui","display").
+			Case(String("small"), DatePickerSmall("uuid-dp-s", Ref(&smallDatepicker))).
+			Case(String("large"), DatePickerLarge("uuid-dp-xl"))).
+			Case(String("medium"), DatePickerMedium("uuid-dp-m")).
+			WithSharedData("date").
+		Default(nil),
+	)
+
+
+	Important to note that the the value of "ui,display" is observed on the parent div of id "uuid-datepicker".
+	This is potentially the same value that is being set by the EnableResponsiveUI constructor option, i.e. the value
+	for the document "ui" property "display"
+	That should allow for the tree to be reactive to display changes.
+	
+
+*/
+
+// ForEachIn allows to parse through a list of values and create a new Element for each value that
+// is added as a child *Element in order, if not nil.
+// If a custom link is provided, it is called once the child Element has been created to allow for custom
+// behavior when appending the child to the parent.
+func ForEachIn(uiprop string, f func(int, Value) *Element, link ...func(parent *Element, child *Element)) func(*Element) *Element {
+	return func(e *Element) *Element {
+		e.Watch("ui", uiprop, e, NewMutationHandler(func(evt MutationEvent) bool {
+			v := evt.NewValue()
+			switch v := v.(type) {
+			case List:
+				w := v.Unwrap()
+				length := len(w)
+				var newchildren = make([]*Element,0, length)
+				g := func(k int, val Value) bool {
+					ne := f(k, val)
+					if ne != nil{
+						if link != nil{
+							for _, l := range link{
+								if l != nil{
+									l(e, ne)
+								}
+							}
+						}
+						newchildren = append(newchildren, ne)
+					}
+					return false
+				}
+				v.Range(g)
+				e.SetChildren(newchildren...)
+			default:
+				el:= f(0, v)
+				if el != nil{
+					e.SetChildren(el)
+				}
+			}
+			return false
+		}).RunASAP())
+
+		return e
+	}
+}

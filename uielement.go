@@ -1121,7 +1121,7 @@ var binddeleteahndler = NewMutationHandler(func(evt MutationEvent)bool{
 	return false
 }).RunOnce()
 
-func(e *Element) BindDeletion(source *Element) *Element{
+func(e *Element) ShareLifetimeOf(source *Element) *Element{
 	e.WatchEvent("deleted",source, binddeleteahndler)
 	return e
 }
