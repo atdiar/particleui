@@ -958,7 +958,22 @@ func deserialize(v Value, target any) error {
             return fmt.Errorf("expected a struct or map for Object deserialization, got %s", targetValue.Kind())
         }
     default:
-        return fmt.Errorf("unsupported Value type: %T", v)
+		if targetValue.Kind() == reflect.Interface{
+			// if the interface is Value, we can just set it
+			if targetValue.Type().Implements(reflect.TypeOf((*Value)(nil)).Elem()){
+				targetValue.Set(reflect.ValueOf(v))
+				return nil
+			}
+
+			// If the interface is the empty interface (aka any), we can just set it
+			if targetValue.Type().Implements(reflect.TypeOf((*any)(nil)).Elem()){
+				targetValue.Set(reflect.ValueOf(v))
+				return nil
+			}
+		} else{
+			return fmt.Errorf("unsupported Value type: %T", v)
+		}
+        
     }
 
     return nil

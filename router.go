@@ -61,7 +61,7 @@ type Router struct {
 	NavContext context.Context
 
 	// Navigation context cancellation function
-	CancelNavigation context.CancelFunc
+	NavigationCancelFn context.CancelFunc
 
 	Links map[string]Link
 
@@ -105,13 +105,11 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 	}))
 
 	r.Outlet.AsElement().Root.WatchEvent("navigation-start", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
-		if r.CancelNavigation != nil {
-			r.CancelNavigation()
-		}
+		r.CancelNavigation()
 
 		NavContext, CancelNav := newCancelableNavContext()
 		r.NavContext = NavContext
-		r.CancelNavigation = CancelNav
+		r.NavigationCancelFn = CancelNav
 
 		return false
 	}))
@@ -202,6 +200,12 @@ func (r *Router) tryNavigate(newroute string) bool {
 		r.Outlet.AsElement().Root.Set("navigation", "hash", String(hash))
 	}
 	return true
+}
+
+func(r *Router) CancelNavigation() {
+	if r.NavigationCancelFn != nil {
+		r.NavigationCancelFn()
+	}
 }
 
 // GoTo changes the application state by updating the current route
@@ -545,6 +549,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			panic("framework error: event value format unexpected. Should have a value field")
 		}
 		root.AsElement().Root.TriggerEvent("navigation-routechangerequest", u.(String))
+		root.AsElement().Root.TriggerEvent("document-idle")
 		return false
 	})
 
@@ -556,6 +561,8 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	for _, event := range eventnames {
 		target.AsElement().AddEventListener(event, routeChangeHandler)
 	}
+
+	r.Outlet.AsElement().Root.TriggerEvent("document-idle")
 
 	for {
 		select {
@@ -878,6 +885,7 @@ func (l Link) Activate(targetid ...string) {
 		}
 	}
 	l.Raw.TriggerEvent("activate", Bool(true))
+	l.Raw.SetDataSetUI("active", Bool(true))
 }
 
 func (l Link) IsActive() bool {
@@ -1025,8 +1033,11 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	route := evt.NewValue().(String).String()
-	lnk, _ := e.GetUI("uri")
-	link := lnk.(String).String()
+	lnk, ok := e.GetUI("uri")
+	var link string
+	if ok {
+		link = lnk.(String).String()
+	}
 
 	if compareRoutes(route, link) {
 		e.SetUI("active", Bool(true))

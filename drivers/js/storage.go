@@ -309,6 +309,6 @@ func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element{
 	e.Watch("data", propname,e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
-	}).OnSync())
+	}))
 	return e		
 }

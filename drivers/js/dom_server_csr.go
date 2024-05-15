@@ -157,31 +157,32 @@ var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndSe
 
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
-	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if HMRMode != "false" || !nohmr {
-			w.Header().Set("Cache-Control","no-cache")
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		
-		path, err := filepath.Abs(r.URL.Path)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		path = filepath.Join(StaticPath, r.URL.Path)
-
-		_, err = os.Stat(path)
+		// Clean the URL path to prevent directory traversal
+		cleanedPath := filepath.Clean(r.URL.Path)
+		
+		// Join the cleaned path with the static directory
+		path := filepath.Join(StaticPath, cleanedPath)
+		
+		// Check if the requested file exists
+		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
-			// file does not exist, serve index.html
-			http.ServeFile(w, r, filepath.Join(StaticPath, IndexPath))
+			// If the file does not exist, serve index.html
+			http.ServeFile(w, r, IndexPath) 
 			return
 		} else if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
+	
+		// If the file exists, serve it
 		fileServer.ServeHTTP(w, r)
 	})
+	
 
 	for _,m:= range buildEnvModifiers{
 		m()

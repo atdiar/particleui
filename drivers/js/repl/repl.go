@@ -118,9 +118,9 @@ func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...stri
 	// on sync mutation event, the repl top div gets synced as well. (caused by input events for instance)
 	// if the repl's code is set from somewhere however, the contentarea will get set to the same value too.
 	repl.Watch("data", "value", textarea, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		repl.SyncData("value", evt.NewValue())
+		repl.SetData("value", evt.NewValue())
 		return false
-	}).OnSync())
+	}))
 
 	repl.Watch("data", "value", repl, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		TextAreaModifier.Value(evt.NewValue().(ui.String).String())(textarea.AsElement())
@@ -151,7 +151,7 @@ func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...stri
 						Listen("input", ui.NewEventHandler(func(evt ui.Event) bool {
 							// DEBUG TODO check that the value corresponds to the value of the element,
 							// even in case where it has been modified somehow sucha as is the case when tabbing.
-							evt.CurrentTarget().SyncUISyncData("value", WithStrConv(evt.Value()))
+							evt.CurrentTarget().SyncUISetData("value", WithStrConv(evt.Value()))
 							return false
 						})),
 					),
@@ -247,7 +247,7 @@ func (r ReplElement) activatecontentarea() ReplElement {
 	r.TextArea().AddEventListener("keydown", ui.NewEventHandler(func(evt ui.Event) bool {
 		if evt.(KeyboardEvent).Key() == "Tab" {
 			evt.PreventDefault()
-			r.TextArea().SyncUISyncData("value", WithStrConv(ui.String(r.TextArea().Text()+"\t")))
+			r.TextArea().SyncUISetData("value", WithStrConv(ui.String(r.TextArea().Text()+"\t")))
 			return false
 		}
 		return false
@@ -255,7 +255,7 @@ func (r ReplElement) activatecontentarea() ReplElement {
 
 	// the contentarea should retrieve the text and store it in the text property of the div element
 	r.TextArea().AddEventListener("input", ui.NewEventHandler(func(evt ui.Event) bool {
-		r.TextArea().SyncUISyncData("value", WithStrConv(evt.Value()))
+		r.TextArea().SyncUISetData("value", WithStrConv(evt.Value()))
 		return false
 	}))
 

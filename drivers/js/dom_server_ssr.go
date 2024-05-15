@@ -149,12 +149,9 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path, err := filepath.Abs(r.URL.Path)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		path = filepath.Join(StaticPath, r.URL.Path)
+		cleanedPath := filepath.Clean(r.URL.Path)
+		// Join the cleaned path with the static directory
+		path := filepath.Join(StaticPath, cleanedPath)
 
 		fi, err := os.Stat(path)
 		if err == nil && !fi.IsDir() {
@@ -162,11 +159,6 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 			return
 		}
 
-		// This is the offline shell of the app. It could be used
-		// to serve a kind of static husk via CDNs if needed (TODO?)
-		// At this point, the fetches have not been sent. Navigation
-		// triggers the first fetches and can take advantage of the
-		// cookies having been put into the cookiejar.
 		document := f()
 		document.Element.HttpClient.Jar.SetCookies(r.URL, r.Cookies())
 

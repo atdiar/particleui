@@ -94,6 +94,9 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		`)
 		d.Head().AppendChild(scrIdleGC)
 
+		base:= d.Base.WithID("zuibase").SetHREF(BasePath)
+		d.Head().AppendChild(base)
+
 		d.AfterEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
 			return false
@@ -106,13 +109,17 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 
 		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			// let's recover the baseURL from the document
-			baseURI := js.Global().Get("document").Get("baseURI").String()
-			bpath, err := url.Parse(baseURI)
-			if err != nil {
-				panic(err)
+			buri:= js.Global().Get("document").Get("baseURI")
+			if buri.Truthy(){
+				baseURI := buri.String()
+				bpath, err := url.Parse(baseURI)
+				if err != nil {
+					panic(err)
+				}
+				BasePath = bpath.Path
+				DEBUG("BasePath is ", BasePath)
 			}
-			BasePath = bpath.Path
-			err = d.mutationRecorder().Replay()
+			err := d.mutationRecorder().Replay()
 			if err != nil {
 				d.mutationRecorder().Clear()
 				// Should reload the page

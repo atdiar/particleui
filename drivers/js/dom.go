@@ -782,6 +782,7 @@ var routerConfig = func(r *ui.Router) {
 	SetInlineCSS(pnf.AsElement(), `all: initial;`)
 
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		DEBUG(evt.NewValue(),evt.OldValue())
 		v, ok := r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
@@ -826,7 +827,7 @@ var routerConfig = func(r *ui.Router) {
 	}))
 
 	// appfailure
-	afd := doc.Div.WithID("ParticleUI-appfailure").SetText("App Failure")
+	afd := doc.Div.WithID(" -appfailure").SetText("App Failure")
 	r.OnAppfailure(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		document := GetDocument(r.Outlet.AsElement())
 		document.Window().SetTitle("App Failure")
@@ -1182,7 +1183,8 @@ func (d Document) ensureDBOpen(dbname string) (js.Value, error) {
 	}
 }
 
-func (d Document) StoreIDB(dbname, key string, value []byte) error {
+// StoreInDB allows to store or update a value in a persistent database such as IndexedDB.
+func (d Document) StoreInDB(dbname, key string, value []byte) error {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return err
@@ -1212,7 +1214,8 @@ func (d Document) StoreIDB(dbname, key string, value []byte) error {
 	return <-done
 }
 
-func (d Document) RetrieveIDB(dbname, key string) ([]byte, error) {
+// RetrieveFromDB allows to retrieve a value from a persistent database such as IndexedDB.
+func (d Document) RetrieveFromDB(dbname, key string) ([]byte, error) {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return nil, err
@@ -1255,7 +1258,8 @@ func (d Document) RetrieveIDB(dbname, key string) ([]byte, error) {
 	}
 }
 
-func (d Document) DeleteIDB(dbname, key string) error {
+// DeleteFromDB allows to delete a value from a persistent database such as IndexedDB.
+func (d Document) DeleteFromDB(dbname, key string) error {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return err
@@ -1572,9 +1576,10 @@ func (s StyleSheet) Delete() {
 // mutationRecorder holds the log of the property mutations of a document.
 type mutationRecorder struct {
 	raw *ui.Element
+	pos int // current position in the list of mutations
 }
 
-func (m mutationRecorder) Capture() {
+func (m *mutationRecorder) Capture() {
 	if !m.raw.ElementStore.MutationCapture {
 		return
 	}
@@ -1615,7 +1620,7 @@ func (m mutationRecorder) Capture() {
 	m.raw.WatchEvent("new-mutation", d, h)
 }
 
-func (m mutationRecorder) Replay() error {
+func (m *mutationRecorder) Replay() error {
 	if !m.raw.ElementStore.MutationReplay {
 		return nil
 	}
@@ -1635,15 +1640,27 @@ func (m mutationRecorder) Replay() error {
 
 	d.Set("internals", "mutation-replaying", ui.Bool(false))
 	d.TriggerEvent("mutation-replayed")
+	m.Clear()
+
 	return nil
 }
 
-func (m mutationRecorder) Clear() {
+func (m *mutationRecorder) Clear() {
 	m.raw.SetData("mutationlist", ui.NewList().Commit())
+	m.pos = 0
 }
 
-func (d Document) newMutationRecorder(options ...string) mutationRecorder {
+func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
+
+	// Watch document for mutation-replay event
+	// If mutation-replaying, it should bump the recorder position.
+	m.AsElement().WatchEvent("mutation-replay", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		mrec := d.mutationRecorder()
+		mrec.pos++
+		return false
+	}))
+	
 	trace, ok := d.Get("internals", "mutationtrace")
 	if ok {
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
@@ -1653,15 +1670,15 @@ func (d Document) newMutationRecorder(options ...string) mutationRecorder {
 		m.AsElement().SetData("mutationlist", v)
 	}
 
-	return mutationRecorder{m.AsElement()}
+	return &mutationRecorder{m.AsElement(),0}
 }
 
-func (d Document) mutationRecorder() mutationRecorder {
+func (d Document) mutationRecorder() *mutationRecorder {
 	m := d.GetElementById("mutation-recorder")
 	if m == nil {
 		panic("mutation recorder is missing")
 	}
-	return mutationRecorder{m}
+	return &mutationRecorder{m,0}
 }
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
@@ -1676,7 +1693,7 @@ func (d Document) ListenAndServe(ctx context.Context) {
 		d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			evt.Origin().TriggerEvent("document-ready")
 			return false
-		}).RunASAP().RunOnce())
+		}).RunASAP()) // DEBUG removed RunOnce()
 
 		return false
 	}))
@@ -1766,8 +1783,8 @@ var documentTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool
 }).RunASAP()
 
 func mutationreplay(d *Document) error {
-
-	e := d.mutationRecorder().raw
+	m:= d.mutationRecorder()
+	e := m.raw
 	if !e.ElementStore.MutationReplay {
 		return nil
 	}
@@ -1781,7 +1798,10 @@ func mutationreplay(d *Document) error {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
 
-	for _, rawop := range mutationtrace.UnsafelyUnwrap() {
+	mutNum:= len(mutationtrace.UnsafelyUnwrap())
+
+	for m.pos < mutNum {
+		rawop := mutationtrace.Get(m.pos)
 		op := rawop.(ui.Object)
 		id, ok := op.Get("id")
 		if !ok {
@@ -1812,7 +1832,7 @@ func mutationreplay(d *Document) error {
 		el.BindValue("event", "connect-native", e)
 		el.BindValue("event", "mutation-replayed", e)
 
-		el.Set(cat.(ui.String).String(), prop.(ui.String).String(), val)
+		el.ReplayMutation(rawop.(ui.Object))
 	}
 
 	return nil
@@ -2197,7 +2217,8 @@ func NewDocument(id string, options ...string) Document {
 
 	e := d.Element
 
-	e.AppendChild(d.head.WithID("head"))
+	head := d.head.WithID("head")
+	e.AppendChild(head)
 	e.AppendChild(d.body.WithID("body"))
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
@@ -2275,14 +2296,15 @@ var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		err := json.Unmarshal([]byte(hstate.String()), &hstateobj)
 		if err == nil {
 			hso := ui.ValueFrom(hstateobj).(ui.Object)
-			// Check that the sate is valid. It is valid if it contains a cursor.
+			// Check that the state is valid. It is valid if it contains a cursor.
 			_, ok := hso.Get("cursor")
 			if ok {
-				evt.Origin().SyncUISyncData("history", hso)
+				evt.Origin().SyncUISetData("history", hso)
 			} else {
 				evt.Origin().SyncUI("history", hso.Value())
 			}
 		}
+
 	}
 
 	route := js.Global().Get("location").Get("pathname").String()
@@ -2560,7 +2582,7 @@ func withStdConstructors(d Document) Document {
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Script.ownedBy(&d)
+	d.Style.ownedBy(&d)
 
 	d.Base = gconstructor[BaseElement, baseConstructor](func() BaseElement {
 		e := BaseElement{newBase(d.newID())}
@@ -3748,7 +3770,7 @@ func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element)
 				return true
 			}
 			s := v.String()
-			e.SyncUISyncData("text", ui.String(s))
+			e.SyncUISetData("text", ui.String(s))
 			return false
 		})
 
@@ -4444,21 +4466,12 @@ func (m labelModifier) Text(str string) func(*ui.Element) *ui.Element {
 	}
 }
 
-func (m labelModifier) For(e *ui.Element) func(*ui.Element) *ui.Element {
+func (m labelModifier) For(el *ui.Element) func(*ui.Element) *ui.Element {
+	if el == nil{
+		panic("label cannot be created for an uninstantiated UI Element")
+	}
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			d := evt.Origin().Root
-
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				if e.Mounted() {
-					e.SetDataSetUI("for", ui.String(e.ID))
-				} else {
-					DEBUG("label for attributes couldb't be set") // panic instead?
-				}
-				return false
-			}).RunOnce())
-			return false
-		}).RunOnce())
+		e.SetDataSetUI("for", ui.String(el.ID))
 		return e
 	}
 }
@@ -4468,17 +4481,14 @@ func (l LabelElement) SetText(s string) LabelElement {
 	return l
 }
 
+// For modifier targets an *Element via a reference to it.
 func (l LabelElement) For(p **ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		d := GetDocument(evt.Origin())
 
-		evt.Origin().WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		evt.Origin().WatchEvent("docuemnt-idle", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			e := *p
-			if e.Mounted() {
-				l.AsElement().SetDataSetUI("for", ui.String(e.ID))
-			} else {
-				DEBUG("label for attributes couldb't be set") // panic instead?
-			}
+			l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			return false
 		}).RunOnce().RunASAP())
 		return false
@@ -4698,7 +4708,7 @@ func SyncValueOnInput(valuemodifiers ...func(ui.Value) ui.Value) func(*ui.Elemen
 			for _, f := range valuemodifiers {
 				val = f(val)
 			}
-			evt.Target().SyncUISyncData("value", val)
+			evt.Target().SyncUISetData("value", val)
 
 			return false
 		}))
@@ -4717,7 +4727,7 @@ func SyncValueOnChange(valuemodifiers ...func(ui.Value) ui.Value) func(*ui.Eleme
 			for _, f := range valuemodifiers {
 				val = f(val)
 			}
-			evt.Target().SyncUISyncData("value", val)
+			evt.Target().SyncUISetData("value", val)
 			return false
 		}))
 		return e
@@ -4737,7 +4747,7 @@ func SyncValueOnEnter(valuemodifiers ...func(ui.Value) ui.Value) func(*ui.Elemen
 				for _, f := range valuemodifiers {
 					val = f(val)
 				}
-				evt.Target().SyncUISyncData("value", val)
+				evt.Target().SyncUISetData("value", val)
 			}
 
 			return false
@@ -5612,7 +5622,7 @@ type OlElement struct {
 }
 
 func (l OlElement) SetValue(lobjs ui.List) OlElement {
-	l.AsElement().Set("data", "value", lobjs)
+	l.AsElement().SetData("value", lobjs)
 	return l
 }
 

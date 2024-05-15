@@ -470,6 +470,10 @@ func (e *Element) Prefetch() {
 	if !e.Registered() {
 		panic("Prefetch can only be called on registered elements")
 	}
+	if mutationreplaying(e) {
+		return
+	}
+
 	e.Root.WatchEvent("document-loaded", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
 		// should start the prefetching process by triggering the prefetch transitions that have been registered
 		e.StartTransition("prefetch")
@@ -481,6 +485,11 @@ func (e *Element) Fetch(props ...string) {
 	if !e.Registered() {
 		panic("Fetch can only be called on registered elements. Error for " + e.ID)
 	}
+
+	if mutationreplaying(e) {
+		return
+	}
+
 
 	// The Fetch will only proceed once a document tree is fully created, i.e. once the document-loaded event
 	// has fired
@@ -551,7 +560,7 @@ func (e *Element) InvalidateAllFetches() {
 		}
 		fl := l.(Object)
 
-		fl.Range(func(propname string, v Value) bool{
+		fl.Range(func(propname string, v Value) bool {
 			e.InvalidateFetch(propname)
 			return false
 		})
@@ -845,6 +854,11 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 		panic("Element is not registered. Cannot process request")
 	}
 
+	if mutationreplaying(e) {
+		return
+	}
+
+
 	e.Root.WatchEvent("document-loaded", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
 		var ctx context.Context
 		var cancelFn context.CancelFunc
@@ -1008,6 +1022,7 @@ func (e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *
 	}
 	e.SyncUI(propname, value)
 
+	
 	e.OnRequestError(r, NewMutationHandler(func(evt MutationEvent) bool {
 		e.SetUI(propname, oldv)
 		err := NewObject().Set("prop", String(propname)).Set("value", value).Commit()
