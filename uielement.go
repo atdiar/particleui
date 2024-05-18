@@ -1217,10 +1217,10 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 		e.Set(category, propname, evt.NewValue())
 		DEBUG(source.ID, " -> ", e.ID, " ", category, ":", propname, " = ", evt.NewValue()," by binding")
 		return false
-	}).RunASAP()
+	}).binder()
 
 	if category != "event"{
-		hdl = hdl.binder()
+		hdl = hdl.RunASAP()
 	}
 	e.Watch(category, propname, source, hdl)
 	return e
@@ -1770,10 +1770,6 @@ func mutationreplaying(e *Element) bool {
 		return false
 	}
 
-	if mutationcapturing(e){
-		panic("mutation replaying and capturing cannot be active at the same time")
-	}
-
 	v, ok := e.Get("internals", "mutation-replaying")
 	if !ok {
 		return false
@@ -1801,9 +1797,10 @@ func mutationcapturing(e *Element) bool {
 	if !e.Registered() {
 		return false
 	}
-	
+
+	// DEBUG
 	if mutationreplaying(e){
-		panic("mutation replaying and capturing cannot be active at the same time")
+		panic("element is replaying mutations, it should not be capturing mutations")
 	}
 
 	v, ok := e.Root.Get("internals", "mutation-capturing")
