@@ -117,7 +117,6 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 					panic(err)
 				}
 				BasePath = bpath.Path
-				DEBUG("BasePath is ", BasePath)
 			}
 			err := d.mutationRecorder().Replay()
 			if err != nil {
@@ -127,6 +126,8 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 				d.Window().Reload()
 				return false
 			}
+			DEBUG("Mutation replayed successfully")
+			DEBUG("mutationreplaying?", ui.DEBUGmutationreplaying(d.AsElement()))
 			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())

@@ -171,11 +171,14 @@ That should allow for the tree to be reactive to display changes.
 
 
 
-// ForEachIn allows to parse through a list of values and create a new Element for each value that
-// is added as a child *Element in order, if not nil.
+// ForEachIn allows to parse through a list of values when it changes and create a new Element for each value.
 // If a custom link is provided, it is called once the child Element has been created to allow for custom
-// behavior when appending the child to the parent.
-func ForEachIn(uiprop string, f func(int, Value) *Element, link ...func(parent *Element, child *Element)) func(*Element) *Element {
+// It is useful in simple cases.
+// Some other cases such as when the elemnts need some complex initialization that should only happen 
+// once at element creation need to be handled with care.
+// (we don't want to register some watchers each time the list change partially.
+// Already existing elements would not need it) for instance.
+func ForEachIn(uiprop string, f func(int, Value) *Element) func(*Element) *Element {
 	return func(e *Element) *Element {
 		e.Watch("ui", uiprop, e, NewMutationHandler(func(evt MutationEvent) bool {
 			v := evt.NewValue()
@@ -186,28 +189,14 @@ func ForEachIn(uiprop string, f func(int, Value) *Element, link ...func(parent *
 				var newchildren = make([]*Element, length)
 				g := func(k int, val Value) bool {
 					ne := f(k, val)
-					if ne != nil {
-						for _, l := range link {
-							if l != nil {
-								l(e, ne)
-							}
-						}
-						newchildren[k] = ne
-					}
+					newchildren[k] = ne
 					return false
 				}
 				v.Range(g)
 				e.SetChildren(newchildren...)
 			default:
 				el := f(0, v)
-				if el != nil {
-					for _, l := range link {
-						if l != nil {
-							l(e, el)
-						}
-					}
-					e.SetChildren(el)
-				}
+				e.SetChildren(el)
 			}
 			return false
 		}).RunASAP())

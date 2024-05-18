@@ -1635,6 +1635,7 @@ func (m *mutationRecorder) Replay() error {
 	err := mutationreplay(&d)
 	if err != nil {
 		DEBUG("error occured when replaying mutations: ", err)
+		d.Set("internals", "mutation-replaying", ui.Bool(false))
 		return ui.ErrReplayFailure
 	}
 
@@ -1658,6 +1659,24 @@ func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m.AsElement().WatchEvent("mutation-replay", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		mrec := d.mutationRecorder()
 		mrec.pos++
+		// replay logic for the corresponding element in the mutationlist
+		mutationlist,ok:=m.AsElement().GetData("mutationlist")
+		if !ok {
+			return false
+		}
+
+		mutationtrace, ok := mutationlist.(ui.List)
+		if !ok {
+			panic("state history should have been a ui.List. Wrong type. Unexpected error")
+		}
+		mut, ok:=mutationtrace.Get(mrec.pos).(ui.Object)
+		if !ok{
+			panic("mutation entry badly encoded. Expectted a ui.Object")
+		}
+
+		replaymutation(d, mut)	
+
+
 		return false
 	}))
 	
@@ -1833,7 +1852,43 @@ func mutationreplay(d *Document) error {
 		el.BindValue("event", "mutation-replayed", e)
 
 		el.ReplayMutation(rawop.(ui.Object))
+		m.pos++
 	}
+
+	return nil
+}
+
+func replaymutation(d Document, op ui.Object) error{
+	id, ok := op.Get("id")
+	if !ok {
+		return ui.ErrReplayFailure
+	}
+
+	cat, ok := op.Get("cat")
+	if !ok {
+		return ui.ErrReplayFailure
+	}
+
+	prop, ok := op.Get("prop")
+	if !ok {
+		return ui.ErrReplayFailure
+	}
+
+	val, ok := op.Get("val")
+	if !ok {
+		return ui.ErrReplayFailure
+	}
+	el := d.GetElementById(id.(ui.String).String())
+	if el == nil {
+		// Unable to recover state for this element id. Element  doesn't exist"
+		DEBUG("Unable to recover state for this element id. Element  doesn't exist", id, cat, prop, val)
+		return ui.ErrReplayFailure
+	}
+
+	el.BindValue("event", "connect-native", d.AsElement())
+	el.BindValue("event", "mutation-replayed", d.AsElement())
+
+	el.ReplayMutation(op)
 
 	return nil
 }

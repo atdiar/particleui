@@ -182,6 +182,7 @@ func registerElementfn(root, e *Element) {
 	e.BindValue("internals", "documentstate", root)
 	e.BindValue("internals", "mutation-replaying", root) 
 	e.BindValue("internals", "mutation-capturing", root)
+	
 	root.BindValue("event", "mutation-replay", e)
 	e.TriggerEvent("registered")
 }
@@ -1197,7 +1198,7 @@ func (e *Element) OnMutation(category string, propname string, h *MutationHandle
 }
 
 // BindValue allows for the binding of a property to another element's property.
-// When two elements both bind each other's properties, this is ttwo way-binding.
+// When two elements both bind each other's properties, this is two way-binding.
 // Indeed, property mutations are idempotent.
 // Otherwise, this is one-way binding.
 func (e *Element) BindValue(category string, propname string, source *Element) *Element {
@@ -1212,10 +1213,16 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 		return e
 	}
 
-	e.Watch(category, propname, source, NewMutationHandler(func(evt MutationEvent) bool {
+	hdl := NewMutationHandler(func(evt MutationEvent) bool {
 		e.Set(category, propname, evt.NewValue())
+		DEBUG(source.ID, " -> ", e.ID, " ", category, ":", propname, " = ", evt.NewValue()," by binding")
 		return false
-	}).RunASAP().binder())
+	}).RunASAP()
+
+	if category != "event"{
+		hdl = hdl.binder()
+	}
+	e.Watch(category, propname, source, hdl)
 	return e
 }
 
@@ -1616,7 +1623,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
 
-	if mutationreplaying(e) && propname != "mutation-replay" && category != "event"{
+	if mutationreplaying(e) && !(category == "event" && propname == "mutation-replay"){
 		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String(category)).Set("prop", String(propname)).Set("val", value).Commit())
 		return
 	}
@@ -1679,6 +1686,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 		if category == "data" && propname == "mutationlist" { // TODO: make it less broad a condition
 			return
 		}
+
+		if category == "event" && propname == "mutation-replay" {
+			return
+		}
+
 
 		m := NewObject()
 		m.Set("id", String(e.ID))
@@ -1758,6 +1770,10 @@ func mutationreplaying(e *Element) bool {
 		return false
 	}
 
+	if mutationcapturing(e){
+		panic("mutation replaying and capturing cannot be active at the same time")
+	}
+
 	v, ok := e.Get("internals", "mutation-replaying")
 	if !ok {
 		return false
@@ -1766,6 +1782,9 @@ func mutationreplaying(e *Element) bool {
 	return v.(Bool).Bool()
 }
 
+func DEBUGmutationreplaying(e *Element) bool {
+	return mutationreplaying(e)
+}
 
 
 func mutationcapturing(e *Element) bool {
@@ -1781,6 +1800,10 @@ func mutationcapturing(e *Element) bool {
 
 	if !e.Registered() {
 		return false
+	}
+	
+	if mutationreplaying(e){
+		panic("mutation replaying and capturing cannot be active at the same time")
 	}
 
 	v, ok := e.Root.Get("internals", "mutation-capturing")
