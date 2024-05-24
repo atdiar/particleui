@@ -6,9 +6,10 @@ package doc
 import (
 	"encoding/json"
 	"errors"
-	"github.com/atdiar/particleui"
-	"github.com/atdiar/particleui/drivers/js/compat"
 	"strings"
+
+	ui "github.com/atdiar/particleui"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 )
 
 // TODO implement IndexedDB storage backaend
@@ -234,6 +235,12 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 	if e == nil {
 		panic("loading a nil element")
 	}
+	v, ok := a.AsElement().Get("internals", "disable-dataloading")
+	if ok {
+		if v.(ui.Bool) {
+			return e
+		}
+	}
 
 	pmode := ui.PersistenceMode(e)
 
@@ -296,7 +303,6 @@ var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", fu
 	return e
 })
 
-
 func EnableSessionPersistence() string {
 	return "sessionstorage"
 }
@@ -305,10 +311,10 @@ func EnableLocalPersistence() string {
 	return "localstorage"
 }
 
-func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element{
-	e.Watch("data", propname,e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element {
+	e.Watch("data", propname, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
 	}))
-	return e		
+	return e
 }

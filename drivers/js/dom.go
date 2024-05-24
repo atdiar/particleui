@@ -7,14 +7,16 @@ import (
 	//crand "crypto/rand"
 	"encoding/json"
 	"encoding/xml"
+
 	//"errors"
 	"fmt"
-	"github.com/atdiar/particleui/drivers/js/compat"
 	"hash/fnv"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	"math/rand"
 	"net/http"
@@ -25,7 +27,7 @@ import (
 
 	//"golang.org/x/exp/rand"
 
-	"github.com/atdiar/particleui"
+	ui "github.com/atdiar/particleui"
 )
 
 func init() {
@@ -290,8 +292,6 @@ func ConnectNative(e *ui.Element, tag string) {
 			e.Set("internals", "mutationtrace", ui.String(state))
 
 			e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				// TODO check value to see if replay  error or not?
-				//e.ElementStore.MutationReplay = false
 				statenode.Call("remove")
 				evt.Origin().TriggerEvent("connect-native")
 				evt.Origin().ElementStore.Disconnected = false
@@ -711,12 +711,58 @@ func newWindow(title string, options ...string) Window {
 var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
 	d := getDocumentRef(e)
 
+	if e.ElementStore.MutationCapture {
+		// We only need to load data from the mutation recorder
+		if e.ID == "mutation-recorder" {
+			d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+					LoadFromStorage(event.Origin())
+					return false
+				}))
+
+				e.TriggerEvent("datastore-load")
+				return false
+			}).RunASAP().RunOnce())
+		}
+		d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			PutInStorage(e)
+			return false
+		}))
+
+		return e
+	}
+
 	e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		LoadFromStorage(evt.Origin())
 		return false
 	}))
 
 	d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		_, ok := d.mutationRecorder().raw.GetData("mutationlist")
+		if ok {
+			// Disable data loading from storage until the list of mutations is replayed.
+			// Should affect LoadFromStorage
+			e.Set("internals", "disable-dataloading", ui.Bool(true))
+			d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				e.Set("internals", "disable-dataloading", ui.Bool(false))
+				return false
+			}).RunASAP().RunOnce())
+			return false
+		} else {
+			d.mutationRecorder().raw.TriggerEvent("datastore-load")
+			_, ok := d.mutationRecorder().raw.GetData("mutationlist")
+			if ok {
+				// Disable data loading from storage until the list of mutations is replayed.
+				// Should affect LoadFromStorage
+				e.Set("internals", "disable-dataloading", ui.Bool(true))
+				d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					e.Set("internals", "disable-dataloading", ui.Bool(false))
+					e.TriggerEvent("datastore-load")
+					return false
+				}).RunASAP().RunOnce())
+				return false
+			}
+		}
 		e.TriggerEvent("datastore-load")
 		return false
 	}).RunASAP().RunOnce())
@@ -782,7 +828,6 @@ var routerConfig = func(r *ui.Router) {
 	SetInlineCSS(pnf.AsElement(), `all: initial;`)
 
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		DEBUG(evt.NewValue(),evt.OldValue())
 		v, ok := r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
@@ -1634,7 +1679,6 @@ func (m *mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(&d)
 	if err != nil {
-		DEBUG("error occured when replaying mutations: ", err)
 		d.Set("internals", "mutation-replaying", ui.Bool(false))
 		return ui.ErrReplayFailure
 	}
@@ -1651,6 +1695,10 @@ func (m *mutationRecorder) Clear() {
 	m.pos = 0
 }
 
+func (d Document) OnMutationsReplayed(h *ui.MutationHandler) {
+	d.WatchEvent("mutation-replayed", d, h)
+}
+
 func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
 
@@ -1660,7 +1708,7 @@ func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 		mrec := d.mutationRecorder()
 		mrec.pos++
 		// replay logic for the corresponding element in the mutationlist
-		mutationlist,ok:=m.AsElement().GetData("mutationlist")
+		mutationlist, ok := m.AsElement().GetData("mutationlist")
 		if !ok {
 			return false
 		}
@@ -1669,17 +1717,16 @@ func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 		if !ok {
 			panic("state history should have been a ui.List. Wrong type. Unexpected error")
 		}
-		mut, ok:=mutationtrace.Get(mrec.pos).(ui.Object)
-		if !ok{
+		mut, ok := mutationtrace.Get(mrec.pos).(ui.Object)
+		if !ok {
 			panic("mutation entry badly encoded. Expectted a ui.Object")
 		}
 
-		replaymutation(d, mut)	
-
+		replaymutation(d, mut)
 
 		return false
 	}))
-	
+
 	trace, ok := d.Get("internals", "mutationtrace")
 	if ok {
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
@@ -1689,7 +1736,7 @@ func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 		m.AsElement().SetData("mutationlist", v)
 	}
 
-	return &mutationRecorder{m.AsElement(),0}
+	return &mutationRecorder{m.AsElement(), 0}
 }
 
 func (d Document) mutationRecorder() *mutationRecorder {
@@ -1697,7 +1744,7 @@ func (d Document) mutationRecorder() *mutationRecorder {
 	if m == nil {
 		panic("mutation recorder is missing")
 	}
-	return &mutationRecorder{m,0}
+	return &mutationRecorder{m, 0}
 }
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
@@ -1802,7 +1849,7 @@ var documentTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool
 }).RunASAP()
 
 func mutationreplay(d *Document) error {
-	m:= d.mutationRecorder()
+	m := d.mutationRecorder()
 	e := m.raw
 	if !e.ElementStore.MutationReplay {
 		return nil
@@ -1817,34 +1864,34 @@ func mutationreplay(d *Document) error {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
 
-	mutNum:= len(mutationtrace.UnsafelyUnwrap())
+	mutNum := len(mutationtrace.UnsafelyUnwrap())
 
 	for m.pos < mutNum {
 		rawop := mutationtrace.Get(m.pos)
 		op := rawop.(ui.Object)
 		id, ok := op.Get("id")
 		if !ok {
-			return ui.ErrReplayFailure
+			panic("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
 		}
 
 		cat, ok := op.Get("cat")
 		if !ok {
-			return ui.ErrReplayFailure
+			panic("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
 		}
 
 		prop, ok := op.Get("prop")
 		if !ok {
-			return ui.ErrReplayFailure
+			panic("mutation entry badly encoded. Expectted a ui.Object with a 'prop' property")
 		}
 
 		val, ok := op.Get("val")
 		if !ok {
-			return ui.ErrReplayFailure
+			panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
 		}
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
-			DEBUG("Unable to recover state for this element id. Element  doesn't exist", id, cat, prop, val)
+			DEBUG("Unable to recover state for this element id. Element  doesn't exist: ", id, cat, prop, val)
 			return ui.ErrReplayFailure
 		}
 
@@ -1858,7 +1905,7 @@ func mutationreplay(d *Document) error {
 	return nil
 }
 
-func replaymutation(d Document, op ui.Object) error{
+func replaymutation(d Document, op ui.Object) error {
 	id, ok := op.Get("id")
 	if !ok {
 		return ui.ErrReplayFailure
@@ -4522,7 +4569,7 @@ func (m labelModifier) Text(str string) func(*ui.Element) *ui.Element {
 }
 
 func (m labelModifier) For(el *ui.Element) func(*ui.Element) *ui.Element {
-	if el == nil{
+	if el == nil {
 		panic("label cannot be created for an uninstantiated UI Element")
 	}
 	return func(e *ui.Element) *ui.Element {

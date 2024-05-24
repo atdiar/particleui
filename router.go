@@ -202,7 +202,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 	return true
 }
 
-func(r *Router) CancelNavigation() {
+func (r *Router) CancelNavigation() {
 	if r.NavigationCancelFn != nil {
 		r.NavigationCancelFn()
 	}
@@ -989,22 +989,21 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 		return nh.Handle(evt)
 	}).RunASAP())
 
-	/*
-		// TODO rework this so that it RUnASAP and also only if the target is mounted/mountable DEBUG trying data instead of ui layer
-		// check the performance. Might want to only setup this only for visible links.
-		e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
-			route := evt.NewValue().(String).String()
-			lnk, _ := e.GetUI("uri")
-			link := lnk.(String).String()
+	/* TODO delete if linkActivityMonitor works
+	// make sure that the link is set to 'active' when the route is the same as the link
+	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+		route := evt.NewValue().(String).String()
+		lnk, _ := e.GetUI("uri")
+		link := lnk.(String).String()
 
-			if compareRoutes(route, link) {
-				e.SetUI("active", Bool(true))
-			} else {
-				e.SetUI("active", Bool(false))
-			}
+		if compareRoutes(route, link) {
+			e.SetUI("active", Bool(true))
+		} else {
+			e.SetUI("active", Bool(false))
+		}
 
-			return false
-		}))
+		return false
+	}).RunASAP())
 	*/
 
 	r.Links[l.URI()] = l

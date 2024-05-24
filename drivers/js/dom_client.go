@@ -7,13 +7,14 @@ package doc
 
 import (
 	"context"
-	"github.com/atdiar/particleui"
 	"log"
 	"net/url"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"github.com/atdiar/particleui/drivers/js/compat"
+
+	ui "github.com/atdiar/particleui"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 )
 
 // TODO on init, Apply EnableMutationCapture to Elements if ldlflags -X tag is set for the buildtype variable to "dev"
@@ -94,7 +95,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		`)
 		d.Head().AppendChild(scrIdleGC)
 
-		base:= d.Base.WithID("zuibase").SetHREF(BasePath)
+		base := d.Base.WithID("zuibase").SetHREF(BasePath)
 		d.Head().AppendChild(base)
 
 		d.AfterEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -109,8 +110,8 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 
 		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			// let's recover the baseURL from the document
-			buri:= js.Global().Get("document").Get("baseURI")
-			if buri.Truthy(){
+			buri := js.Global().Get("document").Get("baseURI")
+			if buri.Truthy() {
 				baseURI := buri.String()
 				bpath, err := url.Parse(baseURI)
 				if err != nil {
@@ -126,8 +127,6 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 				d.Window().Reload()
 				return false
 			}
-			DEBUG("Mutation replayed successfully")
-			DEBUG("mutationreplaying?", ui.DEBUGmutationreplaying(d.AsElement()))
 			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())

@@ -179,10 +179,10 @@ func registerElementfn(root, e *Element) {
 	}
 	root.registry[e.ID] = e
 	e.registry = root.registry
-	e.BindValue("internals", "documentstate", root)
-	e.BindValue("internals", "mutation-replaying", root) 
+	e.BindValue("internals", "mutation-replaying", root)
 	e.BindValue("internals", "mutation-capturing", root)
-	
+	e.BindValue("internals", "documentstate", root)
+
 	root.BindValue("event", "mutation-replay", e)
 	e.TriggerEvent("registered")
 }
@@ -616,7 +616,6 @@ func attach(parent *Element, child *Element) func() {
 		curr := stack[lastIndex]
 		stack[lastIndex] = nil
 		stack = stack[:lastIndex]
-		//DEBUG(curr, child, curr == nil, child == nil)
 		if curr.ID == child.ID {
 			curr.Parent = parent
 		}
@@ -1215,11 +1214,11 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 
 	hdl := NewMutationHandler(func(evt MutationEvent) bool {
 		e.Set(category, propname, evt.NewValue())
-		DEBUG(source.ID, " -> ", e.ID, " ", category, ":", propname, " = ", evt.NewValue()," by binding")
+
 		return false
 	}).binder()
 
-	if category != "event"{
+	if category != "event" {
 		hdl = hdl.RunASAP()
 	}
 	e.Watch(category, propname, source, hdl)
@@ -1292,6 +1291,14 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	if owner.AsElement() == nil {
 		panic("unable to watch element properties as it is nil")
 	}
+
+	/*
+		if category == "ui" {
+			if e.ID != owner.AsElement().ID {
+				panic(fmt.Sprint("A UI property can only be watched by the element that owns it. ", e.ID, " is not ", owner.AsElement().ID, "\n", "You might want to watch (data, ", propname, " instead.", ")"))
+			}
+		}
+	*/
 
 	if h.Once {
 		return e.watchOnce(category, propname, owner, h)
@@ -1623,7 +1630,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
 
-	if mutationreplaying(e) && !(category == "event" && propname == "mutation-replay"){
+	if mutationreplaying(e) && !(category == "event" && propname == "mutation-replay") && !(category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing")) {
 		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String(category)).Set("prop", String(propname)).Set("val", value).Commit())
 		return
 	}
@@ -1637,8 +1644,6 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 
 	e.Properties.Set(category, propname, value)
-
-	
 
 	// Mutation event propagation
 	evt := e.NewMutationEvent(category, propname, value, oldvalue)
@@ -1679,9 +1684,9 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	if mutationcapturing(e) {
 		/*
-		if category != "data" && category != "ui" {
-			return
-		}
+			if category != "data" && category != "ui" {
+				return
+			}
 		*/
 		if category == "data" && propname == "mutationlist" { // TODO: make it less broad a condition
 			return
@@ -1691,6 +1696,13 @@ func (e *Element) Set(category string, propname string, value Value) {
 			return
 		}
 
+		if category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing") {
+			return
+		}
+
+		if e.IsRoot() && category == "event" && propname == "new-mutation" {
+			return
+		}
 
 		m := NewObject()
 		m.Set("id", String(e.ID))
@@ -1701,30 +1713,30 @@ func (e *Element) Set(category string, propname string, value Value) {
 	}
 }
 
-func(e *Element) ReplayMutation(val Object) {
-	type mut struct{
-		cat string
-		prop string
-		val Value
+func (e *Element) ReplayMutation(val Object) {
+	type mut struct {
+		Cat  string
+		Prop string
+		Val  Value
 	}
 
 	var m *mut = &mut{}
-	err:= Deserialize(val, m)
-	if err!= nil{
+	err := Deserialize(val, m)
+	if err != nil {
 		panic(err) // will only fail if deserialization is badly implemented
 	}
 
-	oldvalue, _ := e.Properties.Get(m.cat, m.prop)
-	e.Properties.Set(m.cat, m.prop, m.val)
+	oldvalue, _ := e.Properties.Get(m.Cat, m.Prop)
+	e.Properties.Set(m.Cat, m.Prop, m.Val)
 
-	evt := e.NewMutationEvent(m.cat, m.prop, m.val, oldvalue)
+	evt := e.NewMutationEvent(m.Cat, m.Prop, m.Val, oldvalue)
 
-	props, ok := e.Properties.Categories[m.cat]
+	props, ok := e.Properties.Categories[m.Cat]
 	if !ok {
 		panic("category should exist since property should have been stored")
 	}
 
-	watchers, ok := props.Watchers[m.prop]
+	watchers, ok := props.Watchers[m.Prop]
 	if ok && watchers != nil {
 		var needcleanup bool
 		var index int
@@ -1778,11 +1790,6 @@ func mutationreplaying(e *Element) bool {
 	return v.(Bool).Bool()
 }
 
-func DEBUGmutationreplaying(e *Element) bool {
-	return mutationreplaying(e)
-}
-
-
 func mutationcapturing(e *Element) bool {
 	if e == nil {
 		return false
@@ -1798,17 +1805,18 @@ func mutationcapturing(e *Element) bool {
 		return false
 	}
 
-	// DEBUG
-	if mutationreplaying(e){
-		panic("element is replaying mutations, it should not be capturing mutations")
-	}
-
 	v, ok := e.Root.Get("internals", "mutation-capturing")
 	if !ok {
 		return false
 	}
 
-	return v.(Bool).Bool()
+	res := v.(Bool).Bool()
+	if res {
+		if mutationreplaying(e) {
+			panic("element is replaying mutations, it should not be capturing mutations")
+		}
+	}
+	return res
 }
 
 func (e *Element) GetData(propname string) (Value, bool) {
@@ -1859,8 +1867,8 @@ func (e *Element) SyncUI(propname string, value Value) *Element {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + propname + ")")
 	}
 
-	if mutationreplaying(e){
-		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String("ui")).Set("prop", String(propname)).Set("val", value).Set("sync",Bool(true)).Commit())
+	if mutationreplaying(e) {
+		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String("ui")).Set("prop", String(propname)).Set("val", value).Set("sync", Bool(true)).Commit())
 		return e
 	}
 

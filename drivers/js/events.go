@@ -3,8 +3,9 @@
 package doc
 
 import (
-	"github.com/atdiar/particleui/drivers/js/compat"
 	"strings"
+
+	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	//"net/url"
 	"encoding/json"
@@ -12,7 +13,7 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/atdiar/particleui"
+	ui "github.com/atdiar/particleui"
 )
 
 var DEBUG = log.Print // DEBUG
