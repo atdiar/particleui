@@ -714,7 +714,7 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 	if e.ElementStore.MutationCapture {
 		// We only need to load data from the mutation recorder
 		if e.ID == "mutation-recorder" {
-			d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
 					LoadFromStorage(event.Origin())
 					return false
@@ -730,26 +730,13 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 		}))
 
 		return e
-	}
-
-	e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		LoadFromStorage(evt.Origin())
-		return false
-	}))
-
-	d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		_, ok := d.mutationRecorder().raw.GetData("mutationlist")
-		if ok {
-			// Disable data loading from storage until the list of mutations is replayed.
-			// Should affect LoadFromStorage
-			e.Set("internals", "disable-dataloading", ui.Bool(true))
-			d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				e.Set("internals", "disable-dataloading", ui.Bool(false))
-				return false
-			}).RunASAP().RunOnce())
+	} else {
+		e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			LoadFromStorage(evt.Origin())
 			return false
-		} else {
-			d.mutationRecorder().raw.TriggerEvent("datastore-load")
+		}))
+
+		d.WatchEvent("ui-load", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			_, ok := d.mutationRecorder().raw.GetData("mutationlist")
 			if ok {
 				// Disable data loading from storage until the list of mutations is replayed.
@@ -757,20 +744,33 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 				e.Set("internals", "disable-dataloading", ui.Bool(true))
 				d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 					e.Set("internals", "disable-dataloading", ui.Bool(false))
-					e.TriggerEvent("datastore-load")
 					return false
 				}).RunASAP().RunOnce())
 				return false
+			} else {
+				d.mutationRecorder().raw.TriggerEvent("datastore-load")
+				_, ok := d.mutationRecorder().raw.GetData("mutationlist")
+				if ok {
+					// Disable data loading from storage until the list of mutations is replayed.
+					// Should affect LoadFromStorage
+					e.Set("internals", "disable-dataloading", ui.Bool(true))
+					d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+						e.Set("internals", "disable-dataloading", ui.Bool(false))
+						e.TriggerEvent("datastore-load")
+						return false
+					}).RunASAP().RunOnce())
+					return false
+				}
 			}
-		}
-		e.TriggerEvent("datastore-load")
-		return false
-	}).RunASAP().RunOnce())
+			e.TriggerEvent("datastore-load")
+			return false
+		}).RunASAP().RunOnce())
 
-	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		PutInStorage(e)
-		return false
-	}))
+		d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			PutInStorage(e)
+			return false
+		}))
+	}
 
 	return e
 })
@@ -781,7 +781,7 @@ var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Eleme
 		evt.Origin().Fetch()
 		return false
 	})
-	e.WatchEvent("document-ready", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.WatchEvent("ui-ready", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
 		e.OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			evt.Origin().RemoveMutationHandler("event", "unmounted", evt.Origin(), fetcher)
@@ -1168,6 +1168,7 @@ func (d Document) newID() string {
 	for i := range b {
 		b[i] = charset[d.rng.Intn(l)]
 	}
+	DEBUG("Generated ID: ", string(b))
 	return string(b)
 }
 
@@ -1379,15 +1380,18 @@ func (d Document) OnNavigationEnd(h *ui.MutationHandler) {
 }
 
 func (d Document) OnLoaded(h *ui.MutationHandler) {
-	d.AsElement().WatchEvent("document-loaded", d, h)
+	d.AsElement().WatchEvent("ui-loaded", d, h)
 }
 
 func (d Document) OnReady(h *ui.MutationHandler) {
-	d.AsElement().WatchEvent("document-ready", d, h)
+	if !h.Once {
+		h = h.RunOnce()
+	}
+	d.AsElement().WatchEvent("ui-ready", d, h)
 }
 
 func (d Document) isReady() bool {
-	_, ok := d.GetEventValue("document-ready")
+	_, ok := d.GetEventValue("ui-ready")
 	return ok
 }
 
@@ -1422,7 +1426,7 @@ func (d Document) SetFavicon(href string) {
 
 // NewBuilder accepts a function that builds a document as a UI tree and returns a function
 // that enables event listening for this document.
-// On the client, these are client side javascrip events.
+// On the client, these are client side javascript events.
 // On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
 // for the document.
 // var NewBuilder func(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context))
@@ -1685,7 +1689,6 @@ func (m *mutationRecorder) Replay() error {
 
 	d.Set("internals", "mutation-replaying", ui.Bool(false))
 	d.TriggerEvent("mutation-replayed")
-	m.Clear()
 
 	return nil
 }
@@ -1701,31 +1704,6 @@ func (d Document) OnMutationsReplayed(h *ui.MutationHandler) {
 
 func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
-
-	// Watch document for mutation-replay event
-	// If mutation-replaying, it should bump the recorder position.
-	m.AsElement().WatchEvent("mutation-replay", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		mrec := d.mutationRecorder()
-		mrec.pos++
-		// replay logic for the corresponding element in the mutationlist
-		mutationlist, ok := m.AsElement().GetData("mutationlist")
-		if !ok {
-			return false
-		}
-
-		mutationtrace, ok := mutationlist.(ui.List)
-		if !ok {
-			panic("state history should have been a ui.List. Wrong type. Unexpected error")
-		}
-		mut, ok := mutationtrace.Get(mrec.pos).(ui.Object)
-		if !ok {
-			panic("mutation entry badly encoded. Expectted a ui.Object")
-		}
-
-		replaymutation(d, mut)
-
-		return false
-	}))
 
 	trace, ok := d.Get("internals", "mutationtrace")
 	if ok {
@@ -1756,10 +1734,10 @@ func (d Document) ListenAndServe(ctx context.Context) {
 	}
 
 	d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
-		d.WatchEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			evt.Origin().TriggerEvent("document-ready")
+		d.WatchEvent("ui-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
 			return false
-		}).RunASAP()) // DEBUG removed RunOnce()
+		}).RunASAP().RunOnce())
 
 		return false
 	}))
@@ -1827,8 +1805,11 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 			r.History.Set("focusedElementId", ui.String(evt.Target().ID))
 			return false
 		}))
-
 	})
+
+	if e.ElementStore.MutationReplay && (HMRMode != "false" || SSRMode != "false") {
+		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
+	}
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
@@ -1865,6 +1846,9 @@ func mutationreplay(d *Document) error {
 	}
 
 	mutNum := len(mutationtrace.UnsafelyUnwrap())
+	DEBUG("mutation replaying")
+	// DEBUG("trace ", mutationtrace)
+	DEBUG("# of replays to do ", mutNum)
 
 	for m.pos < mutNum {
 		rawop := mutationtrace.Get(m.pos)
@@ -1891,51 +1875,27 @@ func mutationreplay(d *Document) error {
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
-			DEBUG("Unable to recover state for this element id. Element  doesn't exist: ", id, cat, prop, val)
+			DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: ", id)
+			DEBUG(cat, prop, val)
+			DEBUG(mutationtrace.Get(m.pos - 1))
+			DEBUG(mutationtrace.Get(m.pos))
+			DEBUG(mutationtrace.Get(m.pos + 1))
 			return ui.ErrReplayFailure
 		}
 
 		el.BindValue("event", "connect-native", e)
 		el.BindValue("event", "mutation-replayed", e)
 
-		el.ReplayMutation(rawop.(ui.Object))
-		m.pos++
+		el.Set(cat.(ui.String).String(), prop.(ui.String).String(), val)
+
+		i, ok := d.Get("internals", "mutation-list-index")
+		if !ok {
+			panic("mutation list index not found. Should be >= 1.")
+		}
+		m.pos = int(i.(ui.Number).Float64())
+		m.pos = m.pos + 1
+		d.Set("internals", "mutation-list-index", ui.Number(m.pos))
 	}
-
-	return nil
-}
-
-func replaymutation(d Document, op ui.Object) error {
-	id, ok := op.Get("id")
-	if !ok {
-		return ui.ErrReplayFailure
-	}
-
-	cat, ok := op.Get("cat")
-	if !ok {
-		return ui.ErrReplayFailure
-	}
-
-	prop, ok := op.Get("prop")
-	if !ok {
-		return ui.ErrReplayFailure
-	}
-
-	val, ok := op.Get("val")
-	if !ok {
-		return ui.ErrReplayFailure
-	}
-	el := d.GetElementById(id.(ui.String).String())
-	if el == nil {
-		// Unable to recover state for this element id. Element  doesn't exist"
-		DEBUG("Unable to recover state for this element id. Element  doesn't exist", id, cat, prop, val)
-		return ui.ErrReplayFailure
-	}
-
-	el.BindValue("event", "connect-native", d.AsElement())
-	el.BindValue("event", "mutation-replayed", d.AsElement())
-
-	el.ReplayMutation(op)
 
 	return nil
 }
@@ -2339,7 +2299,7 @@ func NewDocument(id string, options ...string) Document {
 	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
 
 	e.OnRouterMounted(routerConfig)
-	d.WatchEvent("document-loaded", d, navinitHandler)
+	d.OnReady(navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
 	activityStateSupport(e)
@@ -2462,7 +2422,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
-			e.WatchEvent("document-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("ui-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				rootScrollRestorationSupport(evt.Origin())
 				return false
 			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
@@ -2471,7 +2431,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 		}
 
 		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			e.WatchEvent("document-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("ui-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				router := ui.GetRouter(evt.Origin())
 
 				ejs, ok := JSValue(e)
@@ -2529,7 +2489,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						return false
 					}).RunASAP()
 
-					e.WatchEvent("document-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					e.WatchEvent("ui-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 						evt.Origin().WatchEvent("navigation-end", evt.Origin().Root, h)
 						return false
 					}).RunASAP().RunOnce())
@@ -2555,7 +2515,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 		}))
 
 		return false
-	}).RunASAP())
+	}).RunASAP().RunOnce())
 	return el
 
 })
@@ -2635,7 +2595,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 		return false
 	}).RunASAP()
 
-	e.WatchEvent("document-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.WatchEvent("ui-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		evt.Origin().WatchEvent("navigation-end", evt.Origin(), h)
 		return false
 	}).RunASAP().RunOnce())
@@ -4588,7 +4548,7 @@ func (l LabelElement) For(p **ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		d := GetDocument(evt.Origin())
 
-		evt.Origin().WatchEvent("docuemnt-idle", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		evt.Origin().WatchEvent("ui-idle", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			e := *p
 			l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			return false
@@ -6867,7 +6827,7 @@ func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *
 			t = time.NewTicker(interval)
 
 			initticker := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				e.TriggerEvent(tickname) // for init purposes
+				evt.Origin().TriggerEvent(tickname) // for init purposes
 
 				evt.Origin().OnMounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
 					t.Reset(interval)

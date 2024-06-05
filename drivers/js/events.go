@@ -121,6 +121,13 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 		var rv = ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
 
+		// When replaying mutations, user events have already been handled and state has changed accordingly.
+		// we do not need to handle them again.
+		if ui.MutationReplaying(GetDocument(listener).AsElement()) {
+			DEBUG("replaying mutations, skipping event handling")
+			return nil
+		}
+
 		ui.DoSync(func() {
 			if currtargetid.Truthy() {
 				currentTarget = GetDocument(listener).GetElementById(currtargetid.String())

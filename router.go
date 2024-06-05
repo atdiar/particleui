@@ -549,20 +549,74 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			panic("framework error: event value format unexpected. Should have a value field")
 		}
 		root.AsElement().Root.TriggerEvent("navigation-routechangerequest", u.(String))
-		root.AsElement().Root.TriggerEvent("document-idle")
+		root.AsElement().Root.TriggerEvent("ui-idle")
 		return false
 	})
 
 	root.AsElement().Root.WatchEvent("navigation-routechangerequest", root.AsElement().Root, r.handler())
 	root.AsElement().Root.WatchEvent("navigation-routeredirectrequest", root.AsElement().Root, r.redirecthandler())
-	r.Outlet.AsElement().Root.TriggerEvent("document-loaded")
+	r.Outlet.AsElement().Root.StartTransition("load")
+
+	lch := NewLifecycleHandlers(root.AsElement())
+
+	onloadstart := NewMutationHandler(func(evt MutationEvent) bool {
+		if lch.MutationWillReplay() {
+			evt.Origin().OnTransitionError("replay", NewMutationHandler(func(ev MutationEvent) bool {
+				ev.Origin().ErrorTransition("load", ev.NewValue())
+				return false
+			}))
+
+			// After replay end, the app should be considered loaded. So we will end the load transition.
+			evt.Origin().AfterEvent(TransitionPhase("replay", "end"), evt.Origin(), NewMutationHandler(func(ev MutationEvent) bool {
+				ev.Origin().EndTransition("load")
+				return false
+			}).RunOnce())
+
+			evt.Origin().StartTransition("replay")
+
+			return true
+		}
+
+		return false
+	})
+
+	onloaderror := NewMutationHandler(func(evt MutationEvent) bool {
+		if lch.MutationWillReplay() {
+			evt.Origin().ErrorTransition("replay", evt.NewValue())
+			return false
+		}
+
+		return false
+	})
+
+	onloadcancel := NewMutationHandler(func(evt MutationEvent) bool {
+		return false
+	})
+
+	onloadend := NewMutationHandler(func(evt MutationEvent) bool {
+		// DEBUG
+		DEBUG("UI load end")
+		return false
+	})
+
+	root.AsElement().Root.AfterEvent(TransitionPhase("load", "end"), root, NewMutationHandler(func(evt MutationEvent) bool {
+		evt.Origin().TriggerEvent("ui-loaded")
+		return false
+	}))
+
+	root.AsElement().Root.DefineTransition("load", onloadstart, onloaderror, onloadcancel, onloadend)
+
+	// At this stage, the UI tree is built on the go side but still has to wait for
+	// some kind of event on the native side in order to be able to trigger the ui-ready event.
+	// That is platform/driver dependent and makes use of the Ready lifecycle handler function which triggers a ui-ready event
+	// at the root of the UI tree.
 
 	eventnames := strings.Split(events, " ")
 	for _, event := range eventnames {
 		target.AsElement().AddEventListener(event, routeChangeHandler)
 	}
 
-	r.Outlet.AsElement().Root.TriggerEvent("document-idle")
+	r.Outlet.AsElement().Root.TriggerEvent("ui-idle")
 
 	for {
 		select {
@@ -580,6 +634,55 @@ func (r *Router) verifyLinkActivation() {
 			panic("Link activation failure: " + l.URI())
 		}
 	}
+}
+
+type LifecycleHandlers struct {
+	root *Element
+}
+
+func NewLifecycleHandlers(root *Element) LifecycleHandlers {
+	return LifecycleHandlers{root}
+}
+
+func (l LifecycleHandlers) OnReady(h *MutationHandler) {
+	l.root.WatchEvent("ui-ready", l.root, h)
+}
+
+func (l LifecycleHandlers) OnIdle(h *MutationHandler) {
+	l.root.WatchEvent("ui-idle", l.root, h)
+}
+
+func (l LifecycleHandlers) OnLoad(h *MutationHandler) {
+	l.root.WatchEvent("ui-loaded", l.root, h)
+}
+
+func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
+	l.root.WatchEvent("ui-loaded", l.root, h)
+}
+
+// SetReady is used to signal that the UI tree has been built and data/resources have been loaded on both the Go/wasm side
+// and the native sides.
+func (l LifecycleHandlers) SetReady() {
+	l.root.TriggerEvent("ui-ready")
+}
+
+// MutationShouldReplay
+func (l LifecycleHandlers) MutationShouldReplay(b bool) {
+	l.root.Set("internals", "mutation-should-replay", Bool(b))
+}
+
+// MutationWillReplay
+func (l LifecycleHandlers) MutationWillReplay() bool {
+	v, ok := l.root.Get("internals", "mutation-should-replay")
+	if !ok {
+		return false
+	}
+	return bool(v.(Bool))
+}
+
+// MutationReplaying
+func (l LifecycleHandlers) MutationReplaying() bool {
+	return MutationReplaying(l.root)
 }
 
 /*
@@ -1044,7 +1147,7 @@ var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
 		e.SetUI("active", Bool(false))
 	}
 	return false
-})
+}).RunASAP()
 
 func (l Link) MonitorActivity(b bool) Link {
 	if b {

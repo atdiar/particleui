@@ -98,17 +98,12 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		base := d.Base.WithID("zuibase").SetHREF(BasePath)
 		d.Head().AppendChild(base)
 
-		d.AfterEvent("document-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			js.Global().Call("onWasmDone")
-			return false
-		}))
-
 		// sse support if hmr is enabled
 		if HMRMode != "false" {
 			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
 
-		d.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			// let's recover the baseURL from the document
 			buri := js.Global().Get("document").Get("baseURI")
 			if buri.Truthy() {
@@ -119,14 +114,33 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 				}
 				BasePath = bpath.Path
 			}
+			return false
+		}).RunOnce().RunASAP())
+
+		d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			err := d.mutationRecorder().Replay()
 			if err != nil {
-				d.mutationRecorder().Clear()
-				// Should reload the page
-				log.Println(err)
-				d.Window().Reload()
-				return false
+				d.ErrorTransition("replay", ui.String(err.Error()))
+				return true // DEBUG may want to return false, should check
 			}
+			return false
+		}))
+
+		d.OnTransitionError("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			d.mutationRecorder().Clear()
+			// Should reload the page
+			log.Println("replay error, we should reload: ", evt.NewValue())
+			d.Window().Reload()
+			return false
+		}))
+
+		d.OnTransitionEnd("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			js.Global().Call("onWasmDone")
+			return false
+		}))
+
+		// Capture mutations
+		d.AfterEvent("ui-ready", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())

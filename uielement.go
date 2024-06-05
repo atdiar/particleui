@@ -31,7 +31,7 @@ func newIDgenerator(charlen int, seed int64) func() string {
 	}
 }
 
-// ElementStore defines a global context, constiting of properties. methods for
+// ElementStore defines a global context, consisting of properties. methods for
 // Elemnts constructors of User Interfaces.
 type ElementStore struct {
 	DocType                  string
@@ -183,7 +183,6 @@ func registerElementfn(root, e *Element) {
 	e.BindValue("internals", "mutation-capturing", root)
 	e.BindValue("internals", "documentstate", root)
 
-	root.BindValue("event", "mutation-replay", e)
 	e.TriggerEvent("registered")
 }
 
@@ -1577,7 +1576,7 @@ func (e *Element) TriggerEvent(name string, value ...Value) {
 	e.Set("event", name, val)
 }
 
-// WatchEventt enables an elements to watch for an event occuring on any Element including itself.
+// WatchEvent enables an elements to watch for an event occuring on any Element including itself.
 func (e *Element) WatchEvent(name string, target Watchable, h *MutationHandler) {
 	e.Watch("event", name, target, h)
 }
@@ -1630,11 +1629,6 @@ func (e *Element) Set(category string, propname string, value Value) {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
 
-	if mutationreplaying(e) && !(category == "event" && propname == "mutation-replay") && !(category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing")) {
-		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String(category)).Set("prop", String(propname)).Set("val", value).Commit())
-		return
-	}
-
 	oldvalue, ok := e.Properties.Get(category, propname)
 
 	if ok && category != "event" {
@@ -1643,7 +1637,34 @@ func (e *Element) Set(category string, propname string, value Value) {
 		}
 	}
 
+	if MutationReplaying(e) {
+		if !shouldSkip(category, propname) {
+			idx, ok := e.Root.Get("internals", "mutation-list-index")
+			if !ok {
+				e.Root.Set("internals", "mutation-list-index", Number(1))
+			} else {
+				if idx.(Number) > 150 {
+					DEBUG("mutation replaying might be stuck in a loop")
+					panic("mutation replaying might be stuck in a loop")
+				}
+				e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+			}
+		}
+	}
+
 	e.Properties.Set(category, propname, value)
+
+	if mutationcapturing(e) {
+		if !shouldSkip(category, propname) {
+			m := NewObject()
+			m.Set("id", String(e.ID))
+			m.Set("cat", String(category))
+			m.Set("prop", String(propname))
+			m.Set("val", Copy(value))
+			// DEBUG("mutation captured: ", m)
+			e.Root.TriggerEvent("new-mutation", m.Commit())
+		}
+	}
 
 	// Mutation event propagation
 	evt := e.NewMutationEvent(category, propname, value, oldvalue)
@@ -1681,104 +1702,10 @@ func (e *Element) Set(category string, propname string, value Value) {
 			watchers.List = wl[:index]
 		}
 	}
-
-	if mutationcapturing(e) {
-		/*
-			if category != "data" && category != "ui" {
-				return
-			}
-		*/
-		if category == "data" && propname == "mutationlist" { // TODO: make it less broad a condition
-			return
-		}
-
-		if category == "event" && propname == "mutation-replay" {
-			return
-		}
-
-		if category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing") {
-			return
-		}
-
-		if e.IsRoot() && category == "event" && propname == "new-mutation" {
-			return
-		}
-
-		m := NewObject()
-		m.Set("id", String(e.ID))
-		m.Set("cat", String(category))
-		m.Set("prop", String(propname))
-		m.Set("val", Copy(value))
-		e.Root.TriggerEvent("new-mutation", m.Commit())
-	}
 }
 
-func (e *Element) ReplayMutation(val Object) {
-	type mut struct {
-		Cat  string
-		Prop string
-		Val  Value
-	}
-
-	var m *mut = &mut{}
-	err := Deserialize(val, m)
-	if err != nil {
-		panic(err) // will only fail if deserialization is badly implemented
-	}
-
-	oldvalue, _ := e.Properties.Get(m.Cat, m.Prop)
-	e.Properties.Set(m.Cat, m.Prop, m.Val)
-
-	evt := e.NewMutationEvent(m.Cat, m.Prop, m.Val, oldvalue)
-
-	props, ok := e.Properties.Categories[m.Cat]
-	if !ok {
-		panic("category should exist since property should have been stored")
-	}
-
-	watchers, ok := props.Watchers[m.Prop]
-	if ok && watchers != nil {
-		var needcleanup bool
-		var index int
-		wl := watchers.List[:0]
-
-		for i := 0; i < len(watchers.List); i++ {
-			w := watchers.List[i]
-			if w == nil {
-				if !needcleanup {
-					wl = watchers.List[:i]
-					index = i + 1
-					needcleanup = true
-				}
-				continue
-			}
-			w.PropMutationHandlers.DispatchEvent(evt)
-			if needcleanup {
-				wl = append(wl, w)
-				index++
-			}
-		}
-		if needcleanup {
-			for i := index; i < len(watchers.List); i++ {
-				watchers.List[i] = nil
-			}
-			watchers.List = wl[:index]
-		}
-	}
-}
-
-func mutationreplaying(e *Element) bool {
-	if e == nil {
-		return false
-	}
-	if e.ElementStore == nil {
-		return false
-	}
-	if !e.ElementStore.MutationReplay {
-		return false
-	}
-
-	if !e.Registered() {
+func MutationReplaying(e *Element) bool {
+	if e == nil || e.ElementStore == nil || !e.ElementStore.MutationReplay || !e.Registered() {
 		return false
 	}
 
@@ -1790,18 +1717,35 @@ func mutationreplaying(e *Element) bool {
 	return v.(Bool).Bool()
 }
 
-func mutationcapturing(e *Element) bool {
-	if e == nil {
-		return false
-	}
-	if e.ElementStore == nil {
-		return false
-	}
-	if !e.ElementStore.MutationCapture {
-		return false
+func shouldSkip(category, propname string) bool {
+	if category == "internals" && propname == "mutation-list-index" {
+		return true
 	}
 
-	if !e.Registered() {
+	if category == "data" && propname == "mutationlist" { // TODO: make it less broad a condition
+		return true
+	}
+
+	if category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing") {
+		return true
+	}
+
+	if category == "event" && propname == "new-mutation" {
+		return true
+	}
+
+	if category == "event" {
+		switch propname {
+		case "before-unactive":
+			return true
+		}
+	}
+
+	return false
+}
+
+func mutationcapturing(e *Element) bool {
+	if e == nil || e.ElementStore == nil || !e.ElementStore.MutationCapture || !e.Registered() {
 		return false
 	}
 
@@ -1811,10 +1755,8 @@ func mutationcapturing(e *Element) bool {
 	}
 
 	res := v.(Bool).Bool()
-	if res {
-		if mutationreplaying(e) {
-			panic("element is replaying mutations, it should not be capturing mutations")
-		}
+	if res && MutationReplaying(e) {
+		panic("element is replaying mutations, it should not be capturing mutations")
 	}
 	return res
 }
@@ -1867,9 +1809,13 @@ func (e *Element) SyncUI(propname string, value Value) *Element {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + propname + ")")
 	}
 
-	if mutationreplaying(e) {
-		e.TriggerEvent("mutation-replay", NewObject().Set("cat", String("ui")).Set("prop", String(propname)).Set("val", value).Set("sync", Bool(true)).Commit())
-		return e
+	if MutationReplaying(e) {
+		idx, ok := e.Root.Get("internals", "mutation-list-index")
+		if !ok {
+			e.Root.Set("internals", "mutation-list-index", Number(1))
+		} else {
+			e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+		}
 	}
 
 	e.Properties.Set("ui", propname, value)

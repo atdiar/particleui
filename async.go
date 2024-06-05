@@ -41,6 +41,8 @@ func newwork(f func(), signalDone chan struct{}) func() {
 //
 // If nil is passed as the *ui.Element argument, the function will not be cancelled if the navigation
 // changes. Otherwise, async function execution is cancellable by new navigation events.
+// Alternatively, a ui.Observable that is not part of the document tree can be used as they are navigation agnostic
+// and as such, are not tied to navigation.
 //
 // e.g. a fetch might be cancelled if it's not done before the user navigates away from the current route.
 // meaning that each time a new navigation event is triggered, unfinished fetch for the document
@@ -73,6 +75,10 @@ func DoAsync(e *Element, f func(context.Context)) {
 			cancel = func() {}
 			return
 		}
+	} else {
+		executionCtx = context.Background()
+		cancel = func() {}
+
 	}
 
 	go func() {
@@ -459,6 +465,8 @@ func (e *Element) enablefetching() *Element {
 	e.DefineTransition("fetch", fetch, nil, cancel, nil)
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
+		// DEBUG TODO this should happen once the page is ready
+		// prefetching should be disabled when replaying mutations.
 		evt.Origin().Fetch()
 		return false
 	}))
@@ -470,11 +478,11 @@ func (e *Element) Prefetch() {
 	if !e.Registered() {
 		panic("Prefetch can only be called on registered elements")
 	}
-	if mutationreplaying(e) {
+	if MutationReplaying(e) {
 		return
 	}
 
-	e.Root.WatchEvent("document-loaded", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
 		// should start the prefetching process by triggering the prefetch transitions that have been registered
 		e.StartTransition("prefetch")
 		return false
@@ -486,14 +494,13 @@ func (e *Element) Fetch(props ...string) {
 		panic("Fetch can only be called on registered elements. Error for " + e.ID)
 	}
 
-	if mutationreplaying(e) {
+	if MutationReplaying(e) {
 		return
 	}
 
-
-	// The Fetch will only proceed once a document tree is fully created, i.e. once the document-loaded event
+	// The Fetch will only proceed once a document tree is fully created, i.e. once the ui-load event
 	// has fired
-	e.Root.WatchEvent("document-loaded", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
 		if len(props) == 0 {
 			e.Properties.Delete("runtime", "fetcherrors")
 			//e.Properties.Delete("fetchstatus","cancelled")
@@ -830,11 +837,11 @@ func (e *Element) endfetchTransition(propname string, values ...Value) {
 }
 
 func fetchTxName(propname, phase string) string {
-	return transition(strings.Join([]string{"fetch", propname}, "-"), phase)
+	return TransitionPhase(strings.Join([]string{"fetch", propname}, "-"), phase)
 }
 
 func prefetchTxName(propname, phase string) string {
-	return transition(strings.Join([]string{"prefetch", propname}, "-"), phase)
+	return TransitionPhase(strings.Join([]string{"prefetch", propname}, "-"), phase)
 }
 
 //  Making requests at the Element level
@@ -854,12 +861,11 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 		panic("Element is not registered. Cannot process request")
 	}
 
-	if mutationreplaying(e) {
+	if MutationReplaying(e) {
 		return
 	}
 
-
-	e.Root.WatchEvent("document-loaded", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
 		var ctx context.Context
 		var cancelFn context.CancelFunc
 
@@ -904,7 +910,7 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 				})
 			})
 			return false
-		}).RunOnce()
+		}).RunOnce().RunASAP()
 
 		onerror := NewMutationHandler(func(evt MutationEvent) bool {
 			return false
@@ -919,7 +925,7 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 			// initially thought that we could do nothing if req was canceleld or on error
 			// but in fact it doesn't matter because a request in flight may still have mutated data on
 			// the serveer
-			// the clien only controls the request.
+			// the client only controls the request.
 			evt.Origin().Root.TriggerEvent("request-"+requestID(r), String(r.Method))
 			return false
 		}).RunOnce()
@@ -986,7 +992,7 @@ func (e *Element) OnRequestError(r *http.Request, h *MutationHandler) {
 // Otherwise it returns nil.
 // It is typically used when handling OnRequestEnd.
 func RetrieveResponse(e *Element, r *http.Request) (Value, error) {
-	v, ok := e.Get("event", transition("request-"+requestID(r), "end"))
+	v, ok := e.Get("event", TransitionPhase("request-"+requestID(r), "end"))
 	if !ok {
 		return nil, nil
 	}
@@ -1022,7 +1028,6 @@ func (e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *
 	}
 	e.SyncUI(propname, value)
 
-	
 	e.OnRequestError(r, NewMutationHandler(func(evt MutationEvent) bool {
 		e.SetUI(propname, oldv)
 		err := NewObject().Set("prop", String(propname)).Set("value", value).Commit()
