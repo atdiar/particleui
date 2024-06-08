@@ -1738,6 +1738,16 @@ func shouldSkip(category, propname string) bool {
 		switch propname {
 		case "before-unactive":
 			return true
+		case "datastore-load":
+			return true
+		case TransitionPhase("replay", "start"):
+			return true
+		case TransitionPhase("replay", "end"):
+			return true
+		case TransitionPhase("replay", "cancel"):
+			return true
+		case TransitionPhase("replay", "error"):
+			return true
 		}
 	}
 

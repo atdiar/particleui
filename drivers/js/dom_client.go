@@ -134,7 +134,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 			return false
 		}))
 
-		d.OnTransitionEnd("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.AfterTransition("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
 			return false
 		}))

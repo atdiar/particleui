@@ -711,65 +711,40 @@ func newWindow(title string, options ...string) Window {
 var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
 	d := getDocumentRef(e)
 
-	if e.ElementStore.MutationCapture {
-		// We only need to load data from the mutation recorder
-		if e.ID == "mutation-recorder" {
-			d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
-					LoadFromStorage(event.Origin())
-					return false
-				}))
+	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		PutInStorage(e)
+		return false
+	}))
 
-				e.TriggerEvent("datastore-load")
-				return false
-			}).RunASAP().RunOnce())
-		}
-		d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	lch := ui.NewLifecycleHandlers(d)
+
+	if lch.MutationWillReplay() {
+		// datastore persistence should be disabled until the list of mutations is replayed.
+		d.AfterTransition("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			PutInStorage(e)
-			return false
-		}))
-
-		return e
-	} else {
-		e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			LoadFromStorage(evt.Origin())
-			return false
-		}))
-
-		d.WatchEvent("ui-load", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			_, ok := d.mutationRecorder().raw.GetData("mutationlist")
-			if ok {
-				// Disable data loading from storage until the list of mutations is replayed.
-				// Should affect LoadFromStorage
-				e.Set("internals", "disable-dataloading", ui.Bool(true))
-				d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-					e.Set("internals", "disable-dataloading", ui.Bool(false))
-					return false
-				}).RunASAP().RunOnce())
+			e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+				LoadFromStorage(event.Origin())
 				return false
-			} else {
-				d.mutationRecorder().raw.TriggerEvent("datastore-load")
-				_, ok := d.mutationRecorder().raw.GetData("mutationlist")
-				if ok {
-					// Disable data loading from storage until the list of mutations is replayed.
-					// Should affect LoadFromStorage
-					e.Set("internals", "disable-dataloading", ui.Bool(true))
-					d.OnMutationsReplayed(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-						e.Set("internals", "disable-dataloading", ui.Bool(false))
-						e.TriggerEvent("datastore-load")
-						return false
-					}).RunASAP().RunOnce())
-					return false
-				}
+			}))
+			return false
+		}).RunOnce())
+
+		// In HMR Mode, we need to load data persisted for the mutation-recorder
+		if HMRMode != "false" && !(SSRMode != "false") {
+			if e.ID == "mutation-recorder" {
+				LoadFromStorage(e)
 			}
+		}
+	} else {
+		e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+			LoadFromStorage(event.Origin())
+			return false
+		}))
+
+		d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			e.TriggerEvent("datastore-load")
 			return false
 		}).RunASAP().RunOnce())
-
-		d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			PutInStorage(e)
-			return false
-		}))
 	}
 
 	return e
@@ -780,8 +755,9 @@ var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Eleme
 	fetcher := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		evt.Origin().Fetch()
 		return false
-	})
-	e.WatchEvent("ui-ready", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	}).RunASAP()
+
+	e.WatchEvent("ui-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
 		e.OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			evt.Origin().RemoveMutationHandler("event", "unmounted", evt.Origin(), fetcher)
@@ -1696,10 +1672,6 @@ func (m *mutationRecorder) Replay() error {
 func (m *mutationRecorder) Clear() {
 	m.raw.SetData("mutationlist", ui.NewList().Commit())
 	m.pos = 0
-}
-
-func (d Document) OnMutationsReplayed(h *ui.MutationHandler) {
-	d.WatchEvent("mutation-replayed", d, h)
 }
 
 func (d Document) newMutationRecorder(options ...string) *mutationRecorder {

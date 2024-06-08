@@ -567,12 +567,10 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			}))
 
 			// After replay end, the app should be considered loaded. So we will end the load transition.
-			evt.Origin().AfterEvent(TransitionPhase("replay", "end"), evt.Origin(), NewMutationHandler(func(ev MutationEvent) bool {
+			evt.Origin().AfterTransition("replay", NewMutationHandler(func(ev MutationEvent) bool {
 				ev.Origin().EndTransition("load")
 				return false
 			}).RunOnce())
-
-			evt.Origin().StartTransition("replay")
 
 			return true
 		}
@@ -582,7 +580,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 	onloaderror := NewMutationHandler(func(evt MutationEvent) bool {
 		if lch.MutationWillReplay() {
-			evt.Origin().ErrorTransition("replay", evt.NewValue())
+			evt.Origin().CancelTransition("replay", evt.NewValue())
 			return false
 		}
 
@@ -590,6 +588,10 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	onloadcancel := NewMutationHandler(func(evt MutationEvent) bool {
+		if lch.MutationWillReplay() {
+			evt.Origin().CancelTransition("replay", evt.NewValue())
+			return false
+		}
 		return false
 	})
 
@@ -604,6 +606,27 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		return false
 	}))
 
+	onreplaystart := NewMutationHandler(func(evt MutationEvent) bool {
+		return false
+	})
+
+	onreplayerror := NewMutationHandler(func(evt MutationEvent) bool {
+		DEBUG("replay error", evt.NewValue())
+		return false
+	})
+
+	onreplaycancel := NewMutationHandler(func(evt MutationEvent) bool {
+		DEBUG("replay cancel", evt.NewValue())
+		return false
+	})
+
+	onreplayend := NewMutationHandler(func(evt MutationEvent) bool {
+		DEBUG("replay end")
+		return false
+	})
+
+	// DEBUG replay transition phase handlers
+	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend) // TODO check that what this does. DEBUG
 	root.AsElement().Root.DefineTransition("load", onloadstart, onloaderror, onloadcancel, onloadend)
 
 	// At this stage, the UI tree is built on the go side but still has to wait for
@@ -634,55 +657,6 @@ func (r *Router) verifyLinkActivation() {
 			panic("Link activation failure: " + l.URI())
 		}
 	}
-}
-
-type LifecycleHandlers struct {
-	root *Element
-}
-
-func NewLifecycleHandlers(root *Element) LifecycleHandlers {
-	return LifecycleHandlers{root}
-}
-
-func (l LifecycleHandlers) OnReady(h *MutationHandler) {
-	l.root.WatchEvent("ui-ready", l.root, h)
-}
-
-func (l LifecycleHandlers) OnIdle(h *MutationHandler) {
-	l.root.WatchEvent("ui-idle", l.root, h)
-}
-
-func (l LifecycleHandlers) OnLoad(h *MutationHandler) {
-	l.root.WatchEvent("ui-loaded", l.root, h)
-}
-
-func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
-	l.root.WatchEvent("ui-loaded", l.root, h)
-}
-
-// SetReady is used to signal that the UI tree has been built and data/resources have been loaded on both the Go/wasm side
-// and the native sides.
-func (l LifecycleHandlers) SetReady() {
-	l.root.TriggerEvent("ui-ready")
-}
-
-// MutationShouldReplay
-func (l LifecycleHandlers) MutationShouldReplay(b bool) {
-	l.root.Set("internals", "mutation-should-replay", Bool(b))
-}
-
-// MutationWillReplay
-func (l LifecycleHandlers) MutationWillReplay() bool {
-	v, ok := l.root.Get("internals", "mutation-should-replay")
-	if !ok {
-		return false
-	}
-	return bool(v.(Bool))
-}
-
-// MutationReplaying
-func (l LifecycleHandlers) MutationReplaying() bool {
-	return MutationReplaying(l.root)
 }
 
 /*

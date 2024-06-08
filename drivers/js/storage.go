@@ -235,12 +235,6 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 	if e == nil {
 		panic("loading a nil element")
 	}
-	v, ok := a.AsElement().Get("internals", "disable-dataloading")
-	if ok {
-		if v.(ui.Bool) {
-			return e
-		}
-	}
 
 	pmode := ui.PersistenceMode(e)
 

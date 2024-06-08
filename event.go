@@ -3,6 +3,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -315,7 +316,7 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		panic("onstart transition handler cannot be nil")
 	}
 
-	e.OnTransitionStart(name, NewMutationHandler(func(evnt MutationEvent) bool {
+	e.WatchEvent(TransitionPhase(name, "start"), e, NewMutationHandler(func(evnt MutationEvent) bool {
 		// cancel previous in-flight transitions and reset transition state 9to not failed, not cancelled)
 		//evt.Origin().CancelTransition(name,String("transition restarted"))
 		evnt.Origin().CancelTransition(name, String("transition restarted"))
@@ -383,31 +384,40 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 
 		return false
 	}))
+
+	e.TriggerEvent(strings.Join([]string{name, "transition", "defined"}, "-"))
 }
 
 func (e *Element) OnTransitionStart(name string, h *MutationHandler) {
-	e.WatchEvent(TransitionPhase(name, "start"), e, h)
+	e.WatchEvent(strings.Join([]string{name, "transition", "defined"}, "-"), e, NewMutationHandler(func(evnt MutationEvent) bool {
+		evnt.Origin().WatchEvent(TransitionPhase(name, "start"), evnt.Origin(), h)
+		return false
+	}).RunASAP().RunOnce())
 }
 
 func (e *Element) OnTransitionError(name string, h *MutationHandler) {
 	e.OnTransitionStart(name, NewMutationHandler(func(evnt MutationEvent) bool {
-		evnt.Origin().OnTransitionError(name, h.RunOnce())
+		evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), h.RunOnce())
 		return false
 	}))
 }
 
 func (e *Element) OnTransitionCancel(name string, h *MutationHandler) {
 	e.OnTransitionStart(name, NewMutationHandler(func(evnt MutationEvent) bool {
-		evnt.Origin().OnTransitionCancel(name, h.RunOnce())
+		evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), h.RunOnce())
 		return false
 	}))
 }
 
 func (e *Element) OnTransitionEnd(name string, h *MutationHandler) {
-	e.OnTransitionStart(name, NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().OnTransitionEnd(name, h.RunOnce())
+	e.OnTransitionStart(name, NewMutationHandler(func(evnt MutationEvent) bool {
+		evnt.Origin().WatchEvent(TransitionPhase(name, "end"), evnt.Origin(), h.RunOnce())
 		return false
 	}))
+}
+
+func (e *Element) AfterTransition(name string, h *MutationHandler) {
+	e.AfterEvent(TransitionPhase(name, "end"), e, h)
 }
 
 func (e *Element) resetTransition(name string) {
@@ -415,15 +425,29 @@ func (e *Element) resetTransition(name string) {
 	e.Properties.Delete("event", TransitionPhase(name, "end")) // note that these are not UI props being deleted
 }
 
+func (e *Element) transitionIsDefined(name string) bool {
+	_, ok := e.GetEventValue(strings.Join([]string{name, "transition", "defined"}, "-"))
+	return ok
+}
+
 func (e *Element) StartTransition(name string, values ...Value) {
+	if !e.transitionIsDefined(name) {
+		panic(fmt.Sprint(name, " transition is not defined"))
+	}
 	e.TriggerEvent(TransitionPhase(name, "start"), values...)
 }
 
 func (e *Element) ErrorTransition(name string, values ...Value) {
+	if !e.transitionIsDefined(name) {
+		panic(fmt.Sprint(name, " transition is not defined"))
+	}
 	e.TriggerEvent(TransitionPhase(name, "error"), values...)
 }
 
 func (e *Element) CancelTransition(name string, values ...Value) {
+	if !e.transitionIsDefined(name) {
+		panic(fmt.Sprint(name, " transition is not defined"))
+	}
 	e.TriggerEvent(TransitionPhase(name, "cancel"), values...)
 }
 
@@ -432,6 +456,9 @@ func (e *Element) CancelAllTransitions() {
 }
 
 func (e *Element) EndTransition(name string, values ...Value) {
+	if !e.transitionIsDefined(name) {
+		panic(fmt.Sprint(name, " transition is not defined"))
+	}
 	e.TriggerEvent(TransitionPhase(name, "end"), values...)
 }
 
@@ -550,4 +577,68 @@ func (e *Element) NewTransitionChain(name string, transitionevents ...string) fu
 // a given phase.
 func TransitionPhase(name string, phase string) string {
 	return strings.Join([]string{"tr", name, phase}, "-")
+}
+
+type LifecycleHandlers struct {
+	root *Element
+}
+
+func NewLifecycleHandlers(root AnyElement) LifecycleHandlers {
+	return LifecycleHandlers{root.AsElement()}
+}
+
+func (l LifecycleHandlers) OnReady(h *MutationHandler) {
+	l.root.WatchEvent("ui-ready", l.root, h)
+}
+
+func (l LifecycleHandlers) OnIdle(h *MutationHandler) {
+	l.root.WatchEvent("ui-idle", l.root, h)
+}
+
+func (l LifecycleHandlers) OnLoad(h *MutationHandler) {
+	l.root.WatchEvent("ui-loaded", l.root, h)
+}
+
+func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
+	l.root.WatchEvent("ui-loaded", l.root, h)
+}
+
+// SetReady is used to signal that the UI tree has been built and data/resources have been loaded on both the Go/wasm side
+// and the native sides.
+func (l LifecycleHandlers) SetReady() {
+	l.root.TriggerEvent("ui-ready")
+}
+
+// MutationShouldReplay
+func (l LifecycleHandlers) MutationShouldReplay(b bool) {
+	_, ok := l.root.Get("internals", "mutation-should-replay")
+	if !ok {
+		l.root.OnTransitionStart("load", NewMutationHandler(func(evt MutationEvent) bool {
+			evt.Origin().StartTransition("replay")
+			return false
+		}).RunOnce())
+
+		l.root.Set("internals", "mutation-should-replay", Bool(b))
+		return
+	}
+	l.root.Set("internals", "mutation-should-replay", Bool(b))
+
+}
+
+// MutationWillReplay
+func (l LifecycleHandlers) MutationWillReplay() bool {
+	v, ok := l.root.Get("internals", "mutation-should-replay")
+	if !ok {
+		return false
+	}
+	return bool(v.(Bool))
+}
+
+// MutationReplaying
+func (l LifecycleHandlers) MutationReplaying() bool {
+	return MutationReplaying(l.root)
+}
+
+func (l LifecycleHandlers) OnMutationsReplayed(h *MutationHandler) {
+	l.root.OnTransitionEnd("replay", h)
 }

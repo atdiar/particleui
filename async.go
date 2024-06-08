@@ -478,15 +478,14 @@ func (e *Element) Prefetch() {
 	if !e.Registered() {
 		panic("Prefetch can only be called on registered elements")
 	}
-	if MutationReplaying(e) {
+
+	_, ok := e.Root.GetEventValue("ui-loaded")
+	if !ok {
+		DEBUG("UI is not loaded. Not ready for prefetch")
 		return
 	}
 
-	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
-		// should start the prefetching process by triggering the prefetch transitions that have been registered
-		e.StartTransition("prefetch")
-		return false
-	}).RunASAP().RunOnce())
+	e.StartTransition("prefetch")
 }
 
 func (e *Element) Fetch(props ...string) {
@@ -494,27 +493,27 @@ func (e *Element) Fetch(props ...string) {
 		panic("Fetch can only be called on registered elements. Error for " + e.ID)
 	}
 
-	if MutationReplaying(e) {
+	// The Fetch will only proceed once a document tree is fully created, i.e. once the ui-load event
+	// has fired
+
+	_, ok := e.Root.GetEventValue("ui-loaded")
+	if !ok {
+		DEBUG("UI is not loaded. Not ready for fetch")
 		return
 	}
 
-	// The Fetch will only proceed once a document tree is fully created, i.e. once the ui-load event
-	// has fired
-	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
-		if len(props) == 0 {
-			e.Properties.Delete("runtime", "fetcherrors")
-			//e.Properties.Delete("fetchstatus","cancelled")
+	if len(props) == 0 {
+		e.Properties.Delete("runtime", "fetcherrors")
+		//e.Properties.Delete("fetchstatus","cancelled")
 
-			// should start the fetching process by triggering the fetch transitions that have been registered
-			e.StartTransition("fetch")
-			return false
-		}
-		for _, prop := range props {
-			e.startfetchTransition(prop)
-		}
+		// should start the fetching process by triggering the fetch transitions that have been registered
+		e.StartTransition("fetch")
+		return
+	}
 
-		return false
-	}).RunASAP().RunOnce())
+	for _, prop := range props {
+		e.startfetchTransition(prop)
+	}
 }
 
 func (e *Element) ForceFetch() {
