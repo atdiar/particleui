@@ -720,6 +720,13 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 
 	if lch.MutationWillReplay() {
 		// datastore persistence should be disabled until the list of mutations is replayed.
+		if e.ID == "mutation-recorder" && HMRMode != "false" {
+			d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				LoadFromStorage(e)
+				return false
+			}).RunOnce())
+		}
+
 		d.AfterTransition("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			PutInStorage(e)
 			e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
@@ -753,7 +760,9 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Element) *ui.Element {
 	d := getDocumentRef(e)
 	fetcher := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		evt.Origin().Fetch()
+		if ui.FetchingSupported(evt.Origin()) {
+			evt.Origin().Fetch()
+		}
 		return false
 	}).RunASAP()
 
@@ -855,6 +864,8 @@ var routerConfig = func(r *ui.Router) {
 		r.Outlet.AsElement().Root.SetChildren(afd.AsElement())
 		return false
 	}))
+
+	// Import navigation state during the load transition
 
 }
 
@@ -1606,12 +1617,19 @@ type mutationRecorder struct {
 
 func (m *mutationRecorder) Capture() {
 	if !m.raw.ElementStore.MutationCapture {
+		DEBUG("mutationreccorder capturing... not enabled")
 		return
 	}
+
 	d := GetDocument(m.raw)
+
+	c, ok := d.Get("internals", "mutation-capturing")
+	if ok && c.(ui.Bool).Bool() {
+		panic("mutation capture already enabled/ongoing")
+	}
 	d.Set("internals", "mutation-replaying", ui.Bool(false))
 	d.Set("internals", "mutation-capturing", ui.Bool(true))
-
+	DEBUG("mutationreccorder capturing...")
 	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -1646,7 +1664,9 @@ func (m *mutationRecorder) Capture() {
 }
 
 func (m *mutationRecorder) Replay() error {
+	DEBUG("mutationreccorder replaying...")
 	if !m.raw.ElementStore.MutationReplay {
+		DEBUG("mutationreccorder replaying... not enabled")
 		return nil
 	}
 
@@ -1671,6 +1691,7 @@ func (m *mutationRecorder) Replay() error {
 
 func (m *mutationRecorder) Clear() {
 	m.raw.SetData("mutationlist", ui.NewList().Commit())
+	PutInStorage(m.raw)
 	m.pos = 0
 }
 
@@ -1772,12 +1793,26 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.OnRouterMounted(func(r *ui.Router) {
-		e.AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
-			r.History.Set("focusedElementId", ui.String(evt.Target().ID))
-			return false
-		}))
-	})
+	lch := ui.NewLifecycleHandlers(e)
+	lch.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		r := GetDocument(evt.Origin()).Router()
+		if r != nil {
+			evt.Origin().AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
+				r.History.Set("focusedElementId", ui.String(evt.Target().ID))
+				return false
+			}))
+		}
+		return false
+	}))
+	/*
+			// DEBUG TODO use documents's Ready event via lifecyclehandler
+		e.OnRouterMounted(func(r *ui.Router) {
+			e.AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
+				r.History.Set("focusedElementId", ui.String(evt.Target().ID))
+				return false
+			}))
+		})
+	*/
 
 	if e.ElementStore.MutationReplay && (HMRMode != "false" || SSRMode != "false") {
 		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
@@ -1810,6 +1845,7 @@ func mutationreplay(d *Document) error {
 
 	rh, ok := e.GetData("mutationlist")
 	if !ok {
+		DEBUG("mutation recordings are missing")
 		return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
 	}
 	mutationtrace, ok := rh.(ui.List)
@@ -1818,9 +1854,8 @@ func mutationreplay(d *Document) error {
 	}
 
 	mutNum := len(mutationtrace.UnsafelyUnwrap())
-	DEBUG("mutation replaying")
+	DEBUG("mutation replaying: ", mutationtrace, " # of replays to do ", mutNum)
 	// DEBUG("trace ", mutationtrace)
-	DEBUG("# of replays to do ", mutNum)
 
 	for m.pos < mutNum {
 		rawop := mutationtrace.Get(m.pos)
@@ -2271,6 +2306,7 @@ func NewDocument(id string, options ...string) Document {
 	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
 
 	e.OnRouterMounted(routerConfig)
+	loadNavHistory(&d)
 	d.OnReady(navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
@@ -2320,8 +2356,12 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 })
 
 var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-	e := evt.Origin()
+	route := js.Global().Get("location").Get("pathname").String()
+	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
+	return false
+})
 
+func loadNavHistory(d *Document) {
 	// Retrieve history and deserialize URL into corresponding App state.
 	hstate := js.Global().Get("history").Get("state")
 
@@ -2333,18 +2373,14 @@ var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			// Check that the state is valid. It is valid if it contains a cursor.
 			_, ok := hso.Get("cursor")
 			if ok {
-				evt.Origin().SyncUISetData("history", hso)
+				d.SyncUISetData("history", hso)
 			} else {
-				evt.Origin().SyncUI("history", hso.Value())
+				d.SyncUI("history", hso.Value())
 			}
 		}
-
 	}
 
-	route := js.Global().Get("location").Get("pathname").String()
-	e.TriggerEvent("navigation-routechangerequest", ui.String(route))
-	return false
-})
+}
 
 func activityStateSupport(e *ui.Element) *ui.Element {
 	d := GetDocument(e)

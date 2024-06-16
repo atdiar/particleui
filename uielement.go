@@ -1748,6 +1748,8 @@ func shouldSkip(category, propname string) bool {
 			return true
 		case TransitionPhase("replay", "error"):
 			return true
+		case "mutation-replayed":
+			return true
 		}
 	}
 

@@ -555,11 +555,19 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 	root.AsElement().Root.WatchEvent("navigation-routechangerequest", root.AsElement().Root, r.handler())
 	root.AsElement().Root.WatchEvent("navigation-routeredirectrequest", root.AsElement().Root, r.redirecthandler())
-	r.Outlet.AsElement().Root.StartTransition("load")
 
-	lch := NewLifecycleHandlers(root.AsElement())
+	lch := NewLifecycleHandlers(root.AsElement().Root)
 
 	onloadstart := NewMutationHandler(func(evt MutationEvent) bool {
+		// Need to load the router state in case we are reloading history
+		h, ok := evt.Origin().GetData("history")
+		if ok {
+			r.History.ImportState(h)
+		}
+
+		//DEBUG
+		DEBUG("UI load start")
+		DEBUG("mutations will replay", lch.MutationWillReplay())
 		if lch.MutationWillReplay() {
 			evt.Origin().OnTransitionError("replay", NewMutationHandler(func(ev MutationEvent) bool {
 				ev.Origin().ErrorTransition("load", ev.NewValue())
@@ -568,11 +576,13 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 			// After replay end, the app should be considered loaded. So we will end the load transition.
 			evt.Origin().AfterTransition("replay", NewMutationHandler(func(ev MutationEvent) bool {
-				ev.Origin().EndTransition("load")
+				if TransitionError(evt.Origin(), "replay") || TransitionCancelled(evt.Origin(), "replay") {
+					ev.Origin().EndTransition("load")
+				}
 				return false
 			}).RunOnce())
 
-			return true
+			return false
 		}
 
 		return false
@@ -597,16 +607,22 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 	onloadend := NewMutationHandler(func(evt MutationEvent) bool {
 		// DEBUG
-		DEBUG("UI load end")
 		return false
 	})
 
-	root.AsElement().Root.AfterEvent(TransitionPhase("load", "end"), root, NewMutationHandler(func(evt MutationEvent) bool {
+	// At this stage, the UI tree is built on the go side but still has to wait for
+	// some kind of event on the native side in order to be able to trigger the ui-ready event.
+	// That is platform/driver dependent and makes use of the Ready lifecycle handler function which triggers a ui-ready event
+	// at the root of the UI tree.
+	// Note> could use AfterTransition instead of AfterEvent
+	root.AsElement().Root.AfterTransition("load", NewMutationHandler(func(evt MutationEvent) bool {
 		evt.Origin().TriggerEvent("ui-loaded")
+		DEBUG("UI loaded event should have been triggered now.")
 		return false
-	}))
+	}).RunASAP().RunOnce())
 
 	onreplaystart := NewMutationHandler(func(evt MutationEvent) bool {
+		DEBUG("replay start event")
 		return false
 	})
 
@@ -626,13 +642,11 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	// DEBUG replay transition phase handlers
-	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend) // TODO check that what this does. DEBUG
-	root.AsElement().Root.DefineTransition("load", onloadstart, onloaderror, onloadcancel, onloadend)
 
-	// At this stage, the UI tree is built on the go side but still has to wait for
-	// some kind of event on the native side in order to be able to trigger the ui-ready event.
-	// That is platform/driver dependent and makes use of the Ready lifecycle handler function which triggers a ui-ready event
-	// at the root of the UI tree.
+	root.AsElement().Root.DefineTransition("load", onloadstart, onloaderror, onloadcancel, onloadend)
+	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend) // TODO check that what this does. DEBUG
+
+	root.AsElement().Root.StartTransition("load")
 
 	eventnames := strings.Split(events, " ")
 	for _, event := range eventnames {

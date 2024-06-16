@@ -119,10 +119,12 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 
 		d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			err := d.mutationRecorder().Replay()
+			DEBUG("mutation got replayed and error is: ", err)
 			if err != nil {
 				d.ErrorTransition("replay", ui.String(err.Error()))
 				return true // DEBUG may want to return false, should check
 			}
+			d.EndTransition("replay")
 			return false
 		}))
 
@@ -131,7 +133,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 			// Should reload the page
 			log.Println("replay error, we should reload: ", evt.NewValue())
 			d.Window().Reload()
-			return false
+			return true
 		}))
 
 		d.AfterTransition("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
