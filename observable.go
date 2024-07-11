@@ -1,6 +1,6 @@
 package ui
 
-import(
+import (
 	"strings"
 )
 
@@ -32,6 +32,7 @@ func newObservable(id string) Observable {
 		false,
 		"",
 		id,
+		"",
 		"observable",
 		NewPropertyStore(),
 		NewMutationCallbacks(),
@@ -47,11 +48,10 @@ func newObservable(id string) Observable {
 		nil,
 	}
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent)bool{
-		unregisterElement(e)
+	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+		evt.Origin().Root.registry.Unregister(evt.Origin().ID)
 		return false
 	}).RunOnce())
-
 
 	return Observable{e}
 }
@@ -65,13 +65,13 @@ func (o Observable) Set(category string, propname string, value Value) {
 }
 
 func (o Observable) Watch(category string, propname string, owner Watchable, h *MutationHandler) Observable {
-  o.AsElement().Watch(category,propname,owner,h)
-  return o
+	o.AsElement().Watch(category, propname, owner, h)
+	return o
 }
 
 func (o Observable) Unwatch(category string, propname string, owner Watchable) Observable {
-  o.AsElement().Unwatch(category,propname,owner)
-  return o
+	o.AsElement().Unwatch(category, propname, owner)
+	return o
 }
 
 func (o Observable) watchable() {}

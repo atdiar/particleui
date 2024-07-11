@@ -4,6 +4,8 @@ package doc
 
 import (
 	"context"
+	"sync"
+
 	//crand "crypto/rand"
 	"encoding/json"
 	"encoding/xml"
@@ -52,12 +54,12 @@ var (
 	// DOCTYPE holds the document doctype.
 	DOCTYPE = "html/js"
 	// Elements stores wasm-generated HTML ui.Element constructors.
-	Elements = ui.NewElementStore("default", DOCTYPE).
+	Elements = ui.NewConfiguration("default", DOCTYPE).
 			AddPersistenceMode("sessionstorage", loadfromsession, sessionstorefn, clearfromsession).
 			AddPersistenceMode("localstorage", loadfromlocalstorage, localstoragefn, clearfromlocalstorage).
 			AddConstructorOptionsTo("observable", AllowSessionStoragePersistence, AllowAppLocalStoragePersistence).
-			ApplyGlobalOption(allowdatapersistence).
-			ApplyGlobalOption(allowDataFetching)
+			WithGlobalConstructorOption(allowdatapersistence).
+			WithGlobalConstructorOption(allowDataFetching)
 )
 
 var SSEscript = `
@@ -283,8 +285,8 @@ func nativeDocumentAlreadyRendered() bool {
 func ConnectNative(e *ui.Element, tag string) {
 	id := e.ID
 	if e.IsRoot() {
-		if nativeDocumentAlreadyRendered() && e.ElementStore.MutationReplay {
-			e.ElementStore.Disconnected = true
+		if nativeDocumentAlreadyRendered() && e.Configuration.MutationReplay {
+			e.Configuration.Disconnected = true
 
 			statenode := js.Global().Get("document)").Call("getElementById", SSRStateElementID)
 			state := statenode.Get("textContent").String()
@@ -294,13 +296,13 @@ func ConnectNative(e *ui.Element, tag string) {
 			e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				statenode.Call("remove")
 				evt.Origin().TriggerEvent("connect-native")
-				evt.Origin().ElementStore.Disconnected = false
+				evt.Origin().Configuration.Disconnected = false
 				return false
 			}))
 		}
 	}
 
-	if e.ElementStore.Disconnected {
+	if e.Configuration.Disconnected {
 		e.WatchEvent("connect-native", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 
 			if tag == "window" {
@@ -681,9 +683,8 @@ func (w Window) Reload() {
 // TODO see if can get height width of window view port, etc.
 
 var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui.Element {
-	e := ui.NewElement("window", "BROWSER")
+	e := Elements.NewElement("window", "BROWSER")
 
-	e.ElementStore = Elements
 	e.Parent = e
 	ConnectNative(e, "window")
 
@@ -803,7 +804,7 @@ var routerConfig = func(r *ui.Router) {
 	r.History.AppRoot.WatchEvent("history-change", r.History.AppRoot, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		PutInStorage(r.History.State[r.History.Cursor].AsElement())
 		return false
-	}).RunASAP())
+	}))
 
 	doc := GetDocument(r.Outlet.AsElement())
 	// Add default navigation error handlers
@@ -887,7 +888,7 @@ func (c *gconstructor[T, U]) WithID(id string, options ...string) T {
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement())
+	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -924,7 +925,7 @@ func (c *buttongconstructor[T, U]) WithID(id string, typ string, options ...stri
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement())
+	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -957,7 +958,7 @@ func (c *inputgconstructor[T, U]) WithID(id string, typ string, options ...strin
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement())
+	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -990,7 +991,7 @@ func (c *olgconstructor[T, U]) WithID(id string, typ string, offset int, options
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement())
+	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1023,7 +1024,7 @@ func (c *iframeconstructor[T, U]) WithID(id string, src string, options ...strin
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement())
+	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1131,7 +1132,7 @@ func (d *Document) initializeIDgenerator() {
 }
 */
 
-func (d Document) Window() Window {
+func (d *Document) Window() Window {
 	w := d.GetElementById("window")
 	if w != nil {
 		return Window{w}
@@ -1144,11 +1145,11 @@ func (d Document) Window() Window {
 	return wd
 }
 
-func (d Document) GetElementById(id string) *ui.Element {
+func (d *Document) GetElementById(id string) *ui.Element {
 	return ui.GetById(d.AsElement(), id)
 }
 
-func (d Document) newID() string {
+func (d *Document) newID() string {
 	var charset = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	l := len(charset)
 	b := make([]rune, 32)
@@ -1163,7 +1164,7 @@ func (d Document) newID() string {
 // We should be able to persist, retrieve, update, delete data under fthe form of blob or JSON is serializable.
 // ensureDBOpen ensures that a database connection is opened and cached.
 
-func (d Document) ensureDBOpen(dbname string) (js.Value, error) {
+func (d *Document) ensureDBOpen(dbname string) (js.Value, error) {
 	db, exists := d.DBConnections[dbname]
 	if exists {
 		return db, nil
@@ -1217,7 +1218,7 @@ func (d Document) ensureDBOpen(dbname string) (js.Value, error) {
 }
 
 // StoreInDB allows to store or update a value in a persistent database such as IndexedDB.
-func (d Document) StoreInDB(dbname, key string, value []byte) error {
+func (d *Document) StoreInDB(dbname, key string, value []byte) error {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return err
@@ -1248,7 +1249,7 @@ func (d Document) StoreInDB(dbname, key string, value []byte) error {
 }
 
 // RetrieveFromDB allows to retrieve a value from a persistent database such as IndexedDB.
-func (d Document) RetrieveFromDB(dbname, key string) ([]byte, error) {
+func (d *Document) RetrieveFromDB(dbname, key string) ([]byte, error) {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return nil, err
@@ -1292,7 +1293,7 @@ func (d Document) RetrieveFromDB(dbname, key string) ([]byte, error) {
 }
 
 // DeleteFromDB allows to delete a value from a persistent database such as IndexedDB.
-func (d Document) DeleteFromDB(dbname, key string) error {
+func (d *Document) DeleteFromDB(dbname, key string) error {
 	db, err := d.ensureDBOpen(dbname)
 	if err != nil {
 		return err
@@ -1326,11 +1327,12 @@ func (d Document) DeleteFromDB(dbname, key string) error {
 // If the observable alreadys exiswted for this id, it is returns as is.
 // it is up to the caller to check whether an element already exist for this id and possibly clear
 // its state beforehand.
-func (d Document) NewObservable(id string, options ...string) ui.Observable {
+func (d *Document) NewObservable(id string, options ...string) ui.Observable {
 	if e := d.GetElementById(id); e != nil {
+		// panic("observable already exists for this id")
 		return ui.Observable{e}
 	}
-	o := d.AsElement().ElementStore.NewObservable(id, options...).AsElement()
+	o := d.AsElement().Configuration.NewObservable(id, options...).AsElement()
 
 	ui.RegisterElement(d.AsElement(), o)
 	// DEBUG initially that was done in the constructor but might be
@@ -1341,7 +1343,7 @@ func (d Document) NewObservable(id string, options ...string) ui.Observable {
 	return ui.Observable{o}
 }
 
-func (d Document) Head() *ui.Element {
+func (d *Document) Head() *ui.Element {
 	e := d.GetElementById("head")
 	if e == nil {
 		panic("document HEAD seems to be missing for some odd reason...")
@@ -1349,7 +1351,7 @@ func (d Document) Head() *ui.Element {
 	return e //d.NewComponent(e)
 }
 
-func (d Document) Body() *ui.Element {
+func (d *Document) Body() *ui.Element {
 	e := d.GetElementById("body")
 	if e == nil {
 		panic("document BODY seems to be missing for some odd reason...")
@@ -1357,45 +1359,45 @@ func (d Document) Body() *ui.Element {
 	return e
 }
 
-func (d Document) SetLang(lang string) Document {
+func (d *Document) SetLang(lang string) *Document {
 	d.AsElement().SetDataSetUI("lang", ui.String(lang))
 	return d
 }
 
-func (d Document) OnNavigationEnd(h *ui.MutationHandler) {
+func (d *Document) OnNavigationEnd(h *ui.MutationHandler) {
 	d.AsElement().WatchEvent("navigation-end", d, h)
 }
 
-func (d Document) OnLoaded(h *ui.MutationHandler) {
+func (d *Document) OnLoaded(h *ui.MutationHandler) {
 	d.AsElement().WatchEvent("ui-loaded", d, h)
 }
 
-func (d Document) OnReady(h *ui.MutationHandler) {
+func (d *Document) OnReady(h *ui.MutationHandler) {
 	if !h.Once {
 		h = h.RunOnce()
 	}
 	d.AsElement().WatchEvent("ui-ready", d, h)
 }
 
-func (d Document) isReady() bool {
+func (d *Document) isReady() bool {
 	_, ok := d.GetEventValue("ui-ready")
 	return ok
 }
 
-func (d Document) OnRouterMounted(h *ui.MutationHandler) {
-	d.AsElement().WatchEvent("router-mounted", d, h)
+func (d *Document) OnRouterMounted(h *ui.MutationHandler) {
+	d.WatchEvent("router-mounted", d, h)
 }
 
-func (d Document) OnBeforeUnactive(h *ui.MutationHandler) {
-	d.AsElement().WatchEvent("before-unactive", d, h)
+func (d *Document) OnBeforeUnactive(h *ui.MutationHandler) {
+	d.WatchEvent("before-unactive", d, h)
 }
 
 // Router returns the router associated with the document. It is nil if no router has been created.
-func (d Document) Router() *ui.Router {
+func (d *Document) Router() *ui.Router {
 	return ui.GetRouter(d.AsElement())
 }
 
-func (d Document) Delete() { // TODO check for dangling references
+func (d *Document) Delete() { // TODO check for dangling references
 	ui.DoSync(func() {
 		e := d.AsElement()
 		d.Router().CancelNavigation()
@@ -1403,11 +1405,11 @@ func (d Document) Delete() { // TODO check for dangling references
 	})
 }
 
-func (d Document) SetTitle(title string) {
+func (d *Document) SetTitle(title string) {
 	d.AsElement().SetDataSetUI("title", ui.String(title))
 }
 
-func (d Document) SetFavicon(href string) {
+func (d *Document) SetFavicon(href string) {
 	d.AsElement().SetDataSetUI("favicon", ui.String(href))
 }
 
@@ -1416,7 +1418,7 @@ func (d Document) SetFavicon(href string) {
 // On the client, these are client side javascript events.
 // On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
 // for the document.
-// var NewBuilder func(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context))
+// var NewBuilder func(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context))
 
 // Document styles in stylesheet
 
@@ -1536,7 +1538,7 @@ func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
 	return observable
 }
 
-func (d Document) NewStyleSheet(id string) StyleSheet {
+func (d *Document) NewStyleSheet(id string) StyleSheet {
 	o := d.NewObservable(id).AsElement()
 	o.DocType = "text/css"
 	makeStyleSheet(o, id)
@@ -1546,7 +1548,7 @@ func (d Document) NewStyleSheet(id string) StyleSheet {
 	return s
 }
 
-func (d Document) GetStyleSheet(id string) (StyleSheet, bool) {
+func (d *Document) GetStyleSheet(id string) (StyleSheet, bool) {
 	s, ok := d.StyleSheets[id]
 	return s, ok
 }
@@ -1554,7 +1556,7 @@ func (d Document) GetStyleSheet(id string) (StyleSheet, bool) {
 // SetActiveStyleSheets enables the style sheets with the given ids and disables the others.
 // If a style sheet with a given id does not exist, it is ignored.
 // The order of activation is the order provided in the arguments.
-func (d Document) SetActiveStyleSheets(ids ...string) Document {
+func (d *Document) SetActiveStyleSheets(ids ...string) *Document {
 	l := ui.NewList()
 	for _, s := range d.StyleSheets {
 		var idlist = make(map[string]struct{})
@@ -1573,7 +1575,7 @@ func (d Document) SetActiveStyleSheets(ids ...string) Document {
 	return d
 }
 
-func (d Document) DeleteStyleSheet(id string) {
+func (d *Document) DeleteStyleSheet(id string) {
 	s, ok := d.StyleSheets[id]
 	if !ok {
 		return
@@ -1616,7 +1618,7 @@ type mutationRecorder struct {
 }
 
 func (m *mutationRecorder) Capture() {
-	if !m.raw.ElementStore.MutationCapture {
+	if !m.raw.Configuration.MutationCapture {
 		DEBUG("mutationreccorder capturing... not enabled")
 		return
 	}
@@ -1665,7 +1667,7 @@ func (m *mutationRecorder) Capture() {
 
 func (m *mutationRecorder) Replay() error {
 	DEBUG("mutationreccorder replaying...")
-	if !m.raw.ElementStore.MutationReplay {
+	if !m.raw.Configuration.MutationReplay {
 		DEBUG("mutationreccorder replaying... not enabled")
 		return nil
 	}
@@ -1677,7 +1679,7 @@ func (m *mutationRecorder) Replay() error {
 	if r := d.Router(); r != nil {
 		r.CancelNavigation()
 	}
-	err := mutationreplay(&d)
+	err := mutationreplay(d)
 	if err != nil {
 		d.Set("internals", "mutation-replaying", ui.Bool(false))
 		return ui.ErrReplayFailure
@@ -1695,7 +1697,7 @@ func (m *mutationRecorder) Clear() {
 	m.pos = 0
 }
 
-func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
+func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
 
 	trace, ok := d.Get("internals", "mutationtrace")
@@ -1710,7 +1712,7 @@ func (d Document) newMutationRecorder(options ...string) *mutationRecorder {
 	return &mutationRecorder{m.AsElement(), 0}
 }
 
-func (d Document) mutationRecorder() *mutationRecorder {
+func (d *Document) mutationRecorder() *mutationRecorder {
 	m := d.GetElementById("mutation-recorder")
 	if m == nil {
 		panic("mutation recorder is missing")
@@ -1721,7 +1723,7 @@ func (d Document) mutationRecorder() *mutationRecorder {
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
-func (d Document) ListenAndServe(ctx context.Context) {
+func (d *Document) ListenAndServe(ctx context.Context) {
 	if d.Element == nil {
 		panic("document is missing")
 	}
@@ -1748,14 +1750,17 @@ func (d Document) ListenAndServe(ctx context.Context) {
 	d.Router().ListenAndServe(ctx, "popstate", d.Window())
 }
 
-func GetDocument(e *ui.Element) Document {
-	if document != nil {
-		return *document
+func GetDocument(e *ui.Element) *Document {
+	root := e.Root
+	if root == nil {
+		panic("This element does not belong to any registered subtree of a *Document.")
 	}
-	if e.Root == nil {
-		panic("This element does not belong to any registered subtree of the Document. Root is nil. If root of a component, it should be declared as such by callling the NewComponent method of the document Element.")
+	d, ok := documents.Get(root)
+	if !ok {
+		panic("FAILURE: unable to find corresponding *Document for this root element")
+
 	}
-	return withStdConstructors(Document{Element: e.Root}) // TODO initialize document *Element constructors
+	return d
 }
 
 // getDocumentRef is needed for the definition of constructors wich need to refer to the document
@@ -1814,7 +1819,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		})
 	*/
 
-	if e.ElementStore.MutationReplay && (HMRMode != "false" || SSRMode != "false") {
+	if e.Configuration.MutationReplay && (HMRMode != "false" || SSRMode != "false") {
 		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
 	}
 
@@ -1839,7 +1844,7 @@ var documentTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool
 func mutationreplay(d *Document) error {
 	m := d.mutationRecorder()
 	e := m.raw
-	if !e.ElementStore.MutationReplay {
+	if !e.Configuration.MutationReplay {
 		return nil
 	}
 
@@ -1854,8 +1859,13 @@ func mutationreplay(d *Document) error {
 	}
 
 	mutNum := len(mutationtrace.UnsafelyUnwrap())
-	DEBUG("mutation replaying: ", mutationtrace, " # of replays to do ", mutNum)
+	DEBUG("mutation replaying: ", " # of replays to do ", mutNum)
 	// DEBUG("trace ", mutationtrace)
+
+	// DEBUG print lsit of mutations that should occur to replay state
+	for i, op := range mutationtrace.UnsafelyUnwrap() {
+		DEBUG(i, " ", op, "\n")
+	}
 
 	for m.pos < mutNum {
 		rawop := mutationtrace.Get(m.pos)
@@ -1879,26 +1889,31 @@ func mutationreplay(d *Document) error {
 		if !ok {
 			panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
 		}
+		fmt.Println("mutation replaying: ======= ", m.pos, id, cat, prop, val)
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
-			DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: ", id)
-			DEBUG(cat, prop, val)
-			DEBUG(mutationtrace.Get(m.pos - 1))
-			DEBUG(mutationtrace.Get(m.pos))
-			DEBUG(mutationtrace.Get(m.pos + 1))
+			panic("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
 			return ui.ErrReplayFailure
 		}
 
 		el.BindValue("event", "connect-native", e)
 		el.BindValue("event", "mutation-replayed", e)
 
-		el.Set(cat.(ui.String).String(), prop.(ui.String).String(), val)
+		// TODO rollback to the implementation that takes into account Sync mutations
+		// and the ones that are not sync.
+		sync, ok := op.Get("sync")
+		if !ok || !sync.(ui.Bool).Bool() {
+			el.Set(cat.(ui.String).String(), prop.(ui.String).String(), val)
+		} else {
+			el.SyncUI(prop.(ui.String).String(), val)
+		}
 
 		i, ok := d.Get("internals", "mutation-list-index")
 		if !ok {
 			panic("mutation list index not found. Should be >= 1.")
 		}
+		// DEBUG("mutation list cursor positiion:", m.pos)
 		m.pos = int(i.(ui.Number).Float64())
 		m.pos = m.pos + 1
 		d.Set("internals", "mutation-list-index", ui.Number(m.pos))
@@ -2060,7 +2075,7 @@ func Autofocus(e *ui.Element) *ui.Element {
 
 // ScrollIntoView scrolls the element's ancestor containers such that the element on which it is
 // called is visible to the user.
-func (d Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
+func (d *Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
 	var m map[string]any
 	if len(options) > 0 {
 		m = make(map[string]any)
@@ -2252,22 +2267,78 @@ func withNativejshelpers(d *Document) *Document {
 	return d
 }
 
+func shouldbereplayable() bool {
+	return HMRMode != "false" || SSRMode != "false"
+}
+
+type scsmap[K comparable, T any] struct {
+	raw sync.Map
+}
+
+func newscsmap[K comparable, T any]() *scsmap[K, T] {
+	return &scsmap[K, T]{}
+}
+
+func (m *scsmap[K, T]) Set(key K, value T) {
+	m.raw.Store(key, value)
+}
+
+func (m *scsmap[K, T]) Get(key K) (T, bool) {
+	var zero T
+	v, ok := m.raw.Load(key)
+	if !ok {
+		return zero, false
+	}
+	return v.(T), true
+}
+
+func (m *scsmap[K, T]) Delete(key K) {
+	m.raw.Delete(key)
+}
+
+func (m *scsmap[K, T]) Range(fn func(key K, value T) bool) {
+	m.raw.Range(func(key, value interface{}) bool {
+		return fn(key.(K), value.(T))
+	})
+}
+
+// documents associates the root *ui.Element to the corresponding *Document object.
+// It is used to retrieve the document from the root element of a subtree.
+// It is necessary to be able to invert the operation that creates a *Document for a root *ui.Element,
+// since *Document holds state that is neither available to a mere *ui.Element nor in global scope (stylesheets, id generator, ...)
+var documents scsmap[*ui.Element, *Document] = *newscsmap[*ui.Element, *Document]()
+
 // constructorDocumentLinker maps constructors id to the document they are created for.
 // Since we do not have dependent types, it is used to  have access to the document within
-// WithID methods, for element registration purposes (functio types do not have ccessible settable state)
+// WithID methods, for element registration purposes (methods on function types do not have access to non-global user-defined state)
 var constructorDocumentLinker = make(map[string]*Document)
+
+func (d *Document) WithDefaultConstructorOptions(mods ...ui.ConstructorOption) *Document {
+	for _, m := range mods {
+		Elements.WithGlobalConstructorOption(m)
+	}
+	return d
+}
 
 // NewDocument returns the root of new js app. It is the top-most element
 // in the tree of Elements that consitute the full document.
 // Options such as the location of persisted data can be passed to the constructor of an instance.
-func NewDocument(id string, options ...string) Document {
-	d := Document{Element: newDocument(id, options...)}
+func NewDocument(id string, options ...string) *Document {
+	d := &Document{Element: newDocument(id, options...)}
+	documents.Set(d.Element, d)
+	d.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		documents.Delete(evt.Origin())
+		return false
+	}))
 
 	// creating the pseudo-random number generator that will create unique ids for elements
 	// which are not provided with any.
 	h := fnv.New64a()
 	h.Write([]byte(id))
 	seed := h.Sum64()
+	if shouldbereplayable() {
+		seed = 1
+	}
 	d.rng = rand.New(rand.NewSource(int64(seed)))
 
 	d = withStdConstructors(d)
@@ -2281,7 +2352,6 @@ func NewDocument(id string, options ...string) Document {
 	d.HttpClient.Jar = jar
 
 	d.DBConnections = make(map[string]js.Value)
-
 	d.newMutationRecorder(EnableSessionPersistence())
 
 	e := d.Element
@@ -2306,15 +2376,16 @@ func NewDocument(id string, options ...string) Document {
 	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
 
 	e.OnRouterMounted(routerConfig)
-	loadNavHistory(&d)
 	d.OnReady(navinitHandler)
 	e.Watch("ui", "title", e, documentTitleHandler)
 
 	activityStateSupport(e)
 
 	if InBrowser() {
-		document = &d
+		document = d
 	}
+
+	loadNavHistory(d)
 
 	return d
 }
@@ -2379,7 +2450,6 @@ func loadNavHistory(d *Document) {
 			}
 		}
 	}
-
 }
 
 func activityStateSupport(e *ui.Element) *ui.Element {
@@ -2611,258 +2681,267 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 	return e
 }
 
-func withStdConstructors(d Document) Document {
+func withStdConstructors(d *Document) *Document {
+
+	d.Configuration.NewConstructor("observable", func(id string) *ui.Element {
+		o := d.Configuration.NewObservable(id).AsElement()
+		ui.RegisterElement(d.Element, o)
+		o.TriggerEvent("mountable")
+		o.TriggerEvent("mounted")
+		return o
+	}, allowdatapersistence, allowDataFetching, AllowAppLocalStoragePersistence)
+
 	d.body = gconstructor[BodyElement, bodyConstructor](func() BodyElement {
 		e := BodyElement{newBody(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.body.ownedBy(&d)
+	d.body.ownedBy(d)
 
 	d.head = gconstructor[HeadElement, headConstructor](func() HeadElement {
 		e := HeadElement{newHead(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.head.ownedBy(&d)
+	d.head.ownedBy(d)
 
 	d.Meta = gconstructor[MetaElement, metaConstructor](func() MetaElement {
 		e := MetaElement{newMeta(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Meta.ownedBy(&d)
+	d.Meta.ownedBy(d)
 
 	d.Title = gconstructor[TitleElement, titleConstructor](func() TitleElement {
 		e := TitleElement{newTitle(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Title.ownedBy(&d)
+	d.Title.ownedBy(d)
 
 	d.Script = gconstructor[ScriptElement, scriptConstructor](func() ScriptElement {
 		e := ScriptElement{newScript(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Script.ownedBy(&d)
+	d.Script.ownedBy(d)
 
 	d.Style = gconstructor[StyleElement, styleConstructor](func() StyleElement {
 		e := StyleElement{newStyle(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Style.ownedBy(&d)
+	d.Style.ownedBy(d)
 
 	d.Base = gconstructor[BaseElement, baseConstructor](func() BaseElement {
 		e := BaseElement{newBase(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Base.ownedBy(&d)
+	d.Base.ownedBy(d)
 
 	d.NoScript = gconstructor[NoScriptElement, noscriptConstructor](func() NoScriptElement {
 		e := NoScriptElement{newNoScript(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.NoScript.ownedBy(&d)
+	d.NoScript.ownedBy(d)
 
 	d.Link = gconstructor[LinkElement, linkConstructor](func() LinkElement {
 		e := LinkElement{newLink(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Link.ownedBy(&d)
+	d.Link.ownedBy(d)
 
 	d.Div = gconstructor[DivElement, divConstructor](func() DivElement {
 		e := DivElement{newDiv(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Div.ownedBy(&d)
+	d.Div.ownedBy(d)
 
 	d.TextArea = gconstructor[TextAreaElement, textareaConstructor](func() TextAreaElement {
 		e := TextAreaElement{newTextArea(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.TextArea.ownedBy(&d)
+	d.TextArea.ownedBy(d)
 
 	d.Header = gconstructor[HeaderElement, headerConstructor](func() HeaderElement {
 		e := HeaderElement{newHeader(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Header.ownedBy(&d)
+	d.Header.ownedBy(d)
 
 	d.Footer = gconstructor[FooterElement, footerConstructor](func() FooterElement {
 		e := FooterElement{newFooter(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Footer.ownedBy(&d)
+	d.Footer.ownedBy(d)
 
 	d.Section = gconstructor[SectionElement, sectionConstructor](func() SectionElement {
 		e := SectionElement{newSection(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Section.ownedBy(&d)
+	d.Section.ownedBy(d)
 
 	d.H1 = gconstructor[H1Element, h1Constructor](func() H1Element {
 		e := H1Element{newH1(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H1.ownedBy(&d)
+	d.H1.ownedBy(d)
 
 	d.H2 = gconstructor[H2Element, h2Constructor](func() H2Element {
 		e := H2Element{newH2(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H2.ownedBy(&d)
+	d.H2.ownedBy(d)
 
 	d.H3 = gconstructor[H3Element, h3Constructor](func() H3Element {
 		e := H3Element{newH3(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H3.ownedBy(&d)
+	d.H3.ownedBy(d)
 
 	d.H4 = gconstructor[H4Element, h4Constructor](func() H4Element {
 		e := H4Element{newH4(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H4.ownedBy(&d)
+	d.H4.ownedBy(d)
 
 	d.H5 = gconstructor[H5Element, h5Constructor](func() H5Element {
 		e := H5Element{newH5(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H5.ownedBy(&d)
+	d.H5.ownedBy(d)
 
 	d.H6 = gconstructor[H6Element, h6Constructor](func() H6Element {
 		e := H6Element{newH6(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.H6.ownedBy(&d)
+	d.H6.ownedBy(d)
 
 	d.Span = gconstructor[SpanElement, spanConstructor](func() SpanElement {
 		e := SpanElement{newSpan(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Span.ownedBy(&d)
+	d.Span.ownedBy(d)
 
 	d.Article = gconstructor[ArticleElement, articleConstructor](func() ArticleElement {
 		e := ArticleElement{newArticle(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Article.ownedBy(&d)
+	d.Article.ownedBy(d)
 
 	d.Aside = gconstructor[AsideElement, asideConstructor](func() AsideElement {
 		e := AsideElement{newAside(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Aside.ownedBy(&d)
+	d.Aside.ownedBy(d)
 
 	d.Main = gconstructor[MainElement, mainConstructor](func() MainElement {
 		e := MainElement{newMain(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Main.ownedBy(&d)
+	d.Main.ownedBy(d)
 
 	d.Paragraph = gconstructor[ParagraphElement, paragraphConstructor](func() ParagraphElement {
 		e := ParagraphElement{newParagraph(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Paragraph.ownedBy(&d)
+	d.Paragraph.ownedBy(d)
 
 	d.Nav = gconstructor[NavElement, navConstructor](func() NavElement {
 		e := NavElement{newNav(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Nav.ownedBy(&d)
+	d.Nav.ownedBy(d)
 
 	d.Anchor = gconstructor[AnchorElement, anchorConstructor](func() AnchorElement {
 		e := AnchorElement{newAnchor(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Anchor.ownedBy(&d)
+	d.Anchor.ownedBy(d)
 
 	d.Button = buttongconstructor[ButtonElement, buttonConstructor](func(typ ...string) ButtonElement {
 		e := ButtonElement{newButton(d.newID(), typ...)}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Button.ownedBy(&d)
+	d.Button.ownedBy(d)
 
 	d.Label = gconstructor[LabelElement, labelConstructor](func() LabelElement {
 		e := LabelElement{newLabel(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Label.ownedBy(&d)
+	d.Label.ownedBy(d)
 
 	d.Input = inputgconstructor[InputElement, inputConstructor](func(typ string) InputElement {
 		e := InputElement{newInput(d.newID(), typ)}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Input.ownedBy(&d)
+	d.Input.ownedBy(d)
 
 	d.Output = gconstructor[OutputElement, outputConstructor](func() OutputElement {
 		e := OutputElement{newOutput(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Output.ownedBy(&d)
+	d.Output.ownedBy(d)
 
 	d.Img = gconstructor[ImgElement, imgConstructor](func() ImgElement {
 		e := ImgElement{newImg(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Img.ownedBy(&d)
+	d.Img.ownedBy(d)
 
 	d.Audio = gconstructor[AudioElement, audioConstructor](func() AudioElement {
 		e := AudioElement{newAudio(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Audio.ownedBy(&d)
+	d.Audio.ownedBy(d)
 
 	d.Video = gconstructor[VideoElement, videoConstructor](func() VideoElement {
 		e := VideoElement{newVideo(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Video.ownedBy(&d)
+	d.Video.ownedBy(d)
 
 	d.Source = gconstructor[SourceElement, sourceConstructor](func() SourceElement {
 		e := SourceElement{newSource(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Source.ownedBy(&d)
+	d.Source.ownedBy(d)
 
 	d.Ul = gconstructor[UlElement, ulConstructor](func() UlElement {
 		e := UlElement{newUl(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Ul.ownedBy(&d)
+	d.Ul.ownedBy(d)
 
 	d.Ol = olgconstructor[OlElement, olConstructor](func(typ string, offset int) OlElement {
 		e := OlElement{newOl(d.newID())}
@@ -2872,28 +2951,28 @@ func withStdConstructors(d Document) Document {
 		ui.RegisterElement(d.Element, o)
 		return e
 	})
-	d.Ol.ownedBy(&d)
+	d.Ol.ownedBy(d)
 
 	d.Li = gconstructor[LiElement, liConstructor](func() LiElement {
 		e := LiElement{newLi(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Li.ownedBy(&d)
+	d.Li.ownedBy(d)
 
 	d.Table = gconstructor[TableElement, tableConstructor](func() TableElement {
 		e := TableElement{newTable(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Table.ownedBy(&d)
+	d.Table.ownedBy(d)
 
 	d.Iframe = iframeconstructor[IframeElement, iframeConstructor](func() IframeElement {
 		e := IframeElement{newIframe(d.newID())}
 		ui.RegisterElement(d.Element, e.AsElement())
 		return e
 	})
-	d.Iframe.ownedBy(&d)
+	d.Iframe.ownedBy(d)
 
 	return d
 }
@@ -2907,7 +2986,7 @@ type IframeElement struct {
 
 var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	ConnectNative(e, "iframe")
@@ -3268,12 +3347,12 @@ type BodyElement struct {
 
 var newBody = Elements.NewConstructor("body", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	ConnectNative(e, "body")
 
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		evt.Origin().Root.Set("ui", "body", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
@@ -3295,12 +3374,12 @@ type HeadElement struct {
 
 var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	ConnectNative(e, "head")
 
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		evt.Origin().Root.Set("ui", "head", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
@@ -3363,7 +3442,7 @@ func (m MetaElement) SetAttribute(name, value string) MetaElement {
 
 var newMeta = Elements.NewConstructor("meta", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "meta"
@@ -3389,7 +3468,7 @@ func (m TitleElement) Set(title string) TitleElement {
 
 var newTitle = Elements.NewConstructor("title", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "title"
@@ -3463,7 +3542,7 @@ func (s ScriptElement) SetInnerHTML(content string) ScriptElement {
 
 var newScript = Elements.NewConstructor("script", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "script"
@@ -3490,7 +3569,7 @@ func (s StyleElement) SetInnerHTML(content string) StyleElement {
 
 var newStyle = Elements.NewConstructor("style", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "style"
@@ -3519,7 +3598,7 @@ func (b BaseElement) SetHREF(url string) BaseElement {
 
 var newBase = Elements.NewConstructor("base", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "base"
@@ -3555,7 +3634,7 @@ func (s NoScriptElement) SetInnerHTML(content string) NoScriptElement {
 
 var newNoScript = Elements.NewConstructor("noscript", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "noscript"
@@ -3583,7 +3662,7 @@ func (l LinkElement) SetAttribute(name, value string) LinkElement {
 
 var newLink = Elements.NewConstructor("link", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "link"
@@ -3630,7 +3709,7 @@ func (d DivElement) Text() string {
 
 var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "div"
@@ -3792,7 +3871,7 @@ func (t textAreaModifier) Spellcheck(mode string) func(*ui.Element) *ui.Element 
 
 var newTextArea = Elements.NewConstructor("textarea", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "textarea"
@@ -3892,7 +3971,7 @@ type HeaderElement struct {
 
 var newHeader = Elements.NewConstructor("header", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "header"
@@ -3915,7 +3994,7 @@ type FooterElement struct {
 
 var newFooter = Elements.NewConstructor("footer", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "footer"
@@ -3939,7 +4018,7 @@ type SectionElement struct {
 
 var newSection = Elements.NewConstructor("section", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "section"
@@ -3967,7 +4046,7 @@ func (h H1Element) SetText(s string) H1Element {
 
 var newH1 = Elements.NewConstructor("h1", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h1"
@@ -3994,7 +4073,7 @@ func (h H2Element) SetText(s string) H2Element {
 
 var newH2 = Elements.NewConstructor("h2", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h2"
@@ -4021,7 +4100,7 @@ func (h H3Element) SetText(s string) H3Element {
 
 var newH3 = Elements.NewConstructor("h3", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h3"
@@ -4047,7 +4126,7 @@ func (h H4Element) SetText(s string) H4Element {
 }
 
 var newH4 = Elements.NewConstructor("h4", func(id string) *ui.Element {
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h4"
@@ -4074,7 +4153,7 @@ func (h H5Element) SetText(s string) H5Element {
 
 var newH5 = Elements.NewConstructor("h5", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h5"
@@ -4101,7 +4180,7 @@ func (h H6Element) SetText(s string) H6Element {
 
 var newH6 = Elements.NewConstructor("h6", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "h6"
@@ -4128,7 +4207,7 @@ func (s SpanElement) SetText(str string) SpanElement {
 
 var newSpan = Elements.NewConstructor("span", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "span"
@@ -4153,7 +4232,7 @@ type ArticleElement struct {
 
 var newArticle = Elements.NewConstructor("article", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "article"
@@ -4174,7 +4253,7 @@ type AsideElement struct {
 
 var newAside = Elements.NewConstructor("aside", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "aside"
@@ -4195,7 +4274,7 @@ type MainElement struct {
 
 var newMain = Elements.NewConstructor("main", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "main"
@@ -4221,7 +4300,7 @@ func (p ParagraphElement) SetText(s string) ParagraphElement {
 
 var newParagraph = Elements.NewConstructor("p", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "p"
@@ -4251,7 +4330,7 @@ type NavElement struct {
 }
 
 var newNav = Elements.NewConstructor("nav", func(id string) *ui.Element {
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "nav"
@@ -4377,7 +4456,7 @@ func (a AnchorElement) SetText(text string) AnchorElement {
 
 var newAnchor = Elements.NewConstructor("a", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "a"
@@ -4483,7 +4562,7 @@ func (b ButtonElement) SetText(str string) ButtonElement {
 
 var newButton = Elements.NewConstructor("button", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "button"
@@ -4568,7 +4647,7 @@ func (l LabelElement) For(p **ui.Element) LabelElement {
 
 var newLabel = Elements.NewConstructor("label", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "label"
@@ -4828,7 +4907,7 @@ func SyncValueOnEnter(valuemodifiers ...func(ui.Value) ui.Value) func(*ui.Elemen
 
 var newInput = Elements.NewConstructor("input", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "input"
@@ -5015,7 +5094,7 @@ func (m outputModifier) For(inputs ...*ui.Element) func(*ui.Element) *ui.Element
 
 var newOutput = Elements.NewConstructor("output", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "output"
@@ -5059,7 +5138,7 @@ func (i imgModifier) Alt(s string) func(*ui.Element) *ui.Element {
 
 var newImg = Elements.NewConstructor("img", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "img"
@@ -5334,7 +5413,7 @@ func (m audioModifier) DisableRemotePlayback(b bool) func(*ui.Element) *ui.Eleme
 
 var newAudio = Elements.NewConstructor("audio", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "audio"
@@ -5578,7 +5657,7 @@ func (m videoModifier) PreservesPitch(b bool) func(*ui.Element) *ui.Element {
 
 var newVideo = Elements.NewConstructor("video", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "video"
@@ -5631,7 +5710,7 @@ func (s sourceModifier) Type(typ string) func(*ui.Element) *ui.Element {
 
 var newSource = Elements.NewConstructor("source", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "source"
@@ -5672,7 +5751,7 @@ func (l UlElement) Values() ui.List {
 
 var newUl = Elements.NewConstructor("ul", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "ul"
@@ -5698,7 +5777,7 @@ func (l OlElement) SetValue(lobjs ui.List) OlElement {
 
 var newOl = Elements.NewConstructor("ol", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "ol"
@@ -5727,7 +5806,7 @@ func (li LiElement) SetElement(e *ui.Element) LiElement { // TODO Might be unnec
 
 var newLi = Elements.NewConstructor("li", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "li"
@@ -5801,7 +5880,7 @@ type TfootElement struct {
 
 var newThead = Elements.NewConstructor("thead", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "thead"
@@ -5818,7 +5897,7 @@ func (c theadConstructor) WithID(id string, options ...string) TheadElement {
 
 var newTr = Elements.NewConstructor("tr", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "tr"
@@ -5835,7 +5914,7 @@ func (c trConstructor) WithID(id string, options ...string) TrElement {
 
 var newTd = Elements.NewConstructor("td", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "td"
@@ -5852,7 +5931,7 @@ func (c tdConstructor) WithID(id string, options ...string) TdElement {
 
 var newTh = Elements.NewConstructor("th", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "th"
@@ -5869,7 +5948,7 @@ func (c thConstructor) WithID(id string, options ...string) ThElement {
 
 var newTbody = Elements.NewConstructor("tbody", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "tbody"
@@ -5886,7 +5965,7 @@ func (c tbodyConstructor) WithID(id string, options ...string) TbodyElement {
 
 var newTfoot = Elements.NewConstructor("tfoot", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "tfoot"
@@ -5903,7 +5982,7 @@ func (c tfootConstructor) WithID(id string, options ...string) TfootElement {
 
 var newCol = Elements.NewConstructor("col", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "col"
@@ -5922,7 +6001,7 @@ func (c colConstructor) WithID(id string, options ...string) ColElement {
 
 var newColGroup = Elements.NewConstructor("colgroup", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "colgroup"
@@ -5941,7 +6020,7 @@ func (c colgroupConstructor) WithID(id string, options ...string) ColGroupElemen
 
 var newTable = Elements.NewConstructor("table", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "table"
@@ -5980,7 +6059,7 @@ func (c canvasModifier) Width(w int) func(*ui.Element) *ui.Element {
 
 var newCanvas = Elements.NewConstructor("canvas", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "canvas"
@@ -6043,7 +6122,7 @@ func (s svgModifier) Y(y string) func(*ui.Element) *ui.Element {
 
 var newSvg = Elements.NewConstructor("svg", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "svg"
@@ -6075,7 +6154,7 @@ func (s SummaryElement) SetText(str string) SummaryElement {
 
 var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "summary"
@@ -6125,7 +6204,7 @@ func (d DetailsElement) IsOpened() bool {
 
 var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "details"
@@ -6172,7 +6251,7 @@ func (d DialogElement) IsOpened() bool {
 
 var newDialog = Elements.NewConstructor("dialog", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "dialog"
@@ -6204,7 +6283,7 @@ func (c CodeElement) SetText(str string) CodeElement {
 
 var newCode = Elements.NewConstructor("code", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "code"
@@ -6248,7 +6327,7 @@ func (e EmbedElement) SetSrc(src string) EmbedElement {
 
 var newEmbed = Elements.NewConstructor("embed", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "embed"
@@ -6324,7 +6403,7 @@ func (o objectModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 
 var newObject = Elements.NewConstructor("object", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "object"
@@ -6352,7 +6431,7 @@ type DatalistElement struct {
 
 var newDatalist = Elements.NewConstructor("datalist", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "datalist"
@@ -6411,7 +6490,7 @@ func (o OptionElement) SetValue(opt string) OptionElement {
 
 var newOption = Elements.NewConstructor("option", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "option"
@@ -6466,7 +6545,7 @@ func (o OptgroupElement) SetDisabled(b bool) OptgroupElement {
 
 var newOptgroup = Elements.NewConstructor("optgroup", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "optgroup"
@@ -6526,7 +6605,7 @@ func (m fieldsetModifier) Disabled(b bool) func(*ui.Element) *ui.Element {
 
 var newFieldset = Elements.NewConstructor("fieldset", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "fieldset"
@@ -6557,7 +6636,7 @@ func (l LegendElement) SetText(s string) LegendElement {
 
 var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "legend"
@@ -6597,7 +6676,7 @@ func (p ProgressElement) SetValue(v float64) ProgressElement {
 
 var newProgress = Elements.NewConstructor("progress", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "progress"
@@ -6678,7 +6757,7 @@ func (m selectModifier) Name(name string) func(*ui.Element) *ui.Element {
 
 var newSelect = Elements.NewConstructor("select", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "select"
@@ -6783,7 +6862,7 @@ func (f formModifier) Charset(charset string) func(*ui.Element) *ui.Element {
 
 var newForm = Elements.NewConstructor("form", func(id string) *ui.Element {
 
-	e := Elements.NewElement(id)
+	e := Elements.NewElement(id, DOCTYPE)
 	e = enableClasses(e)
 
 	tag := "form"

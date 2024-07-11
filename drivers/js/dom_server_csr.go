@@ -1,6 +1,5 @@
 //go:build server && csr
 
-
 package doc
 
 import (
@@ -9,17 +8,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"log"
+	"strings"
 	"sync"
-	
+
+	ui "github.com/atdiar/particleui"
 	"github.com/fsnotify/fsnotify"
-	"github.com/atdiar/particleui"
 
 	"golang.org/x/net/html"
 	//"golang.org/x/net/html/atom"
@@ -28,59 +27,52 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-
-	SourcePath = filepath.Join(".","dev")
-	StaticPath = filepath.Join(".","dev","build","app")
-	IndexPath = filepath.Join(StaticPath,"index.html")
-
+	SourcePath = filepath.Join(".", "dev")
+	StaticPath = filepath.Join(".", "dev", "build", "app")
+	IndexPath  = filepath.Join(StaticPath, "index.html")
 
 	host string = "localhost"
 	port string = "8888"
 
 	release bool
-	nohmr bool
+	nohmr   bool
 
 	ServeMux *http.ServeMux
-	Server *http.Server = newDefaultServer()
-	
-	
-	RenderHTMLhandler http.Handler
+	Server   *http.Server = newDefaultServer()
 
+	RenderHTMLhandler http.Handler
 )
 
 // NOTE: the default entry path is stored in the BasePath variable stored in dom.go
 
-func init(){
-	flag.StringVar(&host,"host", "localhost", "Host name for the server")
+func init() {
+	flag.StringVar(&host, "host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
-	
+
 	flag.Parse()
 
-	if !release{
+	if !release {
 		DevMode = "true"
 	}
 
-	if !nohmr{
+	if !nohmr {
 		HMRMode = "true"
 	}
 
 }
 
-
-func newDefaultServer() *http.Server{
+func newDefaultServer() *http.Server {
 	return &http.Server{
 		Addr:    host + ":" + port,
 		Handler: ServeMux,
 	}
 }
 
-
-
 type customRoundTripper struct {
-	mux      *http.ServeMux
+	mux       *http.ServeMux
 	transport http.RoundTripper
 }
 
@@ -107,13 +99,13 @@ func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	}
 }
 
-// modifyClient returns a round-tripper modified client that can forego the network and 
-// generate the response as per the servemux when the host is the server it runs onto. 
-func modifyClient(c *http.Client) *http.Client{
-	if c == nil{
+// modifyClient returns a round-tripper modified client that can forego the network and
+// generate the response as per the servemux when the host is the server it runs onto.
+func modifyClient(c *http.Client) *http.Client {
+	if c == nil {
 		c = &http.Client{}
 	}
-	if c.Transport == nil{
+	if c.Transport == nil {
 		c.Transport = &http.Transport{}
 	}
 
@@ -147,13 +139,12 @@ func (w *responseRecorder) Result() *http.Response {
 	}
 }
 
-
 // NewBuilder accepts a function that builds a document as a UI tree and returns a function
 // that enables event listening for this document.
 // On the client, these are client side javascrip events.
 // On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
 // for the document.
-var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndServe func(ctx context.Context)){
+var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe func(ctx context.Context)) {
 
 	fileServer := http.FileServer(http.Dir(StaticPath))
 
@@ -161,58 +152,56 @@ var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndSe
 		if HMRMode != "false" || !nohmr {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		
+
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
-		
+
 		// Join the cleaned path with the static directory
 		path := filepath.Join(StaticPath, cleanedPath)
-		
+
 		// Check if the requested file exists
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			// If the file does not exist, serve index.html
-			http.ServeFile(w, r, IndexPath) 
+			http.ServeFile(w, r, IndexPath)
 			return
 		} else if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	
+
 		// If the file exists, serve it
 		fileServer.ServeHTTP(w, r)
 	})
-	
 
-	for _,m:= range buildEnvModifiers{
+	for _, m := range buildEnvModifiers {
 		m()
 	}
 
 	ServeMux = http.NewServeMux()
 	Server.Handler = ServeMux
 
-
-	return func(ctx context.Context){
-		if ctx == nil{
+	return func(ctx context.Context) {
+		if ctx == nil {
 			ctx = context.Background()
 		}
 		ctx, shutdown := context.WithCancel(ctx)
 		var activehmr bool
 
 		var SSEChannel *SSEController
-		var mu  = &sync.Mutex{}
+		var mu = &sync.Mutex{}
 
-		ServeMux.Handle(BasePath,RenderHTMLhandler)
-		
-		if DevMode != "false"{
-			ServeMux.Handle("/stop",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeMux.Handle(BasePath, RenderHTMLhandler)
+
+		if DevMode != "false" {
+			ServeMux.Handle("/stop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Trigger server shutdown logic
 				shutdown()
 				fmt.Fprintln(w, "Server is shutting down...")
 			}))
 		}
 
-		if HMRMode == "true"{
+		if HMRMode == "true" {
 			// TODO: Implement Server-Sent Event logic for browser reload
 			// Implement filesystem watching and trigger compile on change
 			// (in another goroutine) if it's a go file. If any file change, send SSE message to frontend
@@ -227,24 +216,23 @@ var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndSe
 				if filepath.Ext(event.Name) == ".go" {
 					// file name: main.go
 					sourceFile := "main.go"
-					
+
 					// Ensure the output directory is already existing
 					if _, err := os.Stat(StaticPath); os.IsNotExist(err) {
 						panic("Output directory should already exist")
 					}
 
-
-					targetPath, err:= filepath.Rel(SourcePath,StaticPath)
-					if err != nil{
+					targetPath, err := filepath.Rel(SourcePath, StaticPath)
+					if err != nil {
 						panic(err)
 					}
-					targetPath = filepath.Join(targetPath,"main.wasm")
+					targetPath = filepath.Join(targetPath, "main.wasm")
 
 					// add the relevant build and linker flags
 					args := []string{"build"}
-					ldflags:= ldflags()
+					ldflags := ldflags()
 					if ldflags != "" {
-						args = append(args, "-ldflags", ldflags)	
+						args = append(args, "-ldflags", ldflags)
 					}
 
 					args = append(args, "-o", targetPath, sourceFile)
@@ -258,36 +246,36 @@ var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndSe
 					err = cmd.Run()
 					if err == nil {
 						fmt.Println("main.wasm was rebuilt.")
-					}						
+					}
 				}
 			})
 
-			if err != nil{
+			if err != nil {
 				log.Println(err)
 				log.Println("Unable to watch for changes in ./dev folder.")
-			} else{
+			} else {
 				defer watcher.Close()
 
 				// watching for changes made to the output files which should be in the ./dev/build/app directory
 				// ie. ../../dev/build/app
-				
+
 				wc, err := WatchDir(StaticPath, func(event fsnotify.Event) {
 					// Send event to trigger a page reload
 					log.Println("Something changed: ", event.String()) // DEBUG
 					mu.Lock()
-					SSEChannel.SendEvent("reload",event.String(),"","")
+					SSEChannel.SendEvent("reload", event.String(), "", "")
 					log.Println("reload Event sent to frontend") // DEBUG
 					mu.Unlock()
 				})
-				if err != nil{
+				if err != nil {
 					log.Println(err)
 					panic("Unable to watch for changes in ./dev/build/app folder.")
-				} 
+				}
 				defer wc.Close()
-				activehmr = true				
+				activehmr = true
 				ServeMux.Handle("/sse", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					log.Println("SSE connection established")
-					s:= NewSSEController()
+					s := NewSSEController()
 					mu.Lock()
 					SSEChannel = s
 					mu.Unlock()
@@ -297,40 +285,38 @@ var NewBuilder = func(f func()Document, buildEnvModifiers ...func())(ListenAndSe
 		}
 
 		// return server info including whether hmr is active
-		ServeMux.Handle("/info",http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeMux.Handle("/info", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Server is running on port "+port)
 			fmt.Fprintln(w, "HMR status active: ", activehmr)
 		}))
 
-		go func(){ // allows for graceful shutdown signaling
-			if Server.TLSConfig == nil{
-				if err:=Server.ListenAndServe(); err!= nil && err != http.ErrServerClosed{
+		go func() { // allows for graceful shutdown signaling
+			if Server.TLSConfig == nil {
+				if err := Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					log.Fatal(err)
 				}
-			} else{
-				if err:= Server.ListenAndServeTLS("",""); err!= nil && err != http.ErrServerClosed{
+			} else {
+				if err := Server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 					log.Fatal(err)
 				}
-			}		
+			}
 		}()
 
-		log.Print("Listening on: "+Server.Addr)
+		log.Print("Listening on: " + Server.Addr)
 
-		for{
-			select{
+		for {
+			select {
 			case <-ctx.Done():
-				err:= Server.Shutdown(ctx)
-				if err!= nil{
+				err := Server.Shutdown(ctx)
+				if err != nil {
 					panic(err)
 				}
 				log.Printf("Server shutdown")
 				os.Exit(0)
 			}
-		}	
-	}	
+		}
+	}
 }
-
-
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -340,40 +326,40 @@ func (d Document) Render(w io.Writer) error {
 
 func newHTMLDocument(document Document) *html.Node {
 	doc := document.AsElement()
-	h:= &html.Node{Type: html.DoctypeNode}
-	n:= doc.Native.(NativeElement).Value.Node()
+	h := &html.Node{Type: html.DoctypeNode}
+	n := doc.Native.(NativeElement).Value.Node()
 	h.AppendChild(n)
-	statenode:= generateStateHistoryRecordElement(doc) // TODO review all this logic
-	if statenode != nil{
-		document.Head().AsElement().Native.(NativeElement).Value.Call("appenChild",statenode)
+	statenode := generateStateHistoryRecordElement(doc) // TODO review all this logic
+	if statenode != nil {
+		document.Head().AsElement().Native.(NativeElement).Value.Call("appenChild", statenode)
 	}
 
 	return h
 }
 
-func generateStateHistoryRecordElement(root *ui.Element) *html.Node{
-	state:=  SerializeStateHistory(root)
-	script:= `<script id='` + SSRStateElementID+`' type="application/json">
+func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
+	state := SerializeStateHistory(root)
+	script := `<script id='` + SSRStateElementID + `' type="application/json">
 	` + state + `
 	<script>`
-	scriptNode, err:= html.Parse(strings.NewReader(script))
-	if err!= nil{
+	scriptNode, err := html.Parse(strings.NewReader(script))
+	if err != nil {
 		panic(err)
 	}
 	return scriptNode
 }
 
-func recoverStateHistory(){}
-var recoverStateHistoryHandler = ui.NoopMutationHandler
+func recoverStateHistory() {}
 
+var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func ldflags() string {
 	flags := make(map[string]string)
 
-	flags[uipkg + "/drivers/js.DevMode"] = DevMode
-	flags[uipkg + "/drivers/js.SSGMode"] = SSGMode
-	flags[uipkg + "/drivers/js.SSRMode"] = SSRMode
-	flags[uipkg + "/drivers/js.HMRMode"]= HMRMode
+	flags[uipkg+"/drivers/js.DevMode"] = DevMode
+	flags[uipkg+"/drivers/js.SSGMode"] = SSGMode
+	flags[uipkg+"/drivers/js.SSRMode"] = SSRMode
+	flags[uipkg+"/drivers/js.HMRMode"] = HMRMode
 
 	var ldflags []string
 	for key, value := range flags {

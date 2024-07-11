@@ -114,8 +114,8 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 		return false
 	}))
 
-	r.Outlet.AsElement().ElementStore.NewConstructor("zui_link", func(id string) *Element {
-		e := NewElement(id, "ROUTER")
+	r.Outlet.AsElement().Configuration.NewConstructor("zui_link", func(id string) *Element {
+		e := r.Outlet.AsElement().Configuration.NewElement(id, "ROUTER")
 		RegisterElement(r.Outlet.AsElement().Root, e)
 		return e
 	})
@@ -576,9 +576,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 			// After replay end, the app should be considered loaded. So we will end the load transition.
 			evt.Origin().AfterTransition("replay", NewMutationHandler(func(ev MutationEvent) bool {
-				if TransitionError(evt.Origin(), "replay") || TransitionCancelled(evt.Origin(), "replay") {
-					ev.Origin().EndTransition("load")
-				}
+				ev.Origin().EndTransition("load")
 				return false
 			}).RunOnce())
 
@@ -1026,11 +1024,12 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	l, ok := r.Links["/"+viewname]
 	if !ok {
 		// Let's retrieve the link constructor
-		c, ok := r.Outlet.AsElement().ElementStore.Constructors["zui_link"]
+		c, ok := r.Outlet.AsElement().Configuration.Constructors["zui_link"]
 		if !ok {
 			panic("zui_ERROR: somehow the link constructor has not been registered.")
 		}
 		e := c(r.Outlet.AsElement().ID + "-" + viewname)
+
 		e.SetUI("viewelements", NewList(String(r.Outlet.AsElement().ID)).Commit())
 		e.SetUI("viewnames", NewList(String(viewname)).Commit())
 		e.SetUI("uri", String("/"+viewname))
@@ -1046,7 +1045,6 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 		return ll
 	}
 	e := l.AsElement()
-	RegisterElement(r.Outlet.AsElement().Root, e)
 
 	// Let's retrieve the target viewElement and corresponding view name
 	v, ok := e.GetUI("viewelements")
@@ -1159,7 +1157,7 @@ func Path(ve ViewElement, viewname string) func(Link) Link {
 	}
 	return func(l Link) Link {
 		e := l.AsElement()
-		ne := NewElement(ve.AsElement().ID+"-"+viewname, e.DocType)
+		ne := l.AsElement().Configuration.NewElement(ve.AsElement().ID+"-"+viewname, e.DocType)
 
 		v, ok := e.GetData("viewelements")
 		if !ok {
@@ -1274,9 +1272,8 @@ func NewNavigationHistory(approot *Element) *NavHistory {
 		if e != nil {
 			return Observable{e}
 		}
-		o := approot.ElementStore.NewObservable(id)
+		o := approot.Configuration.NewObservable(id)
 		RegisterElement(approot, o.AsElement())
-		// Initially was done in the constructore but might be more appropriate here
 		o.AsElement().TriggerEvent("mountable")
 		o.AsElement().TriggerEvent("mounted")
 		return o
@@ -1315,6 +1312,7 @@ func (n *NavHistory) Value() Value {
 // Hence, one should be careful before storing app state in the framework history object,
 // depending on the implementation. (some state object could be persisted for each mutation)
 func (n *NavHistory) ImportState(v Value) *NavHistory {
+	DEBUG("importing state")
 	h, ok := v.(Object)
 	if !ok {
 		return n
@@ -1334,6 +1332,14 @@ func (n *NavHistory) ImportState(v Value) *NavHistory {
 		return nil
 	}
 	state := stt.(List)
+
+	// Get cursor value stored in history
+	c, ok := h.Get("cursor")
+	if !ok {
+		DEBUG("No cursor found in history state")
+		return nil
+	}
+	cursor := int(c.(Number))
 
 	if hlen > len(n.Stack) {
 		for i := n.Cursor + 1; i < hlen; i++ {
@@ -1364,6 +1370,7 @@ func (n *NavHistory) ImportState(v Value) *NavHistory {
 			s.Set("data","new",Bool(false))
 		}
 	*/
+	n.Cursor = cursor
 
 	return n
 }

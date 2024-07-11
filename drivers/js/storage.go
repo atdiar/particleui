@@ -238,7 +238,7 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 
 	pmode := ui.PersistenceMode(e)
 
-	storage, ok := e.ElementStore.PersistentStorer[pmode]
+	storage, ok := e.Configuration.PersistentStorer[pmode]
 
 	if ok {
 		err := storage.Load(e)
@@ -254,7 +254,7 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 func PutInStorage(a ui.AnyElement) *ui.Element {
 	e := a.AsElement()
 	pmode := ui.PersistenceMode(e)
-	storage, ok := e.ElementStore.PersistentStorer[pmode]
+	storage, ok := e.Configuration.PersistentStorer[pmode]
 	if !ok {
 		return e
 	}
@@ -275,7 +275,7 @@ func ClearFromStorage(a ui.AnyElement) *ui.Element {
 	e := a.AsElement()
 	pmode := ui.PersistenceMode(e)
 
-	storage, ok := e.ElementStore.PersistentStorer[pmode]
+	storage, ok := e.Configuration.PersistentStorer[pmode]
 	if ok {
 		storage.Clear(e)
 	}

@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 var (
@@ -31,13 +33,46 @@ func newIDgenerator(charlen int, seed int64) func() string {
 	}
 }
 
-// ElementStore defines a global context, consisting of properties. methods for
-// Elemnts constructors of User Interfaces.
-type ElementStore struct {
+type scsmap[K comparable, T any] struct {
+	raw sync.Map
+}
+
+func newscsmap[K comparable, T any]() *scsmap[K, T] {
+	return &scsmap[K, T]{}
+}
+
+func (m *scsmap[K, T]) Set(key K, value T) {
+	m.raw.Store(key, value)
+}
+
+func (m *scsmap[K, T]) Get(key K) (T, bool) {
+	var zero T
+	v, ok := m.raw.Load(key)
+	if !ok {
+		return zero, false
+	}
+	return v.(T), true
+}
+
+func (m *scsmap[K, T]) Delete(key K) {
+	m.raw.Delete(key)
+}
+
+func (m *scsmap[K, T]) Range(fn func(key K, value T) bool) {
+	m.raw.Range(func(key, value interface{}) bool {
+		return fn(key.(K), value.(T))
+	})
+}
+
+// Configuration is an object that holds configuration options for the UI element constrcutors, as well as
+// some of the general UI behavior.
+type Configuration struct {
 	DocType                  string
 	Constructors             map[string]func(id string, optionNames ...string) *Element
 	GlobalConstructorOptions map[string]func(*Element) *Element
 	ConstructorsOptions      map[string]map[string]func(*Element) *Element
+	Registry                 *scsmap[string, map[string]*Element]
+	newUID                   func() string
 
 	PersistentStorer map[string]storageFunctions
 	RuntimePropTypes map[string]bool
@@ -87,35 +122,42 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 	return ConstructorOption{name, fn}
 }
 
-// NewElementStore creates a new namespace for a list of Element constructors.
-func NewElementStore(storeid string, doctype string) *ElementStore {
-	es := &ElementStore{doctype, make(map[string]func(id string, optionNames ...string) *Element, 0), make(map[string]func(*Element) *Element), make(map[string]map[string]func(*Element) *Element, 0), make(map[string]storageFunctions, 5), make(map[string]bool, 8), false, false, false}
+// NewConfiguration creates a new namespace for a list of Element constructors.
+func NewConfiguration(storeid string, doctype string) *Configuration {
+	es := &Configuration{
+		doctype,
+		make(map[string]func(id string, optionNames ...string) *Element, 0),
+		make(map[string]func(*Element) *Element),
+		make(map[string]map[string]func(*Element) *Element, 0),
+		newscsmap[string, map[string]*Element](),
+		nil,
+		make(map[string]storageFunctions, 5),
+		make(map[string]bool, 8),
+		false,
+		false,
+		false,
+	}
 	es.RuntimePropTypes["event"] = true
 	es.RuntimePropTypes["navigation"] = true
 	es.RuntimePropTypes["runtime"] = true
 	es.RuntimePropTypes["ui"] = true
-
-	es.NewConstructor("observable", func(id string) *Element { // TODO check if this shouldn't be done at the coument level rather
-		o := newObservable(id)
-		//o.AsElement().TriggerEvent("mountable")
-		//o.AsElement().TriggerEvent("mounted")
-		return o.AsElement()
-	})
+	es.PersistentStorer = make(map[string]storageFunctions, 8)
+	es.newUID = newIDgenerator(16, time.Now().UnixNano())
 
 	return es
 }
 
 // AddRuntimePropType allows for the definition of a specific category of *Element properties that can
 // not be stored in memory as they are purely a runtime/transient concept (such as "event").
-func (e *ElementStore) AddRuntimePropType(name string) *ElementStore {
+func (e *Configuration) AddRuntimePropType(name string) *Configuration {
 	e.RuntimePropTypes[name] = true
 	return e
 }
 
-// ApplyGlobalOption registers a Constructor option that will be called for every
+// WithGlobalConstructorOption registers a Constructor option that will be called for every
 // element constructed.
 // Rationale: implementing dark-mode aware ui elements easily.
-func (e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore {
+func (e *Configuration) WithGlobalConstructorOption(c ConstructorOption) *Configuration {
 	e.GlobalConstructorOptions[c.Name] = c.Configurator
 	return e
 }
@@ -124,7 +166,7 @@ func (e *ElementStore) ApplyGlobalOption(c ConstructorOption) *ElementStore {
 // from the default in-memory.
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
-func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool), clear func(*Element)) *ElementStore {
+func (e *Configuration) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool), clear func(*Element)) *Configuration {
 	e.PersistentStorer[name] = storageFunctions{loadFromStore, store, clear}
 	return e
 }
@@ -132,22 +174,31 @@ func (e *ElementStore) AddPersistenceMode(name string, loadFromStore func(*Eleme
 // EnableMutationCapture enables mutation capture of the UI tree. This is used for debugging,
 // implementing hot reloading, SSR (server-side-rendering) etc.
 // It basically captures a trace of the program execution that can be replayed later.
-func (e *ElementStore) EnableMutationCapture() *ElementStore { e.MutationCapture = true; return e }
+func (e *Configuration) EnableMutationCapture() *Configuration { e.MutationCapture = true; return e }
 
 // EnableMutationReplay enables mutation replay of the UI tree. This is used to recover the state corresponding
 // to a UI tree that has already been rendered.
-func (e *ElementStore) EnableMutationReplay() *ElementStore { e.MutationReplay = true; return e }
+func (e *Configuration) EnableMutationReplay() *Configuration { e.MutationReplay = true; return e }
 
 // NewAppRoot returns the starting point of an app. It is a viewElement whose main
 // view name is the root id string.
-func (e *ElementStore) NewAppRoot(id string) *Element {
-	el := NewElement(id, e.DocType)
-	el.registry = make(map[string]*Element, 4096)
+func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Element) *Element {
+	el := e.NewElement(id, e.DocType)
+	el.registry = newRegistry()
 	el.Root = el
 	el.Parent = nil // initially nil DEBUG
 	el.subtreeRoot = el
-	el.ElementStore = e
-	RegisterElement(el, el)
+
+	el.Configuration = e
+	// TODO
+	// SHould generate a doucment uuid and store it as the index value in the
+	// Configuration registry
+	// this uuid should be part oif the document state (we need to be able to recover it)
+	el.uuid = e.newUID()
+	m := make(map[string]*Element, 4096)
+	m[id] = el
+	e.Registry.Set(el.uuid, m)
+
 	el.path = &Elements{make([]*Element, 0)}
 	el.pathvalid = true
 
@@ -156,11 +207,17 @@ func (e *ElementStore) NewAppRoot(id string) *Element {
 	el.TriggerEvent("mountable", Bool(true))
 	el.isroot = true
 
+	RegisterElement(el, el)
+
+	for _, mod := range modifiers {
+		mod(el)
+	}
+
 	return el
 }
 
 var unregisterHandler = NewMutationHandler(func(evt MutationEvent) bool {
-	unregisterElement(evt.Origin())
+	evt.Origin().Root.registry.Unregister(evt.Origin().ID)
 	return false
 }).RunOnce()
 
@@ -169,31 +226,27 @@ func RegisterElement(approot *Element, e *Element) {
 	registerElementfn(approot, e)
 
 	e.OnDeleted(unregisterHandler)
-}
-
-func registerElementfn(root, e *Element) {
-	t := GetById(root, e.ID)
-	if t != nil {
-		*e = *t
-		return
-	}
-	root.registry[e.ID] = e
-	e.registry = root.registry
-	e.BindValue("internals", "mutation-replaying", root)
-	e.BindValue("internals", "mutation-capturing", root)
-	e.BindValue("internals", "documentstate", root)
-
 	e.TriggerEvent("registered")
 }
 
-func unregisterElement(e *Element) {
-	if e.Root.registry == nil {
-		DEBUG("internal err: root element should have an element registry.")
-		return
+func registerElementfn(root, e *Element) {
+	t := root.registry.GetById(e.ID)
+	if t != nil {
+		*e = *t
+		// return
 	}
+	root.registry.Register(e)
+	e.registry = root.registry
+	e.uuid = root.uuid
+	l, ok := e.Configuration.Registry.Get(e.uuid)
+	if !ok {
+		panic("FAILURE: could not retrieve the document registry")
 
-	delete(e.Root.registry, e.ID)
-	e.registry = nil
+	}
+	l[e.ID] = e
+	e.BindValue("internals", "mutation-replaying", root)
+	e.BindValue("internals", "mutation-capturing", root)
+	e.BindValue("internals", "documentstate", root)
 
 }
 
@@ -202,16 +255,18 @@ func (e *Element) Registered() bool {
 	return e.registry != nil
 }
 
-// GetByID finds any element that has been part of the UI tree at least once by its ID.
+// GetById finds any element that has been constructed with the given id.
 func GetById(root *Element, id string) *Element {
-	if root.registry == nil {
-		panic("internal err: root element should have an element registry.")
+	l, ok := root.Configuration.Registry.Get(root.uuid)
+	if !ok {
+		panic("FAILURE: could not retrieve the document registry")
 	}
+	v := l[id]
+	return v
 
-	return root.registry[id]
 }
 
-func (e *ElementStore) AddConstructorOptionsTo(elementtype string, options ...ConstructorOption) *ElementStore {
+func (e *Configuration) AddConstructorOptionsTo(elementtype string, options ...ConstructorOption) *Configuration {
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
 		optlist = make(map[string]func(*Element) *Element)
@@ -226,7 +281,7 @@ func (e *ElementStore) AddConstructorOptionsTo(elementtype string, options ...Co
 }
 
 // NewConstructor registers and returns a new Element construcor function.
-func (e *ElementStore) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
+func (e *Configuration) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
 
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
@@ -242,16 +297,21 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 	c := func(id string, optionNames ...string) *Element {
 		element := constructor(id)
 		element.Set("internals", "constructor", String(elementtype))
-		element.ElementStore = e
+		element.Configuration = e
 
 		element.WatchEvent("registered", element, NewMutationHandler(func(evt MutationEvent) bool {
-			e := evt.Origin().ElementStore
+			e := evt.Origin().Configuration
+			globsopt := make(map[string]struct{}, 16)
 			// Let's apply the global constructor options
-			for _, fn := range e.GlobalConstructorOptions {
+			for optname, fn := range e.GlobalConstructorOptions {
 				fn(evt.Origin())
+				globsopt[optname] = struct{}{}
 			}
 			// Let's apply the remaining options
 			for _, opt := range optionNames {
+				if _, ok := globsopt[opt]; ok {
+					continue
+				}
 				r, ok := e.ConstructorsOptions[elementtype]
 				if ok {
 					config, ok := r[opt]
@@ -271,36 +331,27 @@ func (e *ElementStore) NewConstructor(elementtype string, constructor func(id st
 	return c
 }
 
-func (e *ElementStore) NewObservable(id string, options ...string) Observable {
-	c := e.Constructors["observable"]
-	o := c(id, options...)
-	o.ElementStore = e
-	return Observable{o}
-}
-
-func (e *ElementStore) NewElement(id string) *Element {
-	r := NewElement(id, e.DocType)
-	r.ElementStore = e
-	return r
-}
+type Modifier = func(*Element) *Element
 
 // Element is the building block of the User Interface. Everything is described
 // as an Element having some mutable properties (graphic properties or data properties)
 // From the window to the buttons on a page.
 // Elements may have a unique parent: hence, Views cannot share any Element.
 type Element struct {
-	ElementStore *ElementStore
-	registry     map[string]*Element
-	Root         *Element
-	subtreeRoot  *Element // detached if subtree root has no parent unless subtreeroot == root
-	path         *Elements
-	pathvalid    bool
+	Configuration *Configuration
+	registry      *registry
+
+	Root        *Element
+	subtreeRoot *Element // detached if subtree root has no parent unless subtreeroot == root
+	path        *Elements
+	pathvalid   bool
 
 	Parent *Element
 	isroot bool
 
 	Alias   string
 	ID      string
+	uuid    string
 	DocType string
 
 	Properties             PropertyStore
@@ -325,6 +376,53 @@ type Element struct {
 	HttpClient *http.Client
 }
 
+func (e *Element) RootUUID() string {
+	return e.uuid
+}
+
+type registry struct {
+	list map[string]struct {
+		*Element
+		bool
+	}
+}
+
+func newRegistry() *registry {
+	v := registry{make(map[string]struct {
+		*Element
+		bool // indicates whether the element is registered i.e. tied to a UI tree already.
+	}, 8192)}
+	return &v
+}
+
+func (r *registry) Register(e *Element) *registry {
+	r.New(e)
+	v := r.list[e.ID] // TODO refactor this
+	v.bool = true
+	r.list[e.ID] = v
+	return r
+}
+
+func (r *registry) GetById(id string) *Element {
+	v, ok := r.list[id]
+	if !ok {
+		return nil
+	}
+	return v.Element
+}
+
+func (r *registry) Unregister(id string) {
+	delete(r.list, id)
+}
+
+func (r *registry) New(e *Element) *registry {
+	r.list[e.ID] = struct {
+		*Element
+		bool
+	}{e, false}
+	return r
+}
+
 func (e *Element) AsElement() *Element { return e }
 func (e *Element) AsViewElement() (ViewElement, bool) {
 	if e.isViewElement() {
@@ -337,12 +435,12 @@ func (e *Element) watchable()          {}
 
 // NewElement returns a new Element with no properties, no event or mutation handlers.
 // Essentially an empty shell to be customized.
-func NewElement(id string, doctype string) *Element {
+func (c *Configuration) NewElement(id string, doctype string) *Element {
 	if strings.Contains(id, "/") {
 		panic("An id may not use a slash: " + id + " is not valid.")
 	}
 	e := &Element{
-		nil,
+		c,
 		nil,
 		nil,
 		nil,
@@ -352,6 +450,7 @@ func NewElement(id string, doctype string) *Element {
 		false,
 		"",
 		id,
+		"",
 		doctype,
 		NewPropertyStore(),
 		NewMutationCallbacks(),
@@ -382,6 +481,38 @@ func NewElement(id string, doctype string) *Element {
 	}).RunOnce())
 
 	return e
+}
+
+func (c *Configuration) NewObservable(id string, options ...string) Observable {
+
+	o := newObservable(id).AsElement()
+	o.Set("internals", "constructor", String("observable"))
+	o.Configuration = c
+
+	o.WatchEvent("registered", o, NewMutationHandler(func(evt MutationEvent) bool {
+		globsopt := make(map[string]struct{}, 16)
+		for optname, fn := range c.GlobalConstructorOptions {
+			fn(evt.Origin())
+			globsopt[optname] = struct{}{}
+		}
+		for _, opt := range options {
+			if _, ok := globsopt[opt]; ok {
+				continue
+			}
+			r, ok := c.ConstructorsOptions["observable"]
+			if ok {
+				config, ok := r[opt]
+				if ok {
+					config(evt.Origin())
+				} else {
+					DEBUG(opt, " is not an available option for ", "observable")
+				}
+			}
+		}
+		return false
+	}).RunOnce().RunASAP())
+
+	return Observable{o}
 }
 
 // AnyElement is an interface type implemented by *Element :
@@ -1288,6 +1419,7 @@ func (e *Element) fetching(propname string) bool {
 // when setting(mutationg) a property.
 func (e *Element) Watch(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	if owner.AsElement() == nil {
+		DEBUG(category, propname)
 		panic("unable to watch element properties as it is nil")
 	}
 
@@ -1616,7 +1748,7 @@ func (e *Element) AfterEvent(eventname string, target Watchable, h *MutationHand
 // Get retrieves the value stored for the named property located under the given
 // category. The "" category returns the content of the "global" property category.
 // The "global" namespace is a local copy of the data that resides in the global
-// shared scope common to all Element objects of an ElementStore.
+// shared scope common to all Element objects of an Configuration.
 func (e *Element) Get(category, propname string) (Value, bool) {
 	return e.Properties.Get(category, propname)
 }
@@ -1627,6 +1759,9 @@ func (e *Element) Get(category, propname string) (Value, bool) {
 func (e *Element) Set(category string, propname string, value Value) {
 	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
+	}
+	if !shouldSkip(category, propname) {
+		// fmt.Println("setting", category, propname, value) // DEBUG
 	}
 
 	oldvalue, ok := e.Properties.Get(category, propname)
@@ -1643,10 +1778,6 @@ func (e *Element) Set(category string, propname string, value Value) {
 			if !ok {
 				e.Root.Set("internals", "mutation-list-index", Number(1))
 			} else {
-				if idx.(Number) > 150 {
-					DEBUG("mutation replaying might be stuck in a loop")
-					panic("mutation replaying might be stuck in a loop")
-				}
 				e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
 			}
 		}
@@ -1705,7 +1836,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 }
 
 func MutationReplaying(e *Element) bool {
-	if e == nil || e.ElementStore == nil || !e.ElementStore.MutationReplay || !e.Registered() {
+	if e == nil || e.Configuration == nil || !e.Configuration.MutationReplay || !e.Registered() {
 		return false
 	}
 
@@ -1757,7 +1888,7 @@ func shouldSkip(category, propname string) bool {
 }
 
 func mutationcapturing(e *Element) bool {
-	if e == nil || e.ElementStore == nil || !e.ElementStore.MutationCapture || !e.Registered() {
+	if e == nil || e.Configuration == nil || !e.Configuration.MutationCapture || !e.Registered() {
 		return false
 	}
 

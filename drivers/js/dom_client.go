@@ -53,7 +53,7 @@ func (n NativeElement) BatchExecute(parentid string, opslist string) {
 // On the client, these are client side javascrip events.
 // On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
 // for the document.
-func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context)) {
+func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe func(context.Context)) {
 	for _, mod := range buildEnvModifiers {
 		mod()
 	}
@@ -67,7 +67,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		}))
 
 		d := f()
-		withNativejshelpers(&d)
+		withNativejshelpers(d)
 
 		scrIdleGC := d.Script.WithID("idleGC").SetInnerHTML(`
 			let lastGC = Date.now();
@@ -122,7 +122,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 			DEBUG("mutation got replayed and error is: ", err)
 			if err != nil {
 				d.ErrorTransition("replay", ui.String(err.Error()))
-				return true // DEBUG may want to return false, should check
+				return false // DEBUG may want to return false, should check
 			}
 			d.EndTransition("replay")
 			return false
@@ -132,7 +132,8 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 			d.mutationRecorder().Clear()
 			// Should reload the page
 			log.Println("replay error, we should reload: ", evt.NewValue())
-			d.Window().Reload()
+			// TODO: reload the page
+			//d.Window().Reload()
 			return true
 		}))
 
