@@ -1156,7 +1156,6 @@ func (d *Document) newID() string {
 	for i := range b {
 		b[i] = charset[d.rng.Intn(l)]
 	}
-	DEBUG("Generated ID: ", string(b))
 	return string(b)
 }
 
@@ -1324,12 +1323,11 @@ func (d *Document) DeleteFromDB(dbname, key string) error {
 }
 
 // NewObservable returns a new ui.Observable element after registering it for the document.
-// If the observable alreadys exiswted for this id, it is returns as is.
-// it is up to the caller to check whether an element already exist for this id and possibly clear
+// If the observable alreadys existed for this id, it is returned as is.
+// It is up to the caller to check whether an element already exist for this id and possibly clear
 // its state beforehand.
 func (d *Document) NewObservable(id string, options ...string) ui.Observable {
 	if e := d.GetElementById(id); e != nil {
-		// panic("observable already exists for this id")
 		return ui.Observable{e}
 	}
 	o := d.AsElement().Configuration.NewObservable(id, options...).AsElement()
@@ -1868,6 +1866,7 @@ func mutationreplay(d *Document) error {
 	}
 
 	for m.pos < mutNum {
+		DEBUG(m.pos)
 		rawop := mutationtrace.Get(m.pos)
 		op := rawop.(ui.Object)
 		id, ok := op.Get("id")
@@ -1889,7 +1888,7 @@ func mutationreplay(d *Document) error {
 		if !ok {
 			panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
 		}
-		fmt.Println("mutation replaying: ======= ", m.pos, id, cat, prop, val)
+		fmt.Println("mutation replaying: *** ", m.pos, op)
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
@@ -1902,16 +1901,20 @@ func mutationreplay(d *Document) error {
 
 		// TODO rollback to the implementation that takes into account Sync mutations
 		// and the ones that are not sync.
-		sync, ok := op.Get("sync")
-		if !ok || !sync.(ui.Bool).Bool() {
-			el.Set(cat.(ui.String).String(), prop.(ui.String).String(), val)
+		_, ok = op.Get("sync")
+		if !ok {
+			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
 		} else {
-			el.SyncUI(prop.(ui.String).String(), val)
+			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
 		}
 
 		i, ok := d.Get("internals", "mutation-list-index")
 		if !ok {
-			panic("mutation list index not found. Should be >= 1.")
+			if m.pos == 0 {
+				i = ui.Number(0)
+			} else {
+				panic("mutation list index is missing")
+			}
 		}
 		// DEBUG("mutation list cursor positiion:", m.pos)
 		m.pos = int(i.(ui.Number).Float64())
@@ -2306,7 +2309,7 @@ func (m *scsmap[K, T]) Range(fn func(key K, value T) bool) {
 // It is used to retrieve the document from the root element of a subtree.
 // It is necessary to be able to invert the operation that creates a *Document for a root *ui.Element,
 // since *Document holds state that is neither available to a mere *ui.Element nor in global scope (stylesheets, id generator, ...)
-var documents scsmap[*ui.Element, *Document] = *newscsmap[*ui.Element, *Document]()
+var documents *scsmap[*ui.Element, *Document] = newscsmap[*ui.Element, *Document]()
 
 // constructorDocumentLinker maps constructors id to the document they are created for.
 // Since we do not have dependent types, it is used to  have access to the document within
@@ -2359,6 +2362,7 @@ func NewDocument(id string, options ...string) *Document {
 	head := d.head.WithID("head")
 	e.AppendChild(head)
 	e.AppendChild(d.body.WithID("body"))
+	d.EnableWasm()
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
@@ -3388,7 +3392,13 @@ var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 })
 
 // EnableWasm adds the default wasm loader script to the head element of the document.
-func (d Document) EnableWasm() Document {
+// In SSGMode, the script is not added as we render html pages.
+// Javascript scripts can still be added to the page of course, but the wasm App
+// will have been rendered page by page in advance
+func (d *Document) EnableWasm() *Document {
+	if SSGMode != "false" {
+		return d
+	}
 	h := d.Head()
 	h.AppendChild(d.Script.WithID("wasmVM").Src("/wasm_exec.js"))
 	h.AppendChild(d.Script.WithID("goruntime").
@@ -4370,17 +4380,6 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 		return false
 	}).RunASAP())
 
-	a.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		link.MonitorActivity(true)
-
-		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(event ui.MutationEvent) bool {
-			link.MonitorActivity(false)
-			return false
-		}).RunOnce())
-
-		return false
-	}).RunASAP().RunOnce())
-
 	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetDataSetUI("active", evt.NewValue())
 		return false
@@ -4395,6 +4394,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 			}
 		}
 		evt.PreventDefault()
+		DEBUG("AnchorElement click event", a.ID, link.IsActive())
 		if !link.IsActive() {
 			link.Activate(id)
 		}
@@ -7285,7 +7285,7 @@ var NoopMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool 
 	return false
 })
 
-func Sitemap(d Document) ([]byte, error) {
+func Sitemap(d *Document) ([]byte, error) {
 	var routelist = make([]string, 64)
 	r := d.Router()
 	if r == nil {
@@ -7311,7 +7311,7 @@ func Sitemap(d Document) ([]byte, error) {
 
 }
 
-func CreateSitemap(d Document, path string) error {
+func CreateSitemap(d *Document, path string) error {
 	o, err := Sitemap(d)
 	if err != nil {
 		return err

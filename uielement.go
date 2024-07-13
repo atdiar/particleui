@@ -262,6 +262,7 @@ func GetById(root *Element, id string) *Element {
 		panic("FAILURE: could not retrieve the document registry")
 	}
 	v := l[id]
+
 	return v
 
 }
@@ -1760,9 +1761,6 @@ func (e *Element) Set(category string, propname string, value Value) {
 	if strings.Contains(category, "/") || strings.Contains(propname, "/") {
 		panic("category string and/or propname seems to contain a slash. This is not accepted, try a base32 encoding. (" + category + "," + propname + ")")
 	}
-	if !shouldSkip(category, propname) {
-		// fmt.Println("setting", category, propname, value) // DEBUG
-	}
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
@@ -1904,6 +1902,62 @@ func mutationcapturing(e *Element) bool {
 	return res
 }
 
+func ReplayMutation(e *Element, category string, propname string, value Value, sync bool) {
+	if e == nil {
+		panic("element is nil, obviously can't replay mutations \n")
+	}
+
+	oldvalue, ok := e.Properties.Get(category, propname)
+
+	if ok && category != "event" {
+		if Equal(value, oldvalue) { // idempotency
+			return
+		}
+	}
+
+	e.Properties.Set(category, propname, value)
+
+	if sync {
+		return
+	}
+
+	evt := e.NewMutationEvent(category, propname, value, oldvalue)
+
+	props, ok := e.Properties.Categories[category]
+	if !ok {
+		panic("category should exist since property should have been stored")
+	}
+	watchers, ok := props.Watchers[propname]
+	if ok && watchers != nil {
+		var needcleanup bool
+		var index int
+		wl := watchers.List[:0]
+
+		for i := 0; i < len(watchers.List); i++ {
+			w := watchers.List[i]
+			if w == nil {
+				if !needcleanup {
+					wl = watchers.List[:i]
+					index = i + 1
+					needcleanup = true
+				}
+				continue
+			}
+			w.PropMutationHandlers.DispatchEvent(evt)
+			if needcleanup {
+				wl = append(wl, w)
+				index++
+			}
+		}
+		if needcleanup {
+			for i := index; i < len(watchers.List); i++ {
+				watchers.List[i] = nil
+			}
+			watchers.List = wl[:index]
+		}
+	}
+}
+
 func (e *Element) GetData(propname string) (Value, bool) {
 	return e.Get("data", propname)
 }
@@ -1953,11 +2007,13 @@ func (e *Element) SyncUI(propname string, value Value) *Element {
 	}
 
 	if MutationReplaying(e) {
-		idx, ok := e.Root.Get("internals", "mutation-list-index")
-		if !ok {
-			e.Root.Set("internals", "mutation-list-index", Number(1))
-		} else {
-			e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+		if !shouldSkip("ui", propname) {
+			idx, ok := e.Root.Get("internals", "mutation-list-index")
+			if !ok {
+				e.Root.Set("internals", "mutation-list-index", Number(1))
+			} else {
+				e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+			}
 		}
 	}
 

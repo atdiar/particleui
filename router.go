@@ -1078,7 +1078,6 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 		return nh.Handle(evt)
 	}).RunASAP())
 
-	/* TODO delete if linkActivityMonitor works
 	// make sure that the link is set to 'active' when the route is the same as the link
 	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String).String()
@@ -1093,7 +1092,6 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 
 		return false
 	}).RunASAP())
-	*/
 
 	r.Links[l.URI()] = l
 
@@ -1118,6 +1116,16 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	return l
 }
 
+func (r *Router) CurrentRoute() string {
+	route, ok := r.Outlet.AsElement().Root.GetUI("currentroute")
+	if !ok {
+		return ""
+
+	}
+	return route.(String).String()
+}
+
+/*
 var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	route := evt.NewValue().(String).String()
@@ -1143,6 +1151,7 @@ func (l Link) MonitorActivity(b bool) Link {
 	l.Raw.RemoveMutationHandler("ui", "currentroute", l.Raw.Root, linkActivityMonitor)
 	return l
 }
+*/
 
 // Path is a link modifying function that allows to link to a more deeply nested app state,
 // specified by the nested ViewElement and the corresponding name for the view that the latter
