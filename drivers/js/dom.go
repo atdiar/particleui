@@ -1441,6 +1441,21 @@ func (s StyleSheet) InsertRule(selector string, rules string) StyleSheet {
 	return s
 }
 
+func (s StyleSheet) FromRawText(text string) StyleSheet {
+	rules := strings.Split(text, "}")
+	for _, rule := range rules {
+		if rule == "" {
+			continue
+		}
+		rule = strings.TrimSpace(rule)
+		rule = rule + "}"
+		selector := strings.Split(rule, "{")[0]
+		rules := strings.Split(rule, "{")[1]
+		s.InsertRule(selector, rules)
+	}
+	return s
+}
+
 func (s StyleSheet) String() string {
 	var res strings.Builder
 
@@ -1537,6 +1552,9 @@ func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
 }
 
 func (d *Document) NewStyleSheet(id string) StyleSheet {
+	if _, ok := d.StyleSheets[id]; ok {
+		panic("stylesheet with this id (" + id + ") already exists")
+	}
 	o := d.NewObservable(id).AsElement()
 	o.DocType = "text/css"
 	makeStyleSheet(o, id)
@@ -1551,24 +1569,53 @@ func (d *Document) GetStyleSheet(id string) (StyleSheet, bool) {
 	return s, ok
 }
 
+func (d *Document) GetActiveStyleSheets() (ids []string) {
+	ids = make([]string, 0)
+	for id, s := range d.StyleSheets {
+		if s.Active() {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (d *Document) DeleteAllStyleSheets() {
+	for id := range d.StyleSheets {
+		d.DeleteStyleSheet(id)
+	}
+}
+
+// GetCurrentStyleSheet returns the id of the currently active style sheet.
+// If no style sheet is active, it returns an empty string and false.
+func (d *Document) GetCurrentStyleSheet() (string, bool) {
+	ids := d.GetActiveStyleSheets()
+	if len(ids) == 0 {
+		return "", false
+	}
+	return ids[len(ids)-1], true
+}
+
 // SetActiveStyleSheets enables the style sheets with the given ids and disables the others.
 // If a style sheet with a given id does not exist, it is ignored.
 // The order of activation is the order provided in the arguments.
 func (d *Document) SetActiveStyleSheets(ids ...string) *Document {
 	l := ui.NewList()
+	var idlist = make(map[string]struct{})
+	for _, id := range ids {
+		idlist[id] = struct{}{}
+	}
+
 	for _, s := range d.StyleSheets {
-		var idlist = make(map[string]struct{})
-		for _, id := range ids {
-			idlist[id] = struct{}{}
-			l = l.Append(ui.String(id))
-		}
+
 		_, ok := idlist[s.AsElement().ID]
 		if ok {
 			s.Enable()
+			l.Append(ui.String(s.AsElement().ID))
 		} else {
 			s.Disable()
 		}
 	}
+
 	d.Set("internals", "activestylesheets", l.Commit())
 	return d
 }

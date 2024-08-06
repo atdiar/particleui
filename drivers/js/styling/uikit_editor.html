@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UI Kit Editor</title>
+    <style>
+        /* Existing styles remain here */
+
+        /* CSS Reset Rules */
+        .css-reset {
+
+            /* 1. Use a more-intuitive box-sizing model. */
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+            }
+
+            /* 2. Remove default margin */
+            * {
+                margin: 0;
+            }
+
+            /* 3. Add accessible line-height, 4. Improve text rendering */
+            body {
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+            }
+
+            /* 5. Improve media defaults */
+            img,
+            picture,
+            video,
+            canvas,
+            svg {
+                display: block;
+                max-width: 100%;
+            }
+
+            /* 6. Remove built-in form typography styles */
+            input,
+            button,
+            textarea,
+            select {
+                font: inherit;
+            }
+
+            /* 7. Avoid text overflows */
+            p,
+            h1,
+            h2,
+            h3,
+            h4,
+            h5,
+            h6 {
+                overflow-wrap: break-word;
+            }
+
+            /* 8. Create a root stacking context */
+            #root,
+            #__next {
+                isolation: isolate;
+            }
+        }
+    </style>
+    <style>
+        body {
+            font-family: Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-container {
+            display: flex;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        .element-container {
+            flex: 1;
+            padding: 10px;
+        }
+
+        .css-editor {
+            flex: 1;
+            margin-left: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            resize: vertical;
+        }
+
+        .background-editor {
+            margin-top: 20px;
+        }
+
+        #element-selector {
+            margin-bottom: 20px;
+            padding: 5px;
+        }
+
+        #add-element {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        .remove-element {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .pseudo-selector {
+            margin-top: 10px;
+        }
+
+        .css-display-area {
+            position: relative;
+            margin-top: 20px;
+        }
+
+        .css-display-area i {
+            position: absolute;
+            top: -20px;
+            left: 0;
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .css-display {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        .css-display:focus {
+            outline: 2px solid #007bff;
+        }
+
+        .css-textarea {
+            width: 100%;
+            height: 150px;
+            font-family: monospace;
+        }
+
+        .editable-element-container {
+            position: relative;
+            margin-top: 20px;
+        }
+
+        .editable-element-container i {
+            position: absolute;
+            top: -20px;
+            left: 0;
+            font-size: 0.8em;
+            color: #666; /* wtf Claude AI?!!! *dead* */
+        }
+
+        .editable-element {
+            /*
+            border: 1px solid #ddd;
+            padding: 10px;
+            */
+            min-height: 50px;
+        }
+
+        #element-selector option:disabled {
+            color: #999;
+            font-style: italic;
+        }
+        
+    </style>
+</head>
+
+<body>
+    <div id="save-indicator"></div>
+    <h1>UI Kit Editor</h1>
+
+    <div class="global-styles">
+        <h2>Global Styles</h2>
+    
+    <div class="reset-css">
+        <label>
+            <input type="checkbox" id="reset-css-toggle" checked>
+            Reset CSS
+        </label>
+        <details>
+            <summary>View Reset CSS</summary>
+            <pre id="reset-css-display"></pre>
+        </details>
+    </div>
+
+    <div class="generated-global-styles">
+        <h3>Generated Global Styles</h3>
+        <div>
+            <label for="font-family">Font Family:</label>
+            <select id="font-family">
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Verdana, sans-serif">Verdana</option>
+                <option value="'Times New Roman', serif">Times New Roman</option>
+                <option value="'Courier New', monospace">Courier New</option>
+                <option value="Georgia, serif">Georgia</option>
+            </select>
+        </div>
+        <div>
+            <label for="font-size">Font Size:</label>
+            <input type="range" id="font-size" min="12" max="24" value="16">
+            <span id="font-size-value">16px</span>
+        </div>
+        <div>
+            <label for="text-color">Text Color:</label>
+            <input type="color" id="text-color" value="#000000">
+        </div>
+        <div>
+            <label for="line-height">Line Height:</label>
+            <input type="range" id="line-height" min="1" max="2" step="0.1" value="1.5">
+            <span id="line-height-value">1.5</span>
+        </div>
+        <div>
+            <label for="page-padding">Page Padding:</label>
+            <input type="number" id="page-padding" min="0" max="100" value="20">
+            <span>px</span>
+        </div>
+        <div>
+            <label for="page-width">Page Width:</label>
+            <input type="number" id="page-width" min="200" max="2000" value="800">
+            <span>px</span>
+        </div>
+        <div>
+            <label for="color-picker">Background Color:</label>
+            <input type="color" id="color-picker" value="#ffffff">
+        </div>
+        <details>
+            <summary>View Generated CSS</summary>
+            <pre id="generated-css-display"></pre>
+        </details>
+    </div>
+
+    <div class="user-global-css">
+        <h3>User Global CSS</h3>
+        <textarea id="user-global-css" rows="10" cols="50" placeholder="Add your custom global CSS here"></textarea>
+    </div>
+
+        <button id="new-stylesheet" style="background-color: #2f69f0; color: white;">New Stylesheet</button>
+        <!-- Other global style controls remain here -->
+    </div>
+
+    <select id="element-selector">
+        <option value="">Select an element to add</option>
+        <option value="a">a (Anchor)</option>
+        <option value="abbr">abbr (Abbreviation)</option>
+        <option value="address">address</option>
+        <option value="article">article</option>
+        <option value="aside">aside</option>
+        <option value="audio">audio</option>
+        <option value="blockquote">blockquote</option>
+        <option value="button">button</option>
+        <option value="canvas">canvas</option>
+        <option value="caption">caption</option>
+        <option value="cite">cite</option>
+        <option value="code">code</option>
+        <option value="data">data</option>
+        <option value="dd">dd (Description Details)</option>
+        <option value="del">del</option>
+        <option value="details">details</option>
+        <option value="dfn">dfn</option>
+        <option value="dialog">dialog</option>
+        <option value="div">div</option>
+        <option value="dl">dl (Description List)</option>
+        <option value="dt">dt (Description Term)</option>
+        <option value="em">em (Emphasis)</option>
+        <option value="fieldset">fieldset</option>
+        <option value="figcaption">figcaption</option>
+        <option value="figure">figure</option>
+        <option value="footer">footer</option>
+        <option value="form">form</option>
+        <option value="h1">h1</option>
+        <option value="h2">h2</option>
+        <option value="h3">h3</option>
+        <option value="h4">h4</option>
+        <option value="h5">h5</option>
+        <option value="h6">h6</option>
+        <option value="header">header</option>
+        <option value="hr">hr (Horizontal Rule)</option>
+        <option value="i">i (Italic)</option>
+        <option value="img">img (Image)</option>
+        <option value="input">input (Generic)</option>
+        <option value="input[type='text']">input (Text)</option>
+        <option value="input[type='password']">input (Password)</option>
+        <option value="input[type='email']">input (Email)</option>
+        <option value="input[type='number']">input (Number)</option>
+        <option value="input[type='tel']">input (Telephone)</option>
+        <option value="input[type='url']">input (URL)</option>
+        <option value="input[type='search']">input (Search)</option>
+        <option value="input[type='date']">input (Date)</option>
+        <option value="input[type='time']">input (Time)</option>
+        <option value="input[type='datetime-local']">input (Datetime-local)</option>
+        <option value="input[type='month']">input (Month)</option>
+        <option value="input[type='week']">input (Week)</option>
+        <option value="input[type='color']">input (Color)</option>
+        <option value="input[type='file']">input (File)</option>
+        <option value="input[type='range']">input (Range)</option>
+        <option value="input[type='checkbox']">input (Checkbox)</option>
+        <option value="input[type='radio']">input (Radio)</option>
+        <option value="input[type='submit']">input (Submit)</option>
+        <option value="input[type='reset']">input (Reset)</option>
+        <option value="input[type='button']">input (Button)</option>
+        <option value="ins">ins</option>
+        <option value="kbd">kbd</option>
+        <option value="label">label</option>
+        <option value="legend">legend</option>
+        <option value="li">li (List Item)</option>
+        <option value="main">main</option>
+        <option value="mark">mark</option>
+        <option value="meter">meter</option>
+        <option value="nav">nav</option>
+        <option value="ol">ol (Ordered List)</option>
+        <option value="option">option</option>
+        <option value="output">output</option>
+        <option value="p">p (Paragraph)</option>
+        <option value="pre">pre</option>
+        <option value="progress">progress</option>
+        <option value="q">q (Quote)</option>
+        <option value="s">s (Strikethrough)</option>
+        <option value="samp">samp</option>
+        <option value="section">section</option>
+        <option value="select">select</option>
+        <option value="small">small</option>
+        <option value="span">span</option>
+        <option value="strong">strong</option>
+        <option value="sub">sub</option>
+        <option value="summary">summary</option>
+        <option value="sup">sup</option>
+        <option value="table">table</option>
+        <option value="tbody">tbody</option>
+        <option value="td">td (Table Cell)</option>
+        <option value="textarea">textarea</option>
+        <option value="tfoot">tfoot</option>
+        <option value="th">th (Table Header)</option>
+        <option value="thead">thead</option>
+        <option value="time">time</option>
+        <option value="tr">tr (Table Row)</option>
+        <option value="u">u (Underline)</option>
+        <option value="ul">ul (Unordered List)</option>
+        <option value="var">var</option>
+        <option value="video">video</option>
+    </select>
+    <button id="add-element">Add Element</button>
+
+    <div id="elements-container"></div>
+
+    
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            let elementCount = 0;
+            let currentSheetName = sessionStorage.getItem('currentSheetName') || 'Untitled';
+            let hasUnsavedChanges = false;
+
+            // Global style controls
+            const fontFamily = document.getElementById('font-family');
+            const fontSize = document.getElementById('font-size');
+            const fontSizeValue = document.getElementById('font-size-value');
+            const textColor = document.getElementById('text-color');
+            const lineHeight = document.getElementById('line-height');
+            const lineHeightValue = document.getElementById('line-height-value');
+            const pagePadding = document.getElementById('page-padding');
+            const pagePaddingValue = document.getElementById('page-padding-value');
+            const pageWidth = document.getElementById('page-width');
+            const pageWidthValue = document.getElementById('page-width-value');
+            const globalCSS = document.getElementById('user-global-css');
+            const newStylesheetButton = document.getElementById('new-stylesheet');
+            const backgroundColorPicker = document.getElementById('color-picker');
+
+            let BackgroundColor = '#ffffff';
+            let Margin = '0 auto';
+            let TextColor = '#000000';
+            
+            function updateGlobalCSS() {
+                const resetCSSToggle = document.getElementById('reset-css-toggle');
+                const resetCSSDisplay = document.getElementById('reset-css-display');
+                const generatedCSSDisplay = document.getElementById('generated-css-display');
+                const userGlobalCSS = document.getElementById('user-global-css');
+                
+                // Update reset CSS display
+                resetCSSDisplay.textContent = resetCSSToggle.checked ? resetCSS : '';
+
+                // Generate global CSS from controls
+                const generatedCSS = `
+                    body {
+                        font-family: ${fontFamily.value};
+                        font-size: ${fontSize.value}px;
+                        color: ${textColor.value};
+                        line-height: ${lineHeight.value};
+                        padding: ${pagePadding.value}px;
+                        max-width: ${pageWidth.value}px;
+                        margin: ${Margin};
+                        background-color: ${backgroundColorPicker.value};
+                    }
+                `;
+                generatedCSSDisplay.textContent = formatGlobalCSS(generatedCSS);
+
+                // Combine all CSS
+                const combinedCSS = [
+                    resetCSSToggle.checked ? resetCSS : '',
+                    generatedCSS,
+                    userGlobalCSS.value
+                ].filter(Boolean).join('\n\n');
+
+                // Apply combined CSS
+                applyGlobalCSS(combinedCSS);
+                saveCurrentState();
+            }
+
+            function applyGlobalCSS(css) {
+                let styleTag = document.getElementById('global-styles');
+                if (!styleTag) {
+                    styleTag = document.createElement('style');
+                    styleTag.id = 'global-styles';
+                    document.head.appendChild(styleTag);
+                }
+                styleTag.textContent = css;
+                updateBackgroundColorPicker();
+            }
+
+            // Add event listeners to all controls and the user CSS textarea
+            document.querySelectorAll('.global-styles input, .global-styles select')
+                .forEach(el => el.addEventListener('input', updateGlobalCSS));
+
+
+            // Update display values for range inputs
+            ['font-size', 'line-height'].forEach(id => {
+                const input = document.getElementById(id);
+                const display = document.getElementById(`${id}-value`);
+                input.addEventListener('input', () => {
+                    display.textContent = id === 'font-size' ? `${input.value}px` : input.value;
+                });
+            });
+
+
+            // Add UI elements for saving, loading, and downloading stylesheets
+            const uiControls = document.createElement('div');
+            uiControls.innerHTML = `
+                <select id="load-sheet">
+                    <option value="" disabled selected>Load Sheet</option>
+                </select>
+                <button id="save-sheet">Save Sheet</button>
+                <button id="delete-sheet" onclick="handleSheetDeletion()">Delete Sheet</button>
+                <button id="download-sheet">Download Stylesheet</button>
+            `;
+            document.body.insertBefore(uiControls, document.getElementById('element-selector'));
+
+            // Attach event listeners
+            if (backgroundColorPicker) {
+                backgroundColorPicker.addEventListener('input', (e) => {
+                    BackgroundColor = e.target.value;
+                    updateGlobalCSS();
+                    saveCurrentState();
+                });
+            }
+
+            textColor.addEventListener('input', (e) => {
+                TextColor = e.target.value;
+                updateGlobalCSS();
+                saveCurrentState();
+            });
+
+            document.getElementById('reset-css-toggle').addEventListener('change', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+            });
+
+            fontFamily.addEventListener('change', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+            });
+
+            fontSize.addEventListener('input', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+                document.getElementById('font-size-value').textContent = `${document.getElementById('font-size').value}px`;
+            });
+
+            lineHeight.addEventListener('input', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+                document.getElementById('line-height-value').textContent = document.getElementById('line-height').value;
+            });
+
+            pagePadding.addEventListener('input', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+            });
+
+            pageWidth.addEventListener('input', () => {
+                updateGlobalCSS();
+                saveCurrentState();
+            });
+
+
+            if (newStylesheetButton) {
+                newStylesheetButton.addEventListener('click', function () {
+                    // Ask whether to save changes made to ($(sheetName)) before creating a new stylesheet if there are unsaved changes
+                    if (hasUnsavedChanges) {
+                        if (confirm('You have unsaved changes. Would you like to save them before creating a new stylesheet?')) {
+                            saveCurrentState(true);
+                        }
+                    }
+
+                    currentSheetName = 'Untitled';
+                    loadDefaultState(); 
+                    sessionStorage.removeItem("pending_save")
+                    updateLoadSheetDropdown();
+                    updateSaveIndicator();
+                });
+            }
+
+            document.getElementById('add-element').addEventListener('click', () => {
+                const selector = document.getElementById('element-selector');
+                const selectedElement = selector.value;
+                if (selectedElement) {
+                    createEditorContainer(selectedElement);
+                }
+            });
+
+
+            window.addEventListener('beforeunload', (event) => {
+                pending_save = sessionStorage.getItem('pending_save');
+                if (hasUnsavedChanges) {
+                    event.preventDefault();
+                    event.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+                } else { 
+                    sessionStorage.removeItem('pending_save'); // Clear the pending save flag
+                }
+            });
+
+            function updateSaveIndicator() {
+                const indicator = document.getElementById('save-indicator');
+                // if pending_save is not in sessionstorage, then there is nothing saved and nothing to save 
+                // so the indicator shouldn't be visible
+                // if there is pending_save in sessionstorage, then there are saved or unsaved changes depending on
+                // the value that has been stored.
+
+                const pendingSave = sessionStorage.getItem('pending_save');
+                if (!pendingSave) {
+                    indicator.style.display = 'none';
+                    return;
+                }
+
+                indicator.style.display = 'block';
+
+
+                if (hasUnsavedChanges) {
+                    indicator.textContent = 'Unsaved';
+                    indicator.style.color = 'red';
+                } else {
+                    indicator.textContent = 'Saved';
+                    indicator.style.color = 'green';
+                }
+            }
+
+            const resetCSS = `/* CSS Reset */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+* {
+    margin: 0;
+}
+body {
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+img, picture, video, canvas, svg {
+    display: block;
+    max-width: 100%;
+}
+input, button, textarea, select {
+    font: inherit;
+}
+p, h1, h2, h3, h4, h5, h6 {
+    overflow-wrap: break-word;
+}
+#root, #__next {
+    isolation: isolate;
+}
+
+`;
+
+            
+
+
+            function getStylesheetList() {
+                const list = localStorage.getItem('stylesheet_list');
+                return list ? JSON.parse(list) : [];
+            }
+
+            function addStylesheetToList(sheetName) {
+                const list = JSON.parse(localStorage.getItem('stylesheet_list') || '[]');
+                if (!list.includes(sheetName)) {
+                    list.push(sheetName);
+                    localStorage.setItem('stylesheet_list', JSON.stringify(list));
+                }
+                updateLoadSheetDropdown();
+            }
+
+            function removeStylesheetFromList(sheetName) {
+                const list = getStylesheetList();
+                const index = list.indexOf(sheetName);
+                if (index > -1) {
+                    list.splice(index, 1);
+                    localStorage.setItem('stylesheet_list', JSON.stringify(list));
+                }
+                updateLoadSheetDropdown();
+            }
+
+            function saveCurrentState(persist = false) {
+                currentSheetName = currentSheetName;
+                const elementsContainer = document.getElementById('elements-container');
+                let date = new Date().toLocaleString();
+                
+                // Create a map of element IDs
+                const elementIds = {};
+                if (elementsContainer) {
+                    elementsContainer.querySelectorAll('.editor-container').forEach((container, index) => {
+                        const editableElement = container.querySelector('.editable-element');
+                        if (editableElement && editableElement.id) {
+                            elementIds[`element-${index}`] = editableElement.id;
+                        }
+                    });
+                }
+
+                const state = {
+                    title: `${currentSheetName}`,
+                    elements: elementsContainer ? elementsContainer.innerHTML : '',
+                    resetCSSEnabled: document.getElementById('reset-css-toggle').checked,
+                    fontFamily: fontFamily.value,
+                    fontSize: fontSize.value,
+                    textColor: textColor.value,
+                    lineHeight: lineHeight.value,
+                    pagePadding: pagePadding.value,
+                    pageWidth: pageWidth.value,
+                    backgroundColor: BackgroundColor,
+                    userGlobalCSS: document.getElementById('user-global-css').value,
+                    currentSheetName: currentSheetName,
+                    lastModified: date,
+                    elementIds: elementIds 
+                };
+
+                // Update session storage
+                sessionStorage.setItem(currentSheetName, JSON.stringify(state));
+
+                document.title = state.title;
+
+                if (persist && currentSheetName !== 'Untitled') {
+                    localStorage.setItem(currentSheetName, JSON.stringify(state));
+                    sessionStorage.setItem('pending_save', false);
+                    hasUnsavedChanges = false;
+                } else {
+                    hasUnsavedChanges = true;
+                    let pndchg = sessionStorage.getItem('pending_save');
+                    if (pndchg) {
+                        sessionStorage.setItem('pending_save', true);
+                    }
+                }
+
+                updateSaveIndicator();
+                updateLoadSheetDropdown();
+            }
+            
+            // Function to load a state
+            function loadState(sheetname) {
+                let state;
+                // Try to load from sessionStorage first (for temporary states/save points)
+                let stateJSON = sessionStorage.getItem(sheetname);
+
+                // If not found in sessionStorage, try localStorage (for saved stylesheets)
+                if (!stateJSON) {
+                    if (sheetname === 'Untitled') {
+                        loadDefaultState();
+                        return true;
+                    }
+                    stateJSON = localStorage.getItem(sheetname);
+                }
+
+                if (stateJSON) {
+                    try {
+                        state = JSON.parse(stateJSON);
+                    } catch (e) {
+                        console.error('Error parsing state JSON:', e);
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+
+                const elementsContainer = document.getElementById('elements-container');
+
+                if (elementsContainer && state.elements) {
+                    elementsContainer.innerHTML = state.elements;
+                    
+                    // Restore saved IDs
+                    if (state.elementIds) {
+                        Object.entries(state.elementIds).forEach(([index, oldId]) => {
+                            const newId = `${sheetname}-element-${index}`;
+                            const container = elementsContainer.querySelector(`[id="${oldId}"]`).closest('.editor-container');
+                            if (container) {
+                                const editableElement = container.querySelector('.editable-element');
+                                if (editableElement) {
+                                    editableElement.id = newId;
+                                    
+                                    // Update related element IDs and data attributes
+                                    container.querySelectorAll(`[id^="${oldId}"], [data-for-element="${oldId}"]`).forEach(el => {
+                                        if (el.id) el.id = el.id.replace(oldId, newId);
+                                        if (el.dataset.forElement) el.dataset.forElement = newId;
+                                    });
+                                    
+                                    // Update the style tag
+                                    const styleTag = document.querySelector(`style[data-for="${oldId}"]`);
+                                    if (styleTag) {
+                                        styleTag.setAttribute('data-for', newId);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    rebuildElements(elementsContainer);
+                }
+
+                TextColor = state.textColor || '#000000';
+                textColor.value = TextColor
+
+                BackgroundColor= state.backgroundColor;
+                backgroundColorPicker.value = state.backgroundColor;
+
+                // Restore global CSS settings
+                document.getElementById('reset-css-toggle').checked = state.resetCSSEnabled;
+                fontFamily.value = state.fontFamily;
+                fontSize.value = state.fontSize;
+                lineHeight.value = state.lineHeight;
+                pagePadding.value = state.pagePadding;
+                pageWidth.value = state.pageWidth;
+                document.getElementById('user-global-css').value = state.userGlobalCSS;
+
+                document.title = state.title || "Untitled";
+                currentSheetName = state.currentSheetName || sheetname;
+                sessionStorage.setItem('currentSheetName', currentSheetName);
+
+                updateGlobalCSS();
+                reattachEventListeners();
+                hasUnsavedChanges = false;
+                sessionStorage.removeItem('pending_save');
+                updateSaveIndicator();
+                updateLoadSheetDropdown();
+                return true;
+            }
+            
+            function rebuildElements(elementsContainer) {
+                elementsContainer.querySelectorAll('.editor-container').forEach((container) => {
+                    const editableElement = container.querySelector('.editable-element');
+                    if (editableElement) {
+                        applyCSS(editableElement.id);
+                    }
+                });
+                reattachEventListeners();
+            }
+            
+            // function to delete current session state
+            // it basically get the name of the currentstylesheet from sessionstorage
+            // and then delete the item stored at this key
+            function deleteCurrentState() {
+                const sheetName = sessionStorage.getItem('currentSheetName');
+                if (sheetName) {
+                    sessionStorage.removeItem(sheetName);
+                }
+                // delete unsaved changes from buffer
+                sessionStorage.removeItem('pending_save');
+            }
+
+            function loadDefaultState() {
+                const elementsContainer = document.getElementById('elements-container');
+                if (elementsContainer) {
+                    elementsContainer.innerHTML = '';
+                }
+
+                // Set default values for global CSS controls
+                BackgroundColor = '#ffffff';
+                backgroundColorPicker.value = '#ffffff';  
+
+                TextColor = '#000000';
+                textColor.value = '#000000';
+                
+                document.getElementById('reset-css-toggle').checked = true;
+                fontFamily.value = 'Arial, sans-serif';
+                fontSize.value = '16';
+                lineHeight.value = '1.5';
+                pagePadding.value = '20';
+                pageWidth.value = '800';
+                document.getElementById('user-global-css').value = '';
+                
+
+                ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'a', 'button', 'form', 'blockquote', 'code', 'pre'].forEach(element => createEditorContainer(element));
+
+                updateGlobalCSS();
+                deleteCurrentState();
+                updateSaveIndicator();
+                sessionStorage.setItem('currentSheetName', currentSheetName);
+                hasUnsavedChanges = false;
+                updateLoadSheetDropdown();
+            }
+
+            function updateElementIds() {
+                const elementsContainer = document.getElementById('elements-container');
+                elementsContainer.querySelectorAll('.editor-container').forEach((container, index) => {
+                    const editableElement = container.querySelector('.editable-element');
+                    if (editableElement) {
+                        const oldId = editableElement.id;
+                        const newId = `${currentSheetName}-element-${index}`;
+                        editableElement.id = newId;
+                        
+                        // Update related element IDs and data attributes
+                        container.querySelectorAll(`[id^="${oldId}"], [data-for-element="${oldId}"]`).forEach(el => {
+                            if (el.id) el.id = el.id.replace(oldId, newId);
+                            if (el.dataset.forElement) el.dataset.forElement = newId;
+                        });
+                        
+                        // Update the style tag
+                        const styleTag = document.querySelector(`style[data-for="${oldId}"]`);
+                        if (styleTag) {
+                            styleTag.setAttribute('data-for', newId);
+                        }
+                    }
+                });
+            }
+
+            // Function to reattach event listeners after loading state
+            function reattachEventListeners() {
+                document.querySelectorAll('.editor-container').forEach((editorContainer) => {
+                    const editableElementContainer = editorContainer.querySelector('.editable-element-container');
+                    const editableElement = editableElementContainer.querySelector('.editable-element');
+                    const htmlEditor = editorContainer.querySelector('.html-editor');                
+                    const cssDisplay = editorContainer.querySelector('.css-display');
+                    const cssTextareas = editorContainer.querySelectorAll('.css-textarea');
+                    const pseudoSelector = editorContainer.querySelector('.pseudo-selector-select');
+                
+
+                function toggleCSSEdit() {
+
+                    const currentTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${pseudoSelector.value}"]`);
+                    if (cssDisplay.style.display !== 'none') {
+                        cssDisplay.style.display = 'none';
+                        currentTextarea.style.display = 'block';
+                        // currentTextarea.focus();
+                    } else {
+                        cssDisplay.style.display = 'block';
+                        currentTextarea.style.display = 'none';
+                        updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                    }
+                }
+
+                cssDisplay.addEventListener('dblclick', toggleCSSEdit);
+                cssDisplay.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        toggleCSSEdit();
+                    }
+                });
+
+                cssTextareas.forEach(textarea => {
+                    textarea.addEventListener('blur', () => {
+                        textarea.value = formatCSSProperties(textarea.value);
+                        toggleCSSEdit();
+                        applyCSS(editorContainer.id);
+                    });
+                    textarea.addEventListener('input', () => {
+                        updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                    });
+
+                    textarea.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape') {
+                            this.blur();
+                        }  else if (e.key === 'Tab') {
+                            e.preventDefault(); // Prevent default tab behavior
+
+                            const start = this.selectionStart;
+                            const end = this.selectionEnd;
+                            const value = this.value;
+
+                            if (start === end) {
+                                // No selection, just insert tab
+                                if (!e.shiftKey) {
+                                    // Insert tab
+                                    this.value = value.substring(0, start) + "\t" + value.substring(end);
+                                    this.selectionStart = this.selectionEnd = start + 1;
+                                } else if (start > 0) {
+                                    // Remove tab (if exists) at the start of the line
+                                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                                    if (value[lineStart] === '\t') {
+                                        this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                                        this.selectionStart = this.selectionEnd = start - 1;
+                                    }
+                                }
+                            } else {
+                                // Text is selected, indent or unindent block
+                                const lines = value.substring(start, end).split('\n');
+                                const indentedLines = lines.map(line => 
+                                    !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                                );
+                                const replacement = indentedLines.join('\n');
+                                this.value = value.substring(0, start) + replacement + value.substring(end);
+                                this.selectionStart = start;
+                                this.selectionEnd = start + replacement.length;
+                            }
+                        }
+                    });
+                });
+
+                pseudoSelector.addEventListener('change', () => {
+                    // toggleCSSEdit();
+                    applyCSS(editorContainer.id);
+                });
+
+
+                editableElement.addEventListener('dblclick', function () {
+                    htmlEditor.value = this.innerHTML;
+                    this.style.display = 'none';
+                    htmlEditor.style.display = 'block';
+                    htmlEditor.focus();
+                });
+
+                htmlEditor.addEventListener('blur', function () {
+                    const originalContent = editableElement.innerHTML;
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(this.value, 'text/html');
+                        if (doc.body.firstChild) {
+                            editableElement.innerHTML = this.value;
+                        } else {
+                            throw new Error('Invalid HTML');
+                        }
+                    } catch (e) {
+                        console.error('Invalid HTML:', e);
+                        editableElement.innerHTML = editableElement.getAttribute('data-original-html');
+                    }
+
+                    this.style.display = 'none';
+                    editableElement.style.display = 'block';
+
+                    // Only save if the content has changed
+                    if (originalContent !== editableElement.innerHTML) {
+                        const elementName = editorContainer.querySelector('h2').textContent;
+                        saveCurrentState();
+                    }
+
+                    //applyCSS(id);
+                });
+
+                htmlEditor.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') {
+                        this.blur();
+                    } else if (e.key === 'Tab') {
+                        e.preventDefault(); // Prevent default tab behavior
+
+                        const start = this.selectionStart;
+                        const end = this.selectionEnd;
+                        const value = this.value;
+
+                        if (start === end) {
+                            // No selection, just insert tab
+                            if (!e.shiftKey) {
+                                // Insert tab
+                                this.value = value.substring(0, start) + "\t" + value.substring(end);
+                                this.selectionStart = this.selectionEnd = start + 1;
+                            } else if (start > 0) {
+                                // Remove tab (if exists) at the start of the line
+                                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                                if (value[lineStart] === '\t') {
+                                    this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                                    this.selectionStart = this.selectionEnd = start - 1;
+                                }
+                            }
+                        } else {
+                            // Text is selected, indent or unindent block
+                            const lines = value.substring(start, end).split('\n');
+                            const indentedLines = lines.map(line => 
+                                !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                            );
+                            const replacement = indentedLines.join('\n');
+                            this.value = value.substring(0, start) + replacement + value.substring(end);
+                            this.selectionStart = start;
+                            this.selectionEnd = start + replacement.length;
+                        }
+                    }
+                });
+
+                editorContainer.querySelector('.remove-element').addEventListener('click', () => {
+                    editorContainer.remove();
+                    clearElementStyles(id);
+                    updateElementIds();
+                    saveCurrentState();
+                    updateElementSelector();
+                });
+
+                    applyCSS(id);
+                });
+            }
+
+            // Function to create stylesheet
+            function createStylesheet() {
+                let stylesheet = '';
+
+                // Add Reset CSS if enabled
+                const resetCSSToggle = document.getElementById('reset-css-toggle');
+                if (resetCSSToggle && resetCSSToggle.checked) {
+                    stylesheet += resetCSS + '\n\n';
+                }
+
+                // Add generated global styles
+                stylesheet += `body {
+                    font-family: ${fontFamily.value};
+                    font-size: ${fontSize.value}px;
+                    color: ${textColor.value};
+                    line-height: ${lineHeight.value};
+                    padding: ${pagePadding.value}px;
+                    max-width: ${pageWidth.value}px;
+                    margin: ${Margin};
+                    background-color: ${BackgroundColor};
+                }\n\n`;
+
+                // Add user-defined global CSS
+                const userGlobalCSS = document.getElementById('user-global-css');
+                if (userGlobalCSS && userGlobalCSS.value.trim()) {
+                    stylesheet += userGlobalCSS.value + '\n\n';
+                }
+
+                // Add styles for each editor container
+                // Add styles for each editor container
+                document.querySelectorAll('.editor-container').forEach((editorContainer) => {
+                    const styleTag = document.querySelector(`style[data-for="${editorContainer.id}"]`);
+                    if (styleTag) {
+                        stylesheet += styleTag.textContent + '\n\n';
+                    }
+                });
+
+                return formatGlobalCSS(stylesheet);
+            }
+
+
+            function deleteStylesheet(sheetName) {
+                if (confirm(`Are you sure you want to delete the stylesheet "${sheetName}"? This action cannot be undone.`)) {
+                    localStorage.removeItem(sheetName);
+                    removeStylesheetFromList(sheetName);
+                    updateLoadSheetDropdown();
+                }
+            }
+
+
+            // Populate the load sheet dropdown
+            function updateLoadSheetDropdown() {
+                const loadSheet = document.getElementById('load-sheet');
+                if (!loadSheet) {
+                    console.error("Load sheet dropdown not found");
+                    return;
+                }
+
+                // Clear existing options
+                loadSheet.innerHTML = '<option value="" disabled selected>Load Sheet</option>';
+
+                // deactivate that option value
+
+
+                // Get all saved stylesheets from localStorage
+                const stylesheetList = getStylesheetList();
+
+                stylesheetList.forEach(sheetName => {
+                    const option = document.createElement('option');
+                    option.value = sheetName;
+                    option.textContent = sheetName;
+                    if (sheetName === currentSheetName) {
+                        option.selected = true;
+                    }
+                    loadSheet.appendChild(option);
+                });
+
+                // Update delete button state
+                updateDeleteButtonState();
+            }
+
+            function updateDeleteButtonState() {
+                const deleteButton = document.getElementById('delete-sheet');
+                const loadSheet = document.getElementById('load-sheet');
+                
+                if (deleteButton && loadSheet) {
+                    const selectedSheetName = loadSheet.value;
+                    deleteButton.disabled = !selectedSheetName || selectedSheetName === currentSheetName;
+                }
+            }
+
+            function handleSheetDeletion() {
+                const loadSheet = document.getElementById('load-sheet');
+                const selectedSheetName = loadSheet.value;
+                
+                if (selectedSheetName && selectedSheetName !== currentSheetName) {
+                    if (confirm(`Are you sure you want to delete the sheet "${selectedSheetName}"?`)) {
+                        deleteStylesheet(selectedSheetName);
+                        updateLoadSheetDropdown();
+                    }
+                }
+            }
+
+            // Event listeners for new UI controls
+            document.getElementById('save-sheet').addEventListener('click', () => {
+                let sheetname = currentSheetName;
+                // prompt for non empty string sheet name
+                if (sheetname === 'Untitled') {
+                    sheetname = prompt('Enter a name for the stylesheet');
+                    if (sheetname === null) {
+                        return;
+                    }
+                    while (sheetname === 'Untitled') {
+                        sheetname = prompt('Please enter a non-empty name for the stylesheet');
+                        if (sheetname === null) {
+                            return;
+                        }
+                    }
+                }
+                currentSheetName = sheetname;
+                addStylesheetToList(currentSheetName);
+                saveCurrentState(true);  // Pass true to indicate an explicitly persisted save
+                updateLoadSheetDropdown();
+                updateSaveIndicator();  // Update the save indicatorTODO review necessity for these calls
+            });
+
+            document.getElementById('load-sheet').addEventListener('change', (e) => {
+                const selectedSheetName = e.target.value;
+                
+                currentSheetName = selectedSheetName;
+                if (selectedSheetName) {
+                    loaded = loadState(selectedSheetName);
+                    if (!loaded){
+                        document.body.innerHTML = 'SYSERR: failure loading stylesheet ${selectedSheetName}';
+                        document.title = 'SYSERR';
+                        return; 
+                    }
+                    document.title = selectedSheetName;
+                    
+                }
+                updateLoadSheetDropdown();
+                updateDeleteButtonState();
+            });
+
+            document.getElementById('download-sheet').addEventListener('click', () => {
+                const stylesheet = createStylesheet();
+                const currentDate = new Date().toLocaleString();
+                const htmlContent = `
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>${currentSheetName} - CSS Stylesheet</title>
+                        <style>
+                            body {
+                                font-family: Arial, sans-serif;
+                                line-height: 1.6;
+                                padding: 20px;
+                                max-width: 800px;
+                                margin: 0 auto;
+                            }
+                            h1 {
+                                border-bottom: 1px solid #ccc;
+                                padding-bottom: 10px;
+                            }
+                            pre {
+                                background-color: #f4f4f4;
+                                border: 1px solid #ddd;
+                                border-radius: 4px;
+                                padding: 15px;
+                                white-space: pre-wrap;
+                                word-wrap: break-word;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>${currentSheetName} - CSS Stylesheet</h1>
+                        <p>Generated on: ${currentDate}</p>
+                        <pre>${stylesheet}</pre>
+                    </body>
+                    </html>
+                `;
+                const blob = new Blob([htmlContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                
+                window.open(url, '_blank');
+
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 100);
+            });
+
+
+            function createEditorContainer(elementType) {
+                const elementsContainer = document.getElementById('elements-container');
+                const index = elementsContainer.children.length;
+                const id = `${currentSheetName}-element-${index}`;
+                const editorContainer = document.createElement('div');
+                editorContainer.className = 'editor-container';
+                editorContainer.id = id;                
+
+                let elementName;
+                switch (elementType) {
+                    case 'a': elementName = 'Anchor'; break;
+                    case 'blockquote': elementName = 'Block Quote'; break;
+                    case 'button': elementName = 'Button'; break;
+                    case 'code': elementName = 'Code'; break;
+                    case 'div': elementName = 'Division'; break;
+                    case 'form': elementName = 'Form'; break;
+                    case 'h1': elementName = 'Heading 1'; break;
+                    case 'h2': elementName = 'Heading 2'; break;
+                    case 'h3': elementName = 'Heading 3'; break;
+                    case 'h4': elementName = 'Heading 4'; break;
+                    case 'h5': elementName = 'Heading 5'; break;
+                    case 'h6': elementName = 'Heading 6'; break;
+                    case 'img': elementName = 'Image'; break;
+                    case 'ol': elementName = 'Ordered List'; break;
+                    case 'p': elementName = 'Paragraph'; break;
+                    case 'pre': elementName = 'Preformatted Text'; break;
+                    case 'table': elementName = 'Table'; break;
+                    case 'ul': elementName = 'Unordered List'; break;
+                    default: elementName = elementType.charAt(0).toUpperCase() + elementType.slice(1);
+                }
+
+                let elementHtml;
+                if (elementType === 'form') {
+                    elementHtml = `
+                        <form id="${id}">
+                            <div>
+                                <label for="${id}-text">Text Input:</label>
+                                <input type="text" id="${id}-text" name="text" placeholder="Enter text">
+                            </div>
+                            <div>
+                                <label for="${id}-password">Password:</label>
+                                <input type="password" id="${id}-password" name="password" placeholder="Enter password">
+                            </div>
+                            <div>
+                                <label for="${id}-email">Email:</label>
+                                <input type="email" id="${id}-email" name="email" placeholder="Enter email">
+                            </div>
+                            <div>
+                                <label for="${id}-number">Number:</label>
+                                <input type="number" id="${id}-number" name="number" placeholder="Enter number">
+                            </div>
+                            <div>
+                                <label for="${id}-date">Date:</label>
+                                <input type="date" id="${id}-date" name="date">
+                            </div>
+                            <div>
+                                <label for="${id}-checkbox">Checkbox:</label>
+                                <input type="checkbox" id="${id}-checkbox" name="checkbox">
+                            </div>
+                            <div>
+                                <label>Radio Buttons:</label>
+                                <input type="radio" id="${id}-radio1" name="radio" value="1">
+                                <label for="${id}-radio1">Option 1</label>
+                                <input type="radio" id="${id}-radio2" name="radio" value="2">
+                                <label for="${id}-radio2">Option 2</label>
+                            </div>
+                            <div>
+                                <label for="${id}-select">Select:</label>
+                                <select id="${id}-select" name="select">
+                                    <option value="">Choose an option</option>
+                                    <option value="1">Option 1</option>
+                                    <option value="2">Option 2</option>
+                                    <option value="3">Option 3</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="${id}-textarea">Textarea:</label>
+                                <textarea id="${id}-textarea" name="textarea" placeholder="Enter long text"></textarea>
+                            </div>
+                            <div>
+                                <input type="submit" value="Submit">
+                                <input type="reset" value="Reset">
+                            </div>
+                        </form>
+                    `;
+                } else if (elementType === 'a') {
+                    elementHtml = `<a href="https://zui.dev" id="${id}" onclick="event.preventDefault();">Link to zui.dev</a>`;
+                } else if (elementType.startsWith('input[type=')) {
+                    const inputType = elementType.match(/'([^']+)'/)[1];
+                    elementHtml = `<input type="${inputType}" id="${id}" placeholder="Sample ${inputType} input">`;
+                } else if (elementType === 'ul' || elementType === 'ol') {
+                    elementHtml = `<${elementType} id="${id}"><li>Item 1</li><li>Item 2</li><li>Item 3</li></${elementType}>`;
+                } else if (elementType === 'select') {
+                    elementHtml = `<select id="${id}"><option>Option 1</option><option>Option 2</option><option>Option 3</option></select>`;
+                } else if (elementType === 'img') {
+                    elementHtml = `<img id="${id}" src="https://via.placeholder.com/150" alt="Sample image">`;
+                } else if (elementType === 'table') {
+                    elementHtml = `
+                        <table id="${id}">
+                            <tr><th>Header 1</th><th>Header 2</th></tr>
+                            <tr><td>Row 1, Cell 1</td><td>Row 1, Cell 2</td></tr>
+                            <tr><td>Row 2, Cell 1</td><td>Row 2, Cell 2</td></tr>
+                        </table>
+                    `;
+                } else if (elementType === 'blockquote') {
+                    elementHtml = `<blockquote id="${id}">This is a blockquote. It is often used for quotations.</blockquote>`;
+                } else if (elementType === 'code') {
+                    elementHtml = `<code id="${id}">console.log("This is a code sample");</code>`;
+                } else if (elementType === 'pre') {
+                    elementHtml = `
+<pre id="${id}"><code>
+function example() {
+    console.log("This is a preformatted code block");
+}
+</code></pre>`;
+                } else if (elementType === 'body') {
+                    elementHtml = `<div id="${id}" data-element-type="body">Body styles will be applied to the page body</div>`;
+                } else {
+                    elementHtml = `<${elementType} id="${id}">Sample ${elementType}</${elementType}>`;
+                }
+                
+
+                editorContainer.innerHTML = `
+    <div class="element-container">
+        <h2>${elementName}</h2>
+        <div class="editable-element-container">
+            <i>Double-click to edit</i>
+            <div class="editable-element">${elementHtml}</div>
+        </div>
+        <textarea class="html-editor" style="display: none; width: 100%; height: 150px;"></textarea>
+        <button class="remove-element">Remove Element</button>
+    </div>`;
+
+    const cssEditorHtml = `
+    <div class="css-editor">
+        <div class="pseudo-selector">
+            <label>Pseudo-selector:</label>
+            <select class="pseudo-selector-select">
+                <option value="">None</option>
+                <option value=":hover">:hover</option>
+                <option value=":active">:active</option>
+                <option value=":focus">:focus</option>
+                <option value=":visited">:visited</option>
+                <option value=":first-child">:first-child</option>
+                <option value=":last-child">:last-child</option>
+                <option value=":nth-child(odd)">:nth-child(odd)</option>
+                <option value=":nth-child(even)">:nth-child(even)</option>
+            </select>
+        </div>
+        <div class="css-display-area">
+            <i>Double-click to edit</i>
+            <pre class="css-display" tabindex="0"></pre>
+        </div>
+        <div class="css-textareas">
+            <textarea class="css-textarea" data-pseudo="" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":hover" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":active" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":focus" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":visited" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":first-child" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":last-child" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":nth-child(odd)" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo=":nth-child(even)" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+        </div>
+    </div>`;
+
+                editorContainer.innerHTML += cssEditorHtml;
+
+                const editableElementContainer = editorContainer.querySelector('.editable-element-container');
+                const editableElement = editableElementContainer.querySelector('.editable-element');
+                const htmlEditor = editorContainer.querySelector('.html-editor');
+                const cssDisplay = editorContainer.querySelector('.css-display');
+                const cssTextareas = editorContainer.querySelectorAll('.css-textarea');
+                const pseudoSelector = editorContainer.querySelector('.pseudo-selector-select');
+                
+
+                function toggleCSSEdit() {
+                    const currentTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${pseudoSelector.value}"]`);
+                    if (cssDisplay.style.display !== 'none') {
+                        cssDisplay.style.display = 'none';
+                        currentTextarea.style.display = 'block';
+                        currentTextarea.focus();
+                    } else {
+                        cssDisplay.style.display = 'block';
+                        currentTextarea.style.display = 'none';
+                        updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                    }
+                }
+
+                cssDisplay.addEventListener('dblclick', toggleCSSEdit);
+                cssDisplay.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        toggleCSSEdit();
+                    }
+                });
+
+                cssTextareas.forEach(textarea => {
+                    textarea.addEventListener('blur', () => {
+                        textarea.value = formatCSSProperties(textarea.value);
+                        toggleCSSEdit();
+                        applyCSS(editorContainer.id);
+                    });
+                    textarea.addEventListener('input', () => {
+                        updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                    });
+
+                    textarea.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape') {
+                            this.blur();
+                        }  else if (e.key === 'Tab') {
+                            e.preventDefault(); // Prevent default tab behavior
+
+                            const start = this.selectionStart;
+                            const end = this.selectionEnd;
+                            const value = this.value;
+
+                            if (start === end) {
+                                // No selection, just insert tab
+                                if (!e.shiftKey) {
+                                    // Insert tab
+                                    this.value = value.substring(0, start) + "\t" + value.substring(end);
+                                    this.selectionStart = this.selectionEnd = start + 1;
+                                } else if (start > 0) {
+                                    // Remove tab (if exists) at the start of the line
+                                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                                    if (value[lineStart] === '\t') {
+                                        this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                                        this.selectionStart = this.selectionEnd = start - 1;
+                                    }
+                                }
+                            } else {
+                                // Text is selected, indent or unindent block
+                                const lines = value.substring(start, end).split('\n');
+                                const indentedLines = lines.map(line => 
+                                    !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                                );
+                                const replacement = indentedLines.join('\n');
+                                this.value = value.substring(0, start) + replacement + value.substring(end);
+                                this.selectionStart = start;
+                                this.selectionEnd = start + replacement.length;
+                            }
+                        }               
+                    });
+                });
+
+                pseudoSelector.addEventListener('change', () => {
+                    toggleCSSEdit();
+                    applyCSS(editorContainer.id);
+                });
+
+
+                editableElement.addEventListener('dblclick', function () {
+                    htmlEditor.value = this.innerHTML;
+                    this.style.display = 'none';
+                    htmlEditor.style.display = 'block';
+                    htmlEditor.focus();
+                });
+
+                htmlEditor.addEventListener('blur', function () {
+                    const originalContent = editableElement.innerHTML;
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(this.value, 'text/html');
+                        if (doc.body.firstChild) {
+                            editableElement.innerHTML = this.value;
+                        } else {
+                            throw new Error('Invalid HTML');
+                        }
+                    } catch (e) {
+                        console.error('Invalid HTML:', e);
+                        editableElement.innerHTML = editableElement.getAttribute('data-original-html');
+                    }
+
+                    this.style.display = 'none';
+                    editableElement.style.display = 'block';
+
+                    // Only save if the content has changed
+                    if (originalContent !== editableElement.innerHTML) {
+                        const elementName = editorContainer.querySelector('h2').textContent;
+                        saveCurrentState();
+                    }
+                });
+
+                htmlEditor.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') {
+                        this.blur();
+                    } else if (e.key === 'Tab') {
+                        e.preventDefault(); // Prevent default tab behavior
+
+                        const start = this.selectionStart;
+                        const end = this.selectionEnd;
+                        const value = this.value;
+
+                        if (start === end) {
+                            // No selection, just insert tab
+                            if (!e.shiftKey) {
+                                // Insert tab
+                                this.value = value.substring(0, start) + "\t" + value.substring(end);
+                                this.selectionStart = this.selectionEnd = start + 1;
+                            } else if (start > 0) {
+                                // Remove tab (if exists) at the start of the line
+                                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                                if (value[lineStart] === '\t') {
+                                    this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                                    this.selectionStart = this.selectionEnd = start - 1;
+                                }
+                            }
+                        } else {
+                            // Text is selected, indent or unindent block
+                            const lines = value.substring(start, end).split('\n');
+                            const indentedLines = lines.map(line => 
+                                !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                            );
+                            const replacement = indentedLines.join('\n');
+                            this.value = value.substring(0, start) + replacement + value.substring(end);
+                            this.selectionStart = start;
+                            this.selectionEnd = start + replacement.length;
+                        }
+                    }
+                });
+
+                editorContainer.querySelector('.remove-element').addEventListener('click', () => {
+                    editorContainer.remove();
+                    clearElementStyles(id);
+                    updateElementIds();
+                    saveCurrentState();
+                    updateElementSelector();
+                });
+
+                elementsContainer.appendChild(editorContainer);
+
+                updateCSSDisplay(editorContainer, elementType, '');
+                applyCSS(id);
+
+                saveCurrentState();
+                updateElementSelector(); // Add this line
+            }
+
+            function updateElementSelector() {
+                const elementSelector = document.getElementById('element-selector');
+                const addedElements = new Set(Array.from(document.querySelectorAll('.editor-container')).map(container => 
+                    container.querySelector('.editable-element').children[0].tagName.toLowerCase()
+                ));
+
+                Array.from(elementSelector.options).forEach(option => {
+                    const elementType = option.value.split('[')[0]; // Handle cases like 'input[type='text']'
+                    if (addedElements.has(elementType)) {
+                        option.disabled = true;
+                    } else {
+                        option.disabled = false;
+                    }
+                });
+            }
+
+            document.getElementById('add-element').addEventListener('click', () => {
+                const selector = document.getElementById('element-selector');
+                const selectedElement = selector.value;
+                if (selectedElement && !selector.options[selector.selectedIndex].disabled) {
+                    createEditorContainer(selectedElement);
+                    selector.value = ''; // Reset selection after adding
+                } else if (selector.options[selector.selectedIndex].disabled) {
+                    alert('This element has already been added.');
+                }
+            });
+
+            function clearElementStyles(elementId) {
+                const styleTag = document.querySelector(`style[data-for="${elementId}"]`);
+                if (styleTag) {
+                    styleTag.remove();
+                }
+            }
+
+            function cssTextToObject(cssText) {
+                const obj = {};
+                const pairs = cssText.split(';');
+                for (let i = 0; i < pairs.length; i++) {
+                    const pair = pairs[i].split(':');
+                    const property = pair[0].trim();
+                    const value = pair[1] ? pair[1].trim() : '';
+                    if (property && value) {
+                        obj[property] = value;
+                    }
+                }
+                return obj;
+            }
+
+            function objectToCSSText(obj) {
+                return Object.entries(obj).map(([prop, value]) => `${prop}: ${value};`).join(' ');
+            }
+
+            function formatCSSProperties(css) {
+                return css.split(';')
+                    .map(prop => prop.trim())
+                    .filter(prop => prop)
+                    .map(prop => '  ' + prop + ';')
+                    .join('\n');
+            }
+
+
+            function applyCSS(containerId) {
+                const editorContainer = document.getElementById(containerId);
+                if (!editorContainer) {
+                    throw new Error(`Editor container with id ${containerId} not found.`);
+                }
+
+                const editableElement = editorContainer.querySelector('.editable-element');
+                const cssEditor = editorContainer.querySelector('.css-editor');
+                const cssTextareas = cssEditor.querySelectorAll('.css-textarea');
+                const pseudoSelector = cssEditor.querySelector('.pseudo-selector-select');
+
+                if (!editableElement || !cssEditor || cssTextareas.length === 0 || !pseudoSelector) {
+                    throw new Error(`Required elements not found in container ${containerId}`);
+                }
+
+                const tagName = editableElement.children[0].tagName.toLowerCase();
+                let cssContent = '';
+
+                cssTextareas.forEach(textarea => {
+                    const pseudo = textarea.dataset.pseudo;
+                    const css = textarea.value.trim();
+                    if (css) {
+                        cssContent += `${tagName}${pseudo} {\n${css}\n}\n\n`;
+                    }
+                });
+
+                updateCSS(containerId, formatGlobalCSS(cssContent));
+                updateCSSDisplay(editorContainer, tagName, pseudoSelector.value);
+            }
+
+            function updateCSSDisplay(editorContainer, tagName, currentPseudo) {
+                const cssDisplay = editorContainer.querySelector('.css-display');
+                const cssTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${currentPseudo}"]`);
+                
+                if (cssDisplay && cssTextarea) {
+                    const css = cssTextarea.value.trim();
+                    const formattedProperties = formatCSSProperties(css);
+                    const formattedCSS = formatGlobalCSS(`${tagName}${currentPseudo} {\n${formattedProperties}\n}`);
+                    cssDisplay.textContent = formattedCSS;
+                }
+            }
+
+            function updateCSS(elementId, cssContent) {
+                let styleTag = document.querySelector(`style[data-for="${elementId}"]`);
+                if (!styleTag) {
+                    styleTag = document.createElement('style');
+                    styleTag.setAttribute('data-for', elementId);
+                    document.head.appendChild(styleTag);
+                }
+                if (styleTag.textContent !== cssContent) {
+                    styleTag.textContent = cssContent;
+                }
+            }
+
+            function updateBackgroundColorPicker() {
+                if (backgroundColorPicker) {
+                    const computedStyle = getComputedStyle(document.body);
+                    const currentBgColor = computedStyle.backgroundColor;
+                    backgroundColorPicker.value = rgbToHex(currentBgColor);
+                }
+            }
+
+            // Helper function to convert RGB to HEX
+            function rgbToHex(rgb) {
+                if (rgb.startsWith('#')) return rgb;
+                const rgbValues = rgb.match(/\d+/g);
+                if (!rgbValues) return '#ffffff';
+                return "#" + rgbValues.map(x => parseInt(x).toString(16).padStart(2, '0')).join('');
+            }
+
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
+                        
+/*
+            // updateGlobalCSS is a function that applies the global CSS to the page
+            // by setting the textContent of the style tag with the id 'global-styles'
+            function updateGlobalCSS() {
+                let styleTag = document.getElementById('global-styles');
+                if (!styleTag) {
+                    styleTag = document.createElement('style');
+                    styleTag.id = 'global-styles';
+                    document.head.appendChild(styleTag);
+                }
+                
+                const resetCSSToggle = document.getElementById('reset-css-toggle');
+                const userGlobalCSS = document.getElementById('user-global-css');
+                
+                // Combine reset CSS (if enabled), default styles, and user-defined styles
+                let cssContent = '';
+                
+                if (resetCSSToggle.checked) {
+                    cssContent += resetCSS + '\n\n';
+                }
+                
+                const defaultStyles = `
+                    body {
+                        font-family: ${fontFamily.value};
+                        font-size: ${fontSize.value}px;
+                        color: ${textColor.value};
+                        line-height: ${lineHeight.value};
+                        padding: ${pagePadding.value}px;
+                        max-width: ${pageWidth.value}px;
+                        margin: ${Margin};
+                        background-color: ${backgroundColorPicker.value};
+                    }
+                `;
+                
+                cssContent += formatGlobalCSS(defaultStyles) + '\n\n';
+                
+                if (userGlobalCSS.value.trim()) {
+                    cssContent += formatGlobalCSS(userGlobalCSS.value);
+                }
+                
+                styleTag.textContent = cssContent;
+                
+                // Update background color picker to reflect any changes
+                updateBackgroundColorPicker();
+                
+                // Save the current state
+                saveCurrentState();
+            }
+
+            // Event listeners for global style controls
+            document.getElementById('reset-css-toggle').addEventListener('change', updateGlobalCSS);
+            fontFamily.addEventListener('change', updateGlobalCSS);
+            fontSize.addEventListener('input', updateGlobalCSS);
+            textColor.addEventListener('input', updateGlobalCSS);
+            lineHeight.addEventListener('input', updateGlobalCSS);
+            pagePadding.addEventListener('input', updateGlobalCSS);
+            pageWidth.addEventListener('input', updateGlobalCSS);
+            backgroundColorPicker.addEventListener('input', updateGlobalCSS);
+            document.getElementById('user-global-css').addEventListener('input', debounce(updateGlobalCSS, 300));
+
+            // Update display values for range inputs
+            ['font-size', 'line-height'].forEach(id => {
+                const input = document.getElementById(id);
+                const display = document.getElementById(`${id}-value`);
+                input.addEventListener('input', () => {
+                    display.textContent = id === 'font-size' ? `${input.value}px` : input.value;
+                });
+            });
+*/
+            function cssbeautify(style) {
+                let formatted = '';
+                let depth = 0;
+                const indent = '\t'; // Use tab for indentation
+
+                function newline(decreaseDepth = false) {
+                    if (decreaseDepth) depth--;
+                    return '\n' + indent.repeat(depth);
+                }
+
+                let rules = style.split('}');
+                for (let i = 0; i < rules.length; i++) {
+                    let rule = rules[i].trim();
+                    if (rule.length === 0) continue;
+
+                    let parts = rule.split('{');
+                    if (parts.length === 1) {
+                        // This is a single line rule (like @import)
+                        formatted += rule + ';\n\n';
+                    } else {
+                        let selector = parts[0].trim();
+                        let properties = parts[1].split(';').filter(prop => prop.trim().length > 0);
+
+                        formatted += selector + ' {';
+                        depth++;
+
+                        for (let j = 0; j < properties.length; j++) {
+                            let [key, value] = properties[j].split(':').map(part => part.trim());
+                            formatted += newline() + key + ': ' + value + ';';
+                        }
+
+                        depth--;
+                        formatted += newline() + '}';
+                        
+                        // Add an extra newline after each ruleset, except the last one
+                        if (i < rules.length - 1) formatted += '\n\n';
+                    }
+                }
+
+                // Remove any instances of three or more consecutive newlines
+                formatted = formatted.replace(/\n{3,}/g, '\n\n');
+
+                return formatted.trim();
+            }
+
+
+            function formatGlobalCSS(css) {
+                if (!css || css.trim() === '') {
+                    return '';
+                }
+                return cssbeautify(css);
+            }
+
+            if (globalCSS) {
+                
+                globalCSS.addEventListener('input', debounce(() => {
+                    updateGlobalCSS();
+                }, 75));
+
+                globalCSS.addEventListener('blur', () => {
+                    globalCSS.value = formatGlobalCSS(globalCSS.value);
+                    updateGlobalCSS();
+                    saveCurrentState();
+                    updateSaveIndicator();
+                });
+                
+                globalCSS.addEventListener('keydown', function(e){
+                    if (e.key === 'Escape') {
+                        this.blur();
+                    } else if (e.key === 'Tab') {
+                        e.preventDefault(); // Prevent default tab behavior
+
+                        const start = this.selectionStart;
+                        const end = this.selectionEnd;
+                        const value = this.value;
+
+                        if (start === end) {
+                            // No selection, just insert tab
+                            if (!e.shiftKey) {
+                                // Insert tab
+                                this.value = value.substring(0, start) + "\t" + value.substring(end);
+                                this.selectionStart = this.selectionEnd = start + 1;
+                            } else if (start > 0) {
+                                // Remove tab (if exists) at the start of the line
+                                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                                if (value[lineStart] === '\t') {
+                                    this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                                    this.selectionStart = this.selectionEnd = start - 1;
+                                }
+                            }
+                        } else {
+                            // Text is selected, indent or unindent block
+                            const lines = value.substring(start, end).split('\n');
+                            const indentedLines = lines.map(line => 
+                                !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                            );
+                            const replacement = indentedLines.join('\n');
+                            this.value = value.substring(0, start) + replacement + value.substring(end);
+                            this.selectionStart = start;
+                            this.selectionEnd = start + replacement.length;
+                        }
+                    }
+                })
+
+            }
+
+            if (currentSheetName === 'Untitled') {
+                loadDefaultState();
+            } else {
+                loadState(currentSheetName);
+                updateGlobalCSS();
+            }
+
+            updateLoadSheetDropdown();
+            updateSaveIndicator();
+
+        });
+
+    </script>
+</body>
+
+</html>
