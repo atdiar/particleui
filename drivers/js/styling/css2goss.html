@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSS to Zui Styling function Converter</title>
+    <title>CSS to Go Converter</title>
     <style>
        html, body {
           height: 100%;
@@ -86,7 +86,7 @@
           font-size: 14px;
           line-height: 1.5;
           border: none;
-          white-space: pre-wrap;
+          white-space: pre;
           word-wrap: break-word;
           box-sizing: border-box;
           overflow: hidden;
@@ -212,7 +212,7 @@
 </head>
 <body>
     <div class="main-content">
-        <h1>CSS to Zui Styling function Converter</h1>
+        <h1>CSS to Go Converter</h1>
         <div class="code-container">
             <div class="code-block">
                 <div class="code-header">
@@ -462,48 +462,50 @@
         }
 
         function cssToGoCode(css) {
-    const lines = css.split('\n');
-    let goCode = '';
-    let errors = [];
-    let lineNumber = 1;
-    let customFuncName = '';
-    let inRule = false;
+            const lines = css.split('\n');
+            let goCode = '';
+            let errors = [];
+            let lineNumber = 1;
+            let customFuncName = '';
+            let inRule = false;
+            let currentSelector = '';
 
-    for (let line of lines) {
-        line = line.trim();
+            for (let line of lines) {
+                line = line.trim();
 
-        if (line.startsWith('//')) {
-            customFuncName = line.slice(2).trim();
-            lineNumber++;
-            continue;
-        }
+                if (line.startsWith('//')) {
+                    customFuncName = line.slice(2).trim();
+                    lineNumber++;
+                    continue;
+                }
 
-        if (line.includes('{')) {
-            inRule = true;
-            const selector = line.split('{')[0].trim();
-            let funcName = customFuncName || selector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-            funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
-            goCode += `func ${funcName}(e ui.Element) ui.Element {\n`;
-        } else if (line.includes('}')) {
-            inRule = false;
-            goCode += `\treturn e\n}\n\n`;
-            customFuncName = ''; // Reset custom function name
-        } else if (inRule && line.includes(':')) {
-            const [property, value] = line.split(':').map(s => s.trim());
-            if (cssToGoMapping[property]) {
-                const [namespace, category] = cssToGoMapping[property].split('.');
-                goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
-            } else {
-                errors.push({ property, selector: 'Current Selector', lineNumber: lineNumber });
-                goCode += `\t// ERROR: Unknown property "${property}"\n`;
+                if (line.includes('{')) {
+                    inRule = true;
+                    currentSelector = line.split('{')[0].trim();
+                    let funcName = customFuncName || currentSelector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
+                    funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
+                    goCode += `func ${funcName}(e ui.Element) ui.Element {\n`;
+                } else if (line.includes('}')) {
+                    inRule = false;
+                    goCode += `\treturn e\n}\n\n`;
+                    customFuncName = ''; // Reset custom function name
+                    currentSelector = ''; // Reset current selector
+                } else if (inRule && line.includes(':')) {
+                    const [property, value] = line.split(':').map(s => s.trim());
+                    if (cssToGoMapping[property]) {
+                        const [namespace, category] = cssToGoMapping[property].split('.');
+                        goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
+                    } else {
+                        errors.push({ property, selector: currentSelector, lineNumber: lineNumber });
+                        goCode += `\t// ERROR: Unknown property "${property}"\n`;
+                    }
+                }
+
+                lineNumber++;
             }
+
+            return { goCode: goCode.trim(), errors: errors };
         }
-
-        lineNumber++;
-    }
-
-    return { goCode: goCode.trim(), errors: errors };
-}
 
 
 
@@ -696,19 +698,6 @@
             }
         });
 
-        function saveCssToSessionStorage() {
-            sessionStorage.setItem('cssTocontent', cssInput.value);
-        }
-
-        // Function to load CSS content from sessionStorage
-        function loadCssFromSessionStorage() {
-            const savedCss = sessionStorage.getItem('cssTocontent');
-            if (savedCss) {
-                cssInput.value = savedCss;
-                updateGoCode();
-            }
-        }
-
         // Function to save scroll positions
         function saveScrollPositions() {
             const scrollPositions = {
@@ -806,4 +795,4 @@
 
         updateGoCode(); // Initial conversion
         // Initial update
-    </script>
+</script>
