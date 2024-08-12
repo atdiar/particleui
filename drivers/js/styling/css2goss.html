@@ -462,81 +462,48 @@
         }
 
         function cssToGoCode(css) {
-            const rules = css.replace(/\/\*[\s\S]*?\*\//g, match => {
-                // Preserve comments that define function names
-                if (match.trim().startsWith('//')) {
-                    return match;
-                }
-                return '';
-            }).split('}');
+    const lines = css.split('\n');
+    let goCode = '';
+    let errors = [];
+    let lineNumber = 1;
+    let customFuncName = '';
+    let inRule = false;
 
-            let goCode = '';
-            let errors = [];
-            let lineNumber = 1;
-            let customFuncName = '';
+    for (let line of lines) {
+        line = line.trim();
 
-            for (let rule of rules) {
-                const commentMatch = rule.match(/\/\/\s*(.*)/);
-                if (commentMatch) {
-                    customFuncName = commentMatch[1].trim();
-                    rule = rule.replace(/\/\/\s*.*/, '').trim();
-                }
-
-                const [selector, properties] = rule.split('{');
-                if (!properties) {
-                    lineNumber += selector.split('\n').length;
-                    customFuncName = ''; // Reset custom function name
-                    continue;
-                }
-
-                const trimmedSelector = selector.trim();
-                if (trimmedSelector === '') {
-                    lineNumber += rule.split('\n').length;
-                    customFuncName = ''; // Reset custom function name
-                    continue;
-                }
-
-                let funcName = customFuncName || trimmedSelector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-                funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
-                goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
-
-                const lines = properties.split('\n');
-
-                for (let line of lines) {
-                    line = line.trim();
-                    if (line === '') {
-                        lineNumber++;
-                        continue;
-                    }
-
-                    const propertyValue = line.split(':');
-                    if (propertyValue.length === 2) {
-                        const [property, value] = propertyValue.map(s => s.trim());
-
-                        if (cssToGoMapping[property]) {
-                            const [namespace, category] = cssToGoMapping[property].split('.');
-
-                            if (trimmedSelector.startsWith(':')) {
-                                const pseudoClass = capitalizeFirstLetter(trimmedSelector.slice(1));
-                                goCode += `\te = doc.CSS.${namespace}.${pseudoClass}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
-                            } else {
-                                goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
-                            }
-                        } else {
-                            errors.push({ property, selector: trimmedSelector, lineNumber });
-                            goCode += `\t// ERROR: Unknown property "${property}"\n`;
-                        }
-                    }
-                    lineNumber++;
-                }
-
-                goCode += `\treturn e\n}\n\n`;
-                lineNumber++;
-                customFuncName = ''; // Reset custom function name
-            }
-
-            return { goCode: goCode.trim(), errors: errors };
+        if (line.startsWith('//')) {
+            customFuncName = line.slice(2).trim();
+            lineNumber++;
+            continue;
         }
+
+        if (line.includes('{')) {
+            inRule = true;
+            const selector = line.split('{')[0].trim();
+            let funcName = customFuncName || selector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
+            funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
+            goCode += `func ${funcName}(e ui.Element) ui.Element {\n`;
+        } else if (line.includes('}')) {
+            inRule = false;
+            goCode += `\treturn e\n}\n\n`;
+            customFuncName = ''; // Reset custom function name
+        } else if (inRule && line.includes(':')) {
+            const [property, value] = line.split(':').map(s => s.trim());
+            if (cssToGoMapping[property]) {
+                const [namespace, category] = cssToGoMapping[property].split('.');
+                goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
+            } else {
+                errors.push({ property, selector: 'Current Selector', lineNumber: lineNumber });
+                goCode += `\t// ERROR: Unknown property "${property}"\n`;
+            }
+        }
+
+        lineNumber++;
+    }
+
+    return { goCode: goCode.trim(), errors: errors };
+}
 
 
 
@@ -556,94 +523,115 @@
 
 
         function updateLineNumbers(lineNumbersElement, contentElement) {
-            let content = contentElement.value || contentElement.textContent;
+            const content = contentElement.value || contentElement.textContent;
             const lineCount = content.split('\n').length;
             const numbers = Array(lineCount).fill().map((_, i) => `<div>${i + 1}</div>`).join('');
             lineNumbersElement.innerHTML = numbers;
             lineNumbersElement.style.height = `${contentElement.scrollHeight}px`;
         }
 
-       function syncScroll() {
-            cssHighlight.style.top = `-${cssInput.scrollTop}px`;
-            cssLineNumbers.style.top = `-${cssInput.scrollTop}px`;
+
+
+
+        function updateGoCode() {
+            if (!cssInput || typeof cssInput.value !== 'string') {
+                console.error('cssInput is not available or does not contain a string value');
+                return;
+            }
+
+            const css = cssInput.value;
+            const { goCode, errors } = cssToGoCode(css);
+
+            // Update Go output
+            if (goOutput) {
+                goOutput.textContent = goCode;
+            }
+
+            // Update line numbers and LOC counters
+            updateLineNumbers(cssLineNumbers, cssInput);
+            updateLineNumbers(goLineNumbers, goOutput);
+            updateLOCCounter(cssLOC, css);
+            updateLOCCounter(goLOC, goCode);
+
+            // Update error messages
+            updateErrorMessages(errors);
+
+            // Update highlight
+            updateHighlight();
+
+            // Sync scroll
+            syncScroll();
         }
 
-        // Update the scroll event listener
-        cssInput.addEventListener('scroll', syncScroll);
+        function updateErrorMessages(errors) {
+            if (errors.length > 0) {
+                const errorHTML = '<h3>Errors:</h3>' + errors.map(error =>
+                    `<p>Unknown CSS property: "${error.property}" in selector "${error.selector}" on line ${error.lineNumber}.</p>`
+                ).join('');
+                errorMessagesElement.innerHTML = errorHTML;
+                errorMessagesElement.style.display = 'block';
+            } else {
+                errorMessagesElement.innerHTML = '';
+                errorMessagesElement.style.display = 'none';
+            }
+        }
 
-        cssInput.addEventListener('input', () => {
-            updateHighlight();
-            debouncedUpdateGoCode();
-        });
+        function updateHighlight() {
+            if (!cssInput || typeof cssInput.value !== 'string') {
+                console.error('cssInput is not available or does not contain a string value');
+                return;
+            }
 
-      function updateHighlight() {
-          const css = cssInput.value;
-          const { errors } = cssToGoCode(css);
+            const css = cssInput.value;
+            const { errors } = cssToGoCode(css);
+            const lines = css.split('\n');
 
-          if (errors.length > 0) {
-              const lines = css.split('\n');
-              const highlightedLines = lines.map((line, index) => {
-                  if (errors.some(error => error.lineNumber === index + 1)) {
-                      return `<span class="error-line" style="background-color: #ffcccc; display: inline-block; width: 100%;">${escapeHtml(line)}</span>`;
-                  }
-                  return escapeHtml(line);
-              });
-              cssHighlight.innerHTML = highlightedLines.join('\n');
-          } else {
-              cssHighlight.innerHTML = escapeHtml(css);
-          }
+            const highlightedLines = lines.map((line, index) => {
+                const lineNumber = index + 1;
+                const isErrorLine = errors.some(error => error.lineNumber === lineNumber);
+                const lineContent = escapeHtml(line) || '&nbsp;'; // Use &nbsp; for empty lines
 
-          // Ensure highlight size matches the input size
-          cssHighlight.style.width = `${cssInput.scrollWidth}px`;
-          cssHighlight.style.height = `${cssInput.scrollHeight}px`;
+                if (isErrorLine) {
+                    return `<div class="error-line" style="background-color: #ffcccc; display: block; width: 100%;">${lineContent}</div>`;
+                }
+                return `<div>${lineContent}</div>`;
+            });
 
-          // Sync scroll position
-          syncScroll();
-      }
+            if (cssHighlight) {
+                cssHighlight.innerHTML = highlightedLines.join('');
+                // Ensure highlight size matches the input size
+                cssHighlight.style.width = `${cssInput.scrollWidth}px`;
+                cssHighlight.style.height = `${cssInput.scrollHeight}px`;
+            }
+
+            // Sync scroll position
+            syncScroll();
+        }
+
+        function syncScroll() {
+            if (cssHighlight && cssInput) {
+                // Move the highlight content in the opposite direction of the scroll
+                cssHighlight.style.transform = `translate(0, ${-cssInput.scrollTop}px)`;
+
+                // Ensure the horizontal scroll is synced
+                cssHighlight.scrollLeft = cssInput.scrollLeft;
+            }
+            if (cssLineNumbers) {
+                cssLineNumbers.style.top = `-${cssInput.scrollTop}px`;
+            }
+        }
+
 
       // Update the scroll event listener
       cssInput.addEventListener('scroll', () => {
-          syncScroll(cssInput, cssHighlight, cssLineNumbers);
+          syncScroll();
       });
 
       // Make sure to call updateHighlight whenever the content changes
       cssInput.addEventListener('input', () => {
-          updateHighlight();
-          debouncedUpdateGoCode();
-      });
+            debouncedUpdateGoCode();
 
-      // Initial update
-      updateHighlight();
-
-
-
-       function updateGoCode() {
-          const css = cssInput.value;
-          const { goCode, errors } = cssToGoCode(css);
-          goOutput.textContent = goCode;
-
-          updateLineNumbers(cssLineNumbers, cssInput);
-          updateLineNumbers(goLineNumbers, goOutput);
-          updateLOCCounter(cssLOC, css);
-          updateLOCCounter(goLOC, goCode);
-
-
-
-          if (errors.length > 0) {
-              const errorHTML = '<h3>Errors:</h3>' + errors.map(error =>
-                  `<p>Unknown CSS property: "${error.property}" in selector "${error.selector}" on line ${error.lineNumber}.</p>`
-              ).join('');
-              errorMessagesElement.innerHTML = errorHTML;
-              errorMessagesElement.style.display = 'block';
-          } else {
-              errorMessagesElement.innerHTML = '';
-              errorMessagesElement.style.display = 'none';
-          }
-
-          updateHighlight();
-          syncScroll(cssInput, cssHighlight, cssLineNumbers);
-      }
-
+        });
 
 
         copyButton.addEventListener('click', () => {
@@ -670,7 +658,7 @@
         const debouncedUpdateGoCode = debounce(updateGoCode, 100);
 
         cssInput.addEventListener('paste', () => {
-            setTimeout(updateHighlight, 0);
+            setTimeout(updateGoCode(), 0);
         });
 
         goOutput.addEventListener('scroll', () => {
@@ -768,4 +756,5 @@
         resizeObserver.observe(goOutput);
 
         updateGoCode(); // Initial conversion
+        // Initial update
     </script>
