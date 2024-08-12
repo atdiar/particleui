@@ -709,11 +709,60 @@
             }
         }
 
+        // Function to save scroll positions
+        function saveScrollPositions() {
+            const scrollPositions = {
+                cssInput: cssInput.scrollTop,
+                cssHighlight: cssHighlight.scrollTop,
+                goOutput: goOutput.scrollTop,
+                cssLineNumbers: cssLineNumbers.scrollTop
+            };
+            sessionStorage.setItem('scrollPositions', JSON.stringify(scrollPositions));
+        }
+
+        // Function to restore scroll positions
+        function restoreScrollPositions() {
+            const scrollPositions = JSON.parse(sessionStorage.getItem('scrollPositions'));
+            if (scrollPositions) {
+                cssInput.scrollTop = scrollPositions.cssInput;
+                cssHighlight.scrollTop = scrollPositions.cssHighlight;
+                goOutput.scrollTop = scrollPositions.goOutput;
+                cssLineNumbers.scrollTop = scrollPositions.cssLineNumbers;
+                syncScroll(); // Ensure everything is in sync
+            }
+        }
+
+        // Save scroll positions before unload
+        window.addEventListener('beforeunload', saveScrollPositions);
+
+        // Restore scroll positions after the page has loaded
+        window.addEventListener('load', () => {
+            restoreScrollPositions();
+            // If you're loading content asynchronously, you might need to delay this
+            // setTimeout(restoreScrollPositions, 0);
+        });
+
+        function saveCssToSessionStorage() {
+            sessionStorage.setItem('cssTocontent', cssInput.value);
+        }
+
+        // Function to load CSS content from sessionStorage
+        function loadCssFromSessionStorage() {
+            const savedCss = sessionStorage.getItem('cssTocontent');
+            if (savedCss) {
+                cssInput.value = savedCss;
+                updateGoCode();
+            }
+        }
+
         // Add event listener to save CSS content on input
         cssInput.addEventListener('input', debounce(saveCssToSessionStorage, 500));
 
         // Load saved CSS content on page load
         document.addEventListener('DOMContentLoaded', loadCssFromSessionStorage);
+
+        cssInput.addEventListener('scroll', debounce(saveScrollPositions, 200));
+        goOutput.addEventListener('scroll', debounce(saveScrollPositions, 200));
 
         // Set initial CSS content
         document.getElementById('cssInput').value = `.container {
