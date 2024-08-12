@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS to Zui Styling function Converter</title>
+    <style>
+       html, body {
+          height: 100%;
+          margin: 0;
+          padding: 0;
+          overflow:hidden;
+      }
+
+      body {
+          font-family: Arial, sans-serif;
+          height: 100vh;
+          box-sizing: border-box;
+          line-height: 1.6;
+          display: flex;
+          flex-direction: column;
+          max-width: 100vw;
+          margin: 0 auto;
+          justify-content: center;
+          align-items: center;
+      }
+
+      .main-content {
+          flex: 1 1 auto;
+          display: flex;
+          flex-direction: column;
+      }
+
+      .code-container {
+          display: flex;
+          gap: 20px;
+          flex-wrap: wrap;
+          flex: 0; /* Take up remaining space */
+      }
+
+      .code-block {
+          flex: 1 1;
+          min-width: 400px;
+          max-width: 100%;
+          display: flex;
+          flex-direction: column;
+      }
+
+      .code-block:last-child {
+          flex: 1.5 1; /* Make the Go output wider by default */
+      }
+
+      .code-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 5px;
+      }
+
+      .css-area, .go-area {
+          position: relative;
+          flex: 1; /* Take up remaining space in code block */
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          overflow: hidden;
+          min-height: 200px; /* Set a minimum height */
+          max-height: 480px;
+      }
+
+      .css-wrapper {
+          position: relative;
+          height: 100%;
+          overflow: hidden;
+      }
+
+      #cssInput, #cssHighlight {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          margin: 0;
+          padding: 10px;
+          padding-left: 50px;
+          font-family: monospace;
+          font-size: 14px;
+          line-height: 1.5;
+          border: none;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          box-sizing: border-box;
+          overflow: hidden;
+          width: 100%;
+          height: 100%;
+          tab-size: 4;
+          -moz-tab-size: 4;
+      }
+
+      #cssInput {
+          background: transparent;
+          color: black;
+          caret-color: black;
+          z-index: 1;
+          resize: none;
+      }
+
+      #cssInput:hover {
+          overflow: auto;
+      }
+
+      #cssHighlight {
+          z-index: 0;
+          pointer-events: none;
+          color: transparent;
+          background-color: transparent;
+      }
+
+      .go-area {
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          max-height:50vh;
+      }
+
+      #goOutput {
+          flex-grow: 1;
+          overflow-y: auto;
+          overflow-x:hidden;
+          margin: 0;
+          padding: 10px;
+          padding-left: 50px;
+          font-family: monospace;
+          font-size: 14px;
+          line-height: 1.5;
+          border: none;
+          scrollbar-gutter:stable;
+      }
+
+      #goOutput:hover{
+          overflow-x:auto;
+      }
+
+      .line-numbers {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 40px;
+          height: 100%;
+          padding: 10px 5px;
+          background-color: #f0f0f0;
+          border-right: 1px solid #ccc;
+          text-align: right;
+          font-family: monospace;
+          font-size: 14px;
+          line-height: 1.5;
+          color: #999;
+          user-select: none;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 2;
+          box-sizing: border-box;
+      }
+
+      #cssInput:focus {
+          outline: none;
+      }
+
+      .loc-counter {
+          font-size: 14px;
+          color: #666;
+          margin-right: 10px;
+      }
+
+      .copy-button {
+          padding: 5px 10px;
+          background-color: #007bff;
+          color: white;
+          border: none;
+          border-radius: 3px;
+          cursor: pointer;
+      }
+
+      #errorMessages {
+          margin-top: 10px;
+          padding: 10px;
+          background-color: #fff0f0;
+          overflow-y: auto;
+          flex:1 1;
+      }
+
+      footer {
+          flex: 0 0 32px;
+          text-align: center;
+          padding: 10px 0;
+          background-color: #f8f9fa;
+          border-top: 1px solid #e9ecef;
+          margin-top: 20px;
+          color: black;
+          font-size: 12px;
+      }
+
+      footer a {
+          color: #007bff;
+          text-decoration: none;
+          font-style: normal;
+      }
+
+      footer a:hover {
+          text-decoration: underline;
+      }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <h1>CSS to Zui Styling function Converter</h1>
+        <div class="code-container">
+            <div class="code-block">
+                <div class="code-header">
+                    <h2>CSS Input</h2>
+
+                </div>
+                <div class="loc-counter" id="cssLOC"></div>
+                <div class="css-area">
+                    <div class="line-numbers" id="cssLineNumbers"></div>
+                    <div class="css-wrapper">
+                        <textarea id="cssInput" spellcheck="false"></textarea>
+                        <div id="cssHighlight"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="code-header">
+                    <h2>Go Output</h2>
+                    <button class="copy-button" id="copyButton">Copy</button>
+                </div>
+                <div class="loc-counter" id="goLOC"></div>
+                <div class="go-area">
+                    <div class="line-numbers" id="goLineNumbers"></div>
+                    <pre id="goOutput"></pre>
+                </div>
+            </div>
+        </div>
+        <div id="errorMessages" class="error-messages"></div>
+    </div>
+    <footer>
+        Designed for <a href="https://zui.dev" target="_blank" rel="noopener noreferrer">Zui</a>
+    </footer>
+
+    <script>
+        const cssInput = document.getElementById('cssInput');
+        const cssHighlight = document.getElementById('cssHighlight');
+        const goOutput = document.getElementById('goOutput');
+        const copyButton = document.getElementById('copyButton');
+        const cssLineNumbers = document.getElementById('cssLineNumbers');
+        const goLineNumbers = document.getElementById('goLineNumbers');
+        const cssLOC = document.getElementById('cssLOC');
+        const goLOC = document.getElementById('goLOC');
+        const errorMessagesElement = document.getElementById('errorMessages');
+        const goArea = document.querySelector('.go-area');
+
+        const cssToGoMapping = {
+    'box-shadow': 'Container.Layout.BoxShadow',
+    'justify-content': 'Container.Layout.JustifyContent',
+    'z-index': 'Container.Layout.ZIndex',
+    'float': 'Container.Layout.Float',
+    'overflow': 'Container.Layout.Overflow',
+    'overflow-y': 'Container.Layout.OverflowY',
+    'perspective': 'Container.Layout.Perspective',
+    'border-collapse': 'Container.Layout.BorderCollapse',
+    'page-break-before': 'Container.Layout.PageBreakBefore',
+    'columns': 'Container.Layout.Columns',
+    'column-count': 'Container.Layout.ColumnCount',
+    'min-height': 'Container.Layout.MinHeight',
+    'page-break-inside': 'Container.Layout.PageBreakInside',
+    'column-gap': 'Container.Layout.ColumnGap',
+    'clip': 'Container.Layout.Clip',
+    'flex-direction': 'Container.Layout.FlexDirection',
+    'page-break-after': 'Container.Layout.PageBreakAfter',
+    'top': 'Container.Layout.Top',
+    'counter-increment': 'Container.Layout.CounterIncrement',
+    'height': 'Container.Layout.Height',
+    'transform-style': 'Container.Layout.TransformStyle',
+    'overflow-x': 'Container.Layout.OverflowX',
+    'flex-wrap': 'Container.Layout.FlexWrap',
+    'max-width': 'Container.Layout.MaxWidth',
+    'bottom': 'Container.Layout.Bottom',
+    'counter-reset': 'Container.Layout.CounterReset',
+    'right': 'Container.Layout.Right',
+    'box-sizing': 'Container.Layout.BoxSizing',
+    'position': 'Container.Layout.Position',
+    'table-layout': 'Container.Layout.TableLayout',
+    'width': 'Container.Layout.Width',
+    'max-height': 'Container.Layout.MaxHeight',
+    'column-width': 'Container.Layout.ColumnWidth',
+    'min-width': 'Container.Layout.MinWidth',
+    'vertical-align': 'Container.Layout.VerticalAlign',
+    'perspective-origin': 'Container.Layout.PerspectiveOrigin',
+    'align-content': 'Container.Layout.AlignContent',
+    'flex-flow': 'Container.Layout.FlexFlow',
+    'display': 'Container.Layout.Display',
+    'left': 'Container.Layout.Left',
+    'background-image': 'Container.Style.BackgroundImage',
+    'border-left-style': 'Container.Style.BorderLeftStyle',
+    'transition-delay': 'Container.Style.TransitionDelay',
+    'animation-duration': 'Container.Style.AnimationDuration',
+    'list-style': 'Container.Style.ListStyle',
+    'outline-width': 'Container.Style.OutlineWidth',
+    'border-top-left-radius': 'Container.Style.BorderTopLeftRadius',
+    'white-space': 'Container.Style.WhiteSpace',
+    'border-right': 'Container.Style.BorderRight',
+    'text-decoration-line': 'Container.Style.TextDecorationLine',
+    'animation-delay': 'Container.Style.AnimationDelay',
+    'background-position': 'Container.Style.BackgroundPosition',
+    'border-image': 'Container.Style.BorderImage',
+    'border-spacing': 'Container.Style.BorderSpacing',
+    'border-image-outset': 'Container.Style.BorderImageOutset',
+    'border-image-slice': 'Container.Style.BorderImageSlice',
+    'border-left-color': 'Container.Style.BorderLeftColor',
+    'font-size': 'Container.Style.FontSize',
+    'line-height': 'Container.Style.LineHeight',
+    'text-decoration-style': 'Container.Style.TextDecorationStyle',
+    'backface-visibility': 'Container.Style.BackfaceVisibility',
+    'border-right-style': 'Container.Style.BorderRightStyle',
+    'text-decoration': 'Container.Style.TextDecoration',
+    'transition': 'Container.Style.Transition',
+    'animation-iteration-count': 'Container.Style.AnimationIterationCount',
+    'border-bottom': 'Container.Style.BorderBottom',
+    'animation-timing-function': 'Container.Style.AnimationTimingFunction',
+    'border-radius': 'Container.Style.BorderRadius',
+    'quotes': 'Container.Style.Quotes',
+    'tab-size': 'Container.Style.TabSize',
+    'animation-fill-mode': 'Container.Style.AnimationFillMode',
+    'background-size': 'Container.Style.BackgroundSize',
+    'font-size-adjust': 'Container.Style.FontSizeAdjust',
+    'list-style-position': 'Container.Style.ListStylePosition',
+    'text-align': 'Container.Style.TextAlign',
+    'text-justify': 'Container.Style.TextJustify',
+    'background-attachment': 'Container.Style.BackgroundAttachment',
+    'border-right-width': 'Container.Style.BorderRightWidth',
+    'font': 'Container.Style.Font',
+    'border-left': 'Container.Style.BorderLeft',
+    'transition-duration': 'Container.Style.TransitionDuration',
+    'word-spacing': 'Container.Style.WordSpacing',
+    'animation-name': 'Container.Style.AnimationName',
+    'animation-play-state': 'Container.Style.AnimationPlayState',
+    'letter-spacing': 'Container.Style.LetterSpacing',
+    'border-bottom-style': 'Container.Style.BorderBottomStyle',
+    'word-break': 'Container.Style.WordBreak',
+    'border-bottom-right-radius': 'Container.Style.BorderBottomRightRadius',
+    'font-style': 'Container.Style.FontStyle',
+    'order': 'Container.Style.Order',
+    'outline-style': 'Container.Style.OutlineStyle',
+    'border-bottom-left-radius': 'Container.Style.BorderBottomLeftRadius',
+    'border-image-source': 'Container.Style.BorderImageSource',
+    'text-align-last': 'Container.Style.TextAlignLast',
+    'border-image-width': 'Container.Style.BorderImageWidth',
+    'font-weight': 'Container.Style.FontWeight',
+    'list-style-image': 'Container.Style.ListStyleImage',
+    'opacity': 'Container.Style.Opacity',
+    'clear': 'Container.Style.Clear',
+    'border-top-color': 'Container.Style.BorderTopColor',
+    'border': 'Container.Style.Border',
+    'border-right-color': 'Container.Style.BorderRightColor',
+    'transition-timing-function': 'Container.Style.TransitionTimingFunction',
+    'border-bottom-width': 'Container.Style.BorderBottomWidth',
+    'border-style': 'Container.Style.BorderStyle',
+    'border-top-right-radius': 'Container.Style.BorderTopRightRadius',
+    'caption-side': 'Container.Style.CaptionSide',
+    'font-family': 'Container.Style.FontFamily',
+    'text-decoration-color': 'Container.Style.TextDecorationColor',
+    'transition-property': 'Container.Style.TransitionProperty',
+    'background-origin': 'Container.Style.BackgroundOrigin',
+    'text-indent': 'Container.Style.TextIndent',
+    'visibility': 'Container.Style.Visibility',
+    'border-color': 'Container.Style.BorderColor',
+    'border-top': 'Container.Style.BorderTop',
+    'font-variant': 'Container.Style.FontVariant',
+    'outline': 'Container.Style.Outline',
+    'border-bottom-color': 'Container.Style.BorderBottomColor',
+    'border-top-style': 'Container.Style.BorderTopStyle',
+    'border-width': 'Container.Style.BorderWidth',
+    'list-style-type': 'Container.Style.ListStyleType',
+    'outline-offset': 'Container.Style.OutlineOffset',
+    'animation': 'Container.Style.Animation',
+    'background': 'Container.Style.Background',
+    'background-repeat': 'Container.Style.BackgroundRepeat',
+    'border-top-width': 'Container.Style.BorderTopWidth',
+    'word-wrap': 'Container.Style.WordWrap',
+    'background-color': 'Container.Style.BackgroundColor',
+    'text-overflow': 'Container.Style.TextOverflow',
+    'text-shadow': 'Container.Style.TextShadow',
+    'background-clip': 'Container.Style.BackgroundClip',
+    'border-left-width': 'Container.Style.BorderLeftWidth',
+    'resize': 'Container.Style.Resize',
+    'animation-direction': 'Container.Style.AnimationDirection',
+    'color': 'Container.Style.Color',
+    'outline-color': 'Container.Style.OutlineColor',
+    'border-image-repeat': 'Container.Style.BorderImageRepeat',
+    'font-stretch': 'Container.Style.FontStretch',
+    'text-transform': 'Container.Style.TextTransform',
+    'flex-grow': 'Content.Layout.FlexGrow',
+    'align-self': 'Content.Layout.AlignSelf',
+    'content': 'Content.Layout.Content',
+    'column-span': 'Content.Layout.ColumnSpan',
+    'flex': 'Content.Layout.Flex',
+    'flex-shrink': 'Content.Layout.FlexShrink',
+    'flex-basis': 'Content.Layout.FlexBasis',
+    'align-items': 'Content.Layout.AlignItems',
+    'column-rule-width': 'Content.Style.ColumnRuleWidth',
+    'column-rule': 'Content.Style.ColumnRule',
+    'direction': 'Content.Style.Direction',
+    'column-rule-style': 'Content.Style.ColumnRuleStyle',
+    'column-rule-color': 'Content.Style.ColumnRuleColor',
+    'column-fill': 'Content.Style.ColumnFill',
+    'empty-cells': 'Content.Style.EmptyCells',
+    'cursor': 'Content.Style.Cursor',
+    'transform': 'Container.Style.Transform',
+    'pointer-events': 'Container.Style.PointerEvents',
+    'user-select': 'Container.Style.UserSelect',
+    'backdrop-filter': 'Container.Style.BackdropFilter',
+    'object-fit': 'Container.Style.ObjectFit',
+    'object-position': 'Container.Style.ObjectPosition',
+    'margin': 'Container.Layout.Margin',
+    'margin-top': 'Container.Layout.MarginTop',
+    'margin-right': 'Container.Layout.MarginRight',
+    'margin-bottom': 'Container.Layout.MarginBottom',
+    'margin-left': 'Container.Layout.MarginLeft',
+    'padding-top': 'Container.Layout.PaddingTop',
+    'padding-right': 'Container.Layout.PaddingRight',
+    'padding-bottom': 'Container.Layout.PaddingBottom',
+    'padding-left': 'Container.Layout.PaddingLeft',
+    'grid-template': 'Container.Layout.GridTemplate',
+    'grid-auto-columns': 'Container.Layout.GridAutoColumns', // Not in Go
+    'grid-auto-rows': 'Container.Layout.GridAutoRows', // Not in Go
+    'grid-auto-flow': 'Container.Layout.GridAutoFlow', // ?? in go?
+    'grid': 'Container.Layout.Grid', // ?? in go?
+    'grid-gap': 'Container.Layout.GridGap', // Not in Go
+    'grid-row-gap': 'Container.Layout.GridRowGap',// Not in Go
+    'grid-column-gap': 'Container.Layout.GridColumnGap', // Not in Go
+    'grid-row-start': 'Container.Layout.GridRowStart', // Not in Go
+    'grid-column-start': 'Container.Layout.GridColumnStart', // Not in Go
+    'padding': 'Container.Layout.Padding',
+    'grid-template-columns': 'Container.Layout.GridTemplateColumns',
+    'grid-template-rows': 'Container.Layout.GridTemplateRows',
+    'grid-column': 'Container.Layout.GridColumn',
+    'grid-row': 'Container.Layout.GridRow',
+    'gap': 'Container.Layout.Gap',
+    'scroll-behavior': 'Container.Layout.ScrollBehavior'
+};
+
+        function capitalizeFirstLetter(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+
+        function getMethodCall(property, value) {
+            const capitalizedProperty = property.split('-').map(capitalizeFirstLetter).join('');
+            if (value.match(/^[a-zA-Z-]+$/)) {
+                return `${capitalizedProperty}(e)`;
+            } else {
+                return `${capitalizedProperty}.Value("${value}")(e)`;
+            }
+        }
+
+        function cssToGoCode(css) {
+            const rules = css.replace(/\/\*[\s\S]*?\*\//g, match => {
+                // Preserve comments that define function names
+                if (match.trim().startsWith('//')) {
+                    return match;
+                }
+                return '';
+            }).split('}');
+
+            let goCode = '';
+            let errors = [];
+            let lineNumber = 1;
+            let customFuncName = '';
+
+            for (let rule of rules) {
+                const commentMatch = rule.match(/\/\/\s*(.*)/);
+                if (commentMatch) {
+                    customFuncName = commentMatch[1].trim();
+                    rule = rule.replace(/\/\/\s*.*/, '').trim();
+                }
+
+                const [selector, properties] = rule.split('{');
+                if (!properties) {
+                    lineNumber += selector.split('\n').length;
+                    customFuncName = ''; // Reset custom function name
+                    continue;
+                }
+
+                const trimmedSelector = selector.trim();
+                if (trimmedSelector === '') {
+                    lineNumber += rule.split('\n').length;
+                    customFuncName = ''; // Reset custom function name
+                    continue;
+                }
+
+                let funcName = customFuncName || trimmedSelector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
+                funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
+                goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+
+                const lines = properties.split('\n');
+
+                for (let line of lines) {
+                    line = line.trim();
+                    if (line === '') {
+                        lineNumber++;
+                        continue;
+                    }
+
+                    const propertyValue = line.split(':');
+                    if (propertyValue.length === 2) {
+                        const [property, value] = propertyValue.map(s => s.trim());
+
+                        if (cssToGoMapping[property]) {
+                            const [namespace, category] = cssToGoMapping[property].split('.');
+
+                            if (trimmedSelector.startsWith(':')) {
+                                const pseudoClass = capitalizeFirstLetter(trimmedSelector.slice(1));
+                                goCode += `\te = doc.CSS.${namespace}.${pseudoClass}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
+                            } else {
+                                goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
+                            }
+                        } else {
+                            errors.push({ property, selector: trimmedSelector, lineNumber });
+                            goCode += `\t// ERROR: Unknown property "${property}"\n`;
+                        }
+                    }
+                    lineNumber++;
+                }
+
+                goCode += `\treturn e\n}\n\n`;
+                lineNumber++;
+                customFuncName = ''; // Reset custom function name
+            }
+
+            return { goCode: goCode.trim(), errors: errors };
+        }
+
+
+
+        function updateLOCCounter(element, content) {
+            const lineCount = content.split('\n').length;
+            element.textContent = `LOC: ${lineCount}`;
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+
+        function updateLineNumbers(lineNumbersElement, contentElement) {
+            let content = contentElement.value || contentElement.textContent;
+            const lineCount = content.split('\n').length;
+            const numbers = Array(lineCount).fill().map((_, i) => `<div>${i + 1}</div>`).join('');
+            lineNumbersElement.innerHTML = numbers;
+            lineNumbersElement.style.height = `${contentElement.scrollHeight}px`;
+        }
+
+       function syncScroll() {
+            cssHighlight.style.top = `-${cssInput.scrollTop}px`;
+            cssLineNumbers.style.top = `-${cssInput.scrollTop}px`;
+        }
+
+        // Update the scroll event listener
+        cssInput.addEventListener('scroll', syncScroll);
+
+        cssInput.addEventListener('input', () => {
+            updateHighlight();
+            debouncedUpdateGoCode();
+        });
+
+      function updateHighlight() {
+          const css = cssInput.value;
+          const { errors } = cssToGoCode(css);
+
+          if (errors.length > 0) {
+              const lines = css.split('\n');
+              const highlightedLines = lines.map((line, index) => {
+                  if (errors.some(error => error.lineNumber === index + 1)) {
+                      return `<span class="error-line" style="background-color: #ffcccc; display: inline-block; width: 100%;">${escapeHtml(line)}</span>`;
+                  }
+                  return escapeHtml(line);
+              });
+              cssHighlight.innerHTML = highlightedLines.join('\n');
+          } else {
+              cssHighlight.innerHTML = escapeHtml(css);
+          }
+
+          // Ensure highlight size matches the input size
+          cssHighlight.style.width = `${cssInput.scrollWidth}px`;
+          cssHighlight.style.height = `${cssInput.scrollHeight}px`;
+
+          // Sync scroll position
+          syncScroll();
+      }
+
+      // Update the scroll event listener
+      cssInput.addEventListener('scroll', () => {
+          syncScroll(cssInput, cssHighlight, cssLineNumbers);
+      });
+
+      // Make sure to call updateHighlight whenever the content changes
+      cssInput.addEventListener('input', () => {
+          updateHighlight();
+          debouncedUpdateGoCode();
+      });
+
+      // Initial update
+      updateHighlight();
+
+
+
+       function updateGoCode() {
+          const css = cssInput.value;
+          const { goCode, errors } = cssToGoCode(css);
+          goOutput.textContent = goCode;
+
+          updateLineNumbers(cssLineNumbers, cssInput);
+          updateLineNumbers(goLineNumbers, goOutput);
+          updateLOCCounter(cssLOC, css);
+          updateLOCCounter(goLOC, goCode);
+
+
+
+          if (errors.length > 0) {
+              const errorHTML = '<h3>Errors:</h3>' + errors.map(error =>
+                  `<p>Unknown CSS property: "${error.property}" in selector "${error.selector}" on line ${error.lineNumber}.</p>`
+              ).join('');
+              errorMessagesElement.innerHTML = errorHTML;
+              errorMessagesElement.style.display = 'block';
+          } else {
+              errorMessagesElement.innerHTML = '';
+              errorMessagesElement.style.display = 'none';
+          }
+
+          updateHighlight();
+          syncScroll(cssInput, cssHighlight, cssLineNumbers);
+      }
+
+
+
+        copyButton.addEventListener('click', () => {
+            navigator.clipboard.writeText(goOutput.textContent).then(() => {
+                copyButton.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyButton.textContent = 'Copy';
+                }, 2000);
+            });
+        });
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        const debouncedUpdateGoCode = debounce(updateGoCode, 100);
+
+        cssInput.addEventListener('paste', () => {
+            setTimeout(updateHighlight, 0);
+        });
+
+        goOutput.addEventListener('scroll', () => {
+            document.getElementById('goLineNumbers').style.top = `-${goOutput.scrollTop}px`;
+        });
+
+        cssInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                const value = this.value;
+                if (start === end) {
+                    if (!e.shiftKey) {
+                        this.value = value.substring(0, start) + "\t" + value.substring(end);
+                        this.selectionStart = this.selectionEnd = start + 1;
+                    } else if (start > 0) {
+                        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                        if (value[lineStart] === '\t') {
+                            this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                            this.selectionStart = this.selectionEnd = start - 1;
+                        }
+                    }
+                } else {
+                    const lines = value.substring(start, end).split('\n');
+                    const indentedLines = lines.map(line =>
+                        !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
+                    );
+                    const replacement = indentedLines.join('\n');
+                    this.value = value.substring(0, start) + replacement + value.substring(end);
+                    this.selectionStart = start;
+                    this.selectionEnd = start + replacement.length;
+                }
+                updateGoCode();
+            }
+        });
+
+        function saveCssToSessionStorage() {
+            sessionStorage.setItem('cssTocontent', cssInput.value);
+        }
+
+        // Function to load CSS content from sessionStorage
+        function loadCssFromSessionStorage() {
+            const savedCss = sessionStorage.getItem('cssTocontent');
+            if (savedCss) {
+                cssInput.value = savedCss;
+                updateGoCode();
+            }
+        }
+
+        // Add event listener to save CSS content on input
+        cssInput.addEventListener('input', debounce(saveCssToSessionStorage, 500));
+
+        // Load saved CSS content on page load
+        document.addEventListener('DOMContentLoaded', loadCssFromSessionStorage);
+
+        // Set initial CSS content
+        document.getElementById('cssInput').value = `.container {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f0f0f0;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.container:hover {
+    background-color: #e0e0e0;
+}
+
+.title {
+    font-size: 24px;
+    color: #333;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.button {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 3px;
+    transition: background-color 0.3s ease;
+}
+
+.button:hover {
+    background-color: #0056b3;
+}`;
+        const resizeObserver = new ResizeObserver(() => {
+            updateLineNumbers(goLineNumbers, goOutput);
+        });
+        resizeObserver.observe(goOutput);
+
+        updateGoCode(); // Initial conversion
+    </script>

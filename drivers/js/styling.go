@@ -536,6 +536,20 @@ func initializeContainerLayout[pseudoclass any]() ContainerLayout {
 	c.Left.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("left")
 	c.Left.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("left")
 
+	c.GridTemplateColumns.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("grid-template-columns")
+
+	c.GridTemplateRows.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("grid-template-rows")
+
+	c.GridColumn.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("grid-column")
+
+	c.GridRow.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("grid-row")
+
+	c.Gap.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("gap")
+
+	c.ScrollBehavior.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("scroll-behavior")
+	c.ScrollBehavior.Smooth = newValueFn[pseudoclass](vfn("smooth"), nil).Setter("scroll-behavior")
+	c.ScrollBehavior.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("scroll-behavior")
+
 	return c
 
 }
@@ -1120,6 +1134,42 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.TextTransform.Lowercase = newValueFn[pseudoclass](vfn("lowercase"), nil).Setter("text-transform")
 	c.TextTransform.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-transform")
 
+	c.Margin.Top = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-top")
+	c.Margin.Right = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-right")
+	c.Margin.Bottom = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-bottom")
+	c.Margin.Left = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-left")
+	c.Margin.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin")
+
+	c.Padding.Top = newValueFn[pseudoclass](nil, cfn).CustomSetter("padding-top")
+	c.Padding.Right = newValueFn[pseudoclass](nil, cfn).CustomSetter("padding-right")
+	c.Padding.Bottom = newValueFn[pseudoclass](nil, cfn).CustomSetter("padding-bottom")
+	c.Padding.Left = newValueFn[pseudoclass](nil, cfn).CustomSetter("padding-left")
+	c.Padding.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("padding")
+
+	c.Transform.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("transform")
+
+	c.PointerEvents.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("pointer-events")
+	c.PointerEvents.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("pointer-events")
+	c.PointerEvents.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("pointer-events")
+
+	c.UserSelect.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("user-select")
+	c.UserSelect.Text = newValueFn[pseudoclass](vfn("text"), nil).Setter("user-select")
+	c.UserSelect.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("user-select")
+	c.UserSelect.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("user-select")
+	c.UserSelect.All = newValueFn[pseudoclass](vfn("all"), nil).Setter("user-select")
+	c.UserSelect.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("user-select")
+
+	c.BackdropFilter.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("backdrop-filter")
+
+	c.ObjectFit.Fill = newValueFn[pseudoclass](vfn("fill"), nil).Setter("object-fit")
+	c.ObjectFit.Contain = newValueFn[pseudoclass](vfn("contain"), nil).Setter("object-fit")
+	c.ObjectFit.Cover = newValueFn[pseudoclass](vfn("cover"), nil).Setter("object-fit")
+	c.ObjectFit.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("object-fit")
+	c.ObjectFit.ScaleDown = newValueFn[pseudoclass](vfn("scaledown"), nil).Setter("object-fit")
+	c.ObjectFit.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("object-fit")
+
+	c.ObjectPosition.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("object-position")
+
 	return c
 }
 
@@ -1483,6 +1533,26 @@ type ContainerLayout struct {
 	Left struct {
 		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	GridTemplateColumns struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	GridTemplateRows struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	GridColumn struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	GridRow struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	Gap struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	ScrollBehavior struct {
+		Auto   func(*ui.Element) *ui.Element
+		Smooth func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 }
 
@@ -2065,6 +2135,49 @@ type ContainerStyle struct {
 		Lowercase  func(*ui.Element) *ui.Element
 		Value      func(value string) func(*ui.Element) *ui.Element
 	}
+	Margin struct {
+		Top    func(value string) func(*ui.Element) *ui.Element
+		Right  func(value string) func(*ui.Element) *ui.Element
+		Bottom func(value string) func(*ui.Element) *ui.Element
+		Left   func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	Padding struct {
+		Top    func(value string) func(*ui.Element) *ui.Element
+		Right  func(value string) func(*ui.Element) *ui.Element
+		Bottom func(value string) func(*ui.Element) *ui.Element
+		Left   func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	Transform struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	PointerEvents struct {
+		Auto  func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	UserSelect struct {
+		None  func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
+		Text  func(*ui.Element) *ui.Element
+		All   func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	BackdropFilter struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	ObjectFit struct {
+		Contain   func(*ui.Element) *ui.Element
+		Cover     func(*ui.Element) *ui.Element
+		Fill      func(*ui.Element) *ui.Element
+		None      func(*ui.Element) *ui.Element
+		ScaleDown func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
+	}
+	ObjectPosition struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
 }
 
 type ContentLayout struct {
@@ -2207,5 +2320,37 @@ type ContentStyle struct {
 		ZoomIn       func(*ui.Element) *ui.Element
 		ZoomOut      func(*ui.Element) *ui.Element
 		Value        func(value string) func(*ui.Element) *ui.Element
+	}
+}
+
+func (c ContainerStyle) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
+	return func(value string) func(*ui.Element) *ui.Element {
+		return func(e *ui.Element) *ui.Element {
+			return css("", property, value)(e)
+		}
+	}
+}
+
+func (c ContainerLayout) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
+	return func(value string) func(*ui.Element) *ui.Element {
+		return func(e *ui.Element) *ui.Element {
+			return css("", property, value)(e)
+		}
+	}
+}
+
+func (c ContentStyle) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
+	return func(value string) func(*ui.Element) *ui.Element {
+		return func(e *ui.Element) *ui.Element {
+			return css("", property, value)(e)
+		}
+	}
+}
+
+func (c ContentLayout) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
+	return func(value string) func(*ui.Element) *ui.Element {
+		return func(e *ui.Element) *ui.Element {
+			return css("", property, value)(e)
+		}
 	}
 }
