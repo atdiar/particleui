@@ -484,7 +484,7 @@
                     currentSelector = line.split('{')[0].trim();
                     let funcName = customFuncName || currentSelector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
                     funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1); // Capitalize first letter
-                    goCode += `func ${funcName}(e ui.Element) ui.Element {\n`;
+                    goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
                 } else if (line.includes('}')) {
                     inRule = false;
                     goCode += `\treturn e\n}\n\n`;
