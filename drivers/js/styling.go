@@ -299,18 +299,6 @@ func newContent() *Content {
 	return c
 }
 
-type CSSStyles struct {
-	Container
-	Content
-}
-
-func NewCSSStyles() CSSStyles {
-	c := CSSStyles{}
-	c.Container = *newContainer()
-	c.Content = *newContent()
-	return c
-}
-
 func initializeContainer[pseudoclass any]() *Container {
 	c := Container{}
 	c.Style = initializeContainerStyle[pseudoclass]()

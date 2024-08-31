@@ -107,11 +107,9 @@
         }
 
         #add-element {
-            padding: 5px 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
+            align-self: center;
             cursor: pointer;
+            margin-bottom: 20px;
         }
 
         .remove-element {
@@ -244,6 +242,46 @@
         white-space: nowrap;
         word-break: keep-all;
     }
+
+    @keyframes flash {
+        0%, 100% { opacity: 0; }
+        10%, 90% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    #save-indicator {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-weight: bold;
+        z-index: 1000;
+        transition: all 0.3s ease-in-out;
+        font-size: 16px;
+        opacity: 0;
+    }
+
+    #save-indicator.flashing {
+        top: 50%;
+        left: 50%;
+        font-size: 48px;
+        padding: 30px 50px;
+        animation: flash 2s ease-in-out;
+    }
+
+    #save-indicator.visible {
+        opacity: 1;
+    }
+
+    #copy-go-code {
+        cursor: pointer;
+        padding: 5px 10px;
+        border: none;
+        border-radius: 5px;
+        margin-top: 10px;
+        white-space:nowrap;
+    }
         
     </style>
 </head>
@@ -253,6 +291,7 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2 id="modalTitle">Go Styling function for Zui</h2>
+            <p><i>Double-click code to select</i><p>
             <pre id="modalGoCode" class="go-code-pre"></pre>
         </div>
     </div>
@@ -427,200 +466,900 @@
         <option value="var">var</option>
         <option value="video">video</option>
     </select>
-    <button id="add-element">Add Element</button>
+    <button id="add-element">Click to add Element</button>
 
     <div id="elements-container"></div>
 
     <script>
         const cssToGoMapping = {
-            'box-shadow': 'Container.Layout.BoxShadow',
-            'justify-content': 'Container.Layout.JustifyContent',
-            'z-index': 'Container.Layout.ZIndex',
-            'float': 'Container.Layout.Float',
-            'overflow': 'Container.Layout.Overflow',
-            'overflow-y': 'Container.Layout.OverflowY',
-            'perspective': 'Container.Layout.Perspective',
-            'border-collapse': 'Container.Layout.BorderCollapse',
-            'page-break-before': 'Container.Layout.PageBreakBefore',
-            'columns': 'Container.Layout.Columns',
-            'column-count': 'Container.Layout.ColumnCount',
-            'min-height': 'Container.Layout.MinHeight',
-            'page-break-inside': 'Container.Layout.PageBreakInside',
-            'column-gap': 'Container.Layout.ColumnGap',
-            'clip': 'Container.Layout.Clip',
-            'flex-direction': 'Container.Layout.FlexDirection',
-            'page-break-after': 'Container.Layout.PageBreakAfter',
-            'top': 'Container.Layout.Top',
-            'counter-increment': 'Container.Layout.CounterIncrement',
-            'height': 'Container.Layout.Height',
-            'transform-style': 'Container.Layout.TransformStyle',
-            'overflow-x': 'Container.Layout.OverflowX',
-            'flex-wrap': 'Container.Layout.FlexWrap',
-            'max-width': 'Container.Layout.MaxWidth',
-            'bottom': 'Container.Layout.Bottom',
-            'counter-reset': 'Container.Layout.CounterReset',
-            'right': 'Container.Layout.Right',
-            'box-sizing': 'Container.Layout.BoxSizing',
-            'position': 'Container.Layout.Position',
-            'table-layout': 'Container.Layout.TableLayout',
-            'width': 'Container.Layout.Width',
-            'max-height': 'Container.Layout.MaxHeight',
-            'column-width': 'Container.Layout.ColumnWidth',
-            'min-width': 'Container.Layout.MinWidth',
-            'vertical-align': 'Container.Layout.VerticalAlign',
-            'perspective-origin': 'Container.Layout.PerspectiveOrigin',
-            'align-content': 'Container.Layout.AlignContent',
-            'flex-flow': 'Container.Layout.FlexFlow',
-            'display': 'Container.Layout.Display',
-            'left': 'Container.Layout.Left',
-            'background-image': 'Container.Style.BackgroundImage',
-            'border-left-style': 'Container.Style.BorderLeftStyle',
-            'transition-delay': 'Container.Style.TransitionDelay',
-            'animation-duration': 'Container.Style.AnimationDuration',
-            'list-style': 'Container.Style.ListStyle',
-            'outline-width': 'Container.Style.OutlineWidth',
-            'border-top-left-radius': 'Container.Style.BorderTopLeftRadius',
-            'white-space': 'Container.Style.WhiteSpace',
-            'border-right': 'Container.Style.BorderRight',
-            'text-decoration-line': 'Container.Style.TextDecorationLine',
-            'animation-delay': 'Container.Style.AnimationDelay',
-            'background-position': 'Container.Style.BackgroundPosition',
-            'border-image': 'Container.Style.BorderImage',
-            'border-spacing': 'Container.Style.BorderSpacing',
-            'border-image-outset': 'Container.Style.BorderImageOutset',
-            'border-image-slice': 'Container.Style.BorderImageSlice',
-            'border-left-color': 'Container.Style.BorderLeftColor',
-            'font-size': 'Container.Style.FontSize',
-            'line-height': 'Container.Style.LineHeight',
-            'text-decoration-style': 'Container.Style.TextDecorationStyle',
-            'backface-visibility': 'Container.Style.BackfaceVisibility',
-            'border-right-style': 'Container.Style.BorderRightStyle',
-            'text-decoration': 'Container.Style.TextDecoration',
-            'transition': 'Container.Style.Transition',
-            'animation-iteration-count': 'Container.Style.AnimationIterationCount',
-            'border-bottom': 'Container.Style.BorderBottom',
-            'animation-timing-function': 'Container.Style.AnimationTimingFunction',
-            'border-radius': 'Container.Style.BorderRadius',
-            'quotes': 'Container.Style.Quotes',
-            'tab-size': 'Container.Style.TabSize',
-            'animation-fill-mode': 'Container.Style.AnimationFillMode',
-            'background-size': 'Container.Style.BackgroundSize',
-            'font-size-adjust': 'Container.Style.FontSizeAdjust',
-            'list-style-position': 'Container.Style.ListStylePosition',
-            'text-align': 'Container.Style.TextAlign',
-            'text-justify': 'Container.Style.TextJustify',
-            'background-attachment': 'Container.Style.BackgroundAttachment',
-            'border-right-width': 'Container.Style.BorderRightWidth',
-            'font': 'Container.Style.Font',
-            'border-left': 'Container.Style.BorderLeft',
-            'transition-duration': 'Container.Style.TransitionDuration',
-            'word-spacing': 'Container.Style.WordSpacing',
-            'animation-name': 'Container.Style.AnimationName',
-            'animation-play-state': 'Container.Style.AnimationPlayState',
-            'letter-spacing': 'Container.Style.LetterSpacing',
-            'border-bottom-style': 'Container.Style.BorderBottomStyle',
-            'word-break': 'Container.Style.WordBreak',
-            'border-bottom-right-radius': 'Container.Style.BorderBottomRightRadius',
-            'font-style': 'Container.Style.FontStyle',
-            'order': 'Container.Style.Order',
-            'outline-style': 'Container.Style.OutlineStyle',
-            'border-bottom-left-radius': 'Container.Style.BorderBottomLeftRadius',
-            'border-image-source': 'Container.Style.BorderImageSource',
-            'text-align-last': 'Container.Style.TextAlignLast',
-            'border-image-width': 'Container.Style.BorderImageWidth',
-            'font-weight': 'Container.Style.FontWeight',
-            'list-style-image': 'Container.Style.ListStyleImage',
-            'opacity': 'Container.Style.Opacity',
-            'clear': 'Container.Style.Clear',
-            'border-top-color': 'Container.Style.BorderTopColor',
-            'border': 'Container.Style.Border',
-            'border-right-color': 'Container.Style.BorderRightColor',
-            'transition-timing-function': 'Container.Style.TransitionTimingFunction',
-            'border-bottom-width': 'Container.Style.BorderBottomWidth',
-            'border-style': 'Container.Style.BorderStyle',
-            'border-top-right-radius': 'Container.Style.BorderTopRightRadius',
-            'caption-side': 'Container.Style.CaptionSide',
-            'font-family': 'Container.Style.FontFamily',
-            'text-decoration-color': 'Container.Style.TextDecorationColor',
-            'transition-property': 'Container.Style.TransitionProperty',
-            'background-origin': 'Container.Style.BackgroundOrigin',
-            'text-indent': 'Container.Style.TextIndent',
-            'visibility': 'Container.Style.Visibility',
-            'border-color': 'Container.Style.BorderColor',
-            'border-top': 'Container.Style.BorderTop',
-            'font-variant': 'Container.Style.FontVariant',
-            'outline': 'Container.Style.Outline',
-            'border-bottom-color': 'Container.Style.BorderBottomColor',
-            'border-top-style': 'Container.Style.BorderTopStyle',
-            'border-width': 'Container.Style.BorderWidth',
-            'list-style-type': 'Container.Style.ListStyleType',
-            'outline-offset': 'Container.Style.OutlineOffset',
-            'animation': 'Container.Style.Animation',
-            'background': 'Container.Style.Background',
-            'background-repeat': 'Container.Style.BackgroundRepeat',
-            'border-top-width': 'Container.Style.BorderTopWidth',
-            'word-wrap': 'Container.Style.WordWrap',
-            'background-color': 'Container.Style.BackgroundColor',
-            'text-overflow': 'Container.Style.TextOverflow',
-            'text-shadow': 'Container.Style.TextShadow',
-            'background-clip': 'Container.Style.BackgroundClip',
-            'border-left-width': 'Container.Style.BorderLeftWidth',
-            'resize': 'Container.Style.Resize',
-            'animation-direction': 'Container.Style.AnimationDirection',
-            'color': 'Container.Style.Color',
-            'outline-color': 'Container.Style.OutlineColor',
-            'border-image-repeat': 'Container.Style.BorderImageRepeat',
-            'font-stretch': 'Container.Style.FontStretch',
-            'text-transform': 'Container.Style.TextTransform',
-            'flex-grow': 'Content.Layout.FlexGrow',
-            'align-self': 'Content.Layout.AlignSelf',
-            'content': 'Content.Layout.Content',
-            'column-span': 'Content.Layout.ColumnSpan',
-            'flex': 'Content.Layout.Flex',
-            'flex-shrink': 'Content.Layout.FlexShrink',
-            'flex-basis': 'Content.Layout.FlexBasis',
-            'align-items': 'Content.Layout.AlignItems',
-            'column-rule-width': 'Content.Style.ColumnRuleWidth',
-            'column-rule': 'Content.Style.ColumnRule',
-            'direction': 'Content.Style.Direction',
-            'column-rule-style': 'Content.Style.ColumnRuleStyle',
-            'column-rule-color': 'Content.Style.ColumnRuleColor',
-            'column-fill': 'Content.Style.ColumnFill',
-            'empty-cells': 'Content.Style.EmptyCells',
-            'cursor': 'Content.Style.Cursor',
-            'transform': 'Container.Style.Transform',
-            'pointer-events': 'Container.Style.PointerEvents',
-            'user-select': 'Container.Style.UserSelect',
-            'backdrop-filter': 'Container.Style.BackdropFilter',
-            'object-fit': 'Container.Style.ObjectFit',
-            'object-position': 'Container.Style.ObjectPosition',
-            'margin': 'Container.Layout.Margin',
-            'margin-top': 'Container.Layout.MarginTop',
-            'margin-right': 'Container.Layout.MarginRight',
-            'margin-bottom': 'Container.Layout.MarginBottom',
-            'margin-left': 'Container.Layout.MarginLeft',
-            'padding-top': 'Container.Layout.PaddingTop',
-            'padding-right': 'Container.Layout.PaddingRight',
-            'padding-bottom': 'Container.Layout.PaddingBottom',
-            'padding-left': 'Container.Layout.PaddingLeft',
-            'grid-template': 'Container.Layout.GridTemplate',
-            'grid-auto-columns': 'Container.Layout.GridAutoColumns', // Not in Go
-            'grid-auto-rows': 'Container.Layout.GridAutoRows', // Not in Go
-            'grid-auto-flow': 'Container.Layout.GridAutoFlow', // ?? in go?
-            'grid': 'Container.Layout.Grid', // ?? in go?
-            'grid-gap': 'Container.Layout.GridGap', // Not in Go
-            'grid-row-gap': 'Container.Layout.GridRowGap',// Not in Go
-            'grid-column-gap': 'Container.Layout.GridColumnGap', // Not in Go
-            'grid-row-start': 'Container.Layout.GridRowStart', // Not in Go
-            'grid-column-start': 'Container.Layout.GridColumnStart', // Not in Go
-            'padding': 'Container.Layout.Padding',
-            'grid-template-columns': 'Container.Layout.GridTemplateColumns',
-            'grid-template-rows': 'Container.Layout.GridTemplateRows',
-            'grid-column': 'Container.Layout.GridColumn',
-            'grid-row': 'Container.Layout.GridRow',
-            'gap': 'Container.Layout.Gap',
-            'scroll-behavior': 'Container.Layout.ScrollBehavior'
+            // Container Layout properties
+            "box-shadow": {
+                id: "Container.Layout.BoxShadow",
+                values: ["none"],
+            },
+            "justify-content": {
+                id: "Container.Layout.JustifyContent",
+                values: ["flex-start", "flex-end", "center", "space-between", "space-around"],
+            },
+            "z-index": {
+                id: "Container.Layout.ZIndex",
+                values: ["auto"],
+            },
+            "float": {
+                id: "Container.Layout.Float",
+                values: ["none", "left", "right"],
+            },
+            "overflow": {
+                id: "Container.Layout.Overflow",
+                values: ["visible", "hidden", "scroll", "auto"],
+            },
+            "overflow-y": {
+                id: "Container.Layout.OverflowY",
+                values: ["visible", "hidden", "scroll", "auto"],
+            },
+            "perspective": {
+                id: "Container.Layout.Perspective",
+                values: ["none"],
+            },
+            "border-collapse": {
+                id: "Container.Layout.BorderCollapse",
+                values: ["separate", "collapse"],
+            },
+            "page-break-before": {
+                id: "Container.Layout.PageBreakBefore",
+                values: ["auto", "always", "avoid", "left", "right"],
+            },
+            "columns": {
+                id: "Container.Layout.Columns",
+                values: ["auto"],
+            },
+            "column-count": {
+                id: "Container.Layout.ColumnCount",
+                values: ["auto"],
+            },
+            "min-height": {
+                id: "Container.Layout.MinHeight",
+                values: [],
+            },
+            "page-break-inside": {
+                id: "Container.Layout.PageBreakInside",
+                values: ["auto", "avoid"],
+            },
+            "column-gap": {
+                id: "Container.Layout.ColumnGap",
+                values: ["normal"],
+            },
+            "clip": {
+                id: "Container.Layout.Clip",
+                values: ["auto"],
+            },
+            "flex-direction": {
+                id: "Container.Layout.FlexDirection",
+                values: ["row", "row-reverse", "column", "column-reverse"],
+            },
+            "page-break-after": {
+                id: "Container.Layout.PageBreakAfter",
+                values: ["auto", "always", "avoid", "left", "right"],
+            },
+            "top": {
+                id: "Container.Layout.Top",
+                values: ["auto"],
+            },
+            "counter-increment": {
+                id: "Container.Layout.CounterIncrement",
+                values: ["none"],
+            },
+            "height": {
+                id: "Container.Layout.Height",
+                values: ["auto"],
+            },
+            "transform-style": {
+                id: "Container.Layout.TransformStyle",
+                values: ["flat", "preserve-3d"],
+            },
+            "overflow-x": {
+                id: "Container.Layout.OverflowX",
+                values: ["visible", "hidden", "scroll", "auto"],
+            },
+            "flex-wrap": {
+                id: "Container.Layout.FlexWrap",
+                values: ["nowrap", "wrap", "wrap-reverse"],
+            },
+            "max-width": {
+                id: "Container.Layout.MaxWidth",
+                values: ["none"],
+            },
+            "bottom": {
+                id: "Container.Layout.Bottom",
+                values: ["auto"],
+            },
+            "counter-reset": {
+                id: "Container.Layout.CounterReset",
+                values: ["none"],
+            },
+            "right": {
+                id: "Container.Layout.Right",
+                values: ["auto"],
+            },
+            "box-sizing": {
+                id: "Container.Layout.BoxSizing",
+                values: ["content-box", "border-box"],
+            },
+            "position": {
+                id: "Container.Layout.Position",
+                values: ["static", "absolute", "fixed", "relative", "sticky"],
+            },
+            "table-layout": {
+                id: "Container.Layout.TableLayout",
+                values: ["auto", "fixed"],
+            },
+            "width": {
+                id: "Container.Layout.Width",
+                values: ["auto"],
+            },
+            "max-height": {
+                id: "Container.Layout.MaxHeight",
+                values: ["none"],
+            },
+            "column-width": {
+                id: "Container.Layout.ColumnWidth",
+                values: ["auto"],
+            },
+            "min-width": {
+                id: "Container.Layout.MinWidth",
+                values: [],
+            },
+            "vertical-align": {
+                id: "Container.Layout.VerticalAlign",
+                values: ["baseline", "top", "text-top", "middle", "bottom", "text-bottom"],
+            },
+            "perspective-origin": {
+                id: "Container.Layout.PerspectiveOrigin",
+                values: [],
+            },
+            "align-content": {
+                id: "Container.Layout.AlignContent",
+                values: ["stretch", "center", "flex-start", "flex-end", "space-between", "space-around"],
+            },
+            "flex-flow": {
+                id: "Container.Layout.FlexFlow",
+                values: [],
+            },
+            "display": {
+                id: "Container.Layout.Display",
+                values: ["inline", "block", "contents", "flex", "grid", "none"],
+            },
+            "left": {
+                id: "Container.Layout.Left",
+                values: ["auto"],
+            },
+            "grid-template-columns": {
+                id: "Container.Layout.GridTemplateColumns",
+                values: [],
+            },
+            "grid-template-rows": {
+                id: "Container.Layout.GridTemplateRows",
+                values: [],
+            },
+            "grid-column": {
+                id: "Container.Layout.GridColumn",
+                values: [],
+            },
+            "grid-row": {
+                id: "Container.Layout.GridRow",
+                values: [],
+            },
+            "gap": {
+                id: "Container.Layout.Gap",
+                values: [],
+            },
+            "scroll-behavior": {
+                id: "Container.Layout.ScrollBehavior",
+                values: ["auto", "smooth"],
+            },
+
+            // Container Style properties
+            "background-image": {
+                id: "Container.Style.BackgroundImage",
+                values: ["none"],
+            },
+            "border-left-style": {
+                id: "Container.Style.BorderLeftStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "transition-delay": {
+                id: "Container.Style.TransitionDelay",
+                values: [],
+            },
+            "animation-duration": {
+                id: "Container.Style.AnimationDuration",
+                values: [],
+            },
+            "list-style": {
+                id: "Container.Style.ListStyle",
+                values: [],
+            },
+            "outline-width": {
+                id: "Container.Style.OutlineWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "border-top-left-radius": {
+                id: "Container.Style.BorderTopLeftRadius",
+                values: [],
+            },
+            "white-space": {
+                id: "Container.Style.WhiteSpace",
+                values: ["normal", "nowrap", "pre", "pre-line", "pre-wrap"],
+            },
+            "border-right": {
+                id: "Container.Style.BorderRight",
+                values: [],
+            },
+            "text-decoration-line": {
+                id: "Container.Style.TextDecorationLine",
+                values: ["none", "underline", "overline", "line-through"],
+            },
+            "animation-delay": {
+                id: "Container.Style.AnimationDelay",
+                values: [],
+            },
+            "background-position": {
+                id: "Container.Style.BackgroundPosition",
+                values: ["left top", "left center", "left bottom", "right top", "right center", "right bottom", "center top", "center center", "center bottom"],
+            },
+            "border-image": {
+                id: "Container.Style.BorderImage",
+                values: [],
+            },
+            "border-spacing": {
+                id: "Container.Style.BorderSpacing",
+                values: [],
+            },
+            "border-image-outset": {
+                id: "Container.Style.BorderImageOutset",
+                values: [],
+            },
+            "border-image-slice": {
+                id: "Container.Style.BorderImageSlice",
+                values: [],
+            },
+            "border-left-color": {
+                id: "Container.Style.BorderLeftColor",
+                values: ["transparent"],
+            },
+            "font-size": {
+                id: "Container.Style.FontSize",
+                values: ["medium", "xx-small", "x-small", "small", "large", "x-large", "xx-large", "smaller", "larger"],
+            },
+            "line-height": {
+                id: "Container.Style.LineHeight",
+                values: ["normal"],
+            },
+            "text-decoration-style": {
+                id: "Container.Style.TextDecorationStyle",
+                values: ["solid", "double", "dotted", "dashed", "wavy"],
+            },
+            "backface-visibility": {
+                id: "Container.Style.BackfaceVisibility",
+                values: ["visible", "hidden"],
+            },
+            "border-right-style": {
+                id: "Container.Style.BorderRightStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "text-decoration": {
+                id: "Container.Style.TextDecoration",
+                values: [],
+            },
+            "transition": {
+                id: "Container.Style.Transition",
+                values: [],
+            },
+            "animation-iteration-count": {
+                id: "Container.Style.AnimationIterationCount",
+                values: ["infinite"],
+            },
+            "border-bottom": {
+                id: "Container.Style.BorderBottom",
+                values: [],
+            },
+            "animation-timing-function": {
+                id: "Container.Style.AnimationTimingFunction",
+                values: [],
+            },
+            "border-radius": {
+                id: "Container.Style.BorderRadius",
+                values: [],
+            },
+            "quotes": {
+                id: "Container.Style.Quotes",
+                values: ["none", "auto"],
+            },
+            "tab-size": {
+                id: "Container.Style.TabSize",
+                values: [],
+            },
+            "animation-fill-mode": {
+                id: "Container.Style.AnimationFillMode",
+                values: ["none", "forwards", "backwards", "both"],
+            },
+            "background-size": {
+                id: "Container.Style.BackgroundSize",
+                values: ["auto", "cover", "contain"],
+            },
+            "font-size-adjust": {
+                id: "Container.Style.FontSizeAdjust",
+                values: ["none"],
+            },
+            "list-style-position": {
+                id: "Container.Style.ListStylePosition",
+                values: ["inside", "outside"],
+            },
+            "text-align": {
+                id: "Container.Style.TextAlign",
+                values: ["left", "right", "center", "justify"],
+            },
+            "text-justify": {
+                id: "Container.Style.TextJustify",
+                values: ["auto", "inter-word", "inter-character", "none"],
+            },
+            "background-attachment": {
+                id: "Container.Style.BackgroundAttachment",
+                values: ["scroll", "fixed", "local"],
+            },
+            "border-right-width": {
+                id: "Container.Style.BorderRightWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "font": {
+                id: "Container.Style.Font",
+                values: [],
+            },
+            "border-left": {
+                id: "Container.Style.BorderLeft",
+                values: [],
+            },
+            "transition-duration": {
+                id: "Container.Style.TransitionDuration",
+                values: [],
+            },
+            "word-spacing": {
+                id: "Container.Style.WordSpacing",
+                values: ["normal"],
+            },
+            "animation-name": {
+                id: "Container.Style.AnimationName",
+                values: ["none"],
+            },
+            "animation-play-state": {
+                id: "Container.Style.AnimationPlayState",
+                values: ["paused", "running"],
+            },
+            "letter-spacing": {
+                id: "Container.Style.LetterSpacing",
+                values: ["normal"],
+            },
+            "border-bottom-style": {
+                id: "Container.Style.BorderBottomStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "word-break": {
+                id: "Container.Style.WordBreak",
+                values: ["normal", "break-all", "keep-all", "break-word"],
+            },
+            "border-bottom-right-radius": {
+                id: "Container.Style.BorderBottomRightRadius",
+                values: [],
+            },
+            "font-style": {
+                id: "Container.Style.FontStyle",
+                values: ["normal", "italic", "oblique"],
+            },
+            "order": {
+                id: "Container.Style.Order",
+                values: [],
+            },
+            "outline-style": {
+                id: "Container.Style.OutlineStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "border-bottom-left-radius": {
+                id: "Container.Style.BorderBottomLeftRadius",
+                values: [],
+            },
+            "border-image-source": {
+                id: "Container.Style.BorderImageSource",
+                values: ["none"],
+            },
+            "text-align-last": {
+                id: "Container.Style.TextAlignLast",
+                values: ["auto", "left", "right", "center", "justify", "start", "end"],
+            },
+            "border-image-width": {
+                id: "Container.Style.BorderImageWidth",
+                values: ["auto"],
+            },
+            "font-weight": {
+                id: "Container.Style.FontWeight",
+                values: ["normal", "bold", "bolder", "lighter", "100", "200", "300", "400", "500", "600", "700", "800", "900"],
+            },
+            "list-style-image": {
+                id: "Container.Style.ListStyleImage",
+                values: ["none"],
+            },
+            "opacity": {
+                id: "Container.Style.Opacity",
+                values: [],
+            },
+            "clear": {
+                id: "Container.Style.Clear",
+                values: ["none", "left", "right", "both"],
+            },
+            "border-top-color": {
+                id: "Container.Style.BorderTopColor",
+                values: ["transparent"],
+            },
+            "border": {
+                id: "Container.Style.Border",
+                values: [],
+            },
+            "border-right-color": {
+                id: "Container.Style.BorderRightColor",
+                values: ["transparent"],
+            },
+            "transition-timing-function": {
+                id: "Container.Style.TransitionTimingFunction",
+                values: [],
+            },
+            "border-bottom-width": {
+                id: "Container.Style.BorderBottomWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "border-style": {
+                id: "Container.Style.BorderStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "border-top-right-radius": {
+                id: "Container.Style.BorderTopRightRadius",
+                values: [],
+            },
+            "caption-side": {
+                id: "Container.Style.CaptionSide",
+                values: ["top", "bottom"],
+            },
+            "font-family": {
+                id: "Container.Style.FontFamily",
+                values: [],
+            },
+            "text-decoration-color": {
+                id: "Container.Style.TextDecorationColor",
+                values: [],
+            },
+            "transition-property": {
+                id: "Container.Style.TransitionProperty",
+                values: ["none"],
+            },
+            "background-origin": {
+                id: "Container.Style.BackgroundOrigin",
+                values: ["padding-box", "border-box", "content-box"],
+            },
+            "text-indent": {
+                id: "Container.Style.TextIndent",
+                values: [],
+            },
+            "visibility": {
+                id: "Container.Style.Visibility",
+                values: ["visible", "hidden", "collapse"],
+            },
+            "border-color": {
+                id: "Container.Style.BorderColor",
+                values: ["transparent"],
+            },
+            "border-top": {
+                id: "Container.Style.BorderTop",
+                values: [],
+            },
+            "font-variant": {
+                id: "Container.Style.FontVariant",
+                values: ["normal", "small-caps"],
+            },
+            "outline": {
+                id: "Container.Style.Outline",
+                values: [],
+            },
+            "border-bottom-color": {
+                id: "Container.Style.BorderBottomColor",
+                values: ["transparent"],
+            },
+            "border-top-style": {
+                id: "Container.Style.BorderTopStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "border-width": {
+                id: "Container.Style.BorderWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "list-style-type": {
+                id: "Container.Style.ListStyleType",
+                values: ["disc", "armenian", "circle", "cjk-ideographic", "decimal", "decimal-leading-zero", "georgian", "hebrew", "hiragana", "hiragana-iroha", "katakana", "katakana-iroha", "lower-alpha", "lower-greek", "lower-latin", "lower-roman", "none", "square", "upper-alpha", "upper-greek", "upper-latin", "upper-roman"],
+            },
+            "outline-offset": {
+                id: "Container.Style.OutlineOffset",
+                values: [],
+            },
+            "animation": {
+                id: "Container.Style.Animation",
+                values: [],
+            },
+            "background": {
+                id: "Container.Style.Background",
+                values: [],
+            },
+            "background-repeat": {
+                id: "Container.Style.BackgroundRepeat",
+                values: ["repeat", "repeat-x", "repeat-y", "no-repeat", "space", "round"],
+            },
+            "border-top-width": {
+                id: "Container.Style.BorderTopWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "word-wrap": {
+                id: "Container.Style.WordWrap",
+                values: ["normal", "break-word"],
+            },
+            "background-color": {
+                id: "Container.Style.BackgroundColor",
+                values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
+                    "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+                    "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
+                    "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
+                    "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+                    "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+                    "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
+                    "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
+                    "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+                    "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
+                    "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
+                    "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
+                    "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
+                    "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
+                    "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
+                    "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
+                    "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
+                    "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
+                    "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
+                    "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
+                    "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
+                    "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
+                    "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
+                    "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
+                    "yellow", "yellowgreen"],
+            },
+            "text-overflow": {
+                id: "Container.Style.TextOverflow",
+                values: ["clip", "ellipsis"],
+            },
+            "text-shadow": {
+                id: "Container.Style.TextShadow",
+                values: ["none"],
+            },
+            "background-clip": {
+                id: "Container.Style.BackgroundClip",
+                values: ["border-box", "padding-box", "content-box"],
+            },
+            "border-left-width": {
+                id: "Container.Style.BorderLeftWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "resize": {
+                id: "Container.Style.Resize",
+                values: ["none", "both", "horizontal", "vertical"],
+            },
+            "animation-direction": {
+                id: "Container.Style.AnimationDirection",
+                values: ["normal", "reverse", "alternate", "alternate-reverse"],
+            },
+            "color": {
+                id: "Container.Style.Color",
+                values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
+                    "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+                    "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
+                    "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
+                    "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+                    "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+                    "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
+                    "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
+                    "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+                    "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
+                    "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
+                    "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
+                    "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
+                    "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
+                    "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
+                    "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
+                    "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
+                    "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
+                    "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
+                    "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
+                    "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
+                    "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
+                    "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
+                    "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
+                    "yellow", "yellowgreen"],
+            },
+            "outline-color": {
+                id: "Container.Style.OutlineColor",
+                values: ["invert"],
+            },
+            "border-image-repeat": {
+                id: "Container.Style.BorderImageRepeat",
+                values: ["stretch", "repeat", "round", "space"],
+            },
+            "font-stretch": {
+                id: "Container.Style.FontStretch",
+                values: ["ultra-condensed", "extra-condensed", "condensed", "semi-condensed", "normal", "semi-expanded", "expanded", "extra-expanded", "ultra-expanded"],
+            },
+            "text-transform": {
+                id: "Container.Style.TextTransform",
+                values: ["none", "capitalize", "uppercase", "lowercase"],
+            },
+            "transform": {
+                id: "Container.Style.Transform",
+                values: [],
+            },
+            "pointer-events": {
+                id: "Container.Style.PointerEvents",
+                values: ["none", "auto"],
+            },
+            "user-select": {
+                id: "Container.Style.UserSelect",
+                values: ["none", "text", "auto", "all"],
+            },
+            "backdrop-filter": {
+                id: "Container.Style.BackdropFilter",
+                values: [],
+            },
+            "object-fit": {
+                id: "Container.Style.ObjectFit",
+                values: ["fill", "contain", "cover", "none", "scale-down"],
+            },
+            "object-position": {
+                id: "Container.Style.ObjectPosition",
+                values: [],
+            },
+
+            // Content Layout properties
+            "flex-grow": {
+                id: "Content.Layout.FlexGrow",
+                values: [],
+            },
+            "align-self": {
+                id: "Content.Layout.AlignSelf",
+                values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline"],
+            },
+            "content": {
+                id: "Content.Layout.Content",
+                values: ["normal", "none", "counter", "open-quote", "close-quote", "no-open-quote", "no-close-quote"],
+            },
+            "column-span": {
+                id: "Content.Layout.ColumnSpan",
+                values: ["none", "all"],
+            },
+            "flex": {
+                id: "Content.Layout.Flex",
+                values: ["auto", "initial", "none", "inherit"],
+            },
+            "flex-shrink": {
+                id: "Content.Layout.FlexShrink",
+                values: [],
+            },
+            "flex-basis": {
+                id: "Content.Layout.FlexBasis",
+                values: ["auto"],
+            },
+            "align-items": {
+                id: "Content.Layout.AlignItems",
+                values: ["stretch", "center", "flex-start", "flex-end", "baseline"],
+            },
+
+            // Content Style properties
+            "column-rule-width": {
+                id: "Content.Style.ColumnRuleWidth",
+                values: ["medium", "thin", "thick"],
+            },
+            "column-rule": {
+                id: "Content.Style.ColumnRule",
+                values: [],
+            },
+            "direction": {
+                id: "Content.Style.Direction",
+                values: ["ltr", "rtl"],
+            },
+            "column-rule-style": {
+                id: "Content.Style.ColumnRuleStyle",
+                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+            },
+            "column-rule-color": {
+                id: "Content.Style.ColumnRuleColor",
+                values: [],
+            },
+            "column-fill": {
+                id: "Content.Style.ColumnFill",
+                values: ["balance", "auto"],
+            },
+            "empty-cells": {
+                id: "Content.Style.EmptyCells",
+                values: ["show", "hide"],
+            },
+            "cursor": {
+                id: "Content.Style.Cursor",
+                values: ["alias", "all-scroll", "auto", "cell", "context-menu", "col-resize", "copy", "crosshair", "default", "e-resize", "ew-resize", "grab", "grabbing", "help", "move", "n-resize", "ne-resize", "nesw-resize", "ns-resize", "nw-resize", "nwse-resize", "no-drop", "none", "not-allowed", "pointer", "progress", "row-resize", "s-resize", "se-resize", "sw-resize", "text", "vertical-text", "w-resize", "wait", "zoom-in", "zoom-out"],
+            },
+            "padding": {
+                id: "Container.Layout.Padding",
+                values: [],
+            },
+            "padding-top": {
+                id: "Container.Layout.PaddingTop",
+                values: [],
+            },
+            "padding-right": {
+                id: "Container.Layout.PaddingRight",
+                values: [],
+            },
+            "padding-bottom": {
+                id: "Container.Layout.PaddingBottom",
+                values: [],
+            },
+            "padding-left": {
+                id: "Container.Layout.PaddingLeft",
+                values: [],
+            },
+
+            // Margin properties
+            "margin": {
+                id: "Container.Layout.Margin",
+                values: ["auto"],
+            },
+            "margin-top": {
+                id: "Container.Layout.MarginTop",
+                values: ["auto"],
+            },
+            "margin-right": {
+                id: "Container.Layout.MarginRight",
+                values: ["auto"],
+            },
+            "margin-bottom": {
+                id: "Container.Layout.MarginBottom",
+                values: ["auto"],
+            },
+            "margin-left": {
+                id: "Container.Layout.MarginLeft",
+                values: ["auto"],
+            },
+
+            // Text-related properties
+            "text-orientation": {
+                id: "Container.Style.TextOrientation",
+                values: ["mixed", "upright", "sideways"],
+            },
+            "text-underline-position": {
+                id: "Container.Style.TextUnderlinePosition",
+                values: ["auto", "under", "left", "right"],
+            },
+            "text-rendering": {
+                id: "Container.Style.TextRendering",
+                values: ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
+            },
+            "font-kerning": {
+                id: "Container.Style.FontKerning",
+                values: ["auto", "normal", "none"],
+            },
+            "hanging-punctuation": {
+                id: "Container.Style.HangingPunctuation",
+                values: ["none", "first", "last", "force-end", "allow-end"],
+            },
+
+            // Flexbox-specific properties
+            "place-content": {
+                id: "Container.Layout.PlaceContent",
+                values: [],
+            },
+            "place-items": {
+                id: "Container.Layout.PlaceItems",
+                values: [],
+            },
+            "place-self": {
+                id: "Content.Layout.PlaceSelf",
+                values: [],
+            },
+
+            // Grid-specific properties
+            "grid-template-areas": {
+                id: "Container.Layout.GridTemplateAreas",
+                values: ["none"],
+            },
+            "grid-auto-columns": {
+                id: "Container.Layout.GridAutoColumns",
+                values: ["auto"],
+            },
+            "grid-auto-rows": {
+                id: "Container.Layout.GridAutoRows",
+                values: ["auto"],
+            },
+            "grid-auto-flow": {
+                id: "Container.Layout.GridAutoFlow",
+                values: ["row", "column", "dense", "row dense", "column dense"],
+            },
+            "grid-area": {
+                id: "Content.Layout.GridArea",
+                values: ["auto"],
+            },
+
+            // Transform-related properties
+            "transform-origin": {
+                id: "Container.Style.TransformOrigin",
+                values: [],
+            },
+            "transform-box": {
+                id: "Container.Style.TransformBox",
+                values: ["content-box", "border-box", "fill-box", "stroke-box", "view-box"],
+            },
+
+            // Miscellaneous properties
+            "aspect-ratio": {
+                id: "Container.Layout.AspectRatio",
+                values: ["auto"],
+            },
+            "scroll-snap-type": {
+                id: "Container.Layout.ScrollSnapType",
+                values: ["none", "x mandatory", "y mandatory", "block mandatory", "inline mandatory", "both mandatory"],
+            },
+            "overscroll-behavior": {
+                id: "Container.Layout.OverscrollBehavior",
+                values: ["auto", "contain", "none"],
+            },
+            "contain": {
+                id: "Container.Layout.Contain",
+                values: ["none", "strict", "content", "size", "layout", "style", "paint"],
+            },
+            "will-change": {
+                id: "Container.Style.WillChange",
+                values: ["auto"],
+            },
+            "filter": {
+                id: "Container.Style.Filter",
+                values: ["none"],
+            },
+            "mix-blend-mode": {
+                id: "Container.Style.MixBlendMode",
+                values: ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"],
+            },
+            "isolation": {
+                id: "Container.Style.Isolation",
+                values: ["auto", "isolate"],
+            },
+
+            // Newer CSS properties
+            "accent-color": {
+                id: "Container.Style.AccentColor",
+                values: ["auto"],
+            },
+            "content-visibility": {
+                id: "Container.Layout.ContentVisibility",
+                values: ["visible", "auto", "hidden"],
+            },
+            "scrollbar-color": {
+                id: "Container.Style.ScrollbarColor",
+                values: ["auto"],
+            },
+            "scrollbar-width": {
+                id: "Container.Style.ScrollbarWidth",
+                values: ["auto", "thin", "none"],
+            },
+
         };
+        
     </script>
 
     <script>
@@ -628,11 +1367,14 @@
             return string.charAt(0).toUpperCase() + string.slice(1);
         }
 
+
         function getMethodCall(property, value) {
             const capitalizedProperty = property.split('-').map(capitalizeFirstLetter).join('');
             if (value.match(/^[a-zA-Z-]+$/)) {
-                return `${capitalizedProperty}(e)`;
+                // For keyword values, use them directly
+                return `${capitalizedProperty}(${value})(e)`;
             } else {
+                // For all other values, including colors and numeric values, use .Value()
                 return `${capitalizedProperty}.Value("${value}")(e)`;
             }
         }
@@ -643,40 +1385,95 @@
             let goCode = '';
             let errors = [];
             let lineNumber = 1;
-            let inRule = false;
-            let currentSelector = '';
+            let currentElement = '';
+            let currentPseudo = '';
+            let styleMap = new Map();
+
+            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'firstchild', 'lastchild', 'checked', 'disabled', 'enabled'];
+
+            function getMethodCall(property, value, pseudo) {
+                const mapping = cssToGoMapping[property];
+                if (!mapping) {
+                    return `// ERROR: Unknown property "${property}"`;
+                }
+
+                const [namespace, category, prop] = mapping.id.split('.');
+                
+                let methodChain = `doc.CSS.${namespace}`;
+                if (pseudo) {
+                    if (validPseudoSelectors.includes(pseudo.toLowerCase())) {
+                        methodChain += `.${capitalizeFirstLetter(pseudo)}`;
+                    } else {
+                        return `// ERROR: Invalid pseudo-selector ":${pseudo}"`;
+                    }
+                }
+                methodChain += `.${category}`;
+
+                if (mapping.values.includes(value)) {
+                    const methodName = value.charAt(0).toUpperCase() + value.slice(1);
+                    return `${methodChain}.${prop}.${methodName}(e)`;
+                } else {
+                    return `${methodChain}.${prop}.Value("${value}")(e)`;
+                }
+            }
 
             for (let line of lines) {
                 line = line.trim();
-
                 if (line.includes('{')) {
-                    inRule = true;
-                    currentSelector = line.split('{')[0].trim();
-                    let funcName = currentSelector.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-                    funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
-                    goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+                    let selector = line.split('{')[0].trim();
+                    [currentElement, currentPseudo] = selector.split(':').map(s => s.trim());
+                    if (currentPseudo && !validPseudoSelectors.includes(currentPseudo.toLowerCase())) {
+                        errors.push({ selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
+                    }
+                    if (!styleMap.has(currentElement)) {
+                        styleMap.set(currentElement, []);
+                    }
                 } else if (line.includes('}')) {
-                    inRule = false;
-                    goCode += `\treturn e\n}\n\n`;
-                    currentSelector = '';
-                } else if (inRule && line.includes(':')) {
+                    currentElement = '';
+                    currentPseudo = '';
+                } else if (currentElement && line.includes(':')) {
                     const [property, value] = line.split(':').map(s => s.trim());
+                    const cleanValue = value.replace(';', '');
                     if (cssToGoMapping[property]) {
-                        const [namespace, category] = cssToGoMapping[property].split('.');
-                        goCode += `\te = doc.CSS.${namespace}.${category}.${getMethodCall(property, value.replace(';', ''))}\n`;
+                        const methodCall = getMethodCall(property, cleanValue, currentPseudo);
+                        if (methodCall.includes('ERROR')) {
+                            errors.push({ property, selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
+                        }
+                        styleMap.get(currentElement).push({ pseudo: currentPseudo, style: methodCall });
                     } else {
-                        errors.push({ property, selector: currentSelector, lineNumber: lineNumber });
-                        goCode += `\t// ERROR: Unknown property "${property}"\n`;
+                        errors.push({ property, selector: currentElement, lineNumber: lineNumber });
                     }
                 }
-
                 lineNumber++;
+            }
+
+            for (let [element, styles] of styleMap) {
+                let funcName = element.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
+                funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
+                goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+                for (let { pseudo, style } of styles) {
+                    goCode += `\te = ${style}\n`;
+                }
+                goCode += `\treturn e\n}\n\n`;
             }
 
             return { goCode: goCode.trim(), errors: errors };
         }
 
+    </script>
 
+    <script>
+        function updateSaveIndicator(message, isFlashing = false) {
+            const indicator = document.getElementById('save-indicator');
+            indicator.textContent = message;
+            
+            if (isFlashing) {
+                indicator.classList.add('flashing');
+                setTimeout(() => {
+                    indicator.classList.remove('flashing');
+                }, 1000); // Remove class after animation duration
+            }
+        }
     </script>
 
     <script>
@@ -684,6 +1481,11 @@
             let elementCount = 0;
             let currentSheetName = sessionStorage.getItem('currentSheetName') || 'Untitled';
             let hasUnsavedChanges = false;
+
+            function setCurrentSheetName(name) {
+                currentSheetName = name;
+                sessionStorage.setItem('currentSheetName', name);
+            }
 
             // Global style controls
             const fontFamily = document.getElementById('font-family');
@@ -829,64 +1631,78 @@
             });
 
 
-            if (newStylesheetButton) {
-                newStylesheetButton.addEventListener('click', function () {
-                    // Ask whether to save changes made to ($(sheetName)) before creating a new stylesheet if there are unsaved changes
-                    if (hasUnsavedChanges) {
+            newStylesheetButton.addEventListener('click', function () {
+                if (!hasUnsavedChanges) {
+                    setCurrentSheetName('Untitled');
+                    loadDefaultState();
+                } else {
+                    if (currentSheetName !== 'Untitled') {
+                        // Unsaved changes on a saved sheet
                         if (confirm('You have unsaved changes. Would you like to save them before creating a new stylesheet?')) {
                             saveCurrentState(true);
+                            setCurrentSheetName('Untitled');
+                            loadDefaultState();
+                        } else if (confirm('Are you sure you want to discard your changes and create a new stylesheet?')) {
+                            setCurrentSheetName('Untitled');
+                            loadDefaultState();
+                        }
+                    } else {
+                        // Unsaved changes on an untitled sheet
+                        if (confirm('You have unsaved changes. Would you like to save them before creating a new stylesheet?')) {
+                            // Trigger the save sheet process
+                            const saveButton = document.getElementById('save-sheet');
+                            if (saveButton) {
+                                saveButton.click();
+                                // Check if the save was successful (sheetname changed from 'Untitled')
+                                if (currentSheetName !== 'Untitled') {
+                                    setCurrentSheetName('Untitled');
+                                    loadDefaultState();
+                                }
+                                // If still 'Untitled', the user cancelled the save, so we don't proceed
+                            } else {
+                                console.error('Save button not found');
+                            }
+                        } else if (confirm('Are you sure you want to discard your changes and create a new stylesheet?')) {
+                            setCurrentSheetName('Untitled');
+                            loadDefaultState();
                         }
                     }
-
-                    currentSheetName = 'Untitled';
-                    loadDefaultState(); 
-                    sessionStorage.removeItem("pending_save")
-                    updateLoadSheetDropdown();
-                    updateSaveIndicator();
-                });
-            }
-
-            document.getElementById('add-element').addEventListener('click', () => {
-                const selector = document.getElementById('element-selector');
-                const selectedElement = selector.value;
-                if (selectedElement) {
-                    createEditorContainer(selectedElement);
                 }
             });
 
 
             window.addEventListener('beforeunload', (event) => {
                 pending_save = sessionStorage.getItem('pending_save');
-                if (hasUnsavedChanges) {
+                if (hasUnsavedChanges) { // && sessionStorage.getItem('pending_save') === 'true') {
                     event.preventDefault();
-                    event.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
-                } else { 
-                    sessionStorage.removeItem('pending_save'); // Clear the pending save flag
+                    event.returnValue = 'You have unsaved changes. Are you sure you want to discard them?';
                 }
             });
 
-            function updateSaveIndicator() {
+            function updateSaveIndicator(isFlashing = false) {
                 const indicator = document.getElementById('save-indicator');
-                // if pending_save is not in sessionstorage, then there is nothing saved and nothing to save 
-                // so the indicator shouldn't be visible
-                // if there is pending_save in sessionstorage, then there are saved or unsaved changes depending on
-                // the value that has been stored.
-
                 const pendingSave = sessionStorage.getItem('pending_save');
+
                 if (!pendingSave) {
-                    indicator.style.display = 'none';
+                    indicator.classList.remove('visible');
                     return;
                 }
 
-                indicator.style.display = 'block';
-
+                indicator.classList.add('visible');
 
                 if (hasUnsavedChanges) {
                     indicator.textContent = 'Unsaved';
-                    indicator.style.color = 'red';
+                    indicator.style.color = 'rgba(255, 0, 0, 0.8)'; // Red
                 } else {
                     indicator.textContent = 'Saved';
-                    indicator.style.color = 'green';
+                    indicator.style.color = 'rgba(0, 128, 0, 0.8)'; // Green 
+                }
+
+                if (isFlashing) {
+                    indicator.classList.add('flashing');
+                    setTimeout(() => {
+                        indicator.classList.remove('flashing');
+                    }, 2000); // Remove class after animation duration
                 }
             }
 
@@ -944,52 +1760,54 @@ p, h1, h2, h3, h4, h5, h6 {
                 updateLoadSheetDropdown();
             }
 
+            function getSerializableState() {
+                const elementsContainer = document.getElementById('elements-container');
+                const elements = Array.from(elementsContainer.children).map(container => {
+                    const editableElement = container.querySelector('.editable-element');
+                    const cssTextareas = container.querySelectorAll('.css-textarea');
+                    return {
+                        type: editableElement.children[0].tagName.toLowerCase(),
+                        html: editableElement.innerHTML,
+                        styles: Array.from(cssTextareas).map(textarea => ({
+                            pseudo: textarea.dataset.pseudo,
+                            css: textarea.value
+                        }))
+                    };
+                });
+
+                return {
+                    elements: elements,
+                    globalSettings: {
+                        resetCSSEnabled: document.getElementById('reset-css-toggle').checked,
+                        fontFamily: document.getElementById('font-family').value,
+                        fontSize: document.getElementById('font-size').value,
+                        textColor: document.getElementById('text-color').value,
+                        lineHeight: document.getElementById('line-height').value,
+                        pagePadding: document.getElementById('page-padding').value,
+                        pageWidth: document.getElementById('page-width').value,
+                        backgroundColor: document.getElementById('color-picker').value,
+                        userGlobalCSS: document.getElementById('user-global-css').value
+                    }
+                };
+            }
+
 
 
             function saveCurrentState(persist = false) {
-                currentSheetName = currentSheetName;
-                const elementsContainer = document.getElementById('elements-container');
-                let date = new Date().toLocaleString();
-                
-                // Create a map of element IDs
-                const elementIds = {};
-                if (elementsContainer) {
-                    elementsContainer.querySelectorAll('.editor-container').forEach((container, index) => {
-                        const editableElement = container.querySelector('.editable-element');
-                        if (editableElement && editableElement.id) {
-                            elementIds[`element-${index}`] = editableElement.id;
-                        }
-                    });
-                }
-
-                const newState = {
-                    title: `${currentSheetName}`,
-                    elements: elementsContainer ? elementsContainer.innerHTML : '',
-                    resetCSSEnabled: document.getElementById('reset-css-toggle').checked,
-                    fontFamily: fontFamily.value,
-                    fontSize: fontSize.value,
-                    textColor: textColor.value,
-                    lineHeight: lineHeight.value,
-                    pagePadding: pagePadding.value,
-                    pageWidth: pageWidth.value,
-                    backgroundColor: BackgroundColor,
-                    userGlobalCSS: document.getElementById('user-global-css').value,
-                    currentSheetName: currentSheetName,
-                    lastModified: date,
-                    elementIds: elementIds 
-                };
+                const newState = getSerializableState();
+                newState.title = currentSheetName;
+                newState.currentSheetName = currentSheetName;
 
                 // Compare with the previous state
                 const previousStateJSON = sessionStorage.getItem(currentSheetName);
                 const previousState = previousStateJSON ? JSON.parse(previousStateJSON) : null;
-                
-                let hasChanges = false;
 
+                let hasChanges = false;
                 if (!previousState || JSON.stringify(newState) !== JSON.stringify(previousState)) {
                     hasChanges = true;
                     // Update session storage
                     sessionStorage.setItem(currentSheetName, JSON.stringify(newState));
-                    document.title = newState.title;
+                    document.title = newState.title + " - UI Kit Editor";
                 }
 
                 if (persist && currentSheetName !== 'Untitled') {
@@ -1008,104 +1826,76 @@ p, h1, h2, h3, h4, h5, h6 {
                     updateSaveIndicator();
                     updateLoadSheetDropdown();
                 }
-            }
-            
+            } 
+                      
             // Function to load a state
             function loadState(sheetname) {
-                let state;
-                // Try to load from sessionStorage first (for temporary states/save points)
-                let stateJSON = sessionStorage.getItem(sheetname);
+                // Try to load from sessionStorage first, then localStorage
+                let stateJSON = sessionStorage.getItem(sheetname) || localStorage.getItem(sheetname);
 
-                // If not found in sessionStorage, try localStorage (for saved stylesheets)
                 if (!stateJSON) {
                     if (sheetname === 'Untitled') {
                         loadDefaultState();
                         return true;
                     }
-                    stateJSON = localStorage.getItem(sheetname);
+                    return false;
                 }
 
-                if (stateJSON) {
-                    try {
-                        state = JSON.parse(stateJSON);
-                    } catch (e) {
-                        console.error('Error parsing state JSON:', e);
-                        return false;
-                    }
-                } else {
+                let state;
+                try {
+                    state = JSON.parse(stateJSON);
+                } catch (e) {
+                    console.error('Error parsing state JSON:', e);
                     return false;
                 }
 
                 const elementsContainer = document.getElementById('elements-container');
+                elementsContainer.innerHTML = ''; // Clear existing elements
 
-                if (elementsContainer && state.elements) {
-                    elementsContainer.innerHTML = state.elements;
-                    
-                    // Restore saved IDs
-                    if (state.elementIds) {
-                        Object.entries(state.elementIds).forEach(([index, oldId]) => {
-                            const newId = `${sheetname}-element-${index}`;
-                            const container = elementsContainer.querySelector(`[id="${oldId}"]`).closest('.editor-container');
-                            if (container) {
-                                const editableElement = container.querySelector('.editable-element');
-                                if (editableElement) {
-                                    editableElement.id = newId;
-                                    
-                                    // Update related element IDs and data attributes
-                                    container.querySelectorAll(`[id^="${oldId}"], [data-for-element="${oldId}"]`).forEach(el => {
-                                        if (el.id) el.id = el.id.replace(oldId, newId);
-                                        if (el.dataset.forElement) el.dataset.forElement = newId;
-                                    });
-                                    
-                                    // Update the style tag
-                                    const styleTag = document.querySelector(`style[data-for="${oldId}"]`);
-                                    if (styleTag) {
-                                        styleTag.setAttribute('data-for', newId);
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    
-                    rebuildElements(elementsContainer);
+                cleanupStyleElements(true);
+
+                // Rebuild elements from the saved state
+                if (state.elements && Array.isArray(state.elements)) {
+                    state.elements.forEach(element => {
+                        createEditorContainer(element.type, element);
+                    });
+                } else {
+                    // If no elements in the state, load default elements
+                    loadDefaultElements();
                 }
 
-                TextColor = state.textColor || '#000000';
-                textColor.value = TextColor
+                // Restore global settings
+                restoreGlobalSettings(state.globalSettings);
 
-                BackgroundColor= state.backgroundColor;
-                backgroundColorPicker.value = state.backgroundColor;
-
-                // Restore global CSS settings
-                document.getElementById('reset-css-toggle').checked = state.resetCSSEnabled;
-                fontFamily.value = state.fontFamily;
-                fontSize.value = state.fontSize;
-                lineHeight.value = state.lineHeight;
-                pagePadding.value = state.pagePadding;
-                pageWidth.value = state.pageWidth;
-                document.getElementById('user-global-css').value = state.userGlobalCSS;
-
-                document.title = state.title || "Untitled - UI Kit Editor";
-                currentSheetName = state.currentSheetName || sheetname;
-                sessionStorage.setItem('currentSheetName', currentSheetName);
+                setCurrentSheetName(state.currentSheetName || sheetname);
+                document.title = (state.currentSheetName || sheetname) + " - UI Kit Editor";
 
                 updateGlobalCSS();
-                reattachEventListeners();
                 hasUnsavedChanges = false;
-                sessionStorage.removeItem('pending_save');
+                sessionStorage.setItem('pending_save', 'false');
                 updateSaveIndicator();
                 updateLoadSheetDropdown();
                 return true;
             }
-            
-            function rebuildElements(elementsContainer) {
-                elementsContainer.querySelectorAll('.editor-container').forEach((container) => {
-                    const editableElement = container.querySelector('.editable-element');
-                    if (editableElement) {
-                        applyCSS(editableElement.id);
-                    }
-                });
-                reattachEventListeners();
+
+            function loadDefaultElements() {
+                ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'a', 'button', 'form', 'blockquote', 'code', 'pre'].forEach(element => 
+                    createEditorContainer(element)
+                );
+            }
+
+            function restoreGlobalSettings(settings) {
+                if (settings) {
+                    document.getElementById('text-color').value = settings.textColor || '#000000';
+                    document.getElementById('color-picker').value = settings.backgroundColor || '#ffffff';
+                    document.getElementById('reset-css-toggle').checked = settings.resetCSSEnabled;
+                    document.getElementById('font-family').value = settings.fontFamily;
+                    document.getElementById('font-size').value = settings.fontSize;
+                    document.getElementById('line-height').value = settings.lineHeight;
+                    document.getElementById('page-padding').value = settings.pagePadding;
+                    document.getElementById('page-width').value = settings.pageWidth;
+                    document.getElementById('user-global-css').value = settings.userGlobalCSS;
+                }
             }
             
             // function to delete current session state
@@ -1120,11 +1910,29 @@ p, h1, h2, h3, h4, h5, h6 {
                 sessionStorage.removeItem('pending_save');
             }
 
+            function cleanupStyleElements(removeAll = false) {
+                const styleElements = document.querySelectorAll('style[data-for]');
+                
+                if (removeAll) {
+                    styleElements.forEach(style => style.remove());
+                } else {
+                    const editorContainers = document.querySelectorAll('.editor-container');
+                    styleElements.forEach(style => {
+                        const forId = style.getAttribute('data-for');
+                        if (!document.getElementById(forId)) {
+                            style.remove();
+                        }
+                    });
+                }
+            }
+
             function loadDefaultState() {
                 const elementsContainer = document.getElementById('elements-container');
                 if (elementsContainer) {
                     elementsContainer.innerHTML = '';
                 }
+
+                cleanupStyleElements(true); // Add this line to remove unused style elements
 
                 // Set default values for global CSS controls
                 BackgroundColor = '#ffffff';
@@ -1140,10 +1948,9 @@ p, h1, h2, h3, h4, h5, h6 {
                 pagePadding.value = '20';
                 pageWidth.value = '800';
                 document.getElementById('user-global-css').value = '';
+
+                loadDefaultElements();
                 
-
-                ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'a', 'button', 'form', 'blockquote', 'code', 'pre'].forEach(element => createEditorContainer(element));
-
                 updateGlobalCSS();
                 deleteCurrentState();
                 updateSaveIndicator();
@@ -1175,229 +1982,7 @@ p, h1, h2, h3, h4, h5, h6 {
                         }
                     }
                 });
-            }
-
-            // Function to reattach event listeners after loading state
-            function reattachEventListeners() {
-                document.querySelectorAll('.editor-container').forEach((editorContainer) => {
-                    const editableElementContainer = editorContainer.querySelector('.editable-element-container');
-                    const editableElement = editableElementContainer.querySelector('.editable-element');
-                    const htmlEditor = editorContainer.querySelector('.html-editor');                
-                    const cssDisplay = editorContainer.querySelector('.css-display');
-                    const cssTextareas = editorContainer.querySelectorAll('.css-textarea');
-                    const pseudoSelector = editorContainer.querySelector('.pseudo-selector-select');
-                    const goCodeDetails = editorContainer.querySelector('.go-code-details');
-                    const goCodeDisplay = editorContainer.querySelector('.go-code-display');
-                
-
-                    function toggleCSSEdit() {
-                        const currentTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${pseudoSelector.value}"]`);
-                        if (cssDisplay.style.display !== 'none') {
-                            cssDisplay.style.display = 'none';
-                            currentTextarea.style.display = 'block';
-                            currentTextarea.focus();
-                        } else {
-                            cssDisplay.style.display = 'block';
-                            currentTextarea.style.display = 'none';
-                            updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
-                        }
-                    }
-
-                    function updateGoCode() {
-                        const cssTextarea = editorContainer.querySelector('.css-textarea[data-pseudo=""]');
-                        const { goCode } = cssToGoCode(cssTextarea.value, elementType);
-                        goCodeDisplay.textContent = goCode;
-                    }
-
-                    cssDisplay.addEventListener('dblclick', toggleCSSEdit);
-                    cssDisplay.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            toggleCSSEdit();
-                        }
-                    });
-
-                    cssTextareas.forEach(textarea => {
-                        textarea.addEventListener('blur', () => {
-                            textarea.value = formatCSSProperties(textarea.value);
-                            toggleCSSEdit();
-                            applyCSS(editorContainer.id);
-                            updateGoCode();
-                            saveCurrentState();
-                        });
-                        textarea.addEventListener('input', () => {
-                            updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
-                            if (goCodeDetails.open) {
-                                updateGoCode();
-                            }
-                        });
-
-                        textarea.addEventListener('keydown', function(e) {
-                        if (e.key === 'Escape') {
-                            this.blur();
-                        } else if (e.key === 'Enter') {
-                            if (e.shiftKey && e.ctrlKey) {
-                                // Shift + Control + Enter: Insert new line with indentation
-                                e.preventDefault();
-                                const start = this.selectionStart;
-                                const end = this.selectionEnd;
-                                const value = this.value;
-                                
-                                // Find the start of the current line
-                                let lineStart = value.lastIndexOf('\n', start - 1) + 1;
-                                let indent = '';
-                                
-                                // Calculate the current line's indentation
-                                for (let i = lineStart; i < value.length; i++) {
-                                    if (value[i] === ' ' || value[i] === '\t') {
-                                        indent += value[i];
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                
-                                // Insert new line with indentation
-                                const insertion = '\n' + indent;
-                                this.value = value.substring(0, start) + insertion + value.substring(end);
-                                
-                                // Move the cursor to the end of the inserted indentation
-                                this.selectionStart = this.selectionEnd = start + insertion.length;
-                            } else if (!e.shiftKey && !e.ctrlKey) {
-                                // Plain Enter: Save and blur
-                                e.preventDefault();
-                                this.blur();
-                            }
-                        } else if (e.key === 'Tab') {
-                            e.preventDefault(); // Prevent default tab behavior
-                            const start = this.selectionStart;
-                            const end = this.selectionEnd;
-                            const value = this.value;
-                            if (start === end) {
-                                // No selection, just insert or remove tab
-                                if (!e.shiftKey) {
-                                    // Insert tab
-                                    this.value = value.substring(0, start) + "\t" + value.substring(end);
-                                    this.selectionStart = this.selectionEnd = start + 1;
-                                } else if (start > 0) {
-                                    // Remove tab (if exists) at the start of the line
-                                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-                                    if (value[lineStart] === '\t') {
-                                        this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
-                                        this.selectionStart = this.selectionEnd = start - 1;
-                                    }
-                                }
-                            } else {
-                                // Text is selected, indent or unindent block
-                                const lines = value.substring(start, end).split('\n');
-                                const indentedLines = lines.map(line => 
-                                    !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
-                                );
-                                const replacement = indentedLines.join('\n');
-                                this.value = value.substring(0, start) + replacement + value.substring(end);
-                                this.selectionStart = start;
-                                this.selectionEnd = start + replacement.length;
-                            }
-                        }
-                    }); 
-                
-                });
-
-                pseudoSelector.addEventListener('change', () => {
-                    // toggleCSSEdit();
-                    applyCSS(editorContainer.id);
-                });
-
-
-                editableElement.addEventListener('dblclick', function () {
-                    if (goCodeDetails.open) {
-                        goCodeDetails.open = false;
-                    }
-                    htmlEditor.value = this.innerHTML;
-                    this.style.display = 'none';
-                    htmlEditor.style.display = 'block';
-                    htmlEditor.focus();
-                });
-
-                htmlEditor.addEventListener('blur', function () {
-                    const originalContent = editableElement.innerHTML;
-                    try {
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(this.value, 'text/html');
-                        if (doc.body.firstChild) {
-                            editableElement.innerHTML = this.value;
-                        } else {
-                            throw new Error('Invalid HTML');
-                        }
-                    } catch (e) {
-                        console.error('Invalid HTML:', e);
-                        editableElement.innerHTML = editableElement.getAttribute('data-original-html');
-                    }
-
-                    this.style.display = 'none';
-                    editableElement.style.display = 'block';
-
-                    // Only save if the content has changed
-                    if (originalContent !== editableElement.innerHTML) {
-                        const elementName = editorContainer.querySelector('h2').textContent;
-                        saveCurrentState();
-                    }
-
-                    //applyCSS(id);
-                });
-
-                htmlEditor.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') {
-                        this.blur();
-                    } else if (e.key === 'Tab') {
-                        e.preventDefault(); // Prevent default tab behavior
-
-                        const start = this.selectionStart;
-                        const end = this.selectionEnd;
-                        const value = this.value;
-
-                        if (start === end) {
-                            // No selection, just insert tab
-                            if (!e.shiftKey) {
-                                // Insert tab
-                                this.value = value.substring(0, start) + "\t" + value.substring(end);
-                                this.selectionStart = this.selectionEnd = start + 1;
-                            } else if (start > 0) {
-                                // Remove tab (if exists) at the start of the line
-                                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-                                if (value[lineStart] === '\t') {
-                                    this.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
-                                    this.selectionStart = this.selectionEnd = start - 1;
-                                }
-                            }
-                        } else {
-                            // Text is selected, indent or unindent block
-                            const lines = value.substring(start, end).split('\n');
-                            const indentedLines = lines.map(line => 
-                                !e.shiftKey ? '\t' + line : line.startsWith('\t') ? line.substring(1) : line
-                            );
-                            const replacement = indentedLines.join('\n');
-                            this.value = value.substring(0, start) + replacement + value.substring(end);
-                            this.selectionStart = start;
-                            this.selectionEnd = start + replacement.length;
-                        }
-                    }
-                });
-
-                editorContainer.querySelector('.remove-element').addEventListener('click', () => {
-                    editorContainer.remove();
-                    clearElementStyles(id);
-                    updateElementIds();
-                    saveCurrentState();
-                    updateElementSelector();
-                });
-
-                goCodeDetails.addEventListener('toggle', (event) => {
-                    if (event.target.open) {
-                        updateGoCode();
-                    }
-                });
-
-                    applyCSS(id);
-                });
+                cleanupStyleElements(); 
             }
 
             // Function to create stylesheet
@@ -1519,7 +2104,7 @@ p, h1, h2, h3, h4, h5, h6 {
                         }
                     }
                 }
-                currentSheetName = sheetname;
+                setCurrentSheetName(sheetname);
                 addStylesheetToList(currentSheetName);
                 saveCurrentState(true);  // Pass true to indicate an explicitly persisted save
                 updateLoadSheetDropdown();
@@ -1528,25 +2113,72 @@ p, h1, h2, h3, h4, h5, h6 {
 
             document.getElementById('load-sheet').addEventListener('change', (e) => {
                 const selectedSheetName = e.target.value;
-                
-                currentSheetName = selectedSheetName;
+    
+                // Check if a valid sheet is selected
+                if (!selectedSheetName) {
+                    console.warn('No stylesheet selected');
+                    return; // Exit the function if no valid selection
+                }
+
+                // Prevent switching to the same sheet
+                if (selectedSheetName === currentSheetName) {
+                    console.log('Already on this stylesheet');
+                    return; // Exit the function if trying to switch to the current sheet
+                }
+
+                if (hasUnsavedChanges) {
+                    const warningMessage = `Warning: You have unsaved changes in the current stylesheet "${currentSheetName}". Proceeding will discard these changes. Do you still wish to continue?`;
+                    
+                    if (confirm(warningMessage)) {
+                        // User chose to discard changes and switch
+                        discardChanges();
+                        loadSelectedSheet(selectedSheetName);
+                    } else {
+                        // User chose to keep current changes, abort the operation
+                        e.target.value = currentSheetName; // Revert the dropdown to the current sheet
+                    }
+                } else {
+                    // No unsaved changes, load the selected sheet directly
+                    loadSelectedSheet(selectedSheetName);
+                }
+            });
+
+            function discardChanges() {
+                // Remove the current state from sessionStorage
+                sessionStorage.removeItem(currentSheetName);
+                // If there's a saved version in localStorage, load that
+                const savedState = localStorage.getItem(currentSheetName);
+                if (savedState) {
+                    sessionStorage.setItem(currentSheetName, savedState);
+                }
+                hasUnsavedChanges = false;
+            }
+
+            function loadSelectedSheet(selectedSheetName) {
+                setCurrentSheetName(selectedSheetName);
                 if (selectedSheetName) {
-                    loaded = loadState(selectedSheetName);
-                    if (!loaded){
-                        document.body.innerHTML = 'SYSERR: failure loading stylesheet ${selectedSheetName}';
+                    const loaded = loadState(selectedSheetName);
+                    if (!loaded) {
+                        document.body.innerHTML = `SYSERR: failure loading stylesheet ${selectedSheetName}`;
                         document.title = 'SYSERR';
-                        return; 
+                        return;
                     }
                     document.title = selectedSheetName + ' - UI Kit Editor';
-                    
                 }
                 updateLoadSheetDropdown();
                 updateDeleteButtonState();
+                hasUnsavedChanges = false;
+            }
+
+            document.getElementById("reset-css-toggle").addEventListener('change', () => {
+                updateGlobalCSS();
+                saveCurrentState();
             });
 
             document.getElementById('download-sheet').addEventListener('click', () => {
                 const stylesheet = createStylesheet();
                 const currentDate = new Date().toLocaleString();
+                
                 const htmlContent = `
                     <!DOCTYPE html>
                     <html lang="en">
@@ -1562,35 +2194,35 @@ p, h1, h2, h3, h4, h5, h6 {
                                 max-width: 800px;
                                 margin: 0 auto;
                             }
-                            h1 {
-                                border-bottom: 1px solid #ccc;
-                                padding-bottom: 10px;
-                            }
-                            pre {
-                                background-color: #f4f4f4;
-                                border: 1px solid #ddd;
-                                border-radius: 4px;
-                                padding: 15px;
-                                white-space: pre-wrap;
-                                word-wrap: break-word;
-                            }
                         </style>
                     </head>
                     <body>
                         <h1>${currentSheetName} - CSS Stylesheet</h1>
                         <p>Generated on: ${currentDate}</p>
-                        <pre>${stylesheet}</pre>
+                        <hr>
+                        <p><i>Double-click code to select</i></p>
+                        <pre id="dl-css">${stylesheet}</pre>
                     </body>
                     </html>
                 `;
-                const blob = new Blob([htmlContent], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                
-                window.open(url, '_blank');
 
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 100);
+                const newWindow = window.open('', '_blank');
+                newWindow.document.write(htmlContent);
+                
+                // Add the script after writing the initial content
+                const script = newWindow.document.createElement('script');
+                script.textContent = `
+                    document.getElementById('dl-css').addEventListener('dblclick', function() {
+                        const range = document.createRange();
+                        range.selectNodeContents(this);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    });
+                `;
+                newWindow.document.body.appendChild(script);
+                
+                newWindow.document.close();
             });
 
             function generateFullGoPackage(styleFunctions, packageName) {
@@ -1608,7 +2240,7 @@ ${styleFunctions}`;
 
 
 
-            function createEditorContainer(elementType) {
+            function createEditorContainer(elementType, existingElement=null) {
                 const elementsContainer = document.getElementById('elements-container');
                 const index = elementsContainer.children.length;
                 const id = `${currentSheetName}-element-${index}`;
@@ -1640,7 +2272,9 @@ ${styleFunctions}`;
                 }
 
                 let elementHtml;
-                if (elementType === 'form') {
+                if (existingElement) {
+                    elementHtml = existingElement.html;
+                } else if (elementType === 'form') {
                     elementHtml = `
                         <form id="${id}">
                             <div>
@@ -1723,8 +2357,6 @@ function example() {
     console.log("This is a preformatted code block");
 }
 </code></pre>`;
-                } else if (elementType === 'body') {
-                    elementHtml = `<div id="${id}" data-element-type="body">Body styles will be applied to the page body</div>`;
                 } else {
                     elementHtml = `<${elementType} id="${id}">Sample ${elementType}</${elementType}>`;
                 }
@@ -1758,7 +2390,7 @@ function example() {
             </select>
         </div>
         <div class="css-display-area">
-            <i>Double-click to edit</i>
+            <i>Double-click to edit (Shift + Enter for newline)</i>
             <pre class="css-display" tabindex="0"></pre>
         </div>
         <div class="css-textareas">
@@ -1809,7 +2441,7 @@ function example() {
                     textarea.addEventListener('blur', () => {
                         textarea.value = formatCSSProperties(textarea.value);
                         toggleCSSEdit();
-                        applyCSS(editorContainer.id);
+                        applyCSS(editorContainer);
                         saveCurrentState();
                     });
                     textarea.addEventListener('input', () => {
@@ -1888,7 +2520,7 @@ function example() {
 
                 pseudoSelector.addEventListener('change', () => {
                     toggleCSSEdit();
-                    applyCSS(editorContainer.id);
+                    applyCSS(editorContainer);
                 });
 
 
@@ -1965,6 +2597,7 @@ function example() {
                 editorContainer.querySelector('.remove-element').addEventListener('click', () => {
                     editorContainer.remove();
                     clearElementStyles(id);
+                    cleanupStyleElements();
                     updateElementIds();
                     saveCurrentState();
                     updateElementSelector();
@@ -1984,13 +2617,23 @@ function example() {
                     showModal(`${elementType} Go Code`, fullGoCode, errors);
                 });
 
+                
+                if (existingElement && existingElement.styles) {
+                    existingElement.styles.forEach(style => {
+                        const textarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${style.pseudo}"]`);
+                        if (textarea) {
+                            textarea.value = style.css;
+                        }
+                    });
+                }
+
                 elementsContainer.appendChild(editorContainer);
 
                 updateCSSDisplay(editorContainer, elementType, '');
-                applyCSS(id);
+                applyCSS(editorContainer);
 
                 saveCurrentState();
-                updateElementSelector(); // Add this line
+                updateElementSelector();
             }
 
             function updateElementSelector() {
@@ -2046,17 +2689,20 @@ function example() {
             }
 
             function formatCSSProperties(css) {
-                return css.split(';')
+                const formattedProps = css.split(';')
                     .map(prop => prop.trim())
-                    .filter(prop => prop)
-                    .map(prop => '  ' + prop + ';')
-                    .join('\n');
+                    .filter(prop => prop && prop !== ';')
+                    .join(';\n');
+                
+                return formattedProps ? formattedProps + ';' : '';
             }
 
 
-            function applyCSS(containerId) {
-                const editorContainer = document.getElementById(containerId);
+            function applyCSS(container) {
+                const editorContainer = container;
+                const containerId = editorContainer.id;
                 if (!editorContainer) {
+                    console.log(container)
                     throw new Error(`Editor container with id ${containerId} not found.`);
                 }
 
@@ -2098,14 +2744,13 @@ function example() {
 
             function updateCSS(elementId, cssContent) {
                 let styleTag = document.querySelector(`style[data-for="${elementId}"]`);
-                if (!styleTag) {
-                    styleTag = document.createElement('style');
-                    styleTag.setAttribute('data-for', elementId);
-                    document.head.appendChild(styleTag);
+                if (styleTag) {
+                    styleTag.remove(); // Remove existing style tag
                 }
-                if (styleTag.textContent !== cssContent) {
-                    styleTag.textContent = cssContent;
-                }
+                styleTag = document.createElement('style');
+                styleTag.setAttribute('data-for', elementId);
+                styleTag.textContent = cssContent;
+                document.head.appendChild(styleTag);
             }
 
             function updateBackgroundColorPicker() {
@@ -2136,75 +2781,7 @@ function example() {
                 };
             }
                         
-/*
-            // updateGlobalCSS is a function that applies the global CSS to the page
-            // by setting the textContent of the style tag with the id 'global-styles'
-            function updateGlobalCSS() {
-                let styleTag = document.getElementById('global-styles');
-                if (!styleTag) {
-                    styleTag = document.createElement('style');
-                    styleTag.id = 'global-styles';
-                    document.head.appendChild(styleTag);
-                }
-                
-                const resetCSSToggle = document.getElementById('reset-css-toggle');
-                const userGlobalCSS = document.getElementById('user-global-css');
-                
-                // Combine reset CSS (if enabled), default styles, and user-defined styles
-                let cssContent = '';
-                
-                if (resetCSSToggle.checked) {
-                    cssContent += resetCSS + '\n\n';
-                }
-                
-                const defaultStyles = `
-                    body {
-                        font-family: ${fontFamily.value};
-                        font-size: ${fontSize.value}px;
-                        color: ${textColor.value};
-                        line-height: ${lineHeight.value};
-                        padding: ${pagePadding.value}px;
-                        max-width: ${pageWidth.value}px;
-                        margin: ${Margin};
-                        background-color: ${backgroundColorPicker.value};
-                    }
-                `;
-                
-                cssContent += formatGlobalCSS(defaultStyles) + '\n\n';
-                
-                if (userGlobalCSS.value.trim()) {
-                    cssContent += formatGlobalCSS(userGlobalCSS.value);
-                }
-                
-                styleTag.textContent = cssContent;
-                
-                // Update background color picker to reflect any changes
-                updateBackgroundColorPicker();
-                
-                // Save the current state
-                saveCurrentState();
-            }
 
-            // Event listeners for global style controls
-            document.getElementById('reset-css-toggle').addEventListener('change', updateGlobalCSS);
-            fontFamily.addEventListener('change', updateGlobalCSS);
-            fontSize.addEventListener('input', updateGlobalCSS);
-            textColor.addEventListener('input', updateGlobalCSS);
-            lineHeight.addEventListener('input', updateGlobalCSS);
-            pagePadding.addEventListener('input', updateGlobalCSS);
-            pageWidth.addEventListener('input', updateGlobalCSS);
-            backgroundColorPicker.addEventListener('input', updateGlobalCSS);
-            document.getElementById('user-global-css').addEventListener('input', debounce(updateGlobalCSS, 300));
-
-            // Update display values for range inputs
-            ['font-size', 'line-height'].forEach(id => {
-                const input = document.getElementById(id);
-                const display = document.getElementById(`${id}-value`);
-                input.addEventListener('input', () => {
-                    display.textContent = id === 'font-size' ? `${input.value}px` : input.value;
-                });
-            });
-*/
             function cssbeautify(style) {
                 let formatted = '';
                 let depth = 0;
@@ -2319,15 +2896,28 @@ function example() {
             const firstFocusableElement = focusableElements[0];
             const lastFocusableElement = focusableElements[focusableElements.length - 1];
 
+            // double click to select all text in the pre element
+            modalGoCode.addEventListener('dblclick', function() {
+                const range = document.createRange();
+                range.selectNodeContents(this);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            });
+
             function showModal(title, code, errors) {
                 modalTitle.textContent = title;
                 modalGoCode.textContent = code;
                 
                 // Display errors if any
                 if (errors && errors.length > 0) {
-                    const errorMessage = errors.map(error => 
-                        `Error on line ${error.lineNumber}: Unknown property "${error.property}" in selector "${error.selector}"`
-                    ).join('\n');
+                    const errorMessage = errors.map(error => {
+                        if (error.pseudoSelector) {
+                            return `Error on line ${error.lineNumber}: Invalid pseudo-selector ":${error.pseudoSelector}" in selector "${error.selector}"`;
+                        } else if (error.property) {
+                            return `Error on line ${error.lineNumber}: Unknown property "${error.property}" in selector "${error.selector}"`;
+                        }
+                    }).join('\n');
                     modalGoCode.textContent += '\n\n// Errors:\n' + errorMessage;
                 }
                 
@@ -2336,13 +2926,7 @@ function example() {
                 if (!copyButton) {
                     copyButton = document.createElement('button');
                     copyButton.id = 'copyGoCode';
-                    copyButton.textContent = 'Copy Go Code';
-                    copyButton.style.marginTop = '10px';
-                    copyButton.style.padding = '10px 20px';
-                    copyButton.style.border = 'none';
-                    copyButton.style.borderRadius = '5px';
-                    copyButton.style.backgroundColor = '#008CBA';
-                    copyButton.style.color = 'white';
+                    copyButton.textContent = 'Copy code';
                     copyButton.style.cursor = 'pointer';
                     modalGoCode.parentNode.insertBefore(copyButton, modalGoCode.nextSibling);
                 }
@@ -2351,10 +2935,8 @@ function example() {
                     navigator.clipboard.writeText(modalGoCode.textContent).then(() => {
                         const originalText = this.textContent;
                         this.textContent = 'Copied!';
-                        this.style.backgroundColor = '#28a745';
                         setTimeout(() => {
                             this.textContent = originalText;
-                            this.style.backgroundColor = '#008CBA';
                         }, 2000);
                     }, (err) => {
                         console.error('Could not copy text: ', err);
@@ -2362,7 +2944,12 @@ function example() {
                 };
                 
                 modal.style.display = 'block';
-                firstFocusableElement.focus();
+                if (firstFocusableElement){
+                    firstFocusableElement.focus();
+                } else{
+                    modalGoCode.focus();
+                }
+ 
                 document.addEventListener('keydown', handleModalKeydown);
             }
 
@@ -2400,26 +2987,41 @@ function example() {
 
             // Event listend for the download go code button
             document.getElementById('download-go-code').addEventListener('click', () => {
-                let allStyleFunctions = '';
+                let allCSS = '';
                 let allErrors = [];
                 const packageName = currentSheetName.replace(/[^\w]/g, '').toLowerCase();
 
                 document.querySelectorAll('.editor-container').forEach(container => {
-                    const cssDisplay = container.querySelector('.css-display');
-                    const fullCSS = cssDisplay.textContent;
-                    const { goCode, errors } = cssToGoCode(fullCSS);
-                    allStyleFunctions += goCode + '\n\n';
-                    if (errors.length > 0) {
-                        allErrors.push({ elementType: container.querySelector('h2').textContent, errors });
+                    const elementType = container.querySelector('h2').textContent.toLowerCase();
+                    const cssTextareas = container.querySelectorAll('.css-textarea');
+                    let elementCSS = '';
+                    cssTextareas.forEach(textarea => {
+                        const pseudo = textarea.dataset.pseudo;
+                        const css = textarea.value.trim();
+                        if (css) {
+                            elementCSS += `${elementType}${pseudo} {\n${css}\n}\n\n`;
+                        }
+                    });
+                    if (elementCSS) {
+                        allCSS += elementCSS;
                     }
                 });
 
-                const fullGoCode = generateFullGoPackage(allStyleFunctions, packageName);
+                const { goCode, errors } = cssToGoCode(allCSS);
+                const fullGoCode = generateFullGoPackage(goCode, packageName);
 
-                // Handle errors if any
-                if (allErrors.length > 0) {
-                    console.warn('Errors occurred during Go code generation:', allErrors);
-                    // Optionally, display these errors to the user
+                if (errors.length > 0) {
+                    console.warn('Errors occurred during Go code generation:', errors);
+                    const errorMessages = errors.map(error => {
+                        if (error.pseudoSelector) {
+                            return `Error in ${error.selector}: Invalid pseudo-selector ":${error.pseudoSelector}" on line ${error.lineNumber}`;
+                        } else if (error.property) {
+                            return `Error in ${error.selector}: Unknown property "${error.property}" on line ${error.lineNumber}`;
+                        }
+                    }).join('\n');
+                    
+                    // Add error messages to the generated Go code
+                    fullGoCode += '\n\n// Errors during code generation:\n' + errorMessages;
                 }
 
                 // Display in new tab
@@ -2427,17 +3029,27 @@ function example() {
                 newWindow.document.write(`
                     <html>
                         <head>
-                            <title>${packageName} - UI Kit Editor</title>
+                            <title>Download ${packageName} - UI Kit Editor</title>
                             <style>
-                                body { font-family: monospace; white-space: pre-wrap; padding: 20px; }
-                                pre { background-color: #f4f4f4; padding: 10px; border-radius: 5px; }
-                                button { margin: 10px; padding: 5px 10px; }
+                                body {
+                                    font-family: Arial, sans-serif;
+                                    line-height: 1.6;
+                                    padding: 20px;
+                                    max-width: 800px;
+                                    margin: 0 auto;
+                                }
                             </style>
                         </head>
                         <body>
-                            <pre>${fullGoCode}</pre>
-                            <button id="downloadBtn">Download Go File</button>
-                            <button id="copyBtn">Copy Go Code</button>
+                            <div id=codeControls style='display:flex; align-items:center;'>
+                                <button id="downloadBtn">Download file</button>
+                                <button id="copyBtn">Copy Code</button>
+                            </div>
+                            <hr>
+                            <p><i>Double-click code to select</i></p>
+
+                            <pre>${fullGoCode.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')}</pre>
+                            
                              <script>
                                 document.getElementById('downloadBtn').addEventListener('click', function() {
                                     const blob = new Blob([document.querySelector('pre').textContent], { type: 'text/plain' });
@@ -2456,21 +3068,51 @@ function example() {
                                     navigator.clipboard.writeText(codeText).then(() => {
                                         const originalText = this.textContent;
                                         this.textContent = 'Copied!';
-                                        this.style.backgroundColor = '#28a745';
                                         setTimeout(() => {
                                             this.textContent = originalText;
-                                            this.style.backgroundColor = '';
                                         }, 2000);
                                     }, (err) => {
                                         console.error('Could not copy text: ', err);
                                     });
                                 });
+
+                                document.querySelector('pre').addEventListener('dblclick', function() {
+                                    const range = document.createRange();
+                                    range.selectNodeContents(this);
+                                    const selection = window.getSelection();
+                                    selection.removeAllRanges();
+                                    selection.addRange(range);
+                                });
+                                
                             <\/script>
                         </body>
                     </html>
                 `);
             });
 
+            document.addEventListener('keydown', function(event) {
+                if (event.ctrlKey && event.key === 's') {
+                    event.preventDefault(); // Prevent the default save action
+                    // Find the save button and click it
+                    const saveButton = document.getElementById('save-sheet');
+                    if (saveButton) {
+                        saveButton.click();
+                    } else{
+                        console.error('Save button not found');
+                    }
+                } else if (event.ctrlKey && event.keyCode === 78) {
+                    // Prevent the default browser action (opening a new window)
+                    event.preventDefault();
+
+                    // Find the "New Stylesheet" button and click it
+                    const newStylesheetButton = document.getElementById('new-stylesheet');
+                    if (newStylesheetButton) {
+                        newStylesheetButton.click();
+                    } else {
+                        console.warn('New Stylesheet button not found');
+                    }
+                }
+            });
 
             if (currentSheetName === 'Untitled') {
                 loadDefaultState();
