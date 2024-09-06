@@ -77,8 +77,10 @@
         .editor-container {
             display: flex;
             margin-bottom: 20px;
-            border: 1px solid #ccc;
+            border: 1px solid #e7e5e5;
             padding: 10px;
+            max-width:960px;
+            margin: 0 auto;
         }
 
         .element-container {
@@ -87,8 +89,11 @@
         }
 
         .css-editor {
+            display:flex;
+            flex-direction: column;
             flex: 1;
             margin-left: 20px;
+            max-width: 350px;;
         }
 
         textarea {
@@ -128,6 +133,9 @@
         .css-display-area {
             position: relative;
             margin-top: 20px;
+            flex:1 1;
+            display:flex;
+            flex-direction: column;
         }
 
         .css-display-area i {
@@ -145,10 +153,15 @@
             padding: 10px;
             white-space: pre;
             font-family: monospace;
+            flex:1 1;
         }
 
         .css-display:focus {
-            outline: 2px solid #007bff;
+            outline: none;
+        }
+
+        .css-display:hover {
+            cursor: pointer;
         }
 
         .css-textarea {
@@ -172,8 +185,7 @@
 
         .editable-element-container .editable-element {
             width: 100%;
-            max-width: 300px; /* Default max-width */
-            overflow: auto; /* Enable both horizontal and vertical scrolling when needed */
+            overflow: hidden; /* Enable both horizontal and vertical scrolling when needed */
             transition: max-width 0.3s ease; /* Smooth transition for width change */
         }
 
@@ -184,6 +196,14 @@
         #element-selector option:disabled {
             color: #999;
             font-style: italic;
+        }
+
+        .editable-element{
+            overflow:hidden;
+        }
+
+        .editable-element:hover {
+            overflow: auto;
         }
 
         .modal {
@@ -233,6 +253,13 @@
         word-wrap: break-word;
         max-height: 400px;
         overflow-y: auto;
+        tab-size: 4;
+    }
+
+    pre, code, textarea {
+        tab-size: 4;
+        -moz-tab-size: 4;
+        -o-tab-size: 4;
     }
 
     .view-go-code-btn {
@@ -1379,87 +1406,168 @@
             }
         }
 
-        // Modify cssToGoCode function to generate a complete Go package
-        function cssToGoCode(css) {
-            const lines = css.split('\n');
-            let goCode = '';
-            let errors = [];
-            let lineNumber = 1;
-            let currentElement = '';
-            let currentPseudo = '';
-            let styleMap = new Map();
+        function generateVariableName(selector) {
+            const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
+            let name = 'RawCSS';
+            let relationship = '';
 
-            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'firstchild', 'lastchild', 'checked', 'disabled', 'enabled'];
-
-            function getMethodCall(property, value, pseudo) {
-                const mapping = cssToGoMapping[property];
-                if (!mapping) {
-                    return `// ERROR: Unknown property "${property}"`;
-                }
-
-                const [namespace, category, prop] = mapping.id.split('.');
-                
-                let methodChain = `doc.CSS.${namespace}`;
-                if (pseudo) {
-                    if (validPseudoSelectors.includes(pseudo.toLowerCase())) {
-                        methodChain += `.${capitalizeFirstLetter(pseudo)}`;
-                    } else {
-                        return `// ERROR: Invalid pseudo-selector ":${pseudo}"`;
-                    }
-                }
-                methodChain += `.${category}`;
-
-                if (mapping.values.includes(value)) {
-                    const methodName = value.charAt(0).toUpperCase() + value.slice(1);
-                    return `${methodChain}.${prop}.${methodName}(e)`;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (part === '>') {
+                    relationship = 'DirectChild';
+                } else if (part === '+') {
+                    relationship = 'AdjacentSibling';
+                } else if (part === '~') {
+                    relationship = 'GeneralSibling';
                 } else {
-                    return `${methodChain}.${prop}.Value("${value}")(e)`;
+                    // It's an element or class/id selector
+                    let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
+                    elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                    name += elementName + relationship;
+                    relationship = 'Descendant'; // Default relationship if no operator is specified
                 }
             }
 
-            for (let line of lines) {
-                line = line.trim();
-                if (line.includes('{')) {
-                    let selector = line.split('{')[0].trim();
-                    [currentElement, currentPseudo] = selector.split(':').map(s => s.trim());
-                    if (currentPseudo && !validPseudoSelectors.includes(currentPseudo.toLowerCase())) {
-                        errors.push({ selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
-                    }
-                    if (!styleMap.has(currentElement)) {
-                        styleMap.set(currentElement, []);
-                    }
-                } else if (line.includes('}')) {
-                    currentElement = '';
-                    currentPseudo = '';
-                } else if (currentElement && line.includes(':')) {
-                    const [property, value] = line.split(':').map(s => s.trim());
-                    const cleanValue = value.replace(';', '');
-                    if (cssToGoMapping[property]) {
-                        const methodCall = getMethodCall(property, cleanValue, currentPseudo);
-                        if (methodCall.includes('ERROR')) {
-                            errors.push({ property, selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
-                        }
-                        styleMap.get(currentElement).push({ pseudo: currentPseudo, style: methodCall });
-                    } else {
-                        errors.push({ property, selector: currentElement, lineNumber: lineNumber });
-                    }
-                }
-                lineNumber++;
-            }
-
-            for (let [element, styles] of styleMap) {
-                let funcName = element.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-                funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
-                goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
-                for (let { pseudo, style } of styles) {
-                    goCode += `\te = ${style}\n`;
-                }
-                goCode += `\treturn e\n}\n\n`;
-            }
-
-            return { goCode: goCode.trim(), errors: errors };
+            return name;
         }
 
+  
+        function cssToGoCode(css) {
+    const ast = parseCSS(css);
+    const beautifiedCSS = beautifyCSS(ast);
+    let goCode = '';
+    let rawCSSVariables = '';
+    let errors = [];
+    const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
+
+    const styleMap = new Map();
+
+    function addToStyleMap(selector, declarations) {
+        if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
+            // This is a complex selector, store it as raw CSS
+            if (!styleMap.has('rawCSS')) {
+                styleMap.set('rawCSS', []);
+            }
+            styleMap.get('rawCSS').push({ selector, declarations });
+        } else {
+            const [baseSelector, pseudoSelector] = selector.split(':');
+            if (!styleMap.has(baseSelector)) {
+                styleMap.set(baseSelector, { base: [], pseudo: {} });
+            }
+            const style = styleMap.get(baseSelector);
+            if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                if (!style.pseudo[pseudoSelector]) {
+                    style.pseudo[pseudoSelector] = [];
+                }
+                style.pseudo[pseudoSelector].push(...declarations);
+            } else {
+                style.base.push(...declarations);
+            }
+        }
+    }
+
+    ast.stylesheet.rules.forEach(rule => {
+        if (rule.type === 'rule') {
+            rule.selectors.forEach(selector => {
+                addToStyleMap(selector, rule.declarations);
+            });
+        } else if (rule.type === 'keyframes' || rule.type === 'media') {
+            // Store unsupported features in raw variables
+            const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
+            rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
+        }
+    });
+
+    styleMap.forEach((style, baseSelector) => {
+        if (baseSelector === 'rawCSS') {
+            style.forEach(({ selector, declarations }) => {
+                const varName = generateVariableName(selector);
+                rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
+                declarations.forEach(decl => {
+                    rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
+                });
+                rawCSSVariables += '}\n`\n\n';
+            });
+        } else {
+            const elementName = baseSelector.replace(/[^\w]/g, '');
+            const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
+            let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+
+            // Handle base styles
+            style.base.forEach(decl => {
+                const result = handleDeclaration(decl);
+                if (result.goCode) {
+                    functionCode += result.goCode;
+                }
+            });
+
+            // Handle pseudo-classes
+            Object.entries(style.pseudo).forEach(([pseudo, declarations]) => {
+                declarations.forEach(decl => {
+                    const result = handleDeclaration(decl, pseudo);
+                    if (result.goCode) {
+                        functionCode += result.goCode;
+                    }
+                });
+            });
+
+            functionCode += '\treturn e\n}\n';
+            goCode += functionCode;
+        }
+    });
+
+    function handleDeclaration(decl, pseudoSelector = '') {
+        const property = propertyToGoMethod(decl.property);
+        const value = decl.value;
+
+        if (cssToGoMapping[decl.property]) {
+            let methodChain = `doc.CSS.Container`;
+            if (pseudoSelector) {
+                methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+            }
+            methodChain += `.Style.${property}`;
+
+            if (cssToGoMapping[decl.property].values.includes(value)) {
+                return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+            } else {
+                return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
+            }
+        } else {
+            return { goCode: '' }; // This will be collected in rawCSSVariables
+        }
+    }
+
+    function generateVariableName(selector) {
+        const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
+        let name = 'RawCSS';
+        let relationship = '';
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (part === '>') {
+                relationship = 'DirectChild';
+            } else if (part === '+') {
+                relationship = 'AdjacentSibling';
+            } else if (part === '~') {
+                relationship = 'GeneralSibling';
+            } else {
+                // It's an element or class/id selector
+                let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
+                elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                name += elementName + relationship;
+                relationship = 'Descendant'; // Default relationship if no operator is specified
+            }
+        }
+
+        return name;
+    }
+
+    return { 
+        beautifiedCSS, 
+        goCode: goCode + '\n' + rawCSSVariables, 
+        errors 
+    };
+}
     </script>
 
     <script>
@@ -1485,6 +1593,7 @@
             function setCurrentSheetName(name) {
                 currentSheetName = name;
                 sessionStorage.setItem('currentSheetName', name);
+                updateDeleteButtonState();
             }
 
             // Global style controls
@@ -1576,7 +1685,7 @@
                     <option value="" disabled selected>Load Sheet</option>
                 </select>
                 <button id="save-sheet">Save Sheet</button>
-                <button id="delete-sheet" onclick="handleSheetDeletion()">Delete Sheet</button>
+                <button id="delete-sheet">Delete Sheet</button>
                 <button id="download-sheet">Download Stylesheet</button>
                 <button id="download-go-code">Download Go Code</button>
             `;
@@ -1635,6 +1744,11 @@
                 if (!hasUnsavedChanges) {
                     setCurrentSheetName('Untitled');
                     loadDefaultState();
+                
+                    // Update UI
+                    document.title = 'Untitled - UI Kit Editor';
+                    updateLoadSheetDropdown();
+                    updateDeleteButtonState();
                 } else {
                     if (currentSheetName !== 'Untitled') {
                         // Unsaved changes on a saved sheet
@@ -1946,7 +2060,7 @@ p, h1, h2, h3, h4, h5, h6 {
                 fontSize.value = '16';
                 lineHeight.value = '1.5';
                 pagePadding.value = '20';
-                pageWidth.value = '800';
+                pageWidth.value = window.innerWidth - 40;
                 document.getElementById('user-global-css').value = '';
 
                 loadDefaultElements();
@@ -1958,6 +2072,7 @@ p, h1, h2, h3, h4, h5, h6 {
                 hasUnsavedChanges = false;
                 updateLoadSheetDropdown();
                 document.title = currentSheetName + " - UI Kit Editor";
+                updateDeleteButtonState();
             }
 
             function updateElementIds() {
@@ -2014,24 +2129,40 @@ p, h1, h2, h3, h4, h5, h6 {
                 }
 
                 // Add styles for each editor container
-                // Add styles for each editor container
                 document.querySelectorAll('.editor-container').forEach((editorContainer) => {
                     const styleTag = document.querySelector(`style[data-for="${editorContainer.id}"]`);
                     if (styleTag) {
-                        stylesheet += styleTag.textContent + '\n\n';
+                        const css = styleTag.textContent.trim();
+                        try {
+                            const ast = parseCSS(css);
+                            const validRules = ast.stylesheet.rules.filter(rule => {
+                                if (rule.type === 'rule') {
+                                    return rule.declarations && rule.declarations.some(decl => 
+                                        decl.property && decl.property.trim() && decl.value && decl.value.trim()
+                                    );
+                                }
+                                return false; // Exclude non-rule types (like comments or at-rules)
+                            });
+
+                            if (validRules.length > 0) {
+                                const validCSS = validRules.map(rule => {
+                                    const selector = rule.selectors.join(', ');
+                                    const declarations = rule.declarations
+                                        .filter(decl => decl.property && decl.property.trim() && decl.value && decl.value.trim())
+                                        .map(decl => `    ${decl.property}: ${decl.value};`)
+                                        .join('\n');
+                                    return `${selector} {\n${declarations}\n}`;
+                                }).join('\n\n');
+
+                                stylesheet += validCSS + '\n\n';
+                            }
+                        } catch (error) {
+                            console.error(`Error parsing CSS for ${editorContainer.id}:`, error);
+                        }
                     }
                 });
 
                 return formatGlobalCSS(stylesheet);
-            }
-
-
-            function deleteStylesheet(sheetName) {
-                if (confirm(`Are you sure you want to delete the stylesheet "${sheetName}"? This action cannot be undone.`)) {
-                    localStorage.removeItem(sheetName);
-                    removeStylesheetFromList(sheetName);
-                    updateLoadSheetDropdown();
-                }
             }
 
 
@@ -2044,13 +2175,19 @@ p, h1, h2, h3, h4, h5, h6 {
                 }
 
                 // Clear existing options
-                loadSheet.innerHTML = '<option value="" disabled selected>Load Sheet</option>';
+                loadSheet.innerHTML = '';
 
-                // deactivate that option value
-
+                // Add the disabled "Load Sheet" option
+                const defaultOption = document.createElement('option');
+                defaultOption.textContent = 'Load Sheet';
+                defaultOption.value = '';
+                defaultOption.disabled = true;
+                loadSheet.appendChild(defaultOption);
 
                 // Get all saved stylesheets from localStorage
                 const stylesheetList = getStylesheetList();
+
+                let selectedOptionExists = false;
 
                 stylesheetList.forEach(sheetName => {
                     const option = document.createElement('option');
@@ -2058,11 +2195,20 @@ p, h1, h2, h3, h4, h5, h6 {
                     option.textContent = sheetName;
                     if (sheetName === currentSheetName) {
                         option.selected = true;
+                        selectedOptionExists = true;
                     }
                     loadSheet.appendChild(option);
                 });
 
-                // Update delete button state
+                // If the current sheet is not in the list (i.e., it's a new unsaved sheet),
+                // select the disabled "Load Sheet" option
+                if (!selectedOptionExists) {
+                    defaultOption.selected = true;
+                }
+
+                // Disable the dropdown if there are no stylesheets
+                loadSheet.disabled = stylesheetList.length === 0;
+
                 updateDeleteButtonState();
             }
 
@@ -2071,8 +2217,15 @@ p, h1, h2, h3, h4, h5, h6 {
                 const loadSheet = document.getElementById('load-sheet');
                 
                 if (deleteButton && loadSheet) {
-                    const selectedSheetName = loadSheet.value;
-                    deleteButton.disabled = !selectedSheetName || selectedSheetName === currentSheetName;
+                    const stylesheetList = getStylesheetList();
+                    
+                    // Disable delete button if:
+                    // 1. There are no saved stylesheets, or
+                    // 2. The current stylesheet is "Untitled", or
+                    // 3. The current stylesheet is not in the list of saved stylesheets
+                    deleteButton.disabled = stylesheetList.length === 0 || 
+                                            currentSheetName === 'Untitled' || 
+                                            !stylesheetList.includes(currentSheetName);
                 }
             }
 
@@ -2080,13 +2233,44 @@ p, h1, h2, h3, h4, h5, h6 {
                 const loadSheet = document.getElementById('load-sheet');
                 const selectedSheetName = loadSheet.value;
                 
-                if (selectedSheetName && selectedSheetName !== currentSheetName) {
+                if (selectedSheetName) {
                     if (confirm(`Are you sure you want to delete the sheet "${selectedSheetName}"?`)) {
+                        // Remove the stylesheet from the list and storage
                         deleteStylesheet(selectedSheetName);
-                        updateLoadSheetDropdown();
+                        
+                        hasUnsavedChanges = false;
+                        newStylesheetButton.click();
+
                     }
                 }
             }
+
+            function deleteStylesheet(sheetName) {
+                // Remove the stylesheet data from localStorage
+                localStorage.removeItem(sheetName);
+                
+                // Remove from the stylesheet list
+                removeStylesheetFromList(sheetName);
+                
+                // Remove from sessionStorage if it exists there
+                sessionStorage.removeItem(sheetName);
+            }
+
+            function createNewStylesheet() {
+                // Set the current sheet name to 'Untitled'
+                setCurrentSheetName('Untitled');
+                
+                // Load the default state (this should create a new, empty stylesheet)
+                loadDefaultState();
+                
+                // Update UI
+                document.title = 'Untitled - UI Kit Editor';
+                updateLoadSheetDropdown();
+                updateDeleteButtonState();
+                updateSaveIndicator(false);
+            }
+
+            document.getElementById('delete-sheet').addEventListener('click', handleSheetDeletion);
 
             // Event listeners for new UI controls
             document.getElementById('save-sheet').addEventListener('click', () => {
@@ -2098,10 +2282,20 @@ p, h1, h2, h3, h4, h5, h6 {
                         return;
                     }
                     while (sheetname === 'Untitled') {
-                        sheetname = prompt('Please enter a non-empty name for the stylesheet');
-                        if (sheetname === null) {
+                        pname = prompt('Please enter a non-empty name for the stylesheet');
+                        if (pname === null) {
                             return;
                         }
+
+                        // check that pname is not one of the already saved stylesheet names
+                        // otherwise we may prompt for overwrite
+                        if (getStylesheetList().includes(pname)) {
+                            if (!confirm(`A stylesheet named "${pname}" already exists. Do you want to overwrite it?`)) {
+                                sheetname = 'Untitled';
+                                continue;
+                            }
+                        }
+                        sheetname = pname;
                     }
                 }
                 setCurrentSheetName(sheetname);
@@ -2109,6 +2303,7 @@ p, h1, h2, h3, h4, h5, h6 {
                 saveCurrentState(true);  // Pass true to indicate an explicitly persisted save
                 updateLoadSheetDropdown();
                 updateSaveIndicator();  // Update the save indicatorTODO review necessity for these calls
+                updateDeleteButtonState();
             });
 
             document.getElementById('load-sheet').addEventListener('change', (e) => {
@@ -2191,7 +2386,6 @@ p, h1, h2, h3, h4, h5, h6 {
                                 font-family: Arial, sans-serif;
                                 line-height: 1.6;
                                 padding: 20px;
-                                max-width: 800px;
                                 margin: 0 auto;
                             }
                         </style>
@@ -2236,9 +2430,6 @@ import (
 
 ${styleFunctions}`;
             }
-
-
-
 
             function createEditorContainer(elementType, existingElement=null) {
                 const elementsContainer = document.getElementById('elements-container');
@@ -2354,7 +2545,7 @@ ${styleFunctions}`;
                     elementHtml = `
 <pre id="${id}"><code>
 function example() {
-    console.log("This is a preformatted code block");
+    console.log("preformatted plop!");
 }
 </code></pre>`;
                 } else {
@@ -2394,7 +2585,7 @@ function example() {
             <pre class="css-display" tabindex="0"></pre>
         </div>
         <div class="css-textareas">
-            <textarea class="css-textarea" data-pseudo="" style="display: none;" placeholder="Add your CSS properties here"></textarea>
+            <textarea class="css-textarea" data-pseudo="" style="display: none;" placeholder="Add your CSS code here"></textarea>
             <textarea class="css-textarea" data-pseudo=":hover" style="display: none;" placeholder="Add your CSS properties here"></textarea>
             <textarea class="css-textarea" data-pseudo=":active" style="display: none;" placeholder="Add your CSS properties here"></textarea>
             <textarea class="css-textarea" data-pseudo=":focus" style="display: none;" placeholder="Add your CSS properties here"></textarea>
@@ -2414,6 +2605,8 @@ function example() {
                 const cssDisplay = editorContainer.querySelector('.css-display');
                 const cssTextareas = editorContainer.querySelectorAll('.css-textarea');
                 const pseudoSelector = editorContainer.querySelector('.pseudo-selector-select');
+                pseudoSelector.previousValue = '';
+                const tagName = editableElement.children[0].tagName.toLowerCase();
                 
 
                 function toggleCSSEdit() {
@@ -2439,15 +2632,35 @@ function example() {
 
                 cssTextareas.forEach(textarea => {
                     textarea.addEventListener('blur', () => {
-                        textarea.value = formatCSSProperties(textarea.value);
+                        const pseudoSelector = editorContainer.querySelector('.pseudo-selector-select');
+                        if (pseudoSelector.value === '') {
+                            // For 'None', we're dealing with full CSS, not just properties
+                            textarea.value = formatGlobalCSS(textarea.value);
+                        } else {
+                            // For other pseudo-selectors, format only the properties
+                            textarea.value = formatCSSProperties(textarea.value);
+                        }
                         toggleCSSEdit();
                         applyCSS(editorContainer);
                         saveCurrentState();
                     });
                     textarea.addEventListener('input', () => {
-                        updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                        try {
+                            updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
+                        } catch (e) {
+                            console.error('Error updating CSS display:', e);
+                        }
     
                     });
+
+                    const pseudo = textarea.dataset.pseudo;
+                    if (pseudo === '') {
+                        // Set default CSS for the main selector
+                        textarea.value = `${tagName} {\n\n}`;
+                    } else {
+                        // Set default CSS for pseudo-selectors
+                        textarea.value = ``;
+                    }
 
                     textarea.addEventListener('keydown', function(e) {
                         if (e.key === 'Escape') {
@@ -2519,6 +2732,23 @@ function example() {
                 });
 
                 pseudoSelector.addEventListener('change', () => {
+                    const currentTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${pseudoSelector.value}"]`);
+                    
+                    if (pseudoSelector.value === '') {
+                        // Switching to 'None', ensure the full selector is present
+                        if (!currentTextarea.value.trim().startsWith(tagName)) {
+                            currentTextarea.value = `${tagName} {\n${currentTextarea.value.trim()}\n}`;
+                        }
+                    } else if (pseudoSelector.previousValue === '') {
+                        // Switching from 'None' to a pseudo-selector, extract property-value pairs
+                        const css = currentTextarea.value.trim();
+                        const match = css.match(/{([^}]*)}/);
+                        if (match) {
+                            currentTextarea.value = match[1].trim();
+                        }
+                    }
+
+                    pseudoSelector.previousValue = pseudoSelector.value;
                     toggleCSSEdit();
                     applyCSS(editorContainer);
                 });
@@ -2607,14 +2837,31 @@ function example() {
                 goCodeButton.textContent = 'View Go Code';
                 goCodeButton.classList.add('view-go-code-btn');
                 editorContainer.appendChild(goCodeButton);
+                
 
                 goCodeButton.addEventListener('click', () => {
-                    const cssDisplay = editorContainer.querySelector('.css-display');
-                    const fullCSS = cssDisplay.textContent;
-                    const { goCode, errors } = cssToGoCode(fullCSS);
-                    const packageName = currentSheetName.replace(/[^\w]/g, '').toLowerCase();
-                    const fullGoCode = generateFullGoPackage(goCode, packageName);
-                    showModal(`${elementType} Go Code`, fullGoCode, errors);
+                    if (goCodeButton.disabled) return;
+
+                    const elementId = editorContainer.id;
+                    const styleElement = document.querySelector(`style[data-for="${elementId}"]`);
+                    
+                    if (styleElement) {
+                        const fullCSS = styleElement.textContent.trim();
+                        try {
+                            const ast = parseCSS(fullCSS);
+                            if (ast.stylesheet.rules.length > 0) {
+                                const { beautifiedCSS, goCode, errors } = cssToGoCode(fullCSS);
+                                const packageName = currentSheetName.replace(/[^\w]/g, '').toLowerCase();
+                                const fullGoCode = generateFullGoPackage(goCode, packageName);
+                                showModal(`${elementType} Go Code`, fullGoCode, errors, beautifiedCSS);
+                                return;
+                            }
+                        } catch (error) {
+                            console.error(`Error parsing CSS for ${elementId}:`, error);
+                        }
+                    }
+                    
+                    showModal(`${elementType} Go Code`, 'No specific styles added to this element', [], '');
                 });
 
                 
@@ -2720,12 +2967,16 @@ function example() {
 
                 cssTextareas.forEach(textarea => {
                     const pseudo = textarea.dataset.pseudo;
-                    const css = textarea.value.trim();
+                    let css = textarea.value.trim();
                     if (css) {
-                        cssContent += `${tagName}${pseudo} {\n${css}\n}\n\n`;
+                        if (pseudo === '') {
+                            // For 'None' pseudo, the textarea already contains the full CSS rule
+                            cssContent += css + '\n\n';
+                        } else {
+                            cssContent += `${tagName}${pseudo} {\n${css}\n}\n\n`;
+                        }
                     }
                 });
-
                 updateCSS(containerId, formatGlobalCSS(cssContent));
                 updateCSSDisplay(editorContainer, tagName, pseudoSelector.value);
             }
@@ -2735,22 +2986,55 @@ function example() {
                 const cssTextarea = editorContainer.querySelector(`.css-textarea[data-pseudo="${currentPseudo}"]`);
                 
                 if (cssDisplay && cssTextarea) {
-                    const css = cssTextarea.value.trim();
-                    const formattedProperties = formatCSSProperties(css);
-                    const formattedCSS = formatGlobalCSS(`${tagName}${currentPseudo} {\n${formattedProperties}\n}`);
-                    cssDisplay.textContent = formattedCSS;
+                    let css = cssTextarea.value.trim();
+                    let formattedCSS;
+                    
+                    if (currentPseudo === '') {
+                        // For 'None' pseudo, display the raw CSS as is
+                        formattedCSS = css ? formatGlobalCSS(css) : `${tagName} {\n\n}`;
+                    } else {
+                        // For other pseudos, wrap the CSS in a rule
+                        const formattedProperties = formatCSSProperties(css);
+                        formattedCSS = formatGlobalCSS(`${tagName}${currentPseudo} {\n${formattedProperties}\n}`);
+                    }
+                    
+                    cssDisplay.textContent = beautifyCSS(parseCSS(formattedCSS), '\t');
                 }
             }
 
             function updateCSS(elementId, cssContent) {
                 let styleTag = document.querySelector(`style[data-for="${elementId}"]`);
-                if (styleTag) {
-                    styleTag.remove(); // Remove existing style tag
+                
+                try {
+                    const ast = parseCSS(cssContent);
+                    const hasValidDeclarations = ast.stylesheet.rules.some(rule => 
+                        rule.type === 'rule' && rule.declarations && 
+                        rule.declarations.some(decl => decl.property && decl.property.trim() && decl.value && decl.value.trim())
+                    );
+
+                    if (!hasValidDeclarations) {
+                        if (styleTag) {
+                            styleTag.remove();
+                        }
+                        return false;
+                    }
+                    
+                    if (!styleTag) {
+                        styleTag = document.createElement('style');
+                        styleTag.setAttribute('data-for', elementId);
+                        document.head.appendChild(styleTag);
+                    }
+                    
+                    styleTag.textContent = cssContent;
+                    return true;
+                    
+                } catch (error) {
+                    console.error(`Error parsing CSS for ${elementId}:`, error);
+                    if (styleTag) {
+                        styleTag.remove();
+                    }
+                    return false;
                 }
-                styleTag = document.createElement('style');
-                styleTag.setAttribute('data-for', elementId);
-                styleTag.textContent = cssContent;
-                document.head.appendChild(styleTag);
             }
 
             function updateBackgroundColorPicker() {
@@ -2782,59 +3066,14 @@ function example() {
             }
                         
 
-            function cssbeautify(style) {
-                let formatted = '';
-                let depth = 0;
-                const indent = '\t'; // Use tab for indentation
-
-                function newline(decreaseDepth = false) {
-                    if (decreaseDepth) depth--;
-                    return '\n' + indent.repeat(depth);
-                }
-
-                let rules = style.split('}');
-                for (let i = 0; i < rules.length; i++) {
-                    let rule = rules[i].trim();
-                    if (rule.length === 0) continue;
-
-                    let parts = rule.split('{');
-                    if (parts.length === 1) {
-                        // This is a single line rule (like @import)
-                        formatted += rule + ';\n\n';
-                    } else {
-                        let selector = parts[0].trim();
-                        let properties = parts[1].split(';').filter(prop => prop.trim().length > 0);
-
-                        formatted += selector + ' {';
-                        depth++;
-
-                        for (let j = 0; j < properties.length; j++) {
-                            let [key, value] = properties[j].split(':').map(part => part.trim());
-                            formatted += newline() + key + ': ' + value + ';';
-                        }
-
-                        depth--;
-                        formatted += newline() + '}';
-                        
-                        // Add an extra newline after each ruleset, except the last one
-                        if (i < rules.length - 1) formatted += '\n\n';
-                    }
-                }
-
-                // Remove any instances of three or more consecutive newlines
-                formatted = formatted.replace(/\n{3,}/g, '\n\n');
-
-                return formatted.trim();
+            function cssbeautify(css) {
+                const ast = parseCSS(css);
+                return beautifyCSS(ast, '\t');
             }
-
 
             function formatGlobalCSS(css) {
-                if (!css || css.trim() === '') {
-                    return '';
-                }
                 return cssbeautify(css);
             }
-
             if (globalCSS) {
                 
                 globalCSS.addEventListener('input', debounce(() => {
@@ -2992,22 +3231,25 @@ function example() {
                 const packageName = currentSheetName.replace(/[^\w]/g, '').toLowerCase();
 
                 document.querySelectorAll('.editor-container').forEach(container => {
-                    const elementType = container.querySelector('h2').textContent.toLowerCase();
+                    const elementType = container.querySelector('.editable-element').children[0].tagName.toLowerCase();
                     const cssTextareas = container.querySelectorAll('.css-textarea');
-                    let elementCSS = '';
                     cssTextareas.forEach(textarea => {
                         const pseudo = textarea.dataset.pseudo;
                         const css = textarea.value.trim();
                         if (css) {
-                            elementCSS += `${elementType}${pseudo} {\n${css}\n}\n\n`;
+                            if (pseudo === '') {
+                                // For the base selector, use the CSS as-is
+                                allCSS += css + '\n\n';
+                            } else {
+                                // For pseudo-selectors, construct the selector
+                                const selector = `${elementType}:${pseudo}`;
+                                allCSS += `${selector} {\n${css}\n}\n\n`;
+                            }
                         }
                     });
-                    if (elementCSS) {
-                        allCSS += elementCSS;
-                    }
                 });
 
-                const { goCode, errors } = cssToGoCode(allCSS);
+                const {bcss, goCode, errors } = cssToGoCode(allCSS);
                 const fullGoCode = generateFullGoPackage(goCode, packageName);
 
                 if (errors.length > 0) {
@@ -3035,7 +3277,6 @@ function example() {
                                     font-family: Arial, sans-serif;
                                     line-height: 1.6;
                                     padding: 20px;
-                                    max-width: 800px;
                                     margin: 0 auto;
                                 }
                             </style>
@@ -3127,6 +3368,735 @@ function example() {
         });
 
     </script>
+    <script>
+        /* CSS Parser 
+        (The MIT License)
+
+        Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation 
+        files (the 'Software'), to deal in the Software without restriction, including without limitation the rights to use, 
+        copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to 
+        whom the Software is furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the 
+        Software.
+
+        THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED 
+        TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+        TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+        SOFTWARE.
+        
+        */
+        var commentre = /\/\*[^*]*\*+([^/*][^*]*\*+)*\//g
+
+        var parseCSS = function(css, options){
+            options = options || {};
+
+            /**
+             * Positional.
+             */
+
+            var lineno = 1;
+            var column = 1;
+
+            /**
+             * Update lineno and column based on `str`.
+             */
+
+            function updatePosition(str) {
+                var lines = str.match(/\n/g);
+                if (lines) lineno += lines.length;
+                var i = str.lastIndexOf('\n');
+                column = ~i ? str.length - i : column + str.length;
+            }
+
+            /**
+             * Mark position and patch `node.position`.
+             */
+
+            function position() {
+                var start = { line: lineno, column: column };
+                return function(node){
+                node.position = new Position(start);
+                whitespace();
+                return node;
+                };
+            }
+
+            /**
+             * Store position information for a node
+             */
+
+            function Position(start) {
+                this.start = start;
+                this.end = { line: lineno, column: column };
+                this.source = options.source;
+            }
+
+            /**
+             * Non-enumerable source string
+             */
+
+            Position.prototype.content = css;
+
+            /**
+             * Error `msg`.
+             */
+
+            var errorsList = [];
+
+            function error(msg) {
+                var err = new Error(options.source + ':' + lineno + ':' + column + ': ' + msg);
+                err.reason = msg;
+                err.filename = options.source;
+                err.line = lineno;
+                err.column = column;
+                err.source = css;
+
+                if (options.silent) {
+                    errorsList.push(err);
+                } else {
+                    throw err;
+                }
+            }
+
+            /**
+             * Parse stylesheet.
+             */
+
+            function stylesheet() {
+                var rulesList = rules();
+
+                return {
+                    type: 'stylesheet',
+                    stylesheet: {
+                        source: options.source,
+                        rules: rulesList,
+                        parsingErrors: errorsList
+                    }
+                };
+            }
+
+            /**
+             * Opening brace.
+             */
+
+            function open() {
+                return match(/^{\s*/);
+            }
+
+            /**
+             * Closing brace.
+             */
+
+            function close() {
+                return match(/^}/);
+            }
+
+            /**
+             * Parse ruleset.
+             */
+
+            function rules() {
+                var node;
+                var rules = [];
+                whitespace();
+                comments(rules);
+                while (css.length && css.charAt(0) != '}' && (node = atrule() || rule())) {
+                if (node !== false) {
+                    rules.push(node);
+                    comments(rules);
+                }
+                }
+                return rules;
+            }
+
+            /**
+             * Match `re` and return captures.
+             */
+
+            function match(re) {
+                var m = re.exec(css);
+                if (!m) return;
+                var str = m[0];
+                updatePosition(str);
+                css = css.slice(str.length);
+                return m;
+            }
+
+            /**
+             * Parse whitespace.
+             */
+
+            function whitespace() {
+                match(/^\s*/);
+            }
+
+            /**
+             * Parse comments;
+             */
+
+            function comments(rules) {
+                var c;
+                rules = rules || [];
+                while (c = comment()) {
+                if (c !== false) {
+                    rules.push(c);
+                }
+                }
+                return rules;
+            }
+
+            /**
+             * Parse comment.
+             */
+
+            function comment() {
+                var pos = position();
+                if ('/' != css.charAt(0) || '*' != css.charAt(1)) return;
+
+                var i = 2;
+                while ("" != css.charAt(i) && ('*' != css.charAt(i) || '/' != css.charAt(i + 1))) ++i;
+                i += 2;
+
+                if ("" === css.charAt(i-1)) {
+                return error('End of comment missing');
+                }
+
+                var str = css.slice(2, i - 2);
+                column += 2;
+                updatePosition(str);
+                css = css.slice(i);
+                column += 2;
+
+                return pos({
+                type: 'comment',
+                comment: str
+                });
+            }
+
+            /**
+             * Parse selector.
+             */
+
+            function selector() {
+                var m = match(/^([^{]+)/);
+                if (!m) return;
+                /* @fix Remove all comments from selectors
+                * http://ostermiller.org/findcomment.html */
+                return trim(m[0])
+                .replace(/\/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*\/+/g, '')
+                .replace(/"(?:\\"|[^"])*"|'(?:\\'|[^'])*'/g, function(m) {
+                    return m.replace(/,/g, '\u200C');
+                })
+                .split(/\s*(?![^(]*\)),\s*/)
+                .map(function(s) {
+                    return s.replace(/\u200C/g, ',');
+                });
+            }
+
+            /**
+             * Parse declaration.
+             */
+
+            function declaration() {
+                var pos = position();
+
+                // prop
+                var prop = match(/^(\*?[-#\/\*\\\w]+(\[[0-9a-z_-]+\])?)\s*/);
+                if (!prop) return;
+                prop = trim(prop[0]);
+
+                // :
+                if (!match(/^:\s*/)) return error("property missing ':'");
+
+                // val
+                var val = match(/^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\([^\)]*?\)|[^};])+)/);
+
+                var ret = pos({
+                type: 'declaration',
+                property: prop.replace(commentre, ''),
+                value: val ? trim(val[0]).replace(commentre, '') : ''
+                });
+
+                // ;
+                match(/^[;\s]*/);
+
+                return ret;
+            }
+
+            /**
+             * Parse declarations.
+             */
+
+            function declarations() {
+                var decls = [];
+
+                if (!open()) return error("missing '{'");
+                comments(decls);
+
+                // declarations
+                var decl;
+                while (decl = declaration()) {
+                if (decl !== false) {
+                    decls.push(decl);
+                    comments(decls);
+                }
+                }
+
+                if (!close()) return error("missing '}'");
+                return decls;
+            }
+
+            /**
+             * Parse keyframe.
+             */
+
+            function keyframe() {
+                var m;
+                var vals = [];
+                var pos = position();
+
+                while (m = match(/^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/)) {
+                vals.push(m[1]);
+                match(/^,\s*/);
+                }
+
+                if (!vals.length) return;
+
+                return pos({
+                type: 'keyframe',
+                values: vals,
+                declarations: declarations()
+                });
+            }
+
+            /**
+             * Parse keyframes.
+             */
+
+            function atkeyframes() {
+                var pos = position();
+                var m = match(/^@([-\w]+)?keyframes\s*/);
+
+                if (!m) return;
+                var vendor = m[1];
+
+                // identifier
+                var m = match(/^([-\w]+)\s*/);
+                if (!m) return error("@keyframes missing name");
+                var name = m[1];
+
+                if (!open()) return error("@keyframes missing '{'");
+
+                var frame;
+                var frames = comments();
+                while (frame = keyframe()) {
+                frames.push(frame);
+                frames = frames.concat(comments());
+                }
+
+                if (!close()) return error("@keyframes missing '}'");
+
+                return pos({
+                type: 'keyframes',
+                name: name,
+                vendor: vendor,
+                keyframes: frames
+                });
+            }
+
+            /**
+             * Parse supports.
+             */
+
+            function atsupports() {
+                var pos = position();
+                var m = match(/^@supports *([^{]+)/);
+
+                if (!m) return;
+                var supports = trim(m[1]);
+
+                if (!open()) return error("@supports missing '{'");
+
+                var style = comments().concat(rules());
+
+                if (!close()) return error("@supports missing '}'");
+
+                return pos({
+                type: 'supports',
+                supports: supports,
+                rules: style
+                });
+            }
+
+            /**
+             * Parse host.
+             */
+
+            function athost() {
+                var pos = position();
+                var m = match(/^@host\s*/);
+
+                if (!m) return;
+
+                if (!open()) return error("@host missing '{'");
+
+                var style = comments().concat(rules());
+
+                if (!close()) return error("@host missing '}'");
+
+                return pos({
+                type: 'host',
+                rules: style
+                });
+            }
+
+            /**
+             * Parse media.
+             */
+
+            function atmedia() {
+                var pos = position();
+                var m = match(/^@media *([^{]+)/);
+
+                if (!m) return;
+                var media = trim(m[1]);
+
+                if (!open()) return error("@media missing '{'");
+
+                var style = comments().concat(rules());
+
+                if (!close()) return error("@media missing '}'");
+
+                return pos({
+                type: 'media',
+                media: media,
+                rules: style
+                });
+            }
+
+
+            /**
+             * Parse custom-media.
+             */
+
+            function atcustommedia() {
+                var pos = position();
+                var m = match(/^@custom-media\s+(--[^\s]+)\s*([^{;]+);/);
+                if (!m) return;
+
+                return pos({
+                type: 'custom-media',
+                name: trim(m[1]),
+                media: trim(m[2])
+                });
+            }
+
+            /**
+             * Parse paged media.
+             */
+
+            function atpage() {
+                var pos = position();
+                var m = match(/^@page */);
+                if (!m) return;
+
+                var sel = selector() || [];
+
+                if (!open()) return error("@page missing '{'");
+                var decls = comments();
+
+                // declarations
+                var decl;
+                while (decl = declaration()) {
+                decls.push(decl);
+                decls = decls.concat(comments());
+                }
+
+                if (!close()) return error("@page missing '}'");
+
+                return pos({
+                type: 'page',
+                selectors: sel,
+                declarations: decls
+                });
+            }
+
+            /**
+             * Parse document.
+             */
+
+            function atdocument() {
+                var pos = position();
+                var m = match(/^@([-\w]+)?document *([^{]+)/);
+                if (!m) return;
+
+                var vendor = trim(m[1]);
+                var doc = trim(m[2]);
+
+                if (!open()) return error("@document missing '{'");
+
+                var style = comments().concat(rules());
+
+                if (!close()) return error("@document missing '}'");
+
+                return pos({
+                type: 'document',
+                document: doc,
+                vendor: vendor,
+                rules: style
+                });
+            }
+
+            /**
+             * Parse font-face.
+             */
+
+            function atfontface() {
+                var pos = position();
+                var m = match(/^@font-face\s*/);
+                if (!m) return;
+
+                if (!open()) return error("@font-face missing '{'");
+                var decls = comments();
+
+                // declarations
+                var decl;
+                while (decl = declaration()) {
+                decls.push(decl);
+                decls = decls.concat(comments());
+                }
+
+                if (!close()) return error("@font-face missing '}'");
+
+                return pos({
+                type: 'font-face',
+                declarations: decls
+                });
+            }
+
+            /**
+             * Parse import
+             */
+
+            var atimport = _compileAtrule('import');
+
+            /**
+             * Parse charset
+             */
+
+            var atcharset = _compileAtrule('charset');
+
+            /**
+             * Parse namespace
+             */
+
+            var atnamespace = _compileAtrule('namespace');
+
+            /**
+             * Parse non-block at-rules
+             */
+
+
+            function _compileAtrule(name) {
+                var re = new RegExp('^@' + name + '\\s*([^;]+);');
+                return function() {
+                var pos = position();
+                var m = match(re);
+                if (!m) return;
+                var ret = { type: name };
+                ret[name] = m[1].trim();
+                return pos(ret);
+                }
+            }
+
+            /**
+             * Parse at rule.
+             */
+
+            function atrule() {
+                if (css[0] != '@') return;
+
+                return atkeyframes()
+                || atmedia()
+                || atcustommedia()
+                || atsupports()
+                || atimport()
+                || atcharset()
+                || atnamespace()
+                || atdocument()
+                || atpage()
+                || athost()
+                || atfontface();
+            }
+
+            /**
+             * Parse rule.
+             */
+
+            function rule() {
+                var pos = position();
+                var sel = selector();
+
+                if (!sel) return error('selector missing');
+                comments();
+
+                return pos({
+                type: 'rule',
+                selectors: sel,
+                declarations: declarations()
+                });
+            }
+
+            return addParent(stylesheet());
+        };
+
+        /**
+         * Trim `str`.
+         */
+
+        function trim(str) {
+            return str ? str.replace(/^\s+|\s+$/g, '') : '';
+        }
+
+        /**
+         * Adds non-enumerable parent node reference to each node.
+         */
+
+        function addParent(obj, parent) {
+            var isNode = obj && typeof obj.type === 'string';
+            var childParent = isNode ? obj : parent;
+
+            for (var k in obj) {
+                var value = obj[k];
+                if (Array.isArray(value)) {
+                value.forEach(function(v) { addParent(v, childParent); });
+                } else if (value && typeof value === 'object') {
+                addParent(value, childParent);
+                }
+            }
+
+            if (isNode) {
+                Object.defineProperty(obj, 'parent', {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: parent || null
+                });
+            }
+
+            return obj;
+        }
+
+        function beautifyCSS(ast, indent = '\t') {
+            function beautifyNode(node, depth = 0) {
+                const padding = indent.repeat(depth);
+                switch (node.type) {
+                    case 'stylesheet':
+                        return node.stylesheet.rules.map(rule => beautifyNode(rule, depth)).join('\n\n');
+                    case 'rule':
+                        return `${padding}${node.selectors.join(', ')} {\n${node.declarations.map(decl => beautifyNode(decl, depth + 1)).join('\n')}\n${padding}}`;
+                    case 'declaration':
+                        return `${padding}${node.property}: ${node.value};`;
+                    case 'comment':
+                        return `${padding}/*${node.comment}*/`;
+                    case 'keyframes':
+                        return `${padding}@keyframes ${node.name} {\n${node.keyframes.map(kf => beautifyNode(kf, depth + 1)).join('\n')}\n${padding}}`;
+                    case 'keyframe':
+                        return `${padding}${node.values.join(', ')} {\n${node.declarations.map(decl => beautifyNode(decl, depth + 1)).join('\n')}\n${padding}}`;
+                    case 'media':
+                        return `${padding}@media ${node.media} {\n${node.rules.map(rule => beautifyNode(rule, depth + 1)).join('\n')}\n${padding}}`;
+                    // Add more cases for other node types as needed
+                    default:
+                        return '';
+                }
+            }
+
+            return beautifyNode(ast);
+        }
+
+        function generateGoCode(ast) {
+            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
+            let goCode = '';
+            let rawCSS = '';
+
+            function generateForNode(node, parentSelector = '') {
+                switch (node.type) {
+                    case 'stylesheet':
+                        return node.stylesheet.rules.map(rule => generateForNode(rule)).join('\n\n');
+                    case 'rule':
+                        const selector = node.selectors.join(', ');
+                        const [baseSelector, pseudoSelector] = selector.split(':');
+                        const funcName = `Style${baseSelector.replace(/[^\w]/g, '')}`;
+                        let code = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+                        let unhandledCSS = '';
+
+                        node.declarations.forEach(decl => {
+                            const result = generateForDeclaration(decl, pseudoSelector);
+                            if (result.goCode) {
+                                code += result.goCode;
+                            } else {
+                                unhandledCSS += `${decl.property}: ${decl.value};\n`;
+                            }
+                        });
+
+                        if (unhandledCSS) {
+                            const varName = `rawCSS_${baseSelector.replace(/[^\w]/g, '')}`;
+                            if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                                rawCSS += `var ${varName}_${pseudoSelector} = \`${baseSelector}:${pseudoSelector} { ${unhandledCSS} }\`\n`;
+                            } else {
+                                rawCSS += `var ${varName} = \`${selector} { ${unhandledCSS} }\`\n`;
+                            }
+                        }
+
+                        code += `\treturn e\n}`;
+                        return code;
+                    case 'comment':
+                        return `// ${node.comment}`;
+                    default:
+                        return '';
+                }
+            }
+
+            function generateForDeclaration(decl, pseudoSelector = '') {
+                const property = propertyToGoMethod(decl.property);
+                const value = decl.value;
+
+                if (cssToGoMapping[decl.property]) {
+                    let methodChain = `doc.CSS.Container`;
+                    if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                        methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+                    }
+                    methodChain += `.Style.${property}`;
+
+                    if (cssToGoMapping[decl.property].values.includes(value)) {
+                        return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+                    } else {
+                        return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
+                    }
+                } else {
+                    return { goCode: '' }; // This will be collected in unhandledCSS
+                }
+            }
+
+            goCode = generateForNode(ast);
+            
+            return { goCode, rawCSS };
+        }
+        
+
+
+        function propertyToGoMethod(property) {
+            return property.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
+        }
+
+
+    </script>
+
+
 </body>
 
 </html>

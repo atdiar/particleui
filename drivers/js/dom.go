@@ -1428,8 +1428,9 @@ func (s StyleSheet) AsElement() *ui.Element {
 	return s.raw
 }
 
-func (s StyleSheet) InsertRule(selector string, rules string) StyleSheet {
-	o := ui.NewObject().Set(selector, ui.String(rules)).Commit()
+func (s StyleSheet) InsertRule(selector string, ruleset string) StyleSheet {
+	o := ui.NewObject().Set(selector, ui.String(ruleset)).Commit()
+
 	r, ok := s.raw.GetData("stylesheet")
 	if !ok {
 		rulelist := ui.NewList(o).Commit()
@@ -1441,19 +1442,50 @@ func (s StyleSheet) InsertRule(selector string, rules string) StyleSheet {
 	return s
 }
 
-func (s StyleSheet) FromRawText(text string) StyleSheet {
-	rules := strings.Split(text, "}")
-	for _, rule := range rules {
-		if rule == "" {
-			continue
+func (s *StyleSheet) FromRawstring(text string) *StyleSheet {
+	text = strings.TrimSpace(text)
+	for len(text) > 0 {
+		selector, body, remainder := parseNextRule(text)
+		if selector != "" && body != "" {
+			s.InsertRule(selector, body)
 		}
-		rule = strings.TrimSpace(rule)
-		rule = rule + "}"
-		selector := strings.Split(rule, "{")[0]
-		rules := strings.Split(rule, "{")[1]
-		s.InsertRule(selector, rules)
+		text = remainder
 	}
 	return s
+}
+
+func parseNextRule(text string) (selector, body, remainder string) {
+	openIndex := strings.Index(text, "{")
+	if openIndex == -1 {
+		return "", "", ""
+	}
+
+	selector = strings.TrimSpace(text[:openIndex])
+	text = text[openIndex+1:]
+
+	nestingLevel := 1
+	bodyEnd := 0
+
+	for i, char := range text {
+		if char == '{' {
+			nestingLevel++
+		} else if char == '}' {
+			nestingLevel--
+			if nestingLevel == 0 {
+				bodyEnd = i
+				break
+			}
+		}
+	}
+
+	if bodyEnd == 0 {
+		return "", "", ""
+	}
+
+	body = strings.TrimSpace(text[:bodyEnd])
+	remainder = strings.TrimSpace(text[bodyEnd+1:])
+
+	return selector, body, remainder
 }
 
 func (s StyleSheet) String() string {
@@ -1523,7 +1555,7 @@ func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
 		if !ok {
 			return false
 		}
-		s.Call("replaceSync", StyleSheet{evt.Origin()}.String())
+		s.Call("replaceSync", evt.NewValue().(ui.String).String())
 		return false
 	})
 	observable.WatchEvent("new", observable, new)
@@ -1585,7 +1617,7 @@ func (d *Document) DeleteAllStyleSheets() {
 	}
 }
 
-// GetCurrentStyleSheet returns the id of the currently active style sheet.
+// GetCurrentStyleSheet returns the id of the currently active stylesheet.
 // If no style sheet is active, it returns an empty string and false.
 func (d *Document) GetCurrentStyleSheet() (string, bool) {
 	ids := d.GetActiveStyleSheets()
@@ -1648,7 +1680,7 @@ func (s StyleSheet) Active() bool {
 }
 
 func (s StyleSheet) Update() StyleSheet {
-	s.AsElement().SetDataSetUI("stylesheet", ui.String(s.String()))
+	s.AsElement().SetUI("stylesheet", ui.String(s.String()))
 	return s
 }
 

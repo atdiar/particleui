@@ -1157,8 +1157,7 @@
             // Remove any trailing semicolons from the value
             value = value.replace(/;$/, '').trim();
             
-            // Escape any existing double quotes in the value
-            value = value.replace(/"/g, '\\"');
+            // Escape any existing double quotes  
             
             // For all values, use them as quoted strings
             return `${capitalizedProperty}("${value}")(e)`;
@@ -1167,13 +1166,53 @@
         function cssToGoCode(css) {
             const lines = css.split('\n');
             let goCode = '';
+            let rawCSSVariables = '';
             let errors = [];
             let lineNumber = 1;
-            let currentElement = '';
-            let currentPseudo = '';
+            let currentSelector = '';
+            let currentRules = '';
             let styleMap = new Map();
-
             const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'firstchild', 'lastchild', 'checked', 'disabled', 'enabled'];
+
+            function isSimpleSelector(selector) {
+                return !selector.includes(' ') && !selector.includes(',') && !selector.includes('>') && !selector.includes('+') && !selector.includes('~') && !selector.includes('::');
+            }
+
+            function generateRawCSSVariableName(selector) {
+                let name = 'RawCSS';
+                const selectorParts = selector.split(/\s*([>+~])\s*|\s+/);
+                
+                for (let part of selectorParts) {
+                    switch (part) {
+                        case '>':
+                            name += '_Child';
+                            break;
+                        case '+':
+                            name += '_Adjacent';
+                            break;
+                        case '~':
+                            name += '_Sibling';
+                            break;
+                        default:
+                            if (part.startsWith('.')) {
+                                name += '_' + part.slice(1).replace(/[^a-zA-Z0-9]/g, '');
+                            } else if (part.startsWith('#')) {
+                                name += '_Id' + part.slice(1).replace(/[^a-zA-Z0-9]/g, '');
+                            } else if (part.startsWith('[')) {
+                                name += '_Attr' + part.replace(/[\[\]='"]/g, '');
+                            } else if (part.includes('::')) {
+                                name += '_PseudoElement' + part.split('::')[1].replace(/[^a-zA-Z0-9]/g, '');
+                            } else if (part.includes(':')) {
+                                name += '_PseudoClass' + part.split(':')[1].replace(/[^a-zA-Z0-9]/g, '');
+                            } else {
+                                name += '_' + part.replace(/[^a-zA-Z0-9]/g, '');
+                            }
+                            break;
+                    }
+                }
+
+                return capitalizeFirstLetter(name);
+            }
 
             function getMethodCall(property, value, pseudo) {
                 const mapping = cssToGoMapping[property];
@@ -1204,46 +1243,92 @@
             for (let line of lines) {
                 line = line.trim();
                 if (line.includes('{')) {
-                    let selector = line.split('{')[0].trim();
-                    [currentElement, currentPseudo] = selector.split(':').map(s => s.trim());
-                    if (currentPseudo && !validPseudoSelectors.includes(currentPseudo.toLowerCase())) {
-                        errors.push({ selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
-                    }
-                    if (!styleMap.has(currentElement)) {
-                        styleMap.set(currentElement, []);
+                    currentSelector = line.split('{')[0].trim();
+                    currentRules = '';
+                    if (!styleMap.has(currentSelector)) {
+                        styleMap.set(currentSelector, []);
                     }
                 } else if (line.includes('}')) {
-                    currentElement = '';
-                    currentPseudo = '';
-                } else if (currentElement && line.includes(':')) {
-                    const [property, value] = line.split(':').map(s => s.trim());
-                    const cleanValue = value.replace(';', '');
-                    if (cssToGoMapping[property]) {
-                        const methodCall = getMethodCall(property, cleanValue, currentPseudo);
-                        if (methodCall.includes('ERROR')) {
-                            errors.push({ property, selector: currentElement, pseudoSelector: currentPseudo, lineNumber: lineNumber });
-                        }
-                        styleMap.get(currentElement).push({ pseudo: currentPseudo, style: methodCall });
-                    } else {
-                        errors.push({ property, selector: currentElement, lineNumber: lineNumber });
+                    if (currentSelector && currentRules) {
+                        styleMap.get(currentSelector).push(currentRules.trim());
                     }
+                    currentSelector = '';
+                    currentRules = '';
+                } else if (currentSelector && line.includes(':')) {
+                    currentRules += line + '\n';
                 }
                 lineNumber++;
             }
 
-            for (let [element, styles] of styleMap) {
-                let funcName = element.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-                funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
+            goCode += `package styles
+
+        import (
+            ui "github.com/atdiar/particleui"
+            doc "github.com/atdiar/particleui/drivers/js"
+            . "github.com/atdiar/particleui/drivers/js/declarative"
+        )
+
+        `;
+
+            let styleFunctions = new Map();
+
+            for (let [selector, rules] of styleMap) {
+                if (isSimpleSelector(selector)) {
+                    let [element, pseudo] = selector.split(':').map(s => s.trim());
+                    let funcName = element.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
+                    funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
+                    
+                    if (!styleFunctions.has(funcName)) {
+                        styleFunctions.set(funcName, new Map());
+                    }
+                    
+                    let pseudoStyles = styleFunctions.get(funcName);
+                    if (!pseudoStyles.has(pseudo || '')) {
+                        pseudoStyles.set(pseudo || '', []);
+                    }
+                    
+                    for (let rule of rules) {
+                        const properties = rule.split(';').filter(p => p.trim());
+                        for (let prop of properties) {
+                            const [property, value] = prop.split(':').map(s => s.trim());
+                            if (cssToGoMapping[property]) {
+                                const methodCall = getMethodCall(property, value, pseudo);
+                                if (methodCall.includes('ERROR')) {
+                                    errors.push({ property, selector, pseudoSelector: pseudo, lineNumber });
+                                } else {
+                                    pseudoStyles.get(pseudo || '').push(methodCall);
+                                }
+                            } else {
+                                errors.push({ property, selector, lineNumber });
+                            }
+                        }
+                    }
+                } else {
+                    // Complex selector, create a raw CSS string variable
+                    const varName = generateRawCSSVariableName(selector);
+                    rawCSSVariables += `var ${varName} = \`${selector} {\n${rules.join('\n')}\n}\`\n\n`;
+                }
+            }
+
+            // Generate Go code for style functions
+            for (let [funcName, pseudoStyles] of styleFunctions) {
                 goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
-                for (let { pseudo, style } of styles) {
-                    goCode += `\te = ${style}\n`;
+                for (let [pseudo, styles] of pseudoStyles) {
+                    if (pseudo) {
+                        goCode += `\t// ${pseudo} styles\n`;
+                    }
+                    for (let style of styles) {
+                        goCode += `\te = ${style}\n`;
+                    }
                 }
                 goCode += `\treturn e\n}\n\n`;
             }
 
+            // Append raw CSS variables to the go code
+            goCode += rawCSSVariables;
+
             return { goCode: goCode.trim(), errors: errors };
         }
-
 
         function updateLOCCounter(element, content) {
             const lineCount = content.split('\n').length;

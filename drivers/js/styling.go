@@ -18,13 +18,26 @@ func (s styleFn) ForAllStylesheets(stylefns ...func(*ui.Element) *ui.Element) fu
 	}
 }
 
+func (s styleFn) Rawstring(stylesheetID string, css string) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		document := GetDocument(e)
+		sheet, ok := document.GetStyleSheet(stylesheetID)
+		if !ok {
+			sheet = document.NewStyleSheet(stylesheetID)
+		}
+		defer sheet.Update()
+		sheet.FromRawstring(css)
+		return e
+	}
+}
+
 // Style allows to define a style for an element, namespaced by stylesheet ID.
 // Each call to style clears any previous style, allowing to specify a new one for
 // that specific element, for a given stylesheet.
 // That means that calling Style multiple times on the same element will only replace the previous style.
 // The categorisation in different stylesheet could allow for instance to
 // differentiate styles for light and dark mode.
-// Style are functions and as such are composable.
+// Style return values are functions and as such are composable.
 // This means that a modfied version of a style can merely be created by composition, using the
 // base style as the first stylefns argument.
 // It has a ForAllStylesheets method that applies the style to all stylesheets of the document.
@@ -2308,37 +2321,5 @@ type ContentStyle struct {
 		ZoomIn       func(*ui.Element) *ui.Element
 		ZoomOut      func(*ui.Element) *ui.Element
 		Value        func(value string) func(*ui.Element) *ui.Element
-	}
-}
-
-func (c ContainerStyle) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
-	return func(value string) func(*ui.Element) *ui.Element {
-		return func(e *ui.Element) *ui.Element {
-			return css("", property, value)(e)
-		}
-	}
-}
-
-func (c ContainerLayout) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
-	return func(value string) func(*ui.Element) *ui.Element {
-		return func(e *ui.Element) *ui.Element {
-			return css("", property, value)(e)
-		}
-	}
-}
-
-func (c ContentStyle) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
-	return func(value string) func(*ui.Element) *ui.Element {
-		return func(e *ui.Element) *ui.Element {
-			return css("", property, value)(e)
-		}
-	}
-}
-
-func (c ContentLayout) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
-	return func(value string) func(*ui.Element) *ui.Element {
-		return func(e *ui.Element) *ui.Element {
-			return css("", property, value)(e)
-		}
 	}
 }
