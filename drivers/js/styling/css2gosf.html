@@ -1164,171 +1164,154 @@
         }
 
         function cssToGoCode(css) {
-            const lines = css.split('\n');
+            const ast = parseCSS(css);
+            const beautifiedCSS = beautifyCSS(ast);
             let goCode = '';
             let rawCSSVariables = '';
             let errors = [];
-            let lineNumber = 1;
-            let currentSelector = '';
-            let currentRules = '';
-            let styleMap = new Map();
-            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'firstchild', 'lastchild', 'checked', 'disabled', 'enabled'];
+            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
 
-            function isSimpleSelector(selector) {
-                return !selector.includes(' ') && !selector.includes(',') && !selector.includes('>') && !selector.includes('+') && !selector.includes('~') && !selector.includes('::');
-            }
+            const styleMap = new Map();
 
-            function generateRawCSSVariableName(selector) {
-                let name = 'RawCSS';
-                const selectorParts = selector.split(/\s*([>+~])\s*|\s+/);
-                
-                for (let part of selectorParts) {
-                    switch (part) {
-                        case '>':
-                            name += '_Child';
-                            break;
-                        case '+':
-                            name += '_Adjacent';
-                            break;
-                        case '~':
-                            name += '_Sibling';
-                            break;
-                        default:
-                            if (part.startsWith('.')) {
-                                name += '_' + part.slice(1).replace(/[^a-zA-Z0-9]/g, '');
-                            } else if (part.startsWith('#')) {
-                                name += '_Id' + part.slice(1).replace(/[^a-zA-Z0-9]/g, '');
-                            } else if (part.startsWith('[')) {
-                                name += '_Attr' + part.replace(/[\[\]='"]/g, '');
-                            } else if (part.includes('::')) {
-                                name += '_PseudoElement' + part.split('::')[1].replace(/[^a-zA-Z0-9]/g, '');
-                            } else if (part.includes(':')) {
-                                name += '_PseudoClass' + part.split(':')[1].replace(/[^a-zA-Z0-9]/g, '');
-                            } else {
-                                name += '_' + part.replace(/[^a-zA-Z0-9]/g, '');
-                            }
-                            break;
+            function addToStyleMap(selector, declarations) {
+                if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
+                    // This is a complex selector, store it as raw CSS
+                    if (!styleMap.has('rawCSS')) {
+                        styleMap.set('rawCSS', []);
                     }
-                }
-
-                return capitalizeFirstLetter(name);
-            }
-
-            function getMethodCall(property, value, pseudo) {
-                const mapping = cssToGoMapping[property];
-                if (!mapping) {
-                    return `// ERROR: Unknown property "${property}"`;
-                }
-
-                const [namespace, category, prop] = mapping.id.split('.');
-                
-                let methodChain = `doc.CSS.${namespace}`;
-                if (pseudo) {
-                    if (validPseudoSelectors.includes(pseudo.toLowerCase())) {
-                        methodChain += `.${capitalizeFirstLetter(pseudo)}`;
-                    } else {
-                        return `// ERROR: Invalid pseudo-selector ":${pseudo}"`;
-                    }
-                }
-                methodChain += `.${category}`;
-
-                if (mapping.values.includes(value)) {
-                    const methodName = value.charAt(0).toUpperCase() + value.slice(1);
-                    return `${methodChain}.${prop}.${methodName}(e)`;
+                    styleMap.get('rawCSS').push({ selector, declarations });
                 } else {
-                    return `${methodChain}.${prop}.Value("${value}")(e)`;
-                }
-            }
-
-            for (let line of lines) {
-                line = line.trim();
-                if (line.includes('{')) {
-                    currentSelector = line.split('{')[0].trim();
-                    currentRules = '';
-                    if (!styleMap.has(currentSelector)) {
-                        styleMap.set(currentSelector, []);
+                    const [baseSelector, pseudoSelector] = selector.split(':');
+                    if (!styleMap.has(baseSelector)) {
+                        styleMap.set(baseSelector, { base: [], pseudo: {} });
                     }
-                } else if (line.includes('}')) {
-                    if (currentSelector && currentRules) {
-                        styleMap.get(currentSelector).push(currentRules.trim());
-                    }
-                    currentSelector = '';
-                    currentRules = '';
-                } else if (currentSelector && line.includes(':')) {
-                    currentRules += line + '\n';
-                }
-                lineNumber++;
-            }
-
-            goCode += `package styles
-
-        import (
-            ui "github.com/atdiar/particleui"
-            doc "github.com/atdiar/particleui/drivers/js"
-            . "github.com/atdiar/particleui/drivers/js/declarative"
-        )
-
-        `;
-
-            let styleFunctions = new Map();
-
-            for (let [selector, rules] of styleMap) {
-                if (isSimpleSelector(selector)) {
-                    let [element, pseudo] = selector.split(':').map(s => s.trim());
-                    let funcName = element.replace(/[^\w]/g, '').replace(/^[0-9]/, '_$&') + 'Style';
-                    funcName = funcName.charAt(0).toUpperCase() + funcName.slice(1);
-                    
-                    if (!styleFunctions.has(funcName)) {
-                        styleFunctions.set(funcName, new Map());
-                    }
-                    
-                    let pseudoStyles = styleFunctions.get(funcName);
-                    if (!pseudoStyles.has(pseudo || '')) {
-                        pseudoStyles.set(pseudo || '', []);
-                    }
-                    
-                    for (let rule of rules) {
-                        const properties = rule.split(';').filter(p => p.trim());
-                        for (let prop of properties) {
-                            const [property, value] = prop.split(':').map(s => s.trim());
-                            if (cssToGoMapping[property]) {
-                                const methodCall = getMethodCall(property, value, pseudo);
-                                if (methodCall.includes('ERROR')) {
-                                    errors.push({ property, selector, pseudoSelector: pseudo, lineNumber });
-                                } else {
-                                    pseudoStyles.get(pseudo || '').push(methodCall);
-                                }
-                            } else {
-                                errors.push({ property, selector, lineNumber });
-                            }
+                    const style = styleMap.get(baseSelector);
+                    if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                        if (!style.pseudo[pseudoSelector]) {
+                            style.pseudo[pseudoSelector] = [];
                         }
+                        style.pseudo[pseudoSelector].push(...declarations);
+                    } else {
+                        style.base.push(...declarations);
+                    }
+                }
+            }
+
+            ast.stylesheet.rules.forEach(rule => {
+                if (rule.type === 'rule') {
+                    rule.selectors.forEach(selector => {
+                        addToStyleMap(selector, rule.declarations);
+                    });
+                } else if (rule.type === 'keyframes' || rule.type === 'media') {
+                    // Store unsupported features in raw variables
+                    const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
+                    rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
+                }
+            });
+
+            styleMap.forEach((style, baseSelector) => {
+                if (baseSelector === 'rawCSS') {
+                    style.forEach(({ selector, declarations }) => {
+                        const varName = generateVariableName(selector);
+                        rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
+                        declarations.forEach(decl => {
+                            rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
+                        });
+                        rawCSSVariables += '}\`\n\n';
+                    });
+                } else {
+                    const elementName = baseSelector.replace(/[^\w]/g, '');
+                    const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
+                    let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+
+                    // Handle base styles
+                    style.base.forEach(decl => {
+                        const result = handleDeclaration(decl);
+                        if (result.goCode) {
+                            functionCode += result.goCode;
+                        }
+                    });
+
+                    // Add a line break if there are both base styles and pseudo-classes
+                    if (style.base.length > 0 && Object.keys(style.pseudo).length > 0) {
+                        functionCode += '\n';
+                    }
+
+                    // Handle pseudo-classes
+                    Object.entries(style.pseudo).forEach(([pseudo, declarations], index) => {
+                        declarations.forEach(decl => {
+                            const result = handleDeclaration(decl, pseudo);
+                            if (result.goCode) {
+                                functionCode += result.goCode;
+                            }
+                        });
+                        // Add a line break between different pseudo-classes
+                        if (index < Object.entries(style.pseudo).length - 1) {
+                            functionCode += '\n';
+                        }
+                    });
+
+                    functionCode += '\treturn e\n}\n';
+                    goCode += functionCode + '\n';
+                }
+            });
+
+            function handleDeclaration(decl, pseudoSelector = '') {
+                const property = propertyToGoMethod(decl.property);
+                const value = decl.value;
+
+                if (cssToGoMapping[decl.property]) {
+                    let methodChain = `doc.CSS.Container`;
+                    if (pseudoSelector) {
+                        methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+                    }
+                    methodChain += `.Style.${property}`;
+
+                    if (cssToGoMapping[decl.property].values.includes(value)) {
+                        return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+                    } else {
+                        return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
                     }
                 } else {
-                    // Complex selector, create a raw CSS string variable
-                    const varName = generateRawCSSVariableName(selector);
-                    rawCSSVariables += `var ${varName} = \`${selector} {\n${rules.join('\n')}\n}\`\n\n`;
+                    return { goCode: '' }; // This will be collected in rawCSSVariables
                 }
             }
 
-            // Generate Go code for style functions
-            for (let [funcName, pseudoStyles] of styleFunctions) {
-                goCode += `func ${funcName}(e *ui.Element) *ui.Element {\n`;
-                for (let [pseudo, styles] of pseudoStyles) {
-                    if (pseudo) {
-                        goCode += `\t// ${pseudo} styles\n`;
-                    }
-                    for (let style of styles) {
-                        goCode += `\te = ${style}\n`;
+            function generateVariableName(selector) {
+                const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
+                let name = 'RawCSS';
+                let relationship = '';
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (part === '>') {
+                        relationship = 'DirectChild';
+                    } else if (part === '+') {
+                        relationship = 'AdjacentSibling';
+                    } else if (part === '~') {
+                        relationship = 'GeneralSibling';
+                    } else {
+                        // It's an element or class/id selector
+                        let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
+                        elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                        name += elementName + relationship;
+                        relationship = 'Descendant'; // Default relationship if no operator is specified
                     }
                 }
-                goCode += `\treturn e\n}\n\n`;
+
+                return name;
             }
 
-            // Append raw CSS variables to the go code
-            goCode += rawCSSVariables;
+            goCode = goCode.trim();
+            rawCSSVariables = rawCSSVariables.trim();
 
-            return { goCode: goCode.trim(), errors: errors };
+            return { 
+                beautifiedCSS, 
+                goCode: goCode + '\n\n' + rawCSSVariables, 
+                errors 
+            };
         }
+        
 
         function updateLOCCounter(element, content) {
             const lineCount = content.split('\n').length;
@@ -1616,4 +1599,734 @@
 
         updateGoCode(); // Initial conversion
         // Initial update
+
+        /* CSS Parser 
+    (The MIT License)
+
+    Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation 
+    files (the 'Software'), to deal in the Software without restriction, including without limitation the rights to use, 
+    copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to 
+    whom the Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the 
+    Software.
+
+    THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED 
+    TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+    SOFTWARE.
+    
+    */
+    var commentre = /\/\*[^*]*\*+([^/*][^*]*\*+)*\//g
+
+    function parseCSS(css, options){
+        options = options || {};
+
+        /**
+         * Positional.
+         */
+
+        var lineno = 1;
+        var column = 1;
+
+        /**
+         * Update lineno and column based on `str`.
+         */
+
+        function updatePosition(str) {
+            var lines = str.match(/\n/g);
+            if (lines) lineno += lines.length;
+            var i = str.lastIndexOf('\n');
+            column = ~i ? str.length - i : column + str.length;
+        }
+
+        /**
+         * Mark position and patch `node.position`.
+         */
+
+        function position() {
+            var start = { line: lineno, column: column };
+            return function(node){
+            node.position = new Position(start);
+            whitespace();
+            return node;
+            };
+        }
+
+        /**
+         * Store position information for a node
+         */
+
+        function Position(start) {
+            this.start = start;
+            this.end = { line: lineno, column: column };
+            this.source = options.source;
+        }
+
+        /**
+         * Non-enumerable source string
+         */
+
+        Position.prototype.content = css;
+
+        /**
+         * Error `msg`.
+         */
+
+        var errorsList = [];
+
+        function error(msg) {
+            var err = new Error(options.source + ':' + lineno + ':' + column + ': ' + msg);
+            err.reason = msg;
+            err.filename = options.source;
+            err.line = lineno;
+            err.column = column;
+            err.source = css;
+
+            if (options.silent) {
+                errorsList.push(err);
+            } else {
+                throw err;
+            }
+        }
+
+        /**
+         * Parse stylesheet.
+         */
+
+        function stylesheet() {
+            var rulesList = rules();
+
+            return {
+                type: 'stylesheet',
+                stylesheet: {
+                    source: options.source,
+                    rules: rulesList,
+                    parsingErrors: errorsList
+                }
+            };
+        }
+
+        /**
+         * Opening brace.
+         */
+
+        function open() {
+            return match(/^{\s*/);
+        }
+
+        /**
+         * Closing brace.
+         */
+
+        function close() {
+            return match(/^}/);
+        }
+
+        /**
+         * Parse ruleset.
+         */
+
+        function rules() {
+            var node;
+            var rules = [];
+            whitespace();
+            comments(rules);
+            while (css.length && css.charAt(0) != '}' && (node = atrule() || rule())) {
+            if (node !== false) {
+                rules.push(node);
+                comments(rules);
+            }
+            }
+            return rules;
+        }
+
+        /**
+         * Match `re` and return captures.
+         */
+
+        function match(re) {
+            var m = re.exec(css);
+            if (!m) return;
+            var str = m[0];
+            updatePosition(str);
+            css = css.slice(str.length);
+            return m;
+        }
+
+        /**
+         * Parse whitespace.
+         */
+
+        function whitespace() {
+            match(/^\s*/);
+        }
+
+        /**
+         * Parse comments;
+         */
+
+        function comments(rules) {
+            var c;
+            rules = rules || [];
+            while (c = comment()) {
+            if (c !== false) {
+                rules.push(c);
+            }
+            }
+            return rules;
+        }
+
+        /**
+         * Parse comment.
+         */
+
+        function comment() {
+            var pos = position();
+            if ('/' != css.charAt(0) || '*' != css.charAt(1)) return;
+
+            var i = 2;
+            while ("" != css.charAt(i) && ('*' != css.charAt(i) || '/' != css.charAt(i + 1))) ++i;
+            i += 2;
+
+            if ("" === css.charAt(i-1)) {
+            return error('End of comment missing');
+            }
+
+            var str = css.slice(2, i - 2);
+            column += 2;
+            updatePosition(str);
+            css = css.slice(i);
+            column += 2;
+
+            return pos({
+            type: 'comment',
+            comment: str
+            });
+        }
+
+        /**
+         * Parse selector.
+         */
+
+        function selector() {
+            var m = match(/^([^{]+)/);
+            if (!m) return;
+            /* @fix Remove all comments from selectors
+            * http://ostermiller.org/findcomment.html */
+            return trim(m[0])
+            .replace(/\/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*\/+/g, '')
+            .replace(/"(?:\\"|[^"])*"|'(?:\\'|[^'])*'/g, function(m) {
+                return m.replace(/,/g, '\u200C');
+            })
+            .split(/\s*(?![^(]*\)),\s*/)
+            .map(function(s) {
+                return s.replace(/\u200C/g, ',');
+            });
+        }
+
+        /**
+         * Parse declaration.
+         */
+
+        function declaration() {
+            var pos = position();
+
+            // prop
+            var prop = match(/^(\*?[-#\/\*\\\w]+(\[[0-9a-z_-]+\])?)\s*/);
+            if (!prop) return;
+            prop = trim(prop[0]);
+
+            // :
+            if (!match(/^:\s*/)) return error("property missing ':'");
+
+            // val
+            var val = match(/^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\([^\)]*?\)|[^};])+)/);
+
+            var ret = pos({
+            type: 'declaration',
+            property: prop.replace(commentre, ''),
+            value: val ? trim(val[0]).replace(commentre, '') : ''
+            });
+
+            // ;
+            match(/^[;\s]*/);
+
+            return ret;
+        }
+
+        /**
+         * Parse declarations.
+         */
+
+        function declarations() {
+            var decls = [];
+
+            if (!open()) return error("missing '{'");
+            comments(decls);
+
+            // declarations
+            var decl;
+            while (decl = declaration()) {
+            if (decl !== false) {
+                decls.push(decl);
+                comments(decls);
+            }
+            }
+
+            if (!close()) return error("missing '}'");
+            return decls;
+        }
+
+        /**
+         * Parse keyframe.
+         */
+
+        function keyframe() {
+            var m;
+            var vals = [];
+            var pos = position();
+
+            while (m = match(/^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/)) {
+            vals.push(m[1]);
+            match(/^,\s*/);
+            }
+
+            if (!vals.length) return;
+
+            return pos({
+            type: 'keyframe',
+            values: vals,
+            declarations: declarations()
+            });
+        }
+
+        /**
+         * Parse keyframes.
+         */
+
+        function atkeyframes() {
+            var pos = position();
+            var m = match(/^@([-\w]+)?keyframes\s*/);
+
+            if (!m) return;
+            var vendor = m[1];
+
+            // identifier
+            var m = match(/^([-\w]+)\s*/);
+            if (!m) return error("@keyframes missing name");
+            var name = m[1];
+
+            if (!open()) return error("@keyframes missing '{'");
+
+            var frame;
+            var frames = comments();
+            while (frame = keyframe()) {
+            frames.push(frame);
+            frames = frames.concat(comments());
+            }
+
+            if (!close()) return error("@keyframes missing '}'");
+
+            return pos({
+            type: 'keyframes',
+            name: name,
+            vendor: vendor,
+            keyframes: frames
+            });
+        }
+
+        /**
+         * Parse supports.
+         */
+
+        function atsupports() {
+            var pos = position();
+            var m = match(/^@supports *([^{]+)/);
+
+            if (!m) return;
+            var supports = trim(m[1]);
+
+            if (!open()) return error("@supports missing '{'");
+
+            var style = comments().concat(rules());
+
+            if (!close()) return error("@supports missing '}'");
+
+            return pos({
+            type: 'supports',
+            supports: supports,
+            rules: style
+            });
+        }
+
+        /**
+         * Parse host.
+         */
+
+        function athost() {
+            var pos = position();
+            var m = match(/^@host\s*/);
+
+            if (!m) return;
+
+            if (!open()) return error("@host missing '{'");
+
+            var style = comments().concat(rules());
+
+            if (!close()) return error("@host missing '}'");
+
+            return pos({
+            type: 'host',
+            rules: style
+            });
+        }
+
+        /**
+         * Parse media.
+         */
+
+        function atmedia() {
+            var pos = position();
+            var m = match(/^@media *([^{]+)/);
+
+            if (!m) return;
+            var media = trim(m[1]);
+
+            if (!open()) return error("@media missing '{'");
+
+            var style = comments().concat(rules());
+
+            if (!close()) return error("@media missing '}'");
+
+            return pos({
+            type: 'media',
+            media: media,
+            rules: style
+            });
+        }
+
+
+        /**
+         * Parse custom-media.
+         */
+
+        function atcustommedia() {
+            var pos = position();
+            var m = match(/^@custom-media\s+(--[^\s]+)\s*([^{;]+);/);
+            if (!m) return;
+
+            return pos({
+            type: 'custom-media',
+            name: trim(m[1]),
+            media: trim(m[2])
+            });
+        }
+
+        /**
+         * Parse paged media.
+         */
+
+        function atpage() {
+            var pos = position();
+            var m = match(/^@page */);
+            if (!m) return;
+
+            var sel = selector() || [];
+
+            if (!open()) return error("@page missing '{'");
+            var decls = comments();
+
+            // declarations
+            var decl;
+            while (decl = declaration()) {
+            decls.push(decl);
+            decls = decls.concat(comments());
+            }
+
+            if (!close()) return error("@page missing '}'");
+
+            return pos({
+            type: 'page',
+            selectors: sel,
+            declarations: decls
+            });
+        }
+
+        /**
+         * Parse document.
+         */
+
+        function atdocument() {
+            var pos = position();
+            var m = match(/^@([-\w]+)?document *([^{]+)/);
+            if (!m) return;
+
+            var vendor = trim(m[1]);
+            var doc = trim(m[2]);
+
+            if (!open()) return error("@document missing '{'");
+
+            var style = comments().concat(rules());
+
+            if (!close()) return error("@document missing '}'");
+
+            return pos({
+            type: 'document',
+            document: doc,
+            vendor: vendor,
+            rules: style
+            });
+        }
+
+        /**
+         * Parse font-face.
+         */
+
+        function atfontface() {
+            var pos = position();
+            var m = match(/^@font-face\s*/);
+            if (!m) return;
+
+            if (!open()) return error("@font-face missing '{'");
+            var decls = comments();
+
+            // declarations
+            var decl;
+            while (decl = declaration()) {
+            decls.push(decl);
+            decls = decls.concat(comments());
+            }
+
+            if (!close()) return error("@font-face missing '}'");
+
+            return pos({
+            type: 'font-face',
+            declarations: decls
+            });
+        }
+
+        /**
+         * Parse import
+         */
+
+        var atimport = _compileAtrule('import');
+
+        /**
+         * Parse charset
+         */
+
+        var atcharset = _compileAtrule('charset');
+
+        /**
+         * Parse namespace
+         */
+
+        var atnamespace = _compileAtrule('namespace');
+
+        /**
+         * Parse non-block at-rules
+         */
+
+
+        function _compileAtrule(name) {
+            var re = new RegExp('^@' + name + '\\s*([^;]+);');
+            return function() {
+            var pos = position();
+            var m = match(re);
+            if (!m) return;
+            var ret = { type: name };
+            ret[name] = m[1].trim();
+            return pos(ret);
+            }
+        }
+
+        /**
+         * Parse at rule.
+         */
+
+        function atrule() {
+            if (css[0] != '@') return;
+
+            return atkeyframes()
+            || atmedia()
+            || atcustommedia()
+            || atsupports()
+            || atimport()
+            || atcharset()
+            || atnamespace()
+            || atdocument()
+            || atpage()
+            || athost()
+            || atfontface();
+        }
+
+        /**
+         * Parse rule.
+         */
+
+        function rule() {
+            var pos = position();
+            var sel = selector();
+
+            if (!sel) return error('selector missing');
+            comments();
+
+            return pos({
+            type: 'rule',
+            selectors: sel,
+            declarations: declarations()
+            });
+        }
+
+        return addParent(stylesheet());
+    };
+
+    /**
+     * Trim `str`.
+     */
+
+    function trim(str) {
+        return str ? str.replace(/^\s+|\s+$/g, '') : '';
+    }
+
+    /**
+     * Adds non-enumerable parent node reference to each node.
+     */
+
+    function addParent(obj, parent) {
+        var isNode = obj && typeof obj.type === 'string';
+        var childParent = isNode ? obj : parent;
+
+        for (var k in obj) {
+            var value = obj[k];
+            if (Array.isArray(value)) {
+            value.forEach(function(v) { addParent(v, childParent); });
+            } else if (value && typeof value === 'object') {
+            addParent(value, childParent);
+            }
+        }
+
+        if (isNode) {
+            Object.defineProperty(obj, 'parent', {
+            configurable: true,
+            writable: true,
+            enumerable: false,
+            value: parent || null
+            });
+        }
+
+        return obj;
+    }
+
+    function beautifyCSS(ast, indent = '\t') {
+        function beautifyNode(node, depth = 0) {
+            const padding = indent.repeat(depth);
+            switch (node.type) {
+                case 'stylesheet':
+                    return node.stylesheet.rules.map(rule => beautifyNode(rule, depth)).join('\n\n');
+                case 'rule':
+                    return `${padding}${node.selectors.join(', ')} {\n${node.declarations.map(decl => beautifyNode(decl, depth + 1)).join('\n')}\n${padding}}`;
+                case 'declaration':
+                    return `${padding}${node.property}: ${node.value};`;
+                case 'comment':
+                    return `${padding}/*${node.comment}*/`;
+                case 'keyframes':
+                    return `${padding}@keyframes ${node.name} {\n${node.keyframes.map(kf => beautifyNode(kf, depth + 1)).join('\n')}\n${padding}}`;
+                case 'keyframe':
+                    return `${padding}${node.values.join(', ')} {\n${node.declarations.map(decl => beautifyNode(decl, depth + 1)).join('\n')}\n${padding}}`;
+                case 'media':
+                    return `${padding}@media ${node.media} {\n${node.rules.map(rule => beautifyNode(rule, depth + 1)).join('\n')}\n${padding}}`;
+                // Add more cases for other node types as needed
+                default:
+                    return '';
+            }
+        }
+
+        return beautifyNode(ast);
+    }
+
+    function generateGoCode(ast) {
+        const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
+        let goCode = '';
+        let rawCSS = '';
+
+        function generateForNode(node, parentSelector = '') {
+            switch (node.type) {
+                case 'stylesheet':
+                    return node.stylesheet.rules.map(rule => generateForNode(rule)).join('\n\n');
+                case 'rule':
+                    const selector = node.selectors.join(', ');
+                    const [baseSelector, pseudoSelector] = selector.split(':');
+                    const funcName = `Style${baseSelector.replace(/[^\w]/g, '')}`;
+                    let code = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
+                    let unhandledCSS = '';
+
+                    node.declarations.forEach(decl => {
+                        const result = generateForDeclaration(decl, pseudoSelector);
+                        if (result.goCode) {
+                            code += result.goCode;
+                        } else {
+                            unhandledCSS += `${decl.property}: ${decl.value};\n`;
+                        }
+                    });
+
+                    if (unhandledCSS) {
+                        const varName = `rawCSS_${baseSelector.replace(/[^\w]/g, '')}`;
+                        if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                            rawCSS += `var ${varName}_${pseudoSelector} = \`${baseSelector}:${pseudoSelector} { ${unhandledCSS} }\`\n`;
+                        } else {
+                            rawCSS += `var ${varName} = \`${selector} { ${unhandledCSS} }\`\n`;
+                        }
+                    }
+
+                    code += `\treturn e\n}`;
+                    return code;
+                case 'comment':
+                    return `// ${node.comment}`;
+                default:
+                    return '';
+            }
+        }
+
+        function generateForDeclaration(decl, pseudoSelector = '') {
+            const property = propertyToGoMethod(decl.property);
+            const value = decl.value;
+
+            if (cssToGoMapping[decl.property]) {
+                let methodChain = `doc.CSS.Container`;
+                if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                    methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+                }
+                methodChain += `.Style.${property}`;
+
+                if (cssToGoMapping[decl.property].values.includes(value)) {
+                    return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+                } else {
+                    return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
+                }
+            } else {
+                return { goCode: '' }; // This will be collected in unhandledCSS
+            }
+        }
+
+        goCode = generateForNode(ast);
+        
+        return { goCode, rawCSS };
+    }
+
+        
+    function cssbeautify(css) {
+        const ast = parseCSS(css);
+        return beautifyCSS(ast, '\t');
+    }
+
+
+
+    function propertyToGoMethod(property) {
+        return property.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
+    }
 </script>

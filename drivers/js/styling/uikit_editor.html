@@ -117,15 +117,6 @@
             margin-bottom: 20px;
         }
 
-        .remove-element {
-            background-color: #f44336;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-
         .pseudo-selector {
             margin-top: 10px;
         }
@@ -1433,141 +1424,154 @@
 
   
         function cssToGoCode(css) {
-    const ast = parseCSS(css);
-    const beautifiedCSS = beautifyCSS(ast);
-    let goCode = '';
-    let rawCSSVariables = '';
-    let errors = [];
-    const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
+            const ast = parseCSS(css);
+            const beautifiedCSS = beautifyCSS(ast);
+            let goCode = '';
+            let rawCSSVariables = '';
+            let errors = [];
+            const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
 
-    const styleMap = new Map();
+            const styleMap = new Map();
 
-    function addToStyleMap(selector, declarations) {
-        if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
-            // This is a complex selector, store it as raw CSS
-            if (!styleMap.has('rawCSS')) {
-                styleMap.set('rawCSS', []);
-            }
-            styleMap.get('rawCSS').push({ selector, declarations });
-        } else {
-            const [baseSelector, pseudoSelector] = selector.split(':');
-            if (!styleMap.has(baseSelector)) {
-                styleMap.set(baseSelector, { base: [], pseudo: {} });
-            }
-            const style = styleMap.get(baseSelector);
-            if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
-                if (!style.pseudo[pseudoSelector]) {
-                    style.pseudo[pseudoSelector] = [];
-                }
-                style.pseudo[pseudoSelector].push(...declarations);
-            } else {
-                style.base.push(...declarations);
-            }
-        }
-    }
-
-    ast.stylesheet.rules.forEach(rule => {
-        if (rule.type === 'rule') {
-            rule.selectors.forEach(selector => {
-                addToStyleMap(selector, rule.declarations);
-            });
-        } else if (rule.type === 'keyframes' || rule.type === 'media') {
-            // Store unsupported features in raw variables
-            const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
-            rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
-        }
-    });
-
-    styleMap.forEach((style, baseSelector) => {
-        if (baseSelector === 'rawCSS') {
-            style.forEach(({ selector, declarations }) => {
-                const varName = generateVariableName(selector);
-                rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
-                declarations.forEach(decl => {
-                    rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
-                });
-                rawCSSVariables += '}\n`\n\n';
-            });
-        } else {
-            const elementName = baseSelector.replace(/[^\w]/g, '');
-            const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
-            let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
-
-            // Handle base styles
-            style.base.forEach(decl => {
-                const result = handleDeclaration(decl);
-                if (result.goCode) {
-                    functionCode += result.goCode;
-                }
-            });
-
-            // Handle pseudo-classes
-            Object.entries(style.pseudo).forEach(([pseudo, declarations]) => {
-                declarations.forEach(decl => {
-                    const result = handleDeclaration(decl, pseudo);
-                    if (result.goCode) {
-                        functionCode += result.goCode;
+            function addToStyleMap(selector, declarations) {
+                if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
+                    // This is a complex selector, store it as raw CSS
+                    if (!styleMap.has('rawCSS')) {
+                        styleMap.set('rawCSS', []);
                     }
-                });
+                    styleMap.get('rawCSS').push({ selector, declarations });
+                } else {
+                    const [baseSelector, pseudoSelector] = selector.split(':');
+                    if (!styleMap.has(baseSelector)) {
+                        styleMap.set(baseSelector, { base: [], pseudo: {} });
+                    }
+                    const style = styleMap.get(baseSelector);
+                    if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                        if (!style.pseudo[pseudoSelector]) {
+                            style.pseudo[pseudoSelector] = [];
+                        }
+                        style.pseudo[pseudoSelector].push(...declarations);
+                    } else {
+                        style.base.push(...declarations);
+                    }
+                }
+            }
+
+            ast.stylesheet.rules.forEach(rule => {
+                if (rule.type === 'rule') {
+                    rule.selectors.forEach(selector => {
+                        addToStyleMap(selector, rule.declarations);
+                    });
+                } else if (rule.type === 'keyframes' || rule.type === 'media') {
+                    // Store unsupported features in raw variables
+                    const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
+                    rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
+                }
             });
 
-            functionCode += '\treturn e\n}\n';
-            goCode += functionCode;
-        }
-    });
+            styleMap.forEach((style, baseSelector) => {
+                if (baseSelector === 'rawCSS') {
+                    style.forEach(({ selector, declarations }) => {
+                        const varName = generateVariableName(selector);
+                        rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
+                        declarations.forEach(decl => {
+                            rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
+                        });
+                        rawCSSVariables += '}\`\n\n';
+                    });
+                } else {
+                    const elementName = baseSelector.replace(/[^\w]/g, '');
+                    const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
+                    let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
 
-    function handleDeclaration(decl, pseudoSelector = '') {
-        const property = propertyToGoMethod(decl.property);
-        const value = decl.value;
+                    // Handle base styles
+                    style.base.forEach(decl => {
+                        const result = handleDeclaration(decl);
+                        if (result.goCode) {
+                            functionCode += result.goCode;
+                        }
+                    });
 
-        if (cssToGoMapping[decl.property]) {
-            let methodChain = `doc.CSS.Container`;
-            if (pseudoSelector) {
-                methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+                    // Add a line break if there are both base styles and pseudo-classes
+                    if (style.base.length > 0 && Object.keys(style.pseudo).length > 0) {
+                        functionCode += '\n';
+                    }
+
+                    // Handle pseudo-classes
+                    Object.entries(style.pseudo).forEach(([pseudo, declarations], index) => {
+                        declarations.forEach(decl => {
+                            const result = handleDeclaration(decl, pseudo);
+                            if (result.goCode) {
+                                functionCode += result.goCode;
+                            }
+                        });
+                        // Add a line break between different pseudo-classes
+                        if (index < Object.entries(style.pseudo).length - 1) {
+                            functionCode += '\n';
+                        }
+                    });
+
+                    functionCode += '\treturn e\n}\n';
+                    goCode += functionCode + '\n';
+                }
+            });
+
+            function handleDeclaration(decl, pseudoSelector = '') {
+                const property = propertyToGoMethod(decl.property);
+                const value = decl.value;
+
+                if (cssToGoMapping[decl.property]) {
+                    let methodChain = `doc.CSS.Container`;
+                    if (pseudoSelector) {
+                        methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
+                    }
+                    methodChain += `.Style.${property}`;
+
+                    if (cssToGoMapping[decl.property].values.includes(value)) {
+                        return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+                    } else {
+                        return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
+                    }
+                } else {
+                    return { goCode: '' }; // This will be collected in rawCSSVariables
+                }
             }
-            methodChain += `.Style.${property}`;
 
-            if (cssToGoMapping[decl.property].values.includes(value)) {
-                return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
-            } else {
-                return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
+            function generateVariableName(selector) {
+                const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
+                let name = 'RawCSS';
+                let relationship = '';
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (part === '>') {
+                        relationship = 'DirectChild';
+                    } else if (part === '+') {
+                        relationship = 'AdjacentSibling';
+                    } else if (part === '~') {
+                        relationship = 'GeneralSibling';
+                    } else {
+                        // It's an element or class/id selector
+                        let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
+                        elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                        name += elementName + relationship;
+                        relationship = 'Descendant'; // Default relationship if no operator is specified
+                    }
+                }
+
+                return name;
             }
-        } else {
-            return { goCode: '' }; // This will be collected in rawCSSVariables
+
+            goCode = goCode.trim();
+            rawCSSVariables = rawCSSVariables.trim();
+
+            return { 
+                beautifiedCSS, 
+                goCode: goCode + '\n\n' + rawCSSVariables, 
+                errors 
+            };
         }
-    }
-
-    function generateVariableName(selector) {
-        const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
-        let name = 'RawCSS';
-        let relationship = '';
-
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            if (part === '>') {
-                relationship = 'DirectChild';
-            } else if (part === '+') {
-                relationship = 'AdjacentSibling';
-            } else if (part === '~') {
-                relationship = 'GeneralSibling';
-            } else {
-                // It's an element or class/id selector
-                let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
-                elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
-                name += elementName + relationship;
-                relationship = 'Descendant'; // Default relationship if no operator is specified
-            }
-        }
-
-        return name;
-    }
-
-    return { 
-        beautifiedCSS, 
-        goCode: goCode + '\n' + rawCSSVariables, 
-        errors 
-    };
-}
+        
     </script>
 
     <script>
@@ -2648,7 +2652,6 @@ function example() {
                         try {
                             updateCSSDisplay(editorContainer, elementType, pseudoSelector.value);
                         } catch (e) {
-                            console.error('Error updating CSS display:', e);
                         }
     
                     });
@@ -3391,7 +3394,7 @@ function example() {
         */
         var commentre = /\/\*[^*]*\*+([^/*][^*]*\*+)*\//g
 
-        var parseCSS = function(css, options){
+        function parseCSS(css, options){
             options = options || {};
 
             /**
