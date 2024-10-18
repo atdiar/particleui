@@ -642,17 +642,17 @@ func installTinyGo(verbosity bool) error {
 
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
-		toolchain:= "go"
-		if tinygo{
+		toolchain := "go"
+		if tinygo {
 			// let's check whether the tinygo toolchain is available, otherwise error out
 			_, err := exec.LookPath("tinygo")
-			if err != nil{
+			if err != nil {
 				err := installTinyGo(verbose)
-				if err != nil{
+				if err != nil {
 					fmt.Printf("error installing tinygo: %v", err)
 					os.Exit(1)
-				} 
-				if verbose{
+				}
+				if verbose {
 					fmt.Println("tinygo installed successfully.")
 				}
 			}
@@ -859,9 +859,9 @@ import (
 	"time"
 )
 
-func App() Document {
+func App() *Document {
 
-	document:= NewDocument("HelloWorld", EnableScrollRestoration()).EnableWasm()
+	document:= NewDocument("HelloWorld", EnableScrollRestoration())
 	
 	var input *ui.Element 
 	var paragraph *ui.Element

@@ -20,6 +20,8 @@ var Ref = ui.Ref
 var InitRouter = ui.InitRouter
 var Hijack = ui.Hijack
 
+// WithStrConv is a utility function that is used to retrieve the value stored in an event object
+// whne it is suppoosed to be a string.
 func WithStrConv(val ui.Value) ui.Value {
 	return val.(ui.Object).MustGetString("value")
 }

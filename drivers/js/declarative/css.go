@@ -1,8 +1,8 @@
 package functions
 
-import(
-	"github.com/atdiar/particleui"
-	"github.com/atdiar/particleui/drivers/js"
+import (
+	ui "github.com/atdiar/particleui"
+	doc "github.com/atdiar/particleui/drivers/js"
 )
 
 // Styling via CSS
@@ -13,39 +13,39 @@ import(
 // Each call to style clears any previous style, allowing to specify a new one for
 // that specific element, for a given stylesheet.
 // That means that calling Style multiple times on the same element will only replace the previous style.
-// The categorisation in different stylesheet could allow for instance to 
+// The categorisation in different stylesheet could allow for instance to
 // differentiate styles for light and dark mode.
-func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element{
-	return func(e *ui.Element) *ui.Element{
-		if styled(stylesheetID,e){
+func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		if styled(stylesheetID, e) {
 			panic("Element already styled for this stylesheet")
 		}
-		
+
 		clearStyle(e)
-		for _,fn := range stylefns{
+		for _, fn := range stylefns {
 			e = fn(e)
 		}
-		document:= doc.GetDocument(e)
-		s, ok:=document.GetStyleSheet(stylesheetID)
-		if !ok{
+		document := doc.GetDocument(e)
+		s, ok := document.GetStyleSheet(stylesheetID)
+		if !ok {
 			s = document.NewStyleSheet(stylesheetID)
 		}
 		defer s.Update()
 		// TODO retrieve css ruleset and "translert" (translate + insert) into stylesheet
-		rls,ok:= e.Get("css","ruleset")
-		if !ok{
+		rls, ok := e.Get("css", "ruleset")
+		if !ok {
 			return e
 		}
 		ruleset := rls.(ui.Object)
-		ruleset.Range(func(pseudoclass string, rulelist ui.Value) bool{
-			for _, rule := range rulelist.(ui.List).UnsafelyUnwrap(){
+		ruleset.Range(func(pseudoclass string, rulelist ui.Value) bool {
+			for _, rule := range rulelist.(ui.List).UnsafelyUnwrap() {
 				ruleobj := rule.(ui.Object)
 				property := ruleobj.MustGetString("property")
 				value := ruleobj.MustGetString("value")
 				// Let's add the rule to the stylesheet for this element
-				selector:= "#"+e.ID+pseudoclass
-				rulestr:= property.String()+":"+value.String()+";"
-				s.InsertRule(selector,rulestr)
+				selector := "#" + e.ID + pseudoclass
+				rulestr := property.String() + ":" + value.String() + ";"
+				s.InsertRule(selector, rulestr)
 			}
 			return false
 		})
@@ -53,42 +53,44 @@ func Style(stylesheetID string, stylefns ...func(*ui.Element) *ui.Element) func(
 	}
 }
 
-
 // CSS holds a list of style modifying functions organized by
 // the type of element they apply to. (container or content) and what they do (change of Style or of layout).
 // For instance, to change the background color of a container to red,
 // one would use CSS.Container.Style.BackgroundColor.Value("red").
 // To center the content of an element, one would use CSS.Content.Layout.AlignItems.Center (for Flex items)
-var CSS = struct{Container; Content}{*newContainer(), *newContent()}
+var CSS = struct {
+	Container
+	Content
+}{*newContainer(), *newContent()}
 
-func css(pseudoclass string, property,value string) func(*ui.Element) *ui.Element{
-	return func(e *ui.Element) *ui.Element{
+func css(pseudoclass string, property, value string) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
 		// Retrieve/Create a css ruleset object and store the new rule/declaration.
 		var ruleset *ui.TempObject
-		c,ok:= e.Get("css","ruleset")
-		if !ok{
+		c, ok := e.Get("css", "ruleset")
+		if !ok {
 			ruleset = ui.NewObject()
 		}
 		ruleset = c.(ui.Object).MakeCopy()
-		ruleobj,ok:= ruleset.Get(pseudoclass)
-		if !ok{
+		ruleobj, ok := ruleset.Get(pseudoclass)
+		if !ok {
 			rules := ui.NewObject().
-						Set("property",ui.String(property)).
-						Set("value",ui.String(value)).
-					Commit()
-			ruleset.Set(pseudoclass,ui.NewList(rules).Commit())
+				Set("property", ui.String(property)).
+				Set("value", ui.String(value)).
+				Commit()
+			ruleset.Set(pseudoclass, ui.NewList(rules).Commit())
 
-		} else{
+		} else {
 
 			rulelist := ruleobj.(ui.List).MakeCopy()
 			rules := ui.NewObject().
-						Set("property",ui.String(property)).
-						Set("value",ui.String(value)).
-					Commit()
+				Set("property", ui.String(property)).
+				Set("value", ui.String(value)).
+				Commit()
 			rulelist.Append(rules)
-			ruleset.Set(pseudoclass,rulelist.Commit())
+			ruleset.Set(pseudoclass, rulelist.Commit())
 		}
-		e.Set("css","ruleset",ruleset.Commit())
+		e.Set("css", "ruleset", ruleset.Commit())
 		return e
 	}
 }
@@ -113,34 +115,32 @@ func StyleRemoveFor(stylesheetid string) func(*ui.Element) *ui.Element{
 
 		return clearStyle(e)
 	}
-	
+
 }
 */
 
-func clearStyle (e *ui.Element) *ui.Element{
-	e.Set("css","ruleset",ui.NewObject().Commit())
+func clearStyle(e *ui.Element) *ui.Element {
+	e.Set("css", "ruleset", ui.NewObject().Commit())
 	return e
 }
 
-func styled(stylesheetid string, e *ui.Element)bool{
-	styles,ok:= e.Get("internals","css-styles-list")
-	if !ok{
+func styled(stylesheetid string, e *ui.Element) bool {
+	styles, ok := e.Get("internals", "css-styles-list")
+	if !ok {
 		return false
 	}
 	return styles.(ui.List).Contains(ui.String(stylesheetid))
 }
 
-
-
-type valueFn[T any] struct{
-	VFn func(property, pseudoclass string) (func(*ui.Element) *ui.Element)
-	CFn func(property, pseudoclass string) (func(value string) func(*ui.Element) *ui.Element)
+type valueFn[T any] struct {
+	VFn func(property, pseudoclass string) func(*ui.Element) *ui.Element
+	CFn func(property, pseudoclass string) func(value string) func(*ui.Element) *ui.Element
 	Typ T
 }
 
-func (v valueFn[T]) Setter(property string) (func(*ui.Element) *ui.Element){
+func (v valueFn[T]) Setter(property string) func(*ui.Element) *ui.Element {
 	var pseudoclass string
-	switch any(v.Typ).(type){
+	switch any(v.Typ).(type) {
 	case Hover:
 		pseudoclass = ":hover"
 	case Active:
@@ -165,9 +165,9 @@ func (v valueFn[T]) Setter(property string) (func(*ui.Element) *ui.Element){
 	return v.VFn(property, pseudoclass)
 }
 
-func (v valueFn[T]) CustomSetter(property string) (func(value string) func(*ui.Element) *ui.Element){
+func (v valueFn[T]) CustomSetter(property string) func(value string) func(*ui.Element) *ui.Element {
 	var pseudoclass string
-	switch any(v.Typ).(type){
+	switch any(v.Typ).(type) {
 	case Hover:
 		pseudoclass = ":hover"
 	case Active:
@@ -192,20 +192,20 @@ func (v valueFn[T]) CustomSetter(property string) (func(value string) func(*ui.E
 	return v.CFn(property, pseudoclass)
 }
 
-func NewValueFn[T any](fn func(property, pseudoclass string) (func(*ui.Element) *ui.Element), cfn func(property, pseudoclass string) (func(value string) func(*ui.Element) *ui.Element)) valueFn[T]{
+func NewValueFn[T any](fn func(property, pseudoclass string) func(*ui.Element) *ui.Element, cfn func(property, pseudoclass string) func(value string) func(*ui.Element) *ui.Element) valueFn[T] {
 	var v T
 	return valueFn[T]{fn, cfn, v}
 }
 
-func cfn(property, pseudoclass string) (func(val string) func(*ui.Element)*ui.Element){
+func cfn(property, pseudoclass string) func(val string) func(*ui.Element) *ui.Element {
 	return func(val string) func(e *ui.Element) *ui.Element {
 		return css(pseudoclass, property, val)
 	}
 }
 
-func vfn(value string) func(property string, pseudoclass string) func(*ui.Element)*ui.Element{
+func vfn(value string) func(property string, pseudoclass string) func(*ui.Element) *ui.Element {
 	return func(property, pseudoclass string) func(*ui.Element) *ui.Element {
-		return cfn(property,pseudoclass)(value)
+		return cfn(property, pseudoclass)(value)
 	}
 }
 
@@ -222,39 +222,39 @@ type Checked PseudoClass
 type Disabled PseudoClass
 type Enabled PseudoClass
 
-type Container struct { 
+type Container struct {
 	Style  ContainerStyle
 	Layout ContainerLayout
 
-	Hover *Container
-	Active *Container
-	Focus *Container
-	Visited *Container
-	Link *Container
+	Hover      *Container
+	Active     *Container
+	Focus      *Container
+	Visited    *Container
+	Link       *Container
 	FirstChild *Container
-	LastChild *Container
-	Checked *Container
-	Disabled *Container
-	Enabled *Container
+	LastChild  *Container
+	Checked    *Container
+	Disabled   *Container
+	Enabled    *Container
 }
 
 type Content struct {
 	Style  ContentStyle
 	Layout ContentLayout
 
-	Hover *Content
-	Active *Content
-	Focus *Content
-	Visited *Content
-	Link *Content
+	Hover      *Content
+	Active     *Content
+	Focus      *Content
+	Visited    *Content
+	Link       *Content
 	FirstChild *Content
-	LastChild *Content
-	Checked *Content
-	Disabled *Content
-	Enabled *Content
+	LastChild  *Content
+	Checked    *Content
+	Disabled   *Content
+	Enabled    *Content
 }
 
-func newContainer() *Container{
+func newContainer() *Container {
 	c := initializeContainer[None]()
 	c.Hover = initializeContainer[Hover]()
 	c.Active = initializeContainer[Active]()
@@ -269,7 +269,7 @@ func newContainer() *Container{
 	return c
 }
 
-func newContent() *Content{
+func newContent() *Content {
 	c := initializeContent[None]()
 	c.Hover = initializeContent[Hover]()
 	c.Active = initializeContent[Active]()
@@ -284,112 +284,111 @@ func newContent() *Content{
 	return c
 }
 
-type CSSStyles struct{
+type CSSStyles struct {
 	Container
 	Content
 }
 
-func NewCSSStyles() CSSStyles{
+func NewCSSStyles() CSSStyles {
 	c := CSSStyles{}
 	c.Container = *newContainer()
 	c.Content = *newContent()
 	return c
 }
 
-
-func initializeContainer[pseudoclass any]() *Container{
+func initializeContainer[pseudoclass any]() *Container {
 	c := Container{}
 	c.Style = initializeContainerStyle[pseudoclass]()
 	c.Layout = initializeContainerLayout[pseudoclass]()
 	return &c
 }
 
-func initializeContent[pseudoclass any]() *Content{
+func initializeContent[pseudoclass any]() *Content {
 	c := Content{}
 	c.Style = initializeContentStyle[pseudoclass]()
 	c.Layout = initializeContentLayout[pseudoclass]()
 	return &c
 }
 
-func initializeContainerLayout[pseudoclass any]() ContainerLayout{
+func initializeContainerLayout[pseudoclass any]() ContainerLayout {
 	// Setting the proper function for each field
 	c := ContainerLayout{}
-	c.BoxShadow.None = NewValueFn[pseudoclass](vfn("None"),nil).Setter("box-shadow")
-	c.BoxShadow.Value = NewValueFn[pseudoclass](nil,cfn).CustomSetter("box-shadow")
+	c.BoxShadow.None = NewValueFn[pseudoclass](vfn("None"), nil).Setter("box-shadow")
+	c.BoxShadow.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("box-shadow")
 
-	c.JustifyContent.FlexStart = NewValueFn[pseudoclass](vfn("flex-start"),nil).Setter("justify-content")
-	c.JustifyContent.FlexEnd = NewValueFn[pseudoclass](vfn("flex-end"),nil).Setter("justify-content")
-	c.JustifyContent.Center = NewValueFn[pseudoclass](vfn("center"),nil).Setter("justify-content")
-	c.JustifyContent.SpaceBetween = NewValueFn[pseudoclass](vfn("space-between"),nil).Setter("justify-content")
-	c.JustifyContent.SpaceAround = NewValueFn[pseudoclass](vfn("space-around"),nil).Setter("justify-content")
-	c.JustifyContent.Value = NewValueFn[pseudoclass](nil,cfn).CustomSetter("justify-content")
+	c.JustifyContent.FlexStart = NewValueFn[pseudoclass](vfn("flex-start"), nil).Setter("justify-content")
+	c.JustifyContent.FlexEnd = NewValueFn[pseudoclass](vfn("flex-end"), nil).Setter("justify-content")
+	c.JustifyContent.Center = NewValueFn[pseudoclass](vfn("center"), nil).Setter("justify-content")
+	c.JustifyContent.SpaceBetween = NewValueFn[pseudoclass](vfn("space-between"), nil).Setter("justify-content")
+	c.JustifyContent.SpaceAround = NewValueFn[pseudoclass](vfn("space-around"), nil).Setter("justify-content")
+	c.JustifyContent.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("justify-content")
 
 	// ZIndex
-    c.ZIndex.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("z-index")
-    c.ZIndex.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("z-index")
+	c.ZIndex.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("z-index")
+	c.ZIndex.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("z-index")
 
-    // Float
-    c.Float.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("float")
-    c.Float.Left = NewValueFn[pseudoclass](vfn("left"), nil).Setter("float")
-    c.Float.Right = NewValueFn[pseudoclass](vfn("right"), nil).Setter("float")
-    c.Float.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("float")
+	// Float
+	c.Float.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("float")
+	c.Float.Left = NewValueFn[pseudoclass](vfn("left"), nil).Setter("float")
+	c.Float.Right = NewValueFn[pseudoclass](vfn("right"), nil).Setter("float")
+	c.Float.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("float")
 
-    // Overflow
-    c.Overflow.Visible = NewValueFn[pseudoclass](vfn("visible"), nil).Setter("overflow")
-    c.Overflow.Hidden = NewValueFn[pseudoclass](vfn("hidden"), nil).Setter("overflow")
-    c.Overflow.Scroll = NewValueFn[pseudoclass](vfn("scroll"), nil).Setter("overflow")
-    c.Overflow.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("overflow")
-    c.Overflow.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("overflow")
+	// Overflow
+	c.Overflow.Visible = NewValueFn[pseudoclass](vfn("visible"), nil).Setter("overflow")
+	c.Overflow.Hidden = NewValueFn[pseudoclass](vfn("hidden"), nil).Setter("overflow")
+	c.Overflow.Scroll = NewValueFn[pseudoclass](vfn("scroll"), nil).Setter("overflow")
+	c.Overflow.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("overflow")
+	c.Overflow.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("overflow")
 
-    // OverflowY
-    c.OverflowY.Visible = NewValueFn[pseudoclass](vfn("visible"), nil).Setter("overflow-y")
-    c.OverflowY.Hidden = NewValueFn[pseudoclass](vfn("hidden"), nil).Setter("overflow-y")
-    c.OverflowY.Scroll = NewValueFn[pseudoclass](vfn("scroll"), nil).Setter("overflow-y")
-    c.OverflowY.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("overflow-y")
-    c.OverflowY.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("overflow-y")
+	// OverflowY
+	c.OverflowY.Visible = NewValueFn[pseudoclass](vfn("visible"), nil).Setter("overflow-y")
+	c.OverflowY.Hidden = NewValueFn[pseudoclass](vfn("hidden"), nil).Setter("overflow-y")
+	c.OverflowY.Scroll = NewValueFn[pseudoclass](vfn("scroll"), nil).Setter("overflow-y")
+	c.OverflowY.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("overflow-y")
+	c.OverflowY.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("overflow-y")
 
-    // Perspective
-    c.Perspective.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("perspective")
-    c.Perspective.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("perspective")
+	// Perspective
+	c.Perspective.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("perspective")
+	c.Perspective.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("perspective")
 
 	// BorderCollapse
-    c.BorderCollapse.Separate = NewValueFn[pseudoclass](vfn("separate"), nil).Setter("border-collapse")
-    c.BorderCollapse.Collapse = NewValueFn[pseudoclass](vfn("collapse"), nil).Setter("border-collapse")
-    c.BorderCollapse.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("border-collapse")
+	c.BorderCollapse.Separate = NewValueFn[pseudoclass](vfn("separate"), nil).Setter("border-collapse")
+	c.BorderCollapse.Collapse = NewValueFn[pseudoclass](vfn("collapse"), nil).Setter("border-collapse")
+	c.BorderCollapse.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("border-collapse")
 
-    // PageBreakBefore
-    c.PageBreakBefore.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("page-break-before")
-    c.PageBreakBefore.Always = NewValueFn[pseudoclass](vfn("always"), nil).Setter("page-break-before")
-    c.PageBreakBefore.Avoid = NewValueFn[pseudoclass](vfn("avoid"), nil).Setter("page-break-before")
-    c.PageBreakBefore.Left = NewValueFn[pseudoclass](vfn("left"), nil).Setter("page-break-before")
-    c.PageBreakBefore.Right = NewValueFn[pseudoclass](vfn("right"), nil).Setter("page-break-before")
-    c.PageBreakBefore.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("page-break-before")
+	// PageBreakBefore
+	c.PageBreakBefore.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("page-break-before")
+	c.PageBreakBefore.Always = NewValueFn[pseudoclass](vfn("always"), nil).Setter("page-break-before")
+	c.PageBreakBefore.Avoid = NewValueFn[pseudoclass](vfn("avoid"), nil).Setter("page-break-before")
+	c.PageBreakBefore.Left = NewValueFn[pseudoclass](vfn("left"), nil).Setter("page-break-before")
+	c.PageBreakBefore.Right = NewValueFn[pseudoclass](vfn("right"), nil).Setter("page-break-before")
+	c.PageBreakBefore.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("page-break-before")
 
-    // Columns
-    c.Columns.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("columns")
-    c.Columns.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("columns")
+	// Columns
+	c.Columns.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("columns")
+	c.Columns.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("columns")
 
-    // ColumnCount
-    c.ColumnCount.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("column-count")
-    c.ColumnCount.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-count")
+	// ColumnCount
+	c.ColumnCount.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("column-count")
+	c.ColumnCount.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-count")
 
-    // MinHeight
-    c.MinHeight.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("min-height")
+	// MinHeight
+	c.MinHeight.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("min-height")
 
-    // PageBreakInside
-    c.PageBreakInside.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("page-break-inside")
-    c.PageBreakInside.Avoid = NewValueFn[pseudoclass](vfn("avoid"), nil).Setter("page-break-inside")
-    c.PageBreakInside.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("page-break-inside")
+	// PageBreakInside
+	c.PageBreakInside.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("page-break-inside")
+	c.PageBreakInside.Avoid = NewValueFn[pseudoclass](vfn("avoid"), nil).Setter("page-break-inside")
+	c.PageBreakInside.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("page-break-inside")
 
-    // ColumnGap
-    c.ColumnGap.Length = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-gap") 
-    c.ColumnGap.Normal = NewValueFn[pseudoclass](vfn("normal"), nil).Setter("column-gap")
-    c.ColumnGap.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-gap")
+	// ColumnGap
+	c.ColumnGap.Length = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-gap")
+	c.ColumnGap.Normal = NewValueFn[pseudoclass](vfn("normal"), nil).Setter("column-gap")
+	c.ColumnGap.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-gap")
 
-    // Clip
-    c.Clip.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("clip")
-    c.Clip.Shape = NewValueFn[pseudoclass](vfn("shape"), nil).Setter("clip")
-    c.Clip.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("clip")
+	// Clip
+	c.Clip.Auto = NewValueFn[pseudoclass](vfn("auto"), nil).Setter("clip")
+	c.Clip.Shape = NewValueFn[pseudoclass](vfn("shape"), nil).Setter("clip")
+	c.Clip.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("clip")
 
 	// FlexDirection
 	c.FlexDirection.Row = NewValueFn[pseudoclass](vfn("row"), nil).Setter("flex-direction")
@@ -526,8 +525,8 @@ func initializeContainerLayout[pseudoclass any]() ContainerLayout{
 
 }
 
-func initializeContainerStyle[pseudoclass any]() ContainerStyle{
-	c:= ContainerStyle{}
+func initializeContainerStyle[pseudoclass any]() ContainerStyle {
+	c := ContainerStyle{}
 
 	c.BackgroundImage.URL = NewValueFn[pseudoclass](nil, cfn).CustomSetter("background-image")
 	c.BackgroundImage.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("background-image")
@@ -570,7 +569,7 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle{
 	c.OutlineWidth.Thick = NewValueFn[pseudoclass](vfn("thick"), nil).Setter("outline-width")
 	c.OutlineWidth.Length = NewValueFn[pseudoclass](nil, cfn).CustomSetter("outline-width")
 	c.OutlineWidth.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("outline-width")
-	
+
 	// BorderTopLeftRadius
 	c.BorderTopLeftRadius.Length = NewValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-left-radius")
 	c.BorderTopLeftRadius.Percent = NewValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-left-radius")
@@ -863,7 +862,7 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle{
 
 	// ListStyleImage
 	c.ListStyleImage.None = NewValueFn[pseudoclass](vfn("none"), nil).Setter("list-style-image")
-	c.ListStyleImage.Url = NewValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image")  // Special handling might be needed for URL
+	c.ListStyleImage.Url = NewValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image") // Special handling might be needed for URL
 	c.ListStyleImage.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image")
 
 	// Opacity
@@ -1109,8 +1108,8 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle{
 	return c
 }
 
-func initializeContentLayout[pseudoclass any]() ContentLayout{
-	c:= ContentLayout{}
+func initializeContentLayout[pseudoclass any]() ContentLayout {
+	c := ContentLayout{}
 
 	// FlexGrow
 	c.FlexGrow.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("flex-grow")
@@ -1173,8 +1172,8 @@ func initializeContentLayout[pseudoclass any]() ContentLayout{
 	return c
 }
 
-func initializeContentStyle[pseudoclass any]() ContentStyle{
-	c:= ContentStyle{}
+func initializeContentStyle[pseudoclass any]() ContentStyle {
+	c := ContentStyle{}
 
 	// ColumnRuleWidth initialization
 	c.ColumnRuleWidth.Medium = NewValueFn[pseudoclass](vfn("medium"), nil).Setter("column-rule-width")
@@ -1182,7 +1181,6 @@ func initializeContentStyle[pseudoclass any]() ContentStyle{
 	c.ColumnRuleWidth.Thick = NewValueFn[pseudoclass](vfn("thick"), nil).Setter("column-rule-width")
 	c.ColumnRuleWidth.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-rule-width")
 
-		
 	// ColumnRule initialization
 	c.ColumnRule.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-rule")
 
@@ -1204,7 +1202,6 @@ func initializeContentStyle[pseudoclass any]() ContentStyle{
 	c.ColumnRuleStyle.Outset = NewValueFn[pseudoclass](vfn("outset"), nil).Setter("column-rule-style")
 	c.ColumnRuleStyle.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-rule-style")
 
-	
 	// ColumnRuleColor initialization
 	c.ColumnRuleColor.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("column-rule-color")
 
@@ -1217,7 +1214,7 @@ func initializeContentStyle[pseudoclass any]() ContentStyle{
 	c.EmptyCells.Show = NewValueFn[pseudoclass](vfn("show"), nil).Setter("empty-cells")
 	c.EmptyCells.Hide = NewValueFn[pseudoclass](vfn("hide"), nil).Setter("empty-cells")
 	c.EmptyCells.Value = NewValueFn[pseudoclass](nil, cfn).CustomSetter("empty-cells")
-	
+
 	// Cursor initialization
 	c.Cursor.Alias = NewValueFn[pseudoclass](vfn("alias"), nil).Setter("cursor")
 	c.Cursor.AllScroll = NewValueFn[pseudoclass](vfn("all-scroll"), nil).Setter("cursor")
@@ -1262,300 +1259,300 @@ func initializeContentStyle[pseudoclass any]() ContentStyle{
 
 type ContainerLayout struct {
 	BoxShadow struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	JustifyContent struct {
-		FlexStart func(*ui.Element) *ui.Element
-		FlexEnd func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
+		FlexStart    func(*ui.Element) *ui.Element
+		FlexEnd      func(*ui.Element) *ui.Element
+		Center       func(*ui.Element) *ui.Element
 		SpaceBetween func(*ui.Element) *ui.Element
-		SpaceAround func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		SpaceAround  func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
 	}
 	ZIndex struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Float struct {
-		None func(*ui.Element) *ui.Element
-		Left func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		Left  func(*ui.Element) *ui.Element
 		Right func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Overflow struct {
 		Visible func(*ui.Element) *ui.Element
-		Hidden func(*ui.Element) *ui.Element
-		Scroll func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Hidden  func(*ui.Element) *ui.Element
+		Scroll  func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	OverflowY struct {
 		Visible func(*ui.Element) *ui.Element
-		Hidden func(*ui.Element) *ui.Element
-		Scroll func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Hidden  func(*ui.Element) *ui.Element
+		Scroll  func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	Perspective struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderCollapse struct {
 		Separate func(*ui.Element) *ui.Element
 		Collapse func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	PageBreakBefore struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto   func(*ui.Element) *ui.Element
 		Always func(*ui.Element) *ui.Element
-		Avoid func(*ui.Element) *ui.Element
-		Left func(*ui.Element) *ui.Element
-		Right func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Avoid  func(*ui.Element) *ui.Element
+		Left   func(*ui.Element) *ui.Element
+		Right  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Columns struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnCount struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	MinHeight struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	PageBreakInside struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Avoid func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnGap struct {
 		Length func(value string) func(*ui.Element) *ui.Element
 		Normal func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Clip struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Shape func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	FlexDirection struct {
-		Row func(*ui.Element) *ui.Element
-		RowReverse func(*ui.Element) *ui.Element
-		Column func(*ui.Element) *ui.Element
+		Row           func(*ui.Element) *ui.Element
+		RowReverse    func(*ui.Element) *ui.Element
+		Column        func(*ui.Element) *ui.Element
 		ColumnReverse func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value         func(value string) func(*ui.Element) *ui.Element
 	}
 	PageBreakAfter struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto   func(*ui.Element) *ui.Element
 		Always func(*ui.Element) *ui.Element
-		Avoid func(*ui.Element) *ui.Element
-		Left func(*ui.Element) *ui.Element
-		Right func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Avoid  func(*ui.Element) *ui.Element
+		Left   func(*ui.Element) *ui.Element
+		Right  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Top struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	CounterIncrement struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Number func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Height struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TransformStyle struct {
-		Flat func(*ui.Element) *ui.Element
+		Flat       func(*ui.Element) *ui.Element
 		Preserve3d func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	OverflowX struct {
 		Visible func(*ui.Element) *ui.Element
-		Hidden func(*ui.Element) *ui.Element
-		Scroll func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Hidden  func(*ui.Element) *ui.Element
+		Scroll  func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	FlexWrap struct {
-		Nowrap func(*ui.Element) *ui.Element
-		Wrap func(*ui.Element) *ui.Element
+		Nowrap      func(*ui.Element) *ui.Element
+		Wrap        func(*ui.Element) *ui.Element
 		WrapReverse func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	MaxWidth struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Bottom struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	CounterReset struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Right struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BoxSizing struct {
 		ContentBox func(*ui.Element) *ui.Element
-		BorderBox func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		BorderBox  func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	Position struct {
-		Static func(*ui.Element) *ui.Element
+		Static   func(*ui.Element) *ui.Element
 		Absolute func(*ui.Element) *ui.Element
-		Fixed func(*ui.Element) *ui.Element
+		Fixed    func(*ui.Element) *ui.Element
 		Relative func(*ui.Element) *ui.Element
-		Sticky func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Sticky   func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	TableLayout struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Fixed func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Width struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	MaxHeight struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnWidth struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	MinWidth struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	VerticalAlign struct {
-		Baseline func(*ui.Element) *ui.Element
-		Top func(*ui.Element) *ui.Element
-		TextTop func(*ui.Element) *ui.Element
-		Middle func(*ui.Element) *ui.Element
-		Bottom func(*ui.Element) *ui.Element
+		Baseline   func(*ui.Element) *ui.Element
+		Top        func(*ui.Element) *ui.Element
+		TextTop    func(*ui.Element) *ui.Element
+		Middle     func(*ui.Element) *ui.Element
+		Bottom     func(*ui.Element) *ui.Element
 		TextBottom func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	PerspectiveOrigin struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AlignContent struct {
-		Stretch func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
-		FlexStart func(*ui.Element) *ui.Element
-		FlexEnd func(*ui.Element) *ui.Element
+		Stretch      func(*ui.Element) *ui.Element
+		Center       func(*ui.Element) *ui.Element
+		FlexStart    func(*ui.Element) *ui.Element
+		FlexEnd      func(*ui.Element) *ui.Element
 		SpaceBetween func(*ui.Element) *ui.Element
-		SpaceAround func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		SpaceAround  func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
 	}
 	FlexFlow struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Display struct {
-		Inline func(*ui.Element) *ui.Element
-		Block func(*ui.Element) *ui.Element
+		Inline   func(*ui.Element) *ui.Element
+		Block    func(*ui.Element) *ui.Element
 		Contents func(*ui.Element) *ui.Element
-		Flex func(*ui.Element) *ui.Element
-		Grid func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Flex     func(*ui.Element) *ui.Element
+		Grid     func(*ui.Element) *ui.Element
+		None     func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	Left struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 }
 
 type ContainerStyle struct {
 	BackgroundImage struct {
-		URL func(url string) func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
+		URL   func(url string) func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderLeftStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BoxShadow struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TransitionDelay struct {
-		Time func(duration string) func(*ui.Element) *ui.Element
+		Time  func(duration string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationDuration struct {
-		Time func(duration string) func(*ui.Element) *ui.Element
+		Time  func(duration string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ListStyle struct {
-		ListStyleType func(value string) func(*ui.Element) *ui.Element
+		ListStyleType     func(value string) func(*ui.Element) *ui.Element
 		ListStylePosition func(value string) func(*ui.Element) *ui.Element
-		ListStyleImage func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		ListStyleImage    func(value string) func(*ui.Element) *ui.Element
+		Value             func(value string) func(*ui.Element) *ui.Element
 	}
 	OutlineWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
 		Length func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTopLeftRadius struct {
-		Length func(value string) func(*ui.Element) *ui.Element
+		Length  func(value string) func(*ui.Element) *ui.Element
 		Percent func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	WhiteSpace struct {
-		Normal func(*ui.Element) *ui.Element
-		Nowrap func(*ui.Element) *ui.Element
-		Pre func(*ui.Element) *ui.Element
+		Normal  func(*ui.Element) *ui.Element
+		Nowrap  func(*ui.Element) *ui.Element
+		Pre     func(*ui.Element) *ui.Element
 		PreLine func(*ui.Element) *ui.Element
 		PreWrap func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderRight struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TextDecorationLine struct {
-		None func(*ui.Element) *ui.Element
-		Underline func(*ui.Element) *ui.Element
-		Overline func(*ui.Element) *ui.Element
+		None        func(*ui.Element) *ui.Element
+		Underline   func(*ui.Element) *ui.Element
+		Overline    func(*ui.Element) *ui.Element
 		LineThrough func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationDelay struct {
-		Time func(duration string) func(*ui.Element) *ui.Element
+		Time  func(duration string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundPosition struct {
-		LeftTop func(*ui.Element) *ui.Element
-		LeftCenter func(*ui.Element) *ui.Element
-		LeftBottom func(*ui.Element) *ui.Element
-		RightTop func(*ui.Element) *ui.Element
-		RightCenter func(*ui.Element) *ui.Element
-		RightBottom func(*ui.Element) *ui.Element
-		CenterTop func(*ui.Element) *ui.Element
+		LeftTop      func(*ui.Element) *ui.Element
+		LeftCenter   func(*ui.Element) *ui.Element
+		LeftBottom   func(*ui.Element) *ui.Element
+		RightTop     func(*ui.Element) *ui.Element
+		RightCenter  func(*ui.Element) *ui.Element
+		RightBottom  func(*ui.Element) *ui.Element
+		CenterTop    func(*ui.Element) *ui.Element
 		CenterCenter func(*ui.Element) *ui.Element
 		CenterBottom func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderImage struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1570,70 +1567,70 @@ type ContainerStyle struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderLeftColor struct {
-		Color func(value string) func(*ui.Element) *ui.Element
+		Color       func(value string) func(*ui.Element) *ui.Element
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	FontSize struct {
-		Medium func(*ui.Element) *ui.Element
+		Medium  func(*ui.Element) *ui.Element
 		XxSmall func(*ui.Element) *ui.Element
-		XSmall func(*ui.Element) *ui.Element
-		Small func(*ui.Element) *ui.Element
-		Large func(*ui.Element) *ui.Element
-		XLarge func(*ui.Element) *ui.Element
+		XSmall  func(*ui.Element) *ui.Element
+		Small   func(*ui.Element) *ui.Element
+		Large   func(*ui.Element) *ui.Element
+		XLarge  func(*ui.Element) *ui.Element
 		XxLarge func(*ui.Element) *ui.Element
 		Smaller func(*ui.Element) *ui.Element
-		Larger func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Larger  func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	LineHeight struct {
 		Normal func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	TextDecorationStyle struct {
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Wavy func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Wavy   func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BackfaceVisibility struct {
 		Visible func(*ui.Element) *ui.Element
-		Hidden func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Hidden  func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderRightStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	TextDecoration struct {
-		TextDecorationLine func(value string) func(*ui.Element) *ui.Element
+		TextDecorationLine  func(value string) func(*ui.Element) *ui.Element
 		TextDecorationColor func(value string) func(*ui.Element) *ui.Element
 		TextDecorationStyle func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value               func(value string) func(*ui.Element) *ui.Element
 	}
 	Transition struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationIterationCount struct {
 		Infinite func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottom struct {
 		BorderBottomWidth func(value string) func(*ui.Element) *ui.Element
 		BorderBottomStyle func(value string) func(*ui.Element) *ui.Element
 		BorderBottomColor func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value             func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationTimingFunction struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1642,60 +1639,60 @@ type ContainerStyle struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Quotes struct {
-		None func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TabSize struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationFillMode struct {
-		None func(*ui.Element) *ui.Element
-		Forwards func(*ui.Element) *ui.Element
+		None      func(*ui.Element) *ui.Element
+		Forwards  func(*ui.Element) *ui.Element
 		Backwards func(*ui.Element) *ui.Element
-		Both func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Both      func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundSize struct {
-		Auto func(*ui.Element) *ui.Element
-		Cover func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Cover   func(*ui.Element) *ui.Element
 		Contain func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	FontSizeAdjust struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ListStylePosition struct {
-		Inside func(*ui.Element) *ui.Element
+		Inside  func(*ui.Element) *ui.Element
 		Outside func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	TextAlign struct {
-		Left func(*ui.Element) *ui.Element
-		Right func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
+		Left    func(*ui.Element) *ui.Element
+		Right   func(*ui.Element) *ui.Element
+		Center  func(*ui.Element) *ui.Element
 		Justify func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	TextJustify struct {
-		Auto func(*ui.Element) *ui.Element
-		InterWord func(*ui.Element) *ui.Element
+		Auto           func(*ui.Element) *ui.Element
+		InterWord      func(*ui.Element) *ui.Element
 		InterCharacter func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		None           func(*ui.Element) *ui.Element
+		Value          func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundAttachment struct {
 		Scroll func(*ui.Element) *ui.Element
-		Fixed func(*ui.Element) *ui.Element
-		Local func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Fixed  func(*ui.Element) *ui.Element
+		Local  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderRightWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Font struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1704,165 +1701,165 @@ type ContainerStyle struct {
 		BorderLeftWidth func(value string) func(*ui.Element) *ui.Element
 		BorderLeftStyle func(value string) func(*ui.Element) *ui.Element
 		BorderLeftColor func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value           func(value string) func(*ui.Element) *ui.Element
 	}
 	TransitionDuration struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	WordSpacing struct {
 		Normal func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationName struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationPlayState struct {
-		Paused func(*ui.Element) *ui.Element
+		Paused  func(*ui.Element) *ui.Element
 		Running func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	LetterSpacing struct {
 		Normal func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	WordBreak struct {
-		Normal func(*ui.Element) *ui.Element
-		BreakAll func(*ui.Element) *ui.Element
-		KeepAll func(*ui.Element) *ui.Element
+		Normal    func(*ui.Element) *ui.Element
+		BreakAll  func(*ui.Element) *ui.Element
+		KeepAll   func(*ui.Element) *ui.Element
 		BreakWord func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomRightRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	FontStyle struct {
-		Normal func(*ui.Element) *ui.Element
-		Italic func(*ui.Element) *ui.Element
+		Normal  func(*ui.Element) *ui.Element
+		Italic  func(*ui.Element) *ui.Element
 		Oblique func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	Order struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	OutlineStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomLeftRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderImageSource struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TextAlignLast struct {
-		Auto func(*ui.Element) *ui.Element
-		Left func(*ui.Element) *ui.Element
-		Right func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Left    func(*ui.Element) *ui.Element
+		Right   func(*ui.Element) *ui.Element
+		Center  func(*ui.Element) *ui.Element
 		Justify func(*ui.Element) *ui.Element
-		Start func(*ui.Element) *ui.Element
-		End func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Start   func(*ui.Element) *ui.Element
+		End     func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderImageWidth struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	FontWeight struct {
-		Normal func(*ui.Element) *ui.Element
-		Bold func(*ui.Element) *ui.Element
-		Bolder func(*ui.Element) *ui.Element
+		Normal  func(*ui.Element) *ui.Element
+		Bold    func(*ui.Element) *ui.Element
+		Bolder  func(*ui.Element) *ui.Element
 		Lighter func(*ui.Element) *ui.Element
-		S100 func(*ui.Element) *ui.Element
-		S200 func(*ui.Element) *ui.Element
-		S300 func(*ui.Element) *ui.Element
-		S400 func(*ui.Element) *ui.Element
-		S500 func(*ui.Element) *ui.Element
-		S600 func(*ui.Element) *ui.Element
-		S700 func(*ui.Element) *ui.Element
-		S800 func(*ui.Element) *ui.Element
-		S900 func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		S100    func(*ui.Element) *ui.Element
+		S200    func(*ui.Element) *ui.Element
+		S300    func(*ui.Element) *ui.Element
+		S400    func(*ui.Element) *ui.Element
+		S500    func(*ui.Element) *ui.Element
+		S600    func(*ui.Element) *ui.Element
+		S700    func(*ui.Element) *ui.Element
+		S800    func(*ui.Element) *ui.Element
+		S900    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	ListStyleImage struct {
-		None func(*ui.Element) *ui.Element
-		Url func(value string) func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		Url   func(value string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Opacity struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Clear struct {
-		None func(*ui.Element) *ui.Element
-		Left func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		Left  func(*ui.Element) *ui.Element
 		Right func(*ui.Element) *ui.Element
-		Both func(*ui.Element) *ui.Element
+		Both  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTopColor struct {
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	Border struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderRightColor struct {
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	TransitionTimingFunction struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTopRightRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	CaptionSide struct {
-		Top func(*ui.Element) *ui.Element
+		Top    func(*ui.Element) *ui.Element
 		Bottom func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	FontFamily struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1871,86 +1868,86 @@ type ContainerStyle struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	TransitionProperty struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundOrigin struct {
 		PaddingBox func(*ui.Element) *ui.Element
-		BorderBox func(*ui.Element) *ui.Element
+		BorderBox  func(*ui.Element) *ui.Element
 		ContentBox func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	TextIndent struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Visibility struct {
-		Visible func(*ui.Element) *ui.Element
-		Hidden func(*ui.Element) *ui.Element
+		Visible  func(*ui.Element) *ui.Element
+		Hidden   func(*ui.Element) *ui.Element
 		Collapse func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderColor struct {
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTop struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	FontVariant struct {
-		Normal func(*ui.Element) *ui.Element
+		Normal    func(*ui.Element) *ui.Element
 		SmallCaps func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	Outline struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomColor struct {
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTopStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	ListStyleType struct {
-		Disc func(*ui.Element) *ui.Element
-		Armenian func(*ui.Element) *ui.Element
-		Circle func(*ui.Element) *ui.Element
-		CjkIdeographic func(*ui.Element) *ui.Element
-		Decimal func(*ui.Element) *ui.Element
+		Disc               func(*ui.Element) *ui.Element
+		Armenian           func(*ui.Element) *ui.Element
+		Circle             func(*ui.Element) *ui.Element
+		CjkIdeographic     func(*ui.Element) *ui.Element
+		Decimal            func(*ui.Element) *ui.Element
 		DecimalLeadingZero func(*ui.Element) *ui.Element
-		Georgian func(*ui.Element) *ui.Element
-		Hebrew func(*ui.Element) *ui.Element
-		Hiragana func(*ui.Element) *ui.Element
-		HiraganaIroha func(*ui.Element) *ui.Element
-		Katakana func(*ui.Element) *ui.Element
-		KatakanaIroha func(*ui.Element) *ui.Element
-		LowerAlpha func(*ui.Element) *ui.Element
-		LowerGreek func(*ui.Element) *ui.Element
-		LowerLatin func(*ui.Element) *ui.Element
-		LowerRoman func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		Square func(*ui.Element) *ui.Element
-		UpperAlpha func(*ui.Element) *ui.Element
-		UpperGreek func(*ui.Element) *ui.Element
-		UpperLatin func(*ui.Element) *ui.Element
-		UpperRoman func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Georgian           func(*ui.Element) *ui.Element
+		Hebrew             func(*ui.Element) *ui.Element
+		Hiragana           func(*ui.Element) *ui.Element
+		HiraganaIroha      func(*ui.Element) *ui.Element
+		Katakana           func(*ui.Element) *ui.Element
+		KatakanaIroha      func(*ui.Element) *ui.Element
+		LowerAlpha         func(*ui.Element) *ui.Element
+		LowerGreek         func(*ui.Element) *ui.Element
+		LowerLatin         func(*ui.Element) *ui.Element
+		LowerRoman         func(*ui.Element) *ui.Element
+		None               func(*ui.Element) *ui.Element
+		Square             func(*ui.Element) *ui.Element
+		UpperAlpha         func(*ui.Element) *ui.Element
+		UpperGreek         func(*ui.Element) *ui.Element
+		UpperLatin         func(*ui.Element) *ui.Element
+		UpperRoman         func(*ui.Element) *ui.Element
+		Value              func(value string) func(*ui.Element) *ui.Element
 	}
 	OutlineOffset struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1962,96 +1959,96 @@ type ContainerStyle struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundRepeat struct {
-		Repeat func(*ui.Element) *ui.Element
-		RepeatX func(*ui.Element) *ui.Element
-		RepeatY func(*ui.Element) *ui.Element
+		Repeat   func(*ui.Element) *ui.Element
+		RepeatX  func(*ui.Element) *ui.Element
+		RepeatY  func(*ui.Element) *ui.Element
 		NoRepeat func(*ui.Element) *ui.Element
-		Space func(*ui.Element) *ui.Element
-		Round func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Space    func(*ui.Element) *ui.Element
+		Round    func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderTopWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	WordWrap struct {
-		Normal func(*ui.Element) *ui.Element
+		Normal    func(*ui.Element) *ui.Element
 		BreakWord func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundColor struct {
 		Transparent func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value       func(value string) func(*ui.Element) *ui.Element
 	}
 	TextOverflow struct {
-		Clip func(*ui.Element) *ui.Element
+		Clip     func(*ui.Element) *ui.Element
 		Ellipsis func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
 	}
 	TextShadow struct {
-		None func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundClip struct {
-		BorderBox func(*ui.Element) *ui.Element
+		BorderBox  func(*ui.Element) *ui.Element
 		PaddingBox func(*ui.Element) *ui.Element
 		ContentBox func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderLeftWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Resize struct {
-		None func(*ui.Element) *ui.Element
-		Both func(*ui.Element) *ui.Element
+		None       func(*ui.Element) *ui.Element
+		Both       func(*ui.Element) *ui.Element
 		Horizontal func(*ui.Element) *ui.Element
-		Vertical func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Vertical   func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	AnimationDirection struct {
-		Normal func(*ui.Element) *ui.Element
-		Reverse func(*ui.Element) *ui.Element
-		Alternate func(*ui.Element) *ui.Element
+		Normal           func(*ui.Element) *ui.Element
+		Reverse          func(*ui.Element) *ui.Element
+		Alternate        func(*ui.Element) *ui.Element
 		AlternateReverse func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value            func(value string) func(*ui.Element) *ui.Element
 	}
 	Color struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	OutlineColor struct {
 		Invert func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderImageRepeat struct {
 		Stretch func(*ui.Element) *ui.Element
-		Repeat func(*ui.Element) *ui.Element
-		Round func(*ui.Element) *ui.Element
-		Space func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Repeat  func(*ui.Element) *ui.Element
+		Round   func(*ui.Element) *ui.Element
+		Space   func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	FontStretch struct {
 		UltraCondensed func(*ui.Element) *ui.Element
 		ExtraCondensed func(*ui.Element) *ui.Element
-		Condensed func(*ui.Element) *ui.Element
-		SemiCondensed func(*ui.Element) *ui.Element
-		Normal func(*ui.Element) *ui.Element
-		SemiExpanded func(*ui.Element) *ui.Element
-		Expanded func(*ui.Element) *ui.Element
-		ExtraExpanded func(*ui.Element) *ui.Element
-		UltraExpanded func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Condensed      func(*ui.Element) *ui.Element
+		SemiCondensed  func(*ui.Element) *ui.Element
+		Normal         func(*ui.Element) *ui.Element
+		SemiExpanded   func(*ui.Element) *ui.Element
+		Expanded       func(*ui.Element) *ui.Element
+		ExtraExpanded  func(*ui.Element) *ui.Element
+		UltraExpanded  func(*ui.Element) *ui.Element
+		Value          func(value string) func(*ui.Element) *ui.Element
 	}
 	TextTransform struct {
-		None func(*ui.Element) *ui.Element
+		None       func(*ui.Element) *ui.Element
 		Capitalize func(*ui.Element) *ui.Element
-		Uppercase func(*ui.Element) *ui.Element
-		Lowercase func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Uppercase  func(*ui.Element) *ui.Element
+		Lowercase  func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 }
 
@@ -2060,141 +2057,140 @@ type ContentLayout struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AlignSelf struct {
-		Auto func(*ui.Element) *ui.Element
-		Stretch func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
+		Auto      func(*ui.Element) *ui.Element
+		Stretch   func(*ui.Element) *ui.Element
+		Center    func(*ui.Element) *ui.Element
 		FlexStart func(*ui.Element) *ui.Element
-		FlexEnd func(*ui.Element) *ui.Element
-		Baseline func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		FlexEnd   func(*ui.Element) *ui.Element
+		Baseline  func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	Content struct {
-		Normal func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		Counter func(*ui.Element) *ui.Element
-		Attr func(value string) func(*ui.Element) *ui.Element
-		String func(*ui.Element) *ui.Element
-		OpenQuote func(*ui.Element) *ui.Element
-		CloseQuote func(*ui.Element) *ui.Element
-		NoOpenQuote func(*ui.Element) *ui.Element
+		Normal       func(*ui.Element) *ui.Element
+		None         func(*ui.Element) *ui.Element
+		Counter      func(*ui.Element) *ui.Element
+		Attr         func(value string) func(*ui.Element) *ui.Element
+		String       func(*ui.Element) *ui.Element
+		OpenQuote    func(*ui.Element) *ui.Element
+		CloseQuote   func(*ui.Element) *ui.Element
+		NoOpenQuote  func(*ui.Element) *ui.Element
 		NoCloseQuote func(*ui.Element) *ui.Element
-		URL func(url string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		URL          func(url string) func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnSpan struct {
-		None func(*ui.Element) *ui.Element
-		All func(*ui.Element) *ui.Element
+		None  func(*ui.Element) *ui.Element
+		All   func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Flex struct {
-		FlexGrow func(value string) func(*ui.Element) *ui.Element
+		FlexGrow   func(value string) func(*ui.Element) *ui.Element
 		FlexShrink func(value string) func(*ui.Element) *ui.Element
-		FlexBasis func(value string) func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Initial func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		Inherit func(*ui.Element) *ui.Element
+		FlexBasis  func(value string) func(*ui.Element) *ui.Element
+		Auto       func(*ui.Element) *ui.Element
+		Initial    func(*ui.Element) *ui.Element
+		None       func(*ui.Element) *ui.Element
+		Inherit    func(*ui.Element) *ui.Element
 	}
 	FlexShrink struct {
 		Number func(value string) func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	Order struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	FlexBasis struct {
-		Auto func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	AlignItems struct {
-		Stretch func(*ui.Element) *ui.Element
-		Center func(*ui.Element) *ui.Element
+		Stretch   func(*ui.Element) *ui.Element
+		Center    func(*ui.Element) *ui.Element
 		FlexStart func(*ui.Element) *ui.Element
-		FlexEnd func(*ui.Element) *ui.Element
-		Baseline func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		FlexEnd   func(*ui.Element) *ui.Element
+		Baseline  func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 }
 
 type ContentStyle struct {
 	ColumnRuleWidth struct {
 		Medium func(*ui.Element) *ui.Element
-		Thin func(*ui.Element) *ui.Element
-		Thick func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Thin   func(*ui.Element) *ui.Element
+		Thick  func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnRule struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Direction struct {
-		Ltr func(*ui.Element) *ui.Element
-		Rtl func(*ui.Element) *ui.Element
+		Ltr   func(*ui.Element) *ui.Element
+		Rtl   func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnRuleStyle struct {
-		None func(*ui.Element) *ui.Element
+		None   func(*ui.Element) *ui.Element
 		Hidden func(*ui.Element) *ui.Element
 		Dotted func(*ui.Element) *ui.Element
 		Dashed func(*ui.Element) *ui.Element
-		Solid func(*ui.Element) *ui.Element
+		Solid  func(*ui.Element) *ui.Element
 		Double func(*ui.Element) *ui.Element
 		Groove func(*ui.Element) *ui.Element
-		Ridge func(*ui.Element) *ui.Element
-		Inset func(*ui.Element) *ui.Element
+		Ridge  func(*ui.Element) *ui.Element
+		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnRuleColor struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	ColumnFill struct {
 		Balance func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		Auto    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	EmptyCells struct {
-		Show func(*ui.Element) *ui.Element
-		Hide func(*ui.Element) *ui.Element
+		Show  func(*ui.Element) *ui.Element
+		Hide  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Cursor struct {
-		Alias func(*ui.Element) *ui.Element
-		AllScroll func(*ui.Element) *ui.Element
-		Auto func(*ui.Element) *ui.Element
-		Cell func(*ui.Element) *ui.Element
-		ContextMenu func(*ui.Element) *ui.Element
-		ColResize func(*ui.Element) *ui.Element
-		Copy func(*ui.Element) *ui.Element
-		Crosshair func(*ui.Element) *ui.Element
-		Default func(*ui.Element) *ui.Element
-		EResize func(*ui.Element) *ui.Element
-		EwResize func(*ui.Element) *ui.Element
-		Grab func(*ui.Element) *ui.Element
-		Grabbing func(*ui.Element) *ui.Element
-		Help func(*ui.Element) *ui.Element
-		Move func(*ui.Element) *ui.Element
-		NResize func(*ui.Element) *ui.Element
-		NeResize func(*ui.Element) *ui.Element
-		NeswResize func(*ui.Element) *ui.Element
-		NsResize func(*ui.Element) *ui.Element
-		NwResize func(*ui.Element) *ui.Element
-		NwseResize func(*ui.Element) *ui.Element
-		NoDrop func(*ui.Element) *ui.Element
-		None func(*ui.Element) *ui.Element
-		NotAllowed func(*ui.Element) *ui.Element
-		Pointer func(*ui.Element) *ui.Element
-		Progress func(*ui.Element) *ui.Element
-		RowResize func(*ui.Element) *ui.Element
-		SResize func(*ui.Element) *ui.Element
-		SeResize func(*ui.Element) *ui.Element
-		SwResize func(*ui.Element) *ui.Element
-		Text func(*ui.Element) *ui.Element
+		Alias        func(*ui.Element) *ui.Element
+		AllScroll    func(*ui.Element) *ui.Element
+		Auto         func(*ui.Element) *ui.Element
+		Cell         func(*ui.Element) *ui.Element
+		ContextMenu  func(*ui.Element) *ui.Element
+		ColResize    func(*ui.Element) *ui.Element
+		Copy         func(*ui.Element) *ui.Element
+		Crosshair    func(*ui.Element) *ui.Element
+		Default      func(*ui.Element) *ui.Element
+		EResize      func(*ui.Element) *ui.Element
+		EwResize     func(*ui.Element) *ui.Element
+		Grab         func(*ui.Element) *ui.Element
+		Grabbing     func(*ui.Element) *ui.Element
+		Help         func(*ui.Element) *ui.Element
+		Move         func(*ui.Element) *ui.Element
+		NResize      func(*ui.Element) *ui.Element
+		NeResize     func(*ui.Element) *ui.Element
+		NeswResize   func(*ui.Element) *ui.Element
+		NsResize     func(*ui.Element) *ui.Element
+		NwResize     func(*ui.Element) *ui.Element
+		NwseResize   func(*ui.Element) *ui.Element
+		NoDrop       func(*ui.Element) *ui.Element
+		None         func(*ui.Element) *ui.Element
+		NotAllowed   func(*ui.Element) *ui.Element
+		Pointer      func(*ui.Element) *ui.Element
+		Progress     func(*ui.Element) *ui.Element
+		RowResize    func(*ui.Element) *ui.Element
+		SResize      func(*ui.Element) *ui.Element
+		SeResize     func(*ui.Element) *ui.Element
+		SwResize     func(*ui.Element) *ui.Element
+		Text         func(*ui.Element) *ui.Element
 		VerticalText func(*ui.Element) *ui.Element
-		WResize func(*ui.Element) *ui.Element
-		Wait func(*ui.Element) *ui.Element
-		ZoomIn func(*ui.Element) *ui.Element
-		ZoomOut func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
+		WResize      func(*ui.Element) *ui.Element
+		Wait         func(*ui.Element) *ui.Element
+		ZoomIn       func(*ui.Element) *ui.Element
+		ZoomOut      func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
 	}
 }
-

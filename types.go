@@ -17,6 +17,32 @@ type Value interface {
 	ValueType() string
 }
 
+// Conv is a conversion function that converts any acceptable Go value in to a ui.Value type.
+func Conv[T interface {
+	~int | ~string | ~float64 | ~bool | []Value | map[string]Value
+}](v T) Value {
+	switch w := any(v).(type) {
+	case int:
+		return Number(w)
+	case string:
+		return String(w)
+	case float64:
+		return Number(w)
+	case bool:
+		return Bool(w)
+	case []Value:
+		return NewList(w...).Commit()
+	case map[string]Value:
+		o := NewObject()
+		for k, v := range w {
+			o.Set(k, v)
+		}
+		return o.Commit()
+	default:
+		panic("zui error: unsupported type")
+	}
+}
+
 type Bool bool
 
 func (b Bool) discriminant() discriminant { return "zui" }

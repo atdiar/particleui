@@ -1,0 +1,489 @@
+/* CSS Reset */
+
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+
+* {
+	margin: 0;
+}
+
+body {
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+img, picture, video, canvas, svg {
+	display: block;
+	max-width: 100%;
+}
+
+input, button, textarea, select {
+	font: inherit;
+}
+
+p, h1, h2, h3, h4, h5, h6 {
+	overflow-wrap: break-word;
+	text-wrap: balance;
+}
+
+p, figcaption, li {
+	max-width: 80ch;
+	text-wrap: pretty;
+	/* Prevents orphans on lines */
+}
+
+header, footer, main, section, article {
+	container-type: inline-size;
+}
+
+#root, #__next {
+	isolation: isolate;
+}
+
+body {
+	font-family: Arial, sans-serif;
+	font-size: 18px;
+	color: #ffffff;
+	line-height: 1.7;
+	padding: 20px;
+	max-width: 1880px;
+	margin: 0 auto;
+	background-color: #1f2123;
+}
+
+color: white;
+mix-blend-mode: difference;
+
+a {
+	color: #FFD700;
+	text-decoration: dashed underline;
+	text-underline-offset: 2px;
+	transition: color 0.3s ease, text-decoration 0.3s ease;
+}
+
+a:hover {
+	color: #FFA500;
+	text-decoration: solid underline;
+}
+
+a:active {
+	color: #FFA500;
+	text-decoration: solid underline;
+}
+
+a:focus {
+	outline: 2px solid #FFA500;
+	outline-offset: 2px;
+}
+
+a:visited {
+	color: #FFB6C1;
+	text-decoration: dotted underline;
+}
+
+button {
+	border: 1px solid transparent;
+	background-color: rgb(0,0,0,0.3);
+	color: white;
+	outline: none;
+	padding: 0.6em;
+	box-sizing: border-box;
+	max-width: 10em;
+	width: 10em;
+	transition: transform 0.1s ease-in-out, background-color 0.1s ease-in-out;
+}
+
+button:hover {
+	border: 1px solid white;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+button:active {
+	background-color: white;
+	color: black;
+	text-decoration: none;
+	transform: scale(0.95);
+}
+
+button:focus {
+	border: 1px solid white;
+	outline: none;
+	box-sizing: border-box;
+}
+
+form {
+	max-width: 500px;
+	margin: 0 auto;
+	font-family: Arial, sans-serif;
+}
+
+form > div, form > fieldset > div {
+	margin-bottom: 20px;
+	display: flex;
+	align-items: center;
+}
+
+form label {
+	width: 120px;
+	text-align: left;
+	margin-right: 10px;
+	flex-shrink: 0;
+}
+
+form input[type="text"], form input[type="password"], form input[type="email"], form input[type="number"], form input[type="date"], form input[type="tel"], form input[type="url"], form select, form textarea {
+	width: 250px;
+	padding: 5px 0;
+	box-sizing: border-box;
+	flex-grow: 1;
+	background-color: rgba(255, 255, 255, 0.1);
+	border: none;
+	border-bottom: 2px solid rgba(255, 165, 0, 1);
+	transition: all 0.3s ease;
+	caret-color: white;
+}
+
+form input[type="text"]:focus, form input[type="password"]:focus, form input[type="email"]:focus, form input[type="number"]:focus, form input[type="date"]:focus, form input[type="tel"]:focus, form input[type="url"]:focus, form select:focus, form textarea:focus {
+	outline: none;
+	border-bottom-color: rgba(255, 165, 0, 1);
+	background-color: rgba(255, 165, 0, 0.2);
+}
+
+form input[type="text"]:hover, form input[type="password"]:hover, form input[type="email"]:hover, form input[type="number"]:hover, form input[type="date"]:hover, form input[type="tel"]:hover, form input[type="url"]:hover, form select:hover, form textarea:hover {
+	background-color: rgba(255, 165, 0, 0.15);
+	border-bottom-color: rgba(255, 165, 0, 1);
+}
+
+form input::placeholder, form textarea::placeholder {
+	color: rgba(255, 255, 255, 0.7);
+}
+
+form input[type="checkbox"], form input[type="radio"] {
+	margin-right: 5px;
+}
+
+form textarea {
+	height: 100px;
+	resize: vertical;
+}
+
+form > div:has(input[type="radio"]), form > fieldset > div:has(input[type="radio"]) {
+	flex-wrap: wrap;
+}
+
+form > div:has(input[type="radio"]) label:not(:first-child), form > fieldset > div:has(input[type="radio"]) label:not(:first-child) {
+	width: auto;
+	margin-right: 15px;
+}
+
+form > div:last-child, form > fieldset > div:last-child {
+	justify-content: flex-start;
+	margin-left: 130px;
+}
+
+input[type="submit"], input[type="reset"] {
+	border: 1px solid #FFA500;
+	background-color: rgba(255, 165, 0, 0.2);
+	color: white;
+	outline: none;
+	padding: 0.6em;
+	box-sizing: border-box;
+	max-width: 10em;
+	width: 10em;
+	transition: all 0.3s ease;
+	margin-right: 10px;
+}
+
+input[type="submit"]:hover, input[type="reset"]:hover {
+	background-color: rgba(255, 165, 0, 0.4);
+	cursor: pointer;
+}
+
+input[type="submit"]:active, input[type="reset"]:active {
+	background-color: #FFA500;
+	color: black;
+	transform: scale(0.95);
+}
+
+input[type="submit"]:focus, input[type="reset"]:focus {
+	border-color: #FFD700;
+	outline: none;
+}
+
+form input:disabled, form textarea:disabled, form select:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	background-color: rgba(255, 255, 255, 0.05);
+}
+
+form input:read-only, form textarea:read-only {
+	background-color: rgba(255, 255, 255, 0.05);
+	cursor: default;
+}
+
+form input:invalid, form textarea:invalid, form select:invalid {
+	border-bottom-color: #F44336;
+}
+
+form > div:focus-within, form > fieldset > div:focus-within {
+	background-color: rgba(255, 165, 0, 0.1);
+}
+
+form input[type="checkbox"]:checked + label, form input[type="radio"]:checked + label {
+	color: white;
+	mix-blend-mode: difference;
+}
+
+form label:hover {
+	color: #FFD700;
+	cursor: pointer;
+}
+
+form input:required, form textarea:required, form select:required {
+	border-left: 2px solid #FFA500;
+}
+
+form select option {
+	background-color: #1a1a1a;
+	color: white;
+}
+
+form input:-webkit-autofill, form input:-webkit-autofill:hover, form input:-webkit-autofill:focus, form input:-webkit-autofill:active {
+	-webkit-box-shadow: 0 0 0 30px #1a1a1a inset !important;
+	-webkit-text-fill-color: white !important;
+}
+
+form fieldset {
+	border: 1px solid white;
+	border-radius: 10px;
+	padding: 10px;
+	margin-bottom: 20px;
+	box-shadow: 0 0 10px rgba(255,165,0,0.4);
+}
+
+form fieldset legend {
+	padding: 0 5px;
+}
+
+blockquote {
+	position: relative;
+	background: rgba(0, 0, 0, 0.49);
+	font-size: 1.4em;
+	box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+	backdrop-filter: blur(10.2px);
+	-webkit-backdrop-filter: blur(10.2px);
+	padding: 1.4em 1.2em 1.2em 1.7em;
+	overflow: hidden;
+	margin: 1.4em 0;
+	font-style: italic;
+	color: white;
+	border-radius: 10px;
+	text-shadow: 0 0 1px #fff,
+        0 0 2px #fff,
+        0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+blockquote::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 0.3em;
+	height: 100%;
+	background: #ffffff;
+	box-shadow: -3px 0 10px rgba(255, 255, 255, 0.8),
+        7px 0 10px rgba(255, 255, 255, 0.8),
+        0 0 20px rgba(255, 255, 255, 0.6),
+        0 0 30px rgba(255, 255, 255, 0.4);
+}
+
+pre {
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(10px);
+	border-radius: 10px;
+	padding: 0px 20px 10px 20px;
+	color: #ffffff;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+textarea {
+	overflow: auto;
+}
+
+hr {
+	border-top: 1px solid rgba(0,0,0,1);
+	border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+table {
+	width: 100%;
+	border-collapse: separate;
+	border-spacing: 0;
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 10px;
+	overflow: hidden;
+	margin: 20px 0;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+caption {
+	font-weight: bold;
+	margin-bottom: 10px;
+	color: #FFD700;
+}
+
+th, td {
+	padding: 12px 15px;
+	text-align: left;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+th {
+	background-color: rgba(255, 255, 255, 0.1);
+	font-weight: bold;
+	color: #FFD700;
+	text-transform: uppercase;
+}
+
+tr:last-child td {
+	border-bottom: none;
+}
+
+tbody tr:hover {
+	background-color: rgba(255, 255, 255, 0.05);
+}
+
+tbody tr:nth-child(even) {
+	background-color: rgba(0, 0, 0, 0.2);
+}
+
+input[type="checkbox"] {
+	appearance: none;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	width: 20px;
+	height: 20px;
+	border: 2px solid #ccc;
+	border-radius: 0;
+	background-color: #fff;
+	cursor: pointer;
+	position: relative;
+	vertical-align: middle;
+	margin-right: 8px;
+	transition: all 0.2s ease;
+	margin: 5px;
+}
+
+input[type="checkbox"]:checked {
+	background-color: #2196F3;
+	border-color: #2196F3;
+	transform: scale(1.1);
+}
+
+input[type="checkbox"]:checked::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 5px;
+	height: 10px;
+	border: solid white;
+	border-width: 0 2px 2px 0;
+	transform: translate(-50%, -60%) rotate(45deg);
+}
+
+input[type="checkbox"]:focus {
+	outline: 2px solid #2196F3;
+	outline-offset: 2px;
+}
+
+input[type="checkbox"] + label {
+	cursor: pointer;
+	font-size: 16px;
+	vertical-align: middle;
+}
+
+input[type=range] {
+	-webkit-appearance: none;
+	background: transparent;
+	outline: none;
+	opacity: 0.7;
+	transition: opacity 0.3s;
+}
+
+input[type=range]:hover {
+	opacity: 1;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+	height: 1px;
+	background: rgba(255, 255, 255, 0.3);
+	border: none;
+	border-radius: 0;
+}
+
+input[type=range]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 20px;
+	height: 20px;
+	background: rgba(255, 255, 255, 0.7);
+	border-radius: 50%;
+	cursor: pointer;
+	margin-top: -9.5px;
+}
+
+input[type=range]:hover::-webkit-slider-thumb {
+	background: rgba(255, 255, 255, 1);
+}
+
+input[type=range]::-moz-range-track {
+	height: 1px;
+	background: rgba(255, 255, 255, 0.3);
+	border: none;
+	border-radius: 0;
+}
+
+input[type=range]::-moz-range-thumb {
+	width: 20px;
+	height: 20px;
+	background: rgba(255, 255, 255, 0.7);
+	border: none;
+	border-radius: 50%;
+	cursor: pointer;
+}
+
+input[type=range]:hover::-moz-range-thumb {
+	background: rgba(255, 255, 255, 1);
+}
+
+input[type=range]::-ms-track {
+	height: 1px;
+	background: transparent;
+	border-color: transparent;
+	color: transparent;
+}
+
+input[type=range]::-ms-fill-lower {
+	background: rgba(255, 255, 255, 0.3);
+}
+
+input[type=range]::-ms-fill-upper {
+	background: rgba(255, 255, 255, 0.3);
+}
+
+input[type=range]::-ms-thumb {
+	width: 20px;
+	height: 20px;
+	background: rgba(255, 255, 255, 0.7);
+	border: none;
+	border-radius: 50%;
+	cursor: pointer;
+}
+
+input[type=range]:hover::-ms-thumb {
+	background: rgba(255, 255, 255, 1);
+}

@@ -497,7 +497,11 @@
             },
             "justify-content": {
                 id: "Container.Layout.JustifyContent",
-                values: ["flex-start", "flex-end", "center", "space-between", "space-around"],
+                values: ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"],
+            },
+            "justify-self": {
+                id: "Container.Layout.JustifySelf",
+                values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline", "end", "start", "left", "right", "safe", "unsafe", "anchor center","first baseline", "last baseline"], // todo: add more values
             },
             "z-index": {
                 id: "Container.Layout.ZIndex",
@@ -1424,101 +1428,110 @@
 
   
         function cssToGoCode(css) {
+            css = css.replace(/\/\*[\s\S]*?\*\//g, '');
             const ast = parseCSS(css);
             const beautifiedCSS = beautifyCSS(ast);
-            let goCode = '';
-            let rawCSSVariables = '';
+            let output = '';
             let errors = [];
             const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
 
             const styleMap = new Map();
+            const ruleOrder = [];
+            const mediaQueries = [];
 
-            function addToStyleMap(selector, declarations) {
-                if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
-                    // This is a complex selector, store it as raw CSS
-                    if (!styleMap.has('rawCSS')) {
-                        styleMap.set('rawCSS', []);
+            function addToStyleMap(selector, declarations, ruleType = 'standard', parentRule = null) {
+                const baseSelector = selector.split(':')[0];
+                const ruleId = `${ruleType}:${baseSelector}`;
+                if (!styleMap.has(ruleId)) {
+                    styleMap.set(ruleId, { base: [], pseudo: {}, type: ruleType, parentRule });
+                    ruleOrder.push(ruleId);
+                }
+                const rule = styleMap.get(ruleId);
+                const pseudoSelector = selector.includes(':') ? selector.split(':')[1] : '';
+                if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                    if (!rule.pseudo[pseudoSelector]) {
+                        rule.pseudo[pseudoSelector] = [];
                     }
-                    styleMap.get('rawCSS').push({ selector, declarations });
+                    rule.pseudo[pseudoSelector].push(...declarations);
                 } else {
-                    const [baseSelector, pseudoSelector] = selector.split(':');
-                    if (!styleMap.has(baseSelector)) {
-                        styleMap.set(baseSelector, { base: [], pseudo: {} });
-                    }
-                    const style = styleMap.get(baseSelector);
-                    if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
-                        if (!style.pseudo[pseudoSelector]) {
-                            style.pseudo[pseudoSelector] = [];
-                        }
-                        style.pseudo[pseudoSelector].push(...declarations);
-                    } else {
-                        style.base.push(...declarations);
-                    }
+                    rule.base.push(...declarations);
                 }
             }
 
-            ast.stylesheet.rules.forEach(rule => {
-                if (rule.type === 'rule') {
-                    rule.selectors.forEach(selector => {
-                        addToStyleMap(selector, rule.declarations);
-                    });
-                } else if (rule.type === 'keyframes' || rule.type === 'media') {
-                    // Store unsupported features in raw variables
-                    const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
-                    rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
-                }
-            });
-
-            styleMap.forEach((style, baseSelector) => {
-                if (baseSelector === 'rawCSS') {
-                    style.forEach(({ selector, declarations }) => {
-                        const varName = generateVariableName(selector);
-                        rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
-                        declarations.forEach(decl => {
-                            rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
+            function processRules(rules, parentRule = null) {
+                rules.forEach(rule => {
+                    if (rule.type === 'rule') {
+                        rule.selectors.forEach(selector => {
+                            addToStyleMap(selector, rule.declarations, 'standard', parentRule);
                         });
-                        rawCSSVariables += '}\`\n\n';
+                    } else if (rule.type === 'media') {
+                        mediaQueries.push(rule);
+                    } else if (rule.type === 'keyframes') {
+                        addToStyleMap(`@keyframes ${rule.name}`, [rule], 'keyframes', parentRule);
+                    }
+                });
+            }
+
+            processRules(ast.stylesheet.rules);
+
+            ruleOrder.forEach(ruleId => {
+                const [ruleType, selector] = ruleId.split(':');
+                const { base, pseudo, type, parentRule } = styleMap.get(ruleId);
+
+                if (type === 'keyframes') {
+                    const rule = base[0];
+                    const varName = generateVariableName(`@keyframes ${rule.name}`);
+                    output += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
+                } else if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~') || selector.includes('[') || parentRule) {
+                    const varName = generateVariableName(selector);
+                    output += `var ${varName} = \`\n${selector} {\n`;
+                    base.forEach(decl => {
+                        output += `\t${decl.property}: ${decl.value};\n`;
                     });
-                } else {
-                    const elementName = baseSelector.replace(/[^\w]/g, '');
+                    output += '}\n';
+                    Object.entries(pseudo).forEach(([pseudoSelector, declarations]) => {
+                        output += `${selector}:${pseudoSelector} {\n`;
+                        declarations.forEach(decl => {
+                            output += `\t${decl.property}: ${decl.value};\n`;
+                        });
+                        output += '}\n';
+                    });
+                    output += '\`\n\n';
+                } else if (!parentRule) {
+                    const elementName = selector.replace(/[^\w]/g, '');
                     const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
                     let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
 
-                    // Handle base styles
-                    style.base.forEach(decl => {
+                    base.forEach(decl => {
                         const result = handleDeclaration(decl);
                         if (result.goCode) {
                             functionCode += result.goCode;
                         }
                     });
 
-                    // Add a line break if there are both base styles and pseudo-classes
-                    if (style.base.length > 0 && Object.keys(style.pseudo).length > 0) {
-                        functionCode += '\n';
-                    }
-
-                    // Handle pseudo-classes
-                    Object.entries(style.pseudo).forEach(([pseudo, declarations], index) => {
+                    Object.entries(pseudo).forEach(([pseudoSelector, declarations]) => {
                         declarations.forEach(decl => {
-                            const result = handleDeclaration(decl, pseudo);
+                            const result = handleDeclaration(decl, pseudoSelector);
                             if (result.goCode) {
                                 functionCode += result.goCode;
                             }
                         });
-                        // Add a line break between different pseudo-classes
-                        if (index < Object.entries(style.pseudo).length - 1) {
-                            functionCode += '\n';
-                        }
                     });
 
                     functionCode += '\treturn e\n}\n';
-                    goCode += functionCode + '\n';
+                    output += functionCode + '\n';
                 }
+            });
+
+            // Process media queries
+            mediaQueries.forEach((query, index) => {
+                const varName = `RawCSSMediaQuery${index + 1}`;
+                output += `var ${varName} = \`${beautifyCSS(query)}\`\n\n`;
             });
 
             function handleDeclaration(decl, pseudoSelector = '') {
                 const property = propertyToGoMethod(decl.property);
-                const value = decl.value;
+                let value = decl.value;
 
                 if (cssToGoMapping[decl.property]) {
                     let methodChain = `doc.CSS.Container`;
@@ -1528,6 +1541,8 @@
                     methodChain += `.Style.${property}`;
 
                     if (cssToGoMapping[decl.property].values.includes(value)) {
+                        // Convert hyphenated values to camelCase
+                        value = value.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
                         return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
                     } else {
                         return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
@@ -1536,6 +1551,8 @@
                     return { goCode: '' }; // This will be collected in rawCSSVariables
                 }
             }
+
+
 
             function generateVariableName(selector) {
                 const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
@@ -1551,23 +1568,29 @@
                     } else if (part === '~') {
                         relationship = 'GeneralSibling';
                     } else {
-                        // It's an element or class/id selector
-                        let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
-                        elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
-                        name += elementName + relationship;
-                        relationship = 'Descendant'; // Default relationship if no operator is specified
+                        let elementName = part.replace(/[^a-zA-Z0-9]/g, '');
+                        if (elementName.length > 0) {
+                            elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                            name += elementName + relationship;
+                            relationship = 'Descendant';
+                        }
                     }
                 }
 
                 return name;
             }
 
-            goCode = goCode.trim();
-            rawCSSVariables = rawCSSVariables.trim();
+            function propertyToGoMethod(property) {
+                return property.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+            }
+
+            function capitalizeFirstLetter(string) {
+                return string.charAt(0).toUpperCase() + string.slice(1);
+            }
 
             return { 
                 beautifiedCSS, 
-                goCode: goCode + '\n\n' + rawCSSVariables, 
+                goCode: output.trim(), 
                 errors 
             };
         }
@@ -3229,35 +3252,39 @@ function example() {
 
             // Event listend for the download go code button
             document.getElementById('download-go-code').addEventListener('click', () => {
-                let allCSS = '';
+                let allGoCode = '';
+                let allBeautifiedCSS = '';
                 let allErrors = [];
                 const packageName = currentSheetName.replace(/[^\w]/g, '').toLowerCase();
 
                 document.querySelectorAll('.editor-container').forEach(container => {
-                    const elementType = container.querySelector('.editable-element').children[0].tagName.toLowerCase();
-                    const cssTextareas = container.querySelectorAll('.css-textarea');
-                    cssTextareas.forEach(textarea => {
-                        const pseudo = textarea.dataset.pseudo;
-                        const css = textarea.value.trim();
-                        if (css) {
-                            if (pseudo === '') {
-                                // For the base selector, use the CSS as-is
-                                allCSS += css + '\n\n';
-                            } else {
-                                // For pseudo-selectors, construct the selector
-                                const selector = `${elementType}:${pseudo}`;
-                                allCSS += `${selector} {\n${css}\n}\n\n`;
+                    const elementId = container.id;
+                    const styleElement = document.querySelector(`style[data-for="${elementId}"]`);
+                    
+                    if (styleElement) {
+                        const fullCSS = styleElement.textContent.trim();
+                        try {
+                            const ast = parseCSS(fullCSS);
+                            if (ast.stylesheet.rules.length > 0) {
+                                const { beautifiedCSS, goCode, errors } = cssToGoCode(fullCSS);
+                                
+                                // Append the results
+                                allGoCode += goCode + '\n\n';
+                                allBeautifiedCSS += beautifiedCSS + '\n\n';
+                                allErrors = allErrors.concat(errors.map(error => `${elementId}: ${error}`));
                             }
+                        } catch (error) {
+                            console.error(`Error parsing CSS for ${elementId}:`, error);
+                            allErrors.push(`${elementId}: Error parsing CSS - ${error.message}`);
                         }
-                    });
+                    }
                 });
 
-                const {bcss, goCode, errors } = cssToGoCode(allCSS);
-                const fullGoCode = generateFullGoPackage(goCode, packageName);
+                const fullGoCode = generateFullGoPackage(allGoCode, packageName);
 
-                if (errors.length > 0) {
-                    console.warn('Errors occurred during Go code generation:', errors);
-                    const errorMessages = errors.map(error => {
+                if (allErrors.length > 0) {
+                    console.warn('Errors occurred during Go code generation:', allErrors);
+                    const errorMessages = allErrors.map(error => {
                         if (error.pseudoSelector) {
                             return `Error in ${error.selector}: Invalid pseudo-selector ":${error.pseudoSelector}" on line ${error.lineNumber}`;
                         } else if (error.property) {

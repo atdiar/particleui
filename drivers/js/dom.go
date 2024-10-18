@@ -1971,7 +1971,7 @@ func mutationreplay(d *Document) error {
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
-			panic("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
+			DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
 			return ui.ErrReplayFailure
 		}
 
@@ -2441,7 +2441,7 @@ func NewDocument(id string, options ...string) *Document {
 	head := d.head.WithID("head")
 	e.AppendChild(head)
 	e.AppendChild(d.body.WithID("body"))
-	d.EnableWasm()
+	d.enableWasm()
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
@@ -3470,11 +3470,11 @@ var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 	return e
 })
 
-// EnableWasm adds the default wasm loader script to the head element of the document.
+// enableWasm adds the default wasm loader script to the head element of the document.
 // In SSGMode, the script is not added as we render html pages.
 // Javascript scripts can still be added to the page of course, but the wasm App
 // will have been rendered page by page in advance
-func (d *Document) EnableWasm() *Document {
+func (d *Document) enableWasm() *Document {
 	if SSGMode != "false" {
 		return d
 	}
@@ -4927,7 +4927,7 @@ func (i InputElement) SetDisabled(b bool) InputElement {
 
 // SyncValueOnInput is an element modifier which is used to sync the
 // value of an InputElement once an input event is received
-// This modifier is configurable, allowing to process he raw event value
+// This modifier is configurable, allowing to process the raw event value
 // before syncing the UI element. For example to trim the value when it's a ui.String.
 func SyncValueOnInput(valuemodifiers ...func(ui.Value) ui.Value) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {

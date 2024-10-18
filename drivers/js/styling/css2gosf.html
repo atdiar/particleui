@@ -5,214 +5,291 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CSS to Go Converter</title>
     <style>
-       html, body {
-          height: 100%;
-          margin: 0;
-          padding: 0;
-          overflow:hidden;
-      }
+        :root {
+            --fsize--4: clamp(0.422rem, 0.401rem + 0.1048vw, 0.4823rem);
+            --fsize--3: clamp(0.5064rem, 0.4812rem + 0.1258vw, 0.5787rem);
+            --fsize--2: clamp(0.6076rem, 0.5774rem + 0.151vw, 0.6944rem);
+            --fsize--1: clamp(0.7292rem, 0.6929rem + 0.1812vw, 0.8333rem);
+            --fsize-0: clamp(0.875rem, 0.8315rem + 0.2174vw, 1rem);
+            --fsize-1: clamp(1.05rem, 0.9978rem + 0.2609vw, 1.2rem);
+            --fsize-2: clamp(1.26rem, 1.1974rem + 0.313vw, 1.44rem);
+            --fsize-3: clamp(1.512rem, 1.4369rem + 0.3757vw, 1.728rem);
+            --fsize-4: clamp(1.8144rem, 1.7242rem + 0.4508vw, 2.0736rem);
+            --fsize-5: clamp(2.1773rem, 2.0691rem + 0.5409vw, 2.4883rem);
+            --fsize-6: clamp(2.6127rem, 2.4829rem + 0.6491vw, 2.986rem);
+            --fsize-7: clamp(3.1353rem, 2.9795rem + 0.779vw, 3.5832rem);
+            --fsize-8: clamp(3.7623rem, 3.5754rem + 0.9347vw, 4.2998rem);
+            --fsize-9: clamp(4.5148rem, 4.2905rem + 1.1217vw, 5.1598rem);
+            --fsize-10: clamp(5.4178rem, 5.1486rem + 1.346vw, 6.1917rem);
+            --line-height: 1.5;
+            --logo: clamp(5.4178rem, 5.1486rem + 2.346vw, 8rem);
+        }
 
-      body {
-          font-family: Arial, sans-serif;
-          height: 100vh;
-          box-sizing: border-box;
-          line-height: 1.6;
-          display: flex;
-          flex-direction: column;
-          max-width: 100vw;
-          margin: 0 auto;
-          justify-content: center;
-          align-items: center;
-      }
+@font-face {
+            font-family: 'AfrobeatNova';
+            src: url('./AfrobeatNova-Regular.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
 
-      .main-content {
-          flex: 1 1 auto;
-          display: flex;
-          flex-direction: column;
-      }
+html, body {
+    margin: 0;
+    padding: 0;
+    font-size: var(--fsize-0);
+    height: 100%;
+}
 
-      .code-container {
-          display: flex;
-          gap: 20px;
-          flex-wrap: wrap;
-          flex: 0; /* Take up remaining space */
-      }
+body {
+    font-family: Arial, sans-serif;
+    line-height: var(--line-height);
+    display: flex;
+    flex-direction: column;
+    max-width: 100vw;
+    margin: 0 auto;
+    justify-content: center;
+    align-items: center;
+}
 
-      .code-block {
-          flex: 1 1;
-          min-width: 400px;
-          max-width: 100%;
-          display: flex;
-          flex-direction: column;
-      }
+.gradient-text {
+    background-size: 300% 300%;
+    color: transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: shine 8s linear infinite;
+    background-image: conic-gradient(
+        from 45deg,
+        #ff6b00,
+        #ff00ff,
+        #ff6b00,
+        #000
+    );
+}
 
-      .code-block:last-child {
-          flex: 1.5 1; /* Make the Go output wider by default */
-      }
+@keyframes shine {
+    0% { background-position: 0% center; }
+    100% { background-position: 300% center; }
+}
 
-      .code-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 5px;
-      }
+.logo-container {
+    align-self: center;
+    padding-top: 1.4rem;
+}
 
-      .css-area, .go-area {
-          position: relative;
-          flex: 1; /* Take up remaining space in code block */
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          overflow: hidden;
-          min-height: 200px; /* Set a minimum height */
-          max-height: 480px;
-      }
+.logo {
+    font-size: var(--logo);
+    font-family: "AfrobeatNova", sans-serif;
+    font-weight: normal;
+    color: rgb(0, 0, 0);
+    mix-blend-mode: normal;
+    cursor: pointer;
+    display: inline-block;
+}
 
-      .css-wrapper {
-          position: relative;
-          height: 100%;
-          overflow: hidden;
-      }
+.logo a {
+    color: inherit;
+    text-decoration: none;
+    display: inline-block;
+}
 
-      #cssInput, #cssHighlight {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          margin: 0;
-          padding: 10px;
-          padding-left: 50px;
-          font-family: monospace;
-          font-size: 14px;
-          line-height: 1.5;
-          border: none;
-          white-space: pre;
-          word-wrap: break-word;
-          box-sizing: border-box;
-          overflow: hidden;
-          width: 100%;
-          height: 100%;
-          tab-size: 4;
-          -moz-tab-size: 4;
-      }
+.main-content {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1200px;
+    padding: 0 1rem;
+}
 
-      #cssInput {
-          background: transparent;
-          color: black;
-          caret-color: black;
-          z-index: 1;
-          resize: none;
-      }
+.code-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    flex: 1;
+}
 
-      #cssInput:hover {
-          overflow: auto;
-      }
+.code-block {
+    flex: 1 1 300px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
 
-      #cssHighlight {
-          z-index: 0;
-          pointer-events: none;
-          color: transparent;
-          background-color: transparent;
-      }
+.code-block:last-child {
+    flex: 1.5 1 450px;
+}
 
-      .go-area {
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          max-height:50vh;
-      }
+.code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
 
-      #goOutput {
-          flex-grow: 1;
-          overflow-y: auto;
-          overflow-x:hidden;
-          margin: 0;
-          padding: 10px;
-          padding-left: 50px;
-          font-family: monospace;
-          font-size: 14px;
-          line-height: 1.5;
-          border: none;
-          scrollbar-gutter:stable;
-      }
+.css-area, .go-area {
+    position: relative;
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+    min-height: 200px;
+    max-height: 70vh;
+}
 
-      #goOutput:hover{
-          overflow-x:auto;
-      }
+.css-wrapper {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+}
 
-      .line-numbers {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 40px;
-          height: 100%;
-          padding: 10px 5px;
-          background-color: #f0f0f0;
-          border-right: 1px solid #ccc;
-          text-align: right;
-          font-family: monospace;
-          font-size: 14px;
-          line-height: 1.5;
-          color: #999;
-          user-select: none;
-          overflow: hidden;
-          pointer-events: none;
-          z-index: 2;
-          box-sizing: border-box;
-      }
+#cssInput, #cssHighlight, #goOutput {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 10px;
+    padding-left: 50px;
+    font-family: monospace;
+    font-size: var(--fsize--1);
+    line-height: var(--line-height);
+    border: none;
+    white-space: pre;
+    word-wrap: break-word;
+    box-sizing: border-box;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    tab-size: 4;
+    -moz-tab-size: 4;
+}
 
-      #cssInput:focus {
-          outline: none;
-      }
+textarea:active, textarea:focus {
+    outline: none;
+}
 
-      .loc-counter {
-          font-size: 14px;
-          color: #666;
-          margin-right: 10px;
-      }
+#cssInput {
+    background: transparent;
+    color: black;
+    caret-color: black;
+    z-index: 1;
+    resize: none;
+}
 
-      .copy-button {
-          padding: 5px 10px;
-          background-color: #0091ffd3;
-          color: white;
-          border: none;
-          border-radius: 3px;
-          cursor: pointer;
-      }
+#cssInput:hover, #goOutput:hover {
+    overflow: auto;
+}
 
-      #errorMessages {
-          margin-top: 10px;
-          padding: 10px;
-          background-color: #fff0f0;
-          overflow-y: auto;
-          flex:1 1;
-      }
+#cssHighlight {
+    z-index: 0;
+    pointer-events: none;
+    color: transparent;
+    background-color: transparent;
+}
 
-      footer {
-          flex: 0 0 32px;
-          text-align: center;
-          padding: 10px 0;
-          background-color: #f8f9fa;
-          border-top: 1px solid #e9ecef;
-          margin-top: 20px;
-          color: black;
-          font-size: 12px;
-      }
+.go-area {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
 
-      footer a {
-          color: #007bff;
-          text-decoration: none;
-          font-style: normal;
-      }
+.line-numbers {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 100%;
+    padding: 10px 5px;
+    background-color: #f0f0f0;
+    border-right: 1px solid #ccc;
+    text-align: right;
+    font-family: monospace;
+    font-size: var(--fsize--1);
+    line-height: var(--line-height);
+    color: #999;
+    user-select: none;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 2;
+    box-sizing: border-box;
+}
 
-      footer a:hover {
-          text-decoration: underline;
-      }
+.loc-counter {
+    font-size: var(--fsize--1);
+    color: #666;
+    margin-right: 10px;
+}
+
+.copy-button {
+    padding: 5px 10px;
+    background-color: #0091ffd3;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: var(--fsize--1);
+}
+
+#errorMessages {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #fff0f0;
+    overflow-y: auto;
+    flex: 1 1;
+    font-size: var(--fsize--1);
+}
+
+footer {
+    flex: 0 0 32px;
+    text-align: center;
+    padding: 10px 0;
+    background-color: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+    margin-top: 20px;
+    color: black;
+    font-size: var(--fsize--1);
+    width: 100%;
+}
+
+footer a {
+    color: #007bff;
+    text-decoration: none;
+    font-style: normal;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+    .code-container {
+        flex-direction: column;
+    }
+
+    .code-block {
+        flex: 1 1 auto;
+    }
+
+    .code-block:last-child {
+        flex: 1 1 auto;
+    }
+
+    .css-area, .go-area {
+        max-height: 40vh;
+    }
+}
     </style>
 </head>
 <body>
+    <div class="logo-container">
+        <div class="logo-wrapper">
+            <div class="logo">
+                <a href="https://zui.dev" target="_blank" class="gradient-text">zui</a>
+            </div>
+        </div>
+    </div>
     <div class="main-content">
-        <h1>CSS to goSF Converter - go S(tyling) F(unctions) - for Zui</h1>
+        <h1>CSS to GOSF Converter - Go S(tyling) F(unctions)</h1>
         <div class="code-container">
             <div class="code-block">
                 <div class="code-header">
@@ -243,7 +320,7 @@
         <div id="errorMessages" class="error-messages"></div>
     </div>
     <footer>
-        Designed for <a href="https://zui.dev" target="_blank" rel="noopener noreferrer">Zui</a>
+        Designed for <a href="https://zui.dev" target="_blank" rel="noopener noreferrer">zui</a>
     </footer>
 
     <script>
@@ -266,7 +343,11 @@
             },
             "justify-content": {
                 id: "Container.Layout.JustifyContent",
-                values: ["flex-start", "flex-end", "center", "space-between", "space-around"],
+                values: ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"],
+            },
+            "justify-self": {
+                id: "Container.Layout.JustifySelf",
+                values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline", "end", "start", "left", "right", "safe", "unsafe", "anchor center","first baseline", "last baseline"], // todo: add more values
             },
             "z-index": {
                 id: "Container.Layout.ZIndex",
@@ -1164,111 +1245,141 @@
         }
 
         function cssToGoCode(css) {
+            css = css.replace(/\/\*[\s\S]*?\*\//g, '');
             const ast = parseCSS(css);
             const beautifiedCSS = beautifyCSS(ast);
-            let goCode = '';
-            let rawCSSVariables = '';
+            let output = '';
             let errors = [];
             const validPseudoSelectors = ['hover', 'active', 'focus', 'visited', 'link', 'first-child', 'last-child', 'checked', 'disabled', 'enabled'];
 
             const styleMap = new Map();
+            const ruleOrder = [];
+            const mediaQueries = [];
+            const rawVariables = [];
 
-            function addToStyleMap(selector, declarations) {
-                if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~')) {
-                    // This is a complex selector, store it as raw CSS
-                    if (!styleMap.has('rawCSS')) {
-                        styleMap.set('rawCSS', []);
+            function addToStyleMap(selector, declarations, ruleType = 'standard', parentRule = null) {
+                if (selector === ':root' || declarations.some(decl => decl.property.startsWith('--'))) {
+                    rawVariables.push({ selector, declarations });
+                    return;
+                }
+
+                const baseSelector = selector.split(':')[0];
+                const ruleId = `${ruleType}:${baseSelector}`;
+                if (!styleMap.has(ruleId)) {
+                    styleMap.set(ruleId, { base: [], pseudo: {}, type: ruleType, parentRule });
+                    ruleOrder.push(ruleId);
+                }
+                const rule = styleMap.get(ruleId);
+                const pseudoSelector = selector.includes(':') ? selector.split(':')[1] : '';
+                if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
+                    if (!rule.pseudo[pseudoSelector]) {
+                        rule.pseudo[pseudoSelector] = [];
                     }
-                    styleMap.get('rawCSS').push({ selector, declarations });
+                    rule.pseudo[pseudoSelector].push(...declarations);
                 } else {
-                    const [baseSelector, pseudoSelector] = selector.split(':');
-                    if (!styleMap.has(baseSelector)) {
-                        styleMap.set(baseSelector, { base: [], pseudo: {} });
-                    }
-                    const style = styleMap.get(baseSelector);
-                    if (pseudoSelector && validPseudoSelectors.includes(pseudoSelector)) {
-                        if (!style.pseudo[pseudoSelector]) {
-                            style.pseudo[pseudoSelector] = [];
-                        }
-                        style.pseudo[pseudoSelector].push(...declarations);
-                    } else {
-                        style.base.push(...declarations);
-                    }
+                    rule.base.push(...declarations);
                 }
             }
 
-            ast.stylesheet.rules.forEach(rule => {
-                if (rule.type === 'rule') {
-                    rule.selectors.forEach(selector => {
-                        addToStyleMap(selector, rule.declarations);
-                    });
-                } else if (rule.type === 'keyframes' || rule.type === 'media') {
-                    // Store unsupported features in raw variables
-                    const varName = generateVariableName(rule.type === 'keyframes' ? `@keyframes ${rule.name}` : `@media ${rule.media}`);
-                    rawCSSVariables += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
-                }
+            function processRules(rules, parentRule = null) {
+                rules.forEach(rule => {
+                    if (rule.type === 'rule') {
+                        rule.selectors.forEach(selector => {
+                            addToStyleMap(selector, rule.declarations, 'standard', parentRule);
+                        });
+                    } else if (rule.type === 'media') {
+                        mediaQueries.push(rule);
+                    } else if (rule.type === 'keyframes') {
+                        addToStyleMap(`@keyframes ${rule.name}`, [rule], 'keyframes', parentRule);
+                    }
+                });
+            }
+
+            processRules(ast.stylesheet.rules);
+
+            // Process raw variables first
+            rawVariables.forEach((rule, index) => {
+                const varName = `RawCSS${rule.selector.replace(/[^a-zA-Z0-9]/g, '')}${index}`;
+                output += `var ${varName} = \`${rule.selector} {\n`;
+                rule.declarations.forEach(decl => {
+                    output += `\t${decl.property}: ${decl.value};\n`;
+                });
+                output += '}\`\n\n';
             });
 
-            styleMap.forEach((style, baseSelector) => {
-                if (baseSelector === 'rawCSS') {
-                    style.forEach(({ selector, declarations }) => {
-                        const varName = generateVariableName(selector);
-                        rawCSSVariables += `var ${varName} = \`\n${selector} {\n`;
-                        declarations.forEach(decl => {
-                            rawCSSVariables += `\t${decl.property}: ${decl.value};\n`;
-                        });
-                        rawCSSVariables += '}\`\n\n';
+            // Process regular styles
+            ruleOrder.forEach(ruleId => {
+                const [ruleType, selector] = ruleId.split(':');
+                const { base, pseudo, type, parentRule } = styleMap.get(ruleId);
+
+                if (type === 'keyframes') {
+                    const rule = base[0];
+                    const varName = generateVariableName(`@keyframes ${rule.name}`);
+                    output += `var ${varName} = \`${beautifyCSS(rule)}\`\n\n`;
+                } else if (selector.includes('>') || selector.includes(' ') || selector.includes('+') || selector.includes('~') || selector.includes('[') || parentRule) {
+                    const varName = generateVariableName(selector);
+                    output += `var ${varName} = \`\n${selector} {\n`;
+                    base.forEach(decl => {
+                        output += `\t${decl.property}: ${decl.value};\n`;
                     });
-                } else {
-                    const elementName = baseSelector.replace(/[^\w]/g, '');
+                    output += '}\n';
+                    Object.entries(pseudo).forEach(([pseudoSelector, declarations]) => {
+                        output += `${selector}:${pseudoSelector} {\n`;
+                        declarations.forEach(decl => {
+                            output += `\t${decl.property}: ${decl.value};\n`;
+                        });
+                        output += '}\n';
+                    });
+                    output += '\`\n\n';
+                } else if (!parentRule) {
+                    const elementName = selector.replace(/[^\w]/g, '');
                     const funcName = `${elementName.charAt(0).toUpperCase() + elementName.slice(1)}Style`;
                     let functionCode = `func ${funcName}(e *ui.Element) *ui.Element {\n`;
 
-                    // Handle base styles
-                    style.base.forEach(decl => {
+                    base.forEach(decl => {
                         const result = handleDeclaration(decl);
                         if (result.goCode) {
                             functionCode += result.goCode;
                         }
                     });
 
-                    // Add a line break if there are both base styles and pseudo-classes
-                    if (style.base.length > 0 && Object.keys(style.pseudo).length > 0) {
-                        functionCode += '\n';
-                    }
-
-                    // Handle pseudo-classes
-                    Object.entries(style.pseudo).forEach(([pseudo, declarations], index) => {
+                    Object.entries(pseudo).forEach(([pseudoSelector, declarations]) => {
                         declarations.forEach(decl => {
-                            const result = handleDeclaration(decl, pseudo);
+                            const result = handleDeclaration(decl, pseudoSelector);
                             if (result.goCode) {
                                 functionCode += result.goCode;
                             }
                         });
-                        // Add a line break between different pseudo-classes
-                        if (index < Object.entries(style.pseudo).length - 1) {
-                            functionCode += '\n';
-                        }
                     });
 
                     functionCode += '\treturn e\n}\n';
-                    goCode += functionCode + '\n';
+                    output += functionCode + '\n';
                 }
             });
 
+            // Process media queries
+            mediaQueries.forEach((query, index) => {
+                const varName = `RawCSSMediaQuery${index + 1}`;
+                output += `var ${varName} = \`${beautifyCSS(query)}\`\n\n`;
+            });
             function handleDeclaration(decl, pseudoSelector = '') {
                 const property = propertyToGoMethod(decl.property);
-                const value = decl.value;
+                let value = decl.value;
 
                 if (cssToGoMapping[decl.property]) {
-                    let methodChain = `doc.CSS.Container`;
+                    const mapping = cssToGoMapping[decl.property];
+                    const [container, category] = mapping.id.split('.');
+                    
+                    let methodChain = `doc.CSS.${container}`;
                     if (pseudoSelector) {
                         methodChain += `.${capitalizeFirstLetter(pseudoSelector)}`;
                     }
-                    methodChain += `.Style.${property}`;
+                    methodChain += `.${category}.${capitalizeFirstLetter(property)}`;
 
-                    if (cssToGoMapping[decl.property].values.includes(value)) {
-                        return { goCode: `\te = ${methodChain}.${capitalizeFirstLetter(value)}(e)\n` };
+                    if (mapping.values.includes(value)) {
+                        // Convert hyphenated values to camelCase and capitalize
+                        value = capitalizeFirstLetter(value.replace(/-([a-z])/g, (g) => g[1].toUpperCase()));
+                        return { goCode: `\te = ${methodChain}.${value}(e)\n` };
                     } else {
                         return { goCode: `\te = ${methodChain}.Value("${value}")(e)\n` };
                     }
@@ -1276,6 +1387,7 @@
                     return { goCode: '' }; // This will be collected in rawCSSVariables
                 }
             }
+
 
             function generateVariableName(selector) {
                 const parts = selector.split(/\s*([>+~])\s*|\s+/).filter(Boolean);
@@ -1291,28 +1403,33 @@
                     } else if (part === '~') {
                         relationship = 'GeneralSibling';
                     } else {
-                        // It's an element or class/id selector
-                        let elementName = part.replace(/[#.:\[\]]/g, ''); // Remove special characters
-                        elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
-                        name += elementName + relationship;
-                        relationship = 'Descendant'; // Default relationship if no operator is specified
+                        let elementName = part.replace(/[^a-zA-Z0-9]/g, '');
+                        if (elementName.length > 0) {
+                            elementName = elementName.charAt(0).toUpperCase() + elementName.slice(1);
+                            name += elementName + relationship;
+                            relationship = 'Descendant';
+                        }
                     }
                 }
 
                 return name;
             }
 
-            goCode = goCode.trim();
-            rawCSSVariables = rawCSSVariables.trim();
+            function propertyToGoMethod(property) {
+                return property.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+            }
+
+            function capitalizeFirstLetter(string) {
+                return string.charAt(0).toUpperCase() + string.slice(1);
+            }
 
             return { 
                 beautifiedCSS, 
-                goCode: goCode + '\n\n' + rawCSSVariables, 
+                goCode: output.trim(), 
                 errors 
             };
         }
         
-
         function updateLOCCounter(element, content) {
             const lineCount = content.split('\n').length;
             element.textContent = `LOC: ${lineCount}`;
