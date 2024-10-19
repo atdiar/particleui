@@ -2,7 +2,7 @@
 package code
 
 import (
-	"syscall/js"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	ui "github.com/atdiar/particleui"
 	. "github.com/atdiar/particleui/drivers/js"
@@ -10,9 +10,9 @@ import (
 
 // This package use a js library to provide a code input component.
 // Could have rewritten everything in Go and perhaps will in the future if we have direct access to the DOM.
-// For now it is not important. Even more, it provides a good example of integration of a js library in a Go project.
+// For now it is not important. Even further, it provides a good example of integration of a js library into a zui project.
 
-const scriptID = "zui-code-component"
+const scriptID = "zui-codearea"
 
 func implementation(d *Document) ScriptElement {
 	return d.Script.WithID(scriptID).SetInnerHTML(jscode)
@@ -24,16 +24,22 @@ func addIfAbsent(d *Document) {
 	}
 }
 
-type Input struct {
+type AreaElement struct {
 	*ui.Element
 }
 
-func NewInput(id string, d *Document) Input {
+func Area(d *Document, id string) AreaElement {
 	addIfAbsent(d)
-	return Input{d.Div.WithID(id).AsElement()}
+	a := AreaElement{d.Div.WithID(id).AsElement()}
+	v, ok := JSValue(a)
+	if !ok {
+		panic("Element has no js value")
+	}
+	js.Global().Call("createCodeEditor", v)
+	return a
 }
 
-func (e Input) SetLanguage(l string) Input {
+func (e AreaElement) SetLanguage(l string) AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -42,7 +48,7 @@ func (e Input) SetLanguage(l string) Input {
 	return e
 }
 
-func (e Input) Resize(width, height string) Input {
+func (e AreaElement) Resize(width, height string) AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -51,7 +57,7 @@ func (e Input) Resize(width, height string) Input {
 	return e
 }
 
-func (e Input) SetTheme(t string) Input {
+func (e AreaElement) SetTheme(t string) AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -60,7 +66,7 @@ func (e Input) SetTheme(t string) Input {
 	return e
 }
 
-func (e Input) SetValue(v string) Input {
+func (e AreaElement) SetValue(v string) AreaElement {
 	jsv, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -69,7 +75,7 @@ func (e Input) SetValue(v string) Input {
 	return e
 }
 
-func (e Input) GetValue() string {
+func (e AreaElement) GetValue() string {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -77,7 +83,7 @@ func (e Input) GetValue() string {
 	return v.Call("getValue").String()
 }
 
-func (e Input) Snapshot(b bool) Input {
+func (e AreaElement) Snapshot(b bool) AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -86,7 +92,7 @@ func (e Input) Snapshot(b bool) Input {
 	return e
 }
 
-func (e Input) Refresh() Input {
+func (e AreaElement) Refresh() AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -96,7 +102,7 @@ func (e Input) Refresh() Input {
 
 }
 
-func (e Input) SetOutput(messages []string, t string) Input {
+func (e AreaElement) SetOutput(messages []string, t string) AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -105,7 +111,7 @@ func (e Input) SetOutput(messages []string, t string) Input {
 	return e
 }
 
-func (e Input) ClearOutput() Input {
+func (e AreaElement) ClearOutput() AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -115,7 +121,7 @@ func (e Input) ClearOutput() Input {
 
 }
 
-func (e Input) Undo() Input {
+func (e AreaElement) Undo() AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -124,7 +130,7 @@ func (e Input) Undo() Input {
 	return e
 }
 
-func (e Input) Redo() Input {
+func (e AreaElement) Redo() AreaElement {
 	v, ok := JSValue(e.Element)
 	if !ok {
 		panic("Element has no js vlue")
@@ -133,7 +139,7 @@ func (e Input) Redo() Input {
 	return e
 }
 
-func (e Input) On(event string, callback func()) Input {
+func (e AreaElement) On(event string, callback func()) AreaElement {
 	// let's retrieve the native textarea element first
 	v, ok := JSValue(e.Element)
 	if !ok {
@@ -209,7 +215,7 @@ function createCodeEditor(container, options = {}) {
             top: 0;
             bottom: 0;
         }
-        #codeInput, #codeHighlight {
+        #codeAreaElement, #codeHighlight {
             position: absolute;
             left: 0;
             top: 0;
@@ -228,7 +234,7 @@ function createCodeEditor(container, options = {}) {
             scrollbar-width: thin;
             scrollbar-color: #ccc transparent;
         }
-        #codeInput:hover, #codeHighlight:hover {
+        #codeAreaElement:hover, #codeHighlight:hover {
             cursor: text;
             overflow: auto;
         }
@@ -238,7 +244,7 @@ function createCodeEditor(container, options = {}) {
             box-sizing: border-box;
         }
         
-        #codeInput {
+        #codeAreaElement {
             z-index: 1;
             color: transparent;
             background: transparent;
@@ -316,7 +322,7 @@ function createCodeEditor(container, options = {}) {
             pointer-events: none;
         }
 
-        .code-editor-wrapper.snapshot #codeInput {
+        .code-editor-wrapper.snapshot #codeAreaElement {
             pointer-events: none;
             user-select: none;
             opacity: 0;
@@ -354,7 +360,7 @@ function createCodeEditor(container, options = {}) {
             border-right: 1px solid #ccc;
             color: #999;
         }
-        .code-editor-wrapper.light #codeInput {
+        .code-editor-wrapper.light #codeAreaElement {
             caret-color: #333;
         }
         .code-editor-wrapper.light #codeHighlight {
@@ -391,7 +397,7 @@ function createCodeEditor(container, options = {}) {
             background-color: rgba(0,0,0,0.6);
             color: #666;
         }
-        .code-editor-wrapper.dark #codeInput {
+        .code-editor-wrapper.dark #codeAreaElement {
             caret-color: #e0e0e0;
             scrollbar-color: #666 transparent;
         }
@@ -448,12 +454,12 @@ function createCodeEditor(container, options = {}) {
     codeArea.appendChild(codeWrapper);
 
     const textarea = document.createElement('textarea');
-    textarea.id = 'codeInput';
+    textarea.id = 'codeAreaElement' + "-" + container.id;
     textarea.spellcheck = false;
     codeWrapper.appendChild(textarea);
 
     const highlight = document.createElement('pre');
-    highlight.id = 'codeHighlight';
+    highlight.id = 'codeHighlight'+ "-" + container.id;
     const code = document.createElement('code');
     code.className = ` + "`" + `language-${settings.language}` + "`" + `;
     highlight.appendChild(code);
