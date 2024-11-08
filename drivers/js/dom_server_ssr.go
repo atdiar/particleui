@@ -1,4 +1,4 @@
-//go:build server && ssr
+//go:build server && ssr && !csr
 
 package doc
 
@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/atdiar/particleui"
+	ui "github.com/atdiar/particleui"
 
-	"github.com/atdiar/particleui/drivers/js/compat"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 	"golang.org/x/net/html"
 	//"golang.org/x/net/html/atom"
 )
@@ -52,6 +52,7 @@ func init() {
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 
 	flag.Parse()
 

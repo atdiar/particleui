@@ -485,7 +485,7 @@ func (e *Element) Prefetch() {
 
 	_, ok := e.Root.GetEventValue("ui-loaded")
 	if !ok {
-		DEBUG("UI is not loaded. Not ready for prefetch")
+		// DEBUG("UI is not loaded. Not ready for prefetch")
 		return
 	}
 

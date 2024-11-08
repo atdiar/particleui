@@ -4,6 +4,7 @@ package doc
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	//crand "crypto/rand"
@@ -738,14 +739,16 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 		}).RunOnce())
 
 		// In HMR Mode, we need to load data persisted for the mutation-recorder
-		if HMRMode != "false" && !(SSRMode != "false") {
+		if HMRMode != "false" && SSRMode == "false" {
 			if e.ID == "mutation-recorder" {
 				LoadFromStorage(e)
 			}
 		}
 	} else {
 		e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
-			LoadFromStorage(event.Origin())
+			if !lch.MutationReplaying() {
+				LoadFromStorage(event.Origin())
+			}
 			return false
 		}))
 
@@ -1374,7 +1377,8 @@ func (d *Document) OnReady(h *ui.MutationHandler) {
 	if !h.Once {
 		h = h.RunOnce()
 	}
-	d.AsElement().WatchEvent("ui-ready", d, h)
+	lch := ui.NewLifecycleHandlers(d.AsElement())
+	lch.OnReady(h)
 }
 
 func (d *Document) isReady() bool {
@@ -1708,7 +1712,7 @@ func (m *mutationRecorder) Capture() {
 	}
 	d.Set("internals", "mutation-replaying", ui.Bool(false))
 	d.Set("internals", "mutation-capturing", ui.Bool(true))
-	DEBUG("mutationreccorder capturing...")
+
 	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
@@ -1743,7 +1747,6 @@ func (m *mutationRecorder) Capture() {
 }
 
 func (m *mutationRecorder) Replay() error {
-	DEBUG("mutationreccorder replaying...")
 	if !m.raw.Configuration.MutationReplay {
 		DEBUG("mutationreccorder replaying... not enabled")
 		return nil
@@ -1806,8 +1809,9 @@ func (d *Document) ListenAndServe(ctx context.Context) {
 	}
 
 	d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
-		d.WatchEvent("ui-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
+			DEBUG("document is ready")
 			return false
 		}).RunASAP().RunOnce())
 
@@ -1936,16 +1940,8 @@ func mutationreplay(d *Document) error {
 	}
 
 	mutNum := len(mutationtrace.UnsafelyUnwrap())
-	DEBUG("mutation replaying: ", " # of replays to do ", mutNum)
-	// DEBUG("trace ", mutationtrace)
-
-	// DEBUG print lsit of mutations that should occur to replay state
-	for i, op := range mutationtrace.UnsafelyUnwrap() {
-		DEBUG(i, " ", op, "\n")
-	}
 
 	for m.pos < mutNum {
-		DEBUG(m.pos)
 		rawop := mutationtrace.Get(m.pos)
 		op := rawop.(ui.Object)
 		id, ok := op.Get("id")
@@ -1967,7 +1963,7 @@ func mutationreplay(d *Document) error {
 		if !ok {
 			panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
 		}
-		fmt.Println("mutation replaying: *** ", m.pos, op)
+
 		el := GetDocument(e).GetElementById(id.(ui.String).String())
 		if el == nil {
 			// Unable to recover state for this element id. Element  doesn't exist"
@@ -1978,8 +1974,6 @@ func mutationreplay(d *Document) error {
 		el.BindValue("event", "connect-native", e)
 		el.BindValue("event", "mutation-replayed", e)
 
-		// TODO rollback to the implementation that takes into account Sync mutations
-		// and the ones that are not sync.
 		_, ok = op.Get("sync")
 		if !ok {
 			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
@@ -1995,7 +1989,6 @@ func mutationreplay(d *Document) error {
 				panic("mutation list index is missing")
 			}
 		}
-		// DEBUG("mutation list cursor positiion:", m.pos)
 		m.pos = int(i.(ui.Number).Float64())
 		m.pos = m.pos + 1
 		d.Set("internals", "mutation-list-index", ui.Number(m.pos))
@@ -2480,6 +2473,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 		panic("current route is unknown")
 	}
 	route = string(r.(ui.String))
+	route = filepath.Join(BasePath, route)
 
 	history := evt.NewValue().(ui.Object)
 
@@ -2511,9 +2505,13 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 
 var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	route := js.Global().Get("location").Get("pathname").String()
+	DEBUG("route: " + route)
+	u, _ := url.Parse(route)
+	DEBUG(u.Fragment, u.Host, u.Path, u.RawQuery, u.Scheme)
+	route = strings.TrimPrefix(route, BasePath)
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
-})
+}).RunASAP()
 
 func loadNavHistory(d *Document) {
 	// Retrieve history and deserialize URL into corresponding App state.
@@ -3680,7 +3678,7 @@ type BaseElement struct {
 	*ui.Element
 }
 
-func (b BaseElement) SetHREF(url string) BaseElement {
+func (b BaseElement) SetHref(url string) BaseElement {
 	b.AsElement().SetDataSetUI("href", ui.String(url))
 	return b
 }
@@ -3746,6 +3744,21 @@ type LinkElement struct {
 
 func (l LinkElement) SetAttribute(name, value string) LinkElement {
 	SetAttribute(l.AsElement(), name, value)
+	return l
+}
+
+func (l LinkElement) SetRel(rel string) LinkElement {
+	SetAttribute(l.AsElement(), "rel", rel)
+	return l
+}
+
+func (l LinkElement) SetType(typ string) LinkElement {
+	SetAttribute(l.AsElement(), "type", typ)
+	return l
+}
+
+func (l LinkElement) SetHref(href string) LinkElement {
+	SetAttribute(l.AsElement(), "href", href)
 	return l
 }
 
@@ -4440,8 +4453,8 @@ type AnchorElement struct {
 	*ui.Element
 }
 
-func (a AnchorElement) SetHREF(target string) AnchorElement {
-	a.AsElement().SetDataSetUI("href", ui.String(target))
+func (a AnchorElement) SetHref(target string) AnchorElement {
+	a.SetDataSetUI("href", ui.String(target))
 	return a
 }
 
@@ -4454,10 +4467,11 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 			hash = "#" + targetid[0]
 		}
 	}
-	a.AsElement().WatchEvent("verified", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		a.SetHREF(link.URI() + hash)
+
+	a.WatchEvent("verified", link, (ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		a.SetHref(link.URI() + hash)
 		return false
-	}).RunASAP())
+	}).RunASAP()))
 
 	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetDataSetUI("active", evt.NewValue())
@@ -4473,7 +4487,6 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 			}
 		}
 		evt.PreventDefault()
-		DEBUG("AnchorElement click event", a.ID, link.IsActive())
 		if !link.IsActive() {
 			link.Activate(id)
 		}
@@ -4918,11 +4931,6 @@ func (i InputElement) Value() ui.String {
 		panic("value is not a string type")
 	}
 	return val
-}
-
-func (i InputElement) SetDisabled(b bool) InputElement {
-	i.AsElement().SetUI("disabled", ui.Bool(b))
-	return i
 }
 
 // SyncValueOnInput is an element modifier which is used to sync the

@@ -44,7 +44,7 @@ func (s jsStore) Delete(key string) {
 
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-		if category != "data" {
+		if category != "data" && category != "ui" {
 			return
 		}
 		store := jsStore{js.Global().Get(s)}
@@ -53,7 +53,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			return
 		}
 
-		props := make([]interface{}, 0, 64)
+		props := make([]any, 0, 64)
 
 		c, ok := element.Properties.Categories[category]
 		if !ok {
@@ -66,7 +66,7 @@ func storer(s string) func(element *ui.Element, category string, propname string
 				props = append(props, k)
 			}
 			v := js.ValueOf(props)
-			store.Set(element.ID, v)
+			store.Set(strings.Join([]string{element.ID, category}, "/"), v)
 		}
 
 		item := value.RawValue()
@@ -90,59 +90,66 @@ func loader(s string) func(e *ui.Element) error {
 		id := e.ID
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsonprops, ok := store.Get(id)
-		if !ok {
-			return nil // Not necessarily an error in the general case. element just does not exist in store
-		}
 
-		properties := make([]string, 0, 64)
-		err := json.Unmarshal([]byte(jsonprops.String()), &properties)
-		if err != nil {
-			return err
-		}
-
-		category := "data"
+		categories := []string{"data", "ui"}
 		uiloaders := make([]func(), 0, 64)
 
-		for _, property := range properties {
-			// let's retrieve the propname (it is suffixed by the proptype)
-			// then we can retrieve the value
-			// log.Print("debug...", category, property) // DEBUG
-
-			propname := property
-			jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
-			if ok {
-				var rawvaluemapstring string
-				err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
-				if err != nil {
-					return err
-				}
-
-				rawvalue := make(map[string]interface{})
-				err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
-				if err != nil {
-					return err
-				}
-				val := ui.ValueFrom(rawvalue)
-
-				ui.LoadProperty(e, category, propname, val)
-				if category == "ui" {
-					uiloaders = append(uiloaders, func() {
-						e.SetUI(propname, val)
-					})
-				}
-				//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
+		for _, category := range categories {
+			jsonprops, ok := store.Get(strings.Join([]string{id, category}, "/"))
+			if !ok {
+				continue
 			}
+
+			properties := make([]string, 0, 64)
+			err := json.Unmarshal([]byte(jsonprops.String()), &properties)
+			if err != nil {
+				return err
+			}
+
+			for _, property := range properties {
+				// let's retrieve the propname (it is suffixed by the proptype)
+				// then we can retrieve the value
+				// log.Print("debug...", category, property) // DEBUG
+
+				propname := property
+				jsonvalue, ok := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
+				if ok {
+					var rawvaluemapstring string
+					err = json.Unmarshal([]byte(jsonvalue.String()), &rawvaluemapstring)
+					if err != nil {
+						return err
+					}
+
+					rawvalue := make(map[string]interface{})
+					err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
+					if err != nil {
+						return err
+					}
+					val := ui.ValueFrom(rawvalue)
+
+					if category == "data" {
+						ui.LoadProperty(e, category, propname, val)
+					}
+
+					if category == "ui" {
+						uiloaders = append(uiloaders, func() { // TODO remove since unused
+							e.SetUI(propname, val)
+						})
+					}
+					//log.Print("LOADED PROPMAP: ", e.Properties, category, propname, rawvalue.Value()) // DEBUG
+				}
+			}
+
+			//log.Print(categories, properties) //DEBUG
+			// Should it be OnMounted?
+			e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				for _, load := range uiloaders {
+					load()
+				}
+				return false
+			}).RunOnce().RunASAP())
+
 		}
-
-		//log.Print(categories, properties) //DEBUG
-
-		e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			for _, load := range uiloaders {
-				load()
-			}
-			return false
-		}).RunOnce())
 
 		return nil
 	}
@@ -159,31 +166,33 @@ func clearer(s string) func(element *ui.Element) {
 			return
 		}
 		id := element.ID
-		category := "data"
+		categories := []string{"data", "ui"}
 
-		// Let's retrieve the category index for this element, if it exists in the sessionstore
-		jsonproperties, ok := store.Get(id)
-		if !ok {
-			return
+		for _, category := range categories {
+			// Let's retrieve the category index for this element, if it exists in the sessionstore
+			jsonproperties, ok := store.Get(strings.Join([]string{id, category}, "/"))
+			if !ok {
+				return
+			}
+
+			properties := make([]string, 0, 64)
+
+			err := json.Unmarshal([]byte(jsonproperties.String()), &properties)
+			if err != nil {
+				store.Delete(id)
+				panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
+			}
+
+			for _, property := range properties {
+				// let's retrieve the propname (it is suffixed by the proptype)
+				// then we can retrieve the value
+				// log.Print("debug...", category, property) // DEBUG
+
+				store.Delete(strings.Join([]string{id, category, property}, "/"))
+			}
+
+			store.Delete(strings.Join([]string{id, category}, "/"))
 		}
-
-		properties := make([]string, 0, 50)
-
-		err := json.Unmarshal([]byte(jsonproperties.String()), &properties)
-		if err != nil {
-			store.Delete(id)
-			panic("An error occured when removing an element from storage. It's advised to reinitialize " + s)
-		}
-
-		for _, property := range properties {
-			// let's retrieve the propname (it is suffixed by the proptype)
-			// then we can retrieve the value
-			// log.Print("debug...", category, property) // DEBUG
-
-			store.Delete(strings.Join([]string{id, category, property}, "/"))
-		}
-
-		store.Delete(id)
 	}
 }
 
@@ -260,7 +269,7 @@ func PutInStorage(a ui.AnyElement) *ui.Element {
 	}
 
 	for cat, props := range e.Properties.Categories {
-		if cat != "data" {
+		if cat != "data" && cat != "ui" {
 			continue
 		}
 		for prop, val := range props.Local {

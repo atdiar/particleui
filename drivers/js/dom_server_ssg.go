@@ -15,9 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/atdiar/particleui"
-	"github.com/atdiar/particleui/drivers/js/compat"
-
+	ui "github.com/atdiar/particleui"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 	"golang.org/x/net/html"
 	//"golang.org/x/net/html/atom"
 )
@@ -58,6 +57,8 @@ func init() {
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
+	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
+
 	flag.Parse()
 
 	if !release {
@@ -203,29 +204,28 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 	})
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve the index.html file for all requests		
+		// Serve the index.html file for all requests
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
-		
+
 		// Join the cleaned path with the static directory
 		path := filepath.Join(StaticPath, cleanedPath)
-		
+
 		// Check if the requested file exists
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			// If the file does not exist, serve index.html
-			http.ServeFile(w, r, IndexPath)  // Use IndexPath directly since it's already joined with StaticPath
+			http.ServeFile(w, r, IndexPath) // Use IndexPath directly since it's already joined with StaticPath
 			return
 		} else if err != nil {
 			// If there's an error checking the file, return an internal server error
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	
+
 		// If the file exists, serve it
 		fileServer.ServeHTTP(w, r)
 	})
-	
 
 	for _, m := range buildEnvModifiers {
 		m()

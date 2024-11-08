@@ -25,8 +25,6 @@ var template string
 var web, desktop, terminal bool
 var mobile string
 
-var build bool
-
 var config map[string]string
 
 const configFileName = "zui.config.json"
@@ -82,11 +80,10 @@ func SaveConfig() error {
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "init command is used to launch a new GUI project",
-	Long: `
-		init is the initialization command for a new GUI project.
+	Long: `init is the initialization command for a new GUI project.
 		It creates the project structure and the configuration files.
 		The project should be named, typically by providing the
-		URL of the project repository
+		URL of the project repository.
 		It accepts the platform as mandatory argument, among which are:
 		- web
 		- mobile
@@ -113,7 +110,8 @@ var initCmd = &cobra.Command{
 			o macOS (darwin)
 		
 		An initialized project may only target one platform, and sometimes even
-		only one target for that platform as seen in the mobile case.
+		only one target for that platform as seen in the mobile case whre it's either iOS
+		or andorid but not both.
 	
 	`,
 	Example: `
@@ -361,34 +359,6 @@ var initCmd = &cobra.Command{
 			} else {
 				// TODO
 				// run $go new template_URL projectname
-			}
-
-			if build {
-				// Let's build the default app.
-				// The output file should be in dev/build/app/main.wasm
-				err := Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
-				if err != nil {
-					fmt.Println("Error: Unable to build the default app.", err)
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("default app built.")
-				}
-
-				// Let's build the default server.
-				// The output file should be in dev/build/server/csr/
-				err = Build(filepath.Join(".", "dev", "build", "server", "csr", "main"), []string{"server", "csr"})
-				if err != nil {
-					fmt.Println("Error: Unable to build the default server.")
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("default server built.")
-				}
 			}
 
 			// Config file should be valid now.
@@ -695,9 +665,8 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		args := []string{"build"}
 
 		// add ldflags if any relevant
-		ldflags := ldflags()
-		if ldflags != "" {
-			args = append(args, "-ldflags", ldflags)
+		if ldflags := ldflags(); ldflags != "" {
+			args = append(args, "-ldflags="+ldflags)
 		}
 
 		// Add build tags if provided
@@ -840,8 +809,6 @@ func init() {
 	initCmd.Flags().BoolVarP(&graphic, "graphic", "g", false, "Run the command in graphic mode")
 
 	initCmd.Flags().BoolVarP(&web, "web", "w", false, "Specify a web target option (csr, ssr, ssg)")
-	initCmd.Flags().BoolVarP(&build, "build", "b", false, "Build the project")
-
 	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
 	initCmd.Flags().BoolVarP(&terminal, "terminal", "t", false, "Specify a terminal target option (any additional terminal option can be added here)")
@@ -914,9 +881,9 @@ var defaultindexfile = `
 
 <head>
 	<meta charset="utf-8">
-	<base href="/">
+	<base id="zuibase" href=` + basepath + `>
 	
-	<script id="wasmVM" src="/wasm_exec.js"></script>
+	<script id="wasmVM" src="./wasm_exec.js"></script>
 	<script id="goruntime">
         let wasmLoadedResolver, loadEventResolver;
         window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
@@ -931,7 +898,7 @@ var defaultindexfile = `
         });
 
         const go = new Go();
-        WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject)
+        WebAssembly.instantiateStreaming(fetch("./main.wasm"), go.importObject)
         .then((result) => {
             go.run(result.instance);
         });

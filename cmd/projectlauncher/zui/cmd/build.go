@@ -5,9 +5,9 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
-	"net/url"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -72,14 +72,14 @@ var buildCmd = &cobra.Command{
 		if On("web") {
 			// basepath needs to be validated
 			// It needs to start with a slash
-			b,err:= url.Parse(basepath)
-			if err != nil{
+			b, err := url.Parse(basepath)
+			if err != nil {
 				fmt.Println("invalid basepath")
 				os.Exit(1)
 				return
 			}
-			if b.Path != "/"{
-				if b.Path[0] != '/'{
+			if b.Path != "/" {
+				if b.Path[0] != '/' {
 					fmt.Println("invalid basepath: basepath needs to start with a slash")
 					os.Exit(1)
 					return
@@ -233,4 +233,7 @@ func init() {
 	buildCmd.Flags().BoolVarP(&csr, "csr", "c", false, "build for client-side rendering")
 	buildCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "build for server-side rendering")
 	buildCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "build for static site generation")
+	buildCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "build in release mode")
+	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	buildCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "disable hot module replacement")
 }

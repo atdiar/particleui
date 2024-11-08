@@ -13,18 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var uipkg = "github.com/atdiar/particleui"
-
-var nohmr, nobuild bool
-var releaseMode bool
-var port, host string
-
-// runCmd represents the run command
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "run starts an instance of the dev server and serves the client in devmode.",
+// startCmd represents the start command
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "start starts an instance of the dev server and serves the client in devmode.",
 	Long: `
-		Run starts an instance of the dev server and serves the client in devmode.
+		start starts an instance of the dev server after having built it.
 		For the web target, the apps is served at locahost:8888 by default with hot reloading
 		enabled. To disbale hoitreloading, use the --nohmr flag.
 	`,
@@ -56,16 +50,9 @@ var runCmd = &cobra.Command{
 			}
 
 			// Let's build the app.
-			err = Run(buildtags...)
+			err = Start(buildtags...)
 			if err != nil {
 				fmt.Println(err.Error())
-				os.Exit(1)
-				return
-			}
-
-			err = SaveConfig()
-			if err != nil {
-				fmt.Println(err)
 				os.Exit(1)
 				return
 			}
@@ -92,12 +79,12 @@ var runCmd = &cobra.Command{
 	},
 }
 
-// Run builds and run an application.
-func Run(buildtags ...string) error {
+// Start builds and start the application server.
+func Start(buildtags ...string) error {
 	if On("web") {
-		// Run allows the testing of the application in the browser.
+		// Start allows the testing of the application in the browser.
 		// By default it is a client side rendering application.
-		// The server is also built and run in the background since it serves the app locally
+		// The server is also built and start in the background since it serves the app locally
 		//
 
 		servmod := "csr"
@@ -111,11 +98,6 @@ func Run(buildtags ...string) error {
 		basepathseg := strings.TrimSuffix(basepath, "/")
 		basepathseg = strings.TrimPrefix(basepathseg, "/")
 
-		err := Build(filepath.Join(".", "dev", "build", "app", basepathseg, "main.wasm"), nil) // TODO add build options, e.g. nohmr should be propagated to client
-		if err != nil {
-			return err
-		}
-
 		serverbinpath := filepath.Join(".", "dev", "build", "server", "csr", basepathseg, "main")
 		if ssr {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
@@ -124,7 +106,7 @@ func Run(buildtags ...string) error {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
 		}
 
-		err = Build(serverbinpath, append(buildtags, "server", servmod))
+		err := Build(serverbinpath, append(buildtags, "server", servmod))
 		if err != nil {
 			return err
 		}
@@ -138,13 +120,13 @@ func Run(buildtags ...string) error {
 			args = append(args, "--nohmr")
 		}
 
-		// Let's run the default server.
+		// Let's start the default server.
 		cmd := exec.Command(serverbinpath, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		cmd.Dir = filepath.Join(".")
-		err = cmd.Run()
+		err = cmd.Start()
 		if err != nil {
 			return err
 		}
@@ -168,43 +150,14 @@ func Run(buildtags ...string) error {
 
 }
 
-func ldflags() string {
-	flags := make(map[string]string)
-
-	if !releaseMode {
-		flags[uipkg+"/drivers/js.DevMode"] = "true"
-	}
-	if ssr {
-		flags[uipkg+"/drivers/js.SSRMode"] = "true"
-	}
-	if ssg {
-		flags[uipkg+"/drivers/js.SSGMode"] = "true"
-	}
-	if !nohmr {
-		flags[uipkg+"/drivers/js.HMRMode"] = "true"
-	} else {
-		flags[uipkg+"/drivers/js.HMRMode"] = "false"
-	}
-
-	if basepath != "/" {
-		flags[uipkg+"/drivers/js.BasePath"] = basepath
-	}
-
-	var ldflags []string
-	for key, value := range flags {
-		ldflags = append(ldflags, fmt.Sprintf("-X %s=%s", key, value))
-	}
-	return strings.Join(ldflags, " ")
-}
-
 func init() {
-	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().StringVarP(&basepath, "basepath", "", "/", "base path for the project")
-	runCmd.Flags().StringVarP(&host, "host", "", "localhost", "Host name for the server")
-	runCmd.Flags().StringVarP(&port, "port", "p", "8888", "Port number for the server")
-	runCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Run in release mode")
-	runCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Runs the server in server-side rendering mode")
-	runCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Runs the server in static file mode for ssg.")
-	runCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "Disable hot reloading")
-	runCmd.Flags().BoolVarP(&nobuild, "nobuild", "", false, "run the app without rebuilding it")
+	rootCmd.AddCommand(startCmd)
+	startCmd.Flags().StringVarP(&basepath, "basepath", "", "/", "base path for the project")
+	startCmd.Flags().StringVarP(&host, "host", "", "localhost", "Host name for the server")
+	startCmd.Flags().StringVarP(&port, "port", "p", "8888", "Port number for the server")
+	startCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Start in release mode")
+	startCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Starts the server in server-side rendering mode")
+	startCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Starts the server in static file mode for ssg.")
+	startCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "Disable hot reloading")
+	startCmd.Flags().BoolVarP(&nobuild, "nobuild", "", false, "run the app without rebuilding it")
 }

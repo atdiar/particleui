@@ -375,9 +375,10 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		// After the transition start, upon cancellation, the element should be able to trigger the transition end.
 		evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), NewMutationHandler(func(ev MutationEvent) bool {
 			ev.Origin().Set("transition", name, String("cancelled"))
-			// ev.Origin().TriggerEvent(TransitionPhase(name, "end"))
+
 			ev.Origin().WatchEvent(TransitionPhase(name, "cancel"), ev.Origin(), NewMutationHandler(func(event MutationEvent) bool {
-				event.Origin().EndTransition(name, event.NewValue())
+				event.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+				event.Origin().Set("transition", name, String("ended"))
 				return false
 			}).RunOnce())
 			return false
@@ -399,7 +400,11 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		evnt.Origin().TriggerEvent(onerrorRegistrationHook(name))
 		evnt.Origin().TriggerEvent(onstartRegistrationHook(name))
 
-		return onstart.Handle(evnt)
+		if !onstart.Handle(evnt) {
+			evnt.Origin().EndTransition(name, String("transition ended"))
+			return false
+		}
+		return true
 	}))
 
 	e.TriggerEvent(strings.Join([]string{name, "transition", "defined"}, "-"))
@@ -465,9 +470,9 @@ func (e *Element) OnTransitionEnd(name string, h *MutationHandler) {
 
 func (e *Element) AfterTransition(name string, h *MutationHandler) {
 	e.WatchEvent(onendedRegistrationHook(name), e, NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().WatchEvent(TransitionPhase(name, "ended"), evt.Origin(), h.RunOnce())
+		evt.Origin().WatchEvent(TransitionPhase(name, "ended"), evt.Origin(), h)
 		return false
-	}))
+	}).RunOnce())
 }
 
 func (e *Element) transitionIsDefined(name string) bool {
@@ -669,7 +674,7 @@ func (l LifecycleHandlers) OnIdle(h *MutationHandler) {
 }
 
 func (l LifecycleHandlers) OnLoad(h *MutationHandler) {
-	l.root.WatchEvent("ui-loaded", l.root, h)
+	l.root.WatchEvent(TransitionPhase("load", "start"), l.root, h)
 }
 
 func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
@@ -677,7 +682,7 @@ func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
 }
 
 // SetReady is used to signal that the UI tree has been built and data/resources have been loaded on both the Go/wasm side
-// and the native sides.
+// and the native side.
 func (l LifecycleHandlers) SetReady() {
 	l.root.TriggerEvent("ui-ready")
 }
@@ -711,5 +716,5 @@ func (l LifecycleHandlers) MutationReplaying() bool {
 }
 
 func (l LifecycleHandlers) OnMutationsReplayed(h *MutationHandler) {
-	l.root.WatchEvent(TransitionPhase("replay", "ended"), l.root, h)
+	l.root.WatchEvent(TransitionPhase("replay", "ended"), l.root, h.RunASAP())
 }

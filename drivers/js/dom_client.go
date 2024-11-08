@@ -95,8 +95,12 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		`)
 		d.Head().AppendChild(scrIdleGC)
 
-		base := d.Base.WithID("zuibase").SetHREF(BasePath)
-		d.Head().AppendChild(base)
+		base := js.Global().Get("document").Call("getElementById", "base")
+		if base.Truthy() {
+			base.Set("href", BasePath)
+		}
+		// TODO implement reverse operation that targets a DOM element and creates its zui counterpart.
+		// Usually we create a zui element and link/initialize its native counterpart.
 
 		// sse support if hmr is enabled
 		if HMRMode != "false" {
@@ -112,17 +116,18 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				if err != nil {
 					panic(err)
 				}
-				BasePath = bpath.Path
+				BasePath = bpath.Path // TODO the router should be able to handle this and rewrite links DEBUG
 			}
+			// Otherwise we do nothing, the basepath uses the default value. This i si specific to this framework as
+			// we set the basepath in the document head  .
 			return false
-		}).RunOnce().RunASAP())
+		}).RunASAP())
 
 		d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			err := d.mutationRecorder().Replay()
-			DEBUG("mutation got replayed and error is: ", err)
 			if err != nil {
 				d.ErrorTransition("replay", ui.String(err.Error()))
-				return false // DEBUG may want to return false, should check
+				return true // DEBUG may want to return false, should check
 			}
 			d.EndTransition("replay")
 			return false
@@ -132,9 +137,8 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			d.mutationRecorder().Clear()
 			// Should reload the page
 			log.Println("replay error, we should reload: ", evt.NewValue())
-			// TODO: reload the page
-			//d.Window().Reload()
-			return true
+			d.Window().Reload()
+			return true // here true or false doesn't matter
 		}))
 
 		d.AfterTransition("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {

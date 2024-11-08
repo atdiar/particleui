@@ -72,6 +72,11 @@ type Router struct {
 	LeaveTrailingSlash bool
 }
 
+func (r *Router) TrailingSlashMatters() *Router {
+	r.LeaveTrailingSlash = true
+	return r
+}
+
 // NewRouter takes an Element object which should be the entry point of the router.
 func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 	if rootview.AsElement().Root.router != nil {
@@ -389,6 +394,7 @@ func (r *Router) handler() *MutationHandler {
 		}
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
+		DEBUG(newroute)
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		v, _, a, err := r.Routes.match(newroute)
@@ -565,9 +571,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			r.History.ImportState(h)
 		}
 
-		//DEBUG
-		DEBUG("UI load start")
-		DEBUG("mutations will replay", lch.MutationWillReplay())
 		if lch.MutationWillReplay() {
 			evt.Origin().OnTransitionError("replay", NewMutationHandler(func(ev MutationEvent) bool {
 				ev.Origin().ErrorTransition("load", ev.NewValue())
@@ -582,7 +585,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 			return false
 		}
-
 		return false
 	})
 
@@ -604,7 +606,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	onloadend := NewMutationHandler(func(evt MutationEvent) bool {
-		// DEBUG
 		return false
 	})
 
@@ -614,35 +615,29 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	// at the root of the UI tree.
 	// Note> could use AfterTransition instead of AfterEvent
 	root.AsElement().Root.AfterTransition("load", NewMutationHandler(func(evt MutationEvent) bool {
+
 		evt.Origin().TriggerEvent("ui-loaded")
-		DEBUG("UI loaded event should have been triggered now.")
 		return false
-	}).RunASAP().RunOnce())
+	}).RunOnce())
 
 	onreplaystart := NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("replay start event")
 		return false
 	})
 
 	onreplayerror := NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("replay error", evt.NewValue())
 		return false
 	})
 
 	onreplaycancel := NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("replay cancel", evt.NewValue())
 		return false
 	})
 
 	onreplayend := NewMutationHandler(func(evt MutationEvent) bool {
-		DEBUG("replay end")
 		return false
 	})
 
-	// DEBUG replay transition phase handlers
-
 	root.AsElement().Root.DefineTransition("load", onloadstart, onloaderror, onloadcancel, onloadend)
-	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend) // TODO check that what this does. DEBUG
+	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend)
 
 	root.AsElement().Root.StartTransition("load")
 
@@ -664,7 +659,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 func (r *Router) verifyLinkActivation() {
 	for _, l := range r.Links {
-		_, ok := l.Raw.Get("internals", "verified")
+		_, ok := l.Raw.Get("event", "verified")
 		if !ok {
 			panic("Link activation failure: " + l.URI())
 		}
@@ -1062,9 +1057,9 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		if isValidLink(Link{e}) {
-			_, ok := e.Get("internals", "verified")
+			_, ok := e.Get("event", "verified")
 			if !ok {
-				e.Set("internals", "verified", Bool(true))
+				e.TriggerEvent("verified")
 			}
 		}
 
@@ -1321,7 +1316,6 @@ func (n *NavHistory) Value() Value {
 // Hence, one should be careful before storing app state in the framework history object,
 // depending on the implementation. (some state object could be persisted for each mutation)
 func (n *NavHistory) ImportState(v Value) *NavHistory {
-	DEBUG("importing state")
 	h, ok := v.(Object)
 	if !ok {
 		return n

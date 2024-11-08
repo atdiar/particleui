@@ -3,8 +3,6 @@
 package doc
 
 import (
-	"strings"
-
 	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	//"net/url"
@@ -200,7 +198,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			if typ == "popstate" {
 
 				path := js.Global().Get("location").Get("pathname").String()
-				path = strings.TrimPrefix(path, strings.TrimSuffix(BasePath, "/"))
 				rv.Set("value", ui.String(path))
 
 				// Given that events are not handled concurrently

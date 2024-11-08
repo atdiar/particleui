@@ -31,14 +31,15 @@ var (
 	StaticPath = filepath.Join(".", "dev", "build", "app")
 	IndexPath  = filepath.Join(StaticPath, "index.html")
 
-	host string = "localhost"
-	port string = "8888"
+	host string
+	port string
 
-	release bool
-	nohmr   bool
+	release  bool
+	nohmr    bool
+	basepath string
 
 	ServeMux *http.ServeMux
-	Server   *http.Server = newDefaultServer()
+	Server   *http.Server
 
 	RenderHTMLhandler http.Handler
 )
@@ -52,15 +53,20 @@ func init() {
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
 
+	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
+
 	flag.Parse()
 
 	if !release {
 		DevMode = "true"
 	}
+	DEBUG(HMRMode, !nohmr)
+	DEBUG(host, port)
 
 	if !nohmr {
 		HMRMode = "true"
 	}
+	Server = newDefaultServer()
 
 }
 
@@ -163,7 +169,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			// If the file does not exist, serve index.html
-			http.ServeFile(w, r, IndexPath)
+			http.ServeFile(w, r, filepath.Join(StaticPath, BasePath, "index.html"))
 			return
 		} else if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -194,7 +200,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 		ServeMux.Handle(BasePath, RenderHTMLhandler)
 
 		if DevMode != "false" {
-			ServeMux.Handle("/stop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ServeMux.Handle(filepath.Join(BasePath, "/stop"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Trigger server shutdown logic
 				shutdown()
 				fmt.Fprintln(w, "Server is shutting down...")
