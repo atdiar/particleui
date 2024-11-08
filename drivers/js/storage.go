@@ -141,11 +141,12 @@ func loader(s string) func(e *ui.Element) error {
 			}
 
 			//log.Print(categories, properties) //DEBUG
-			// Should it be OnMounted?
-			e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			lch := ui.NewLifecycleHandlers(e.Root)
+			lch.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				for _, load := range uiloaders {
 					load()
 				}
+				ui.Rerender(e)
 				return false
 			}).RunOnce().RunASAP())
 
@@ -255,7 +256,6 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 			panic(err)
 		}
 	}
-
 	return e
 }
 

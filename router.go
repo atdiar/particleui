@@ -72,7 +72,7 @@ type Router struct {
 	LeaveTrailingSlash bool
 }
 
-func (r *Router) TrailingSlashMatters() *Router {
+func TrailingSlashMatters(r *Router) *Router {
 	r.LeaveTrailingSlash = true
 	return r
 }

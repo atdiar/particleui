@@ -1700,7 +1700,7 @@ type mutationRecorder struct {
 
 func (m *mutationRecorder) Capture() {
 	if !m.raw.Configuration.MutationCapture {
-		DEBUG("mutationreccorder capturing... not enabled")
+		// DEBUG("mutationreccorder capturing... not enabled")
 		return
 	}
 
@@ -1811,7 +1811,6 @@ func (d *Document) ListenAndServe(ctx context.Context) {
 	d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
 		d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
-			DEBUG("document is ready")
 			return false
 		}).RunASAP().RunOnce())
 
@@ -2505,10 +2504,8 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 
 var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	route := js.Global().Get("location").Get("pathname").String()
-	DEBUG("route: " + route)
-	u, _ := url.Parse(route)
-	DEBUG(u.Fragment, u.Host, u.Path, u.RawQuery, u.Scheme)
 	route = strings.TrimPrefix(route, BasePath)
+	route = "/" + route
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
 }).RunASAP()
