@@ -99,11 +99,20 @@ func Start(buildtags ...string) error {
 		basepathseg = strings.TrimPrefix(basepathseg, "/")
 
 		serverbinpath := filepath.Join(".", "dev", "build", "server", "csr", basepathseg, "main")
+		if releaseMode {
+			serverbinpath = filepath.Join(".", "release", "build", "server", "csr", basepathseg, "main")
+		}
 		if ssr {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
+			if releaseMode {
+				serverbinpath = filepath.Join(".", "release", "build", "server", "ssr", basepathseg, "main")
+			}
 		}
 		if ssg {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
+			if releaseMode {
+				serverbinpath = filepath.Join(".", "release", "build", "server", "ssr", basepathseg, "main")
+			}
 		}
 
 		err := Build(serverbinpath, append(buildtags, "server", servmod))
@@ -112,11 +121,11 @@ func Start(buildtags ...string) error {
 		}
 
 		if verbose {
-			fmt.Println("client and server built.")
+			fmt.Println("server built.")
 		}
 
 		args := []string{"-host", host, "-port", port}
-		if nohmr {
+		if nohmr || releaseMode {
 			args = append(args, "--nohmr")
 		}
 

@@ -59,9 +59,11 @@ func init() {
 
 	if !release {
 		DevMode = "true"
+	} else {
+		SourcePath = filepath.Join(".", "release")
+		StaticPath = filepath.Join(".", "release", "build", "app")
+		IndexPath = filepath.Join(StaticPath, "index.html")
 	}
-	DEBUG(HMRMode, !nohmr)
-	DEBUG(host, port)
 
 	if !nohmr {
 		HMRMode = "true"
@@ -200,7 +202,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 		ServeMux.Handle(BasePath, RenderHTMLhandler)
 
 		if DevMode != "false" {
-			ServeMux.Handle(filepath.Join(BasePath, "/stop"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ServeMux.Handle("/stop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Trigger server shutdown logic
 				shutdown()
 				fmt.Fprintln(w, "Server is shutting down...")

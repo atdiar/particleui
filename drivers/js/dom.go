@@ -4,6 +4,7 @@ package doc
 
 import (
 	"context"
+	"net/url"
 	"path/filepath"
 	"sync"
 
@@ -22,9 +23,10 @@ import (
 	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	"math/rand"
+
 	"net/http"
 	"net/http/cookiejar"
-	"net/url"
+
 	"runtime"
 	"time"
 
@@ -2472,7 +2474,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 		panic("current route is unknown")
 	}
 	route = string(r.(ui.String))
-	route = filepath.Join(BasePath, route)
+	route, _ = url.JoinPath(BasePath, route)
 
 	history := evt.NewValue().(ui.Object)
 
@@ -2504,8 +2506,22 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 
 var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	route := js.Global().Get("location").Get("pathname").String()
-	route = strings.TrimPrefix(route, BasePath)
-	route = "/" + route
+
+	// We need to get the value of the base element from the head
+	// to remove it from the route
+	base := js.Global().Get("document").Call("querySelector", "base")
+	if base.Truthy() {
+		uri := base.Get("href").String()
+		urlstr, err := url.Parse(uri)
+		if err != nil {
+			panic(err)
+		}
+		uri = urlstr.Path
+		BasePath = uri
+	}
+
+	route = filepath.Join("/", strings.TrimPrefix(route, BasePath))
+
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
 }).RunASAP()
@@ -3474,7 +3490,7 @@ func (d *Document) enableWasm() *Document {
 		return d
 	}
 	h := d.Head()
-	h.AppendChild(d.Script.WithID("wasmVM").Src("/wasm_exec.js"))
+	h.AppendChild(d.Script.WithID("wasmVM").Src("./wasm_exec.js"))
 	h.AppendChild(d.Script.WithID("goruntime").
 		SetInnerHTML(
 			`
@@ -4466,7 +4482,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 	}
 
 	a.WatchEvent("verified", link, (ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		a.SetHref(link.URI() + hash)
+		a.SetHref(strings.TrimPrefix(link.URI()+hash, "/"))
 		return false
 	}).RunASAP()))
 

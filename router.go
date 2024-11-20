@@ -89,9 +89,9 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 	r := &Router{rootview, nil, nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
 
 	r.Outlet.AsElement().Root.WatchEvent("docupdate", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
-		_, navready := evt.Origin().Get("navigation", "ready")
+		_, navready := evt.Origin().Get(navigationNS, "ready")
 		if !navready {
-			v, ok := evt.Origin().Get("internals", "views")
+			v, ok := evt.Origin().Get(internalsNS, "views")
 			if ok {
 				l, ok := v.(List)
 				if ok {
@@ -176,7 +176,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 
 	// 1. Let's see if the URI matches any of the registered routes.
 	v, _, a, err := r.Routes.match(newroute)
-	r.Outlet.AsElement().Root.Set("navigation", "targetviewid", String(v.AsElement().ID))
+	r.Outlet.AsElement().Root.Set(navigationNS, "targetviewid", String(v.AsElement().ID))
 	if err != nil {
 		log.Print(err) // DEBUG
 		if err == ErrNotFound {
@@ -202,7 +202,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 		return false
 	}
 	if found {
-		r.Outlet.AsElement().Root.Set("navigation", "hash", String(hash))
+		r.Outlet.AsElement().Root.Set(navigationNS, "hash", String(hash))
 	}
 	return true
 }
@@ -260,7 +260,7 @@ func (r *Router) Hijack(route string, destination string) {
 		if string(navroute) == route {
 			//r.History.Push(route)
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(destination))
-			return true
+			return true // permanent redirection
 		}
 		return false
 	}))
@@ -359,7 +359,7 @@ func (r *Router) handler() *MutationHandler {
 		}
 
 		// Determination of navigation history action
-		h, ok := r.Outlet.AsElement().Root.Get("data", "history")
+		h, ok := r.Outlet.AsElement().Root.Get(dataNS, "history")
 		if !ok {
 			r.History.Push(newroute)
 		} else {
@@ -394,11 +394,10 @@ func (r *Router) handler() *MutationHandler {
 		}
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
-		DEBUG(newroute)
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
 		v, _, a, err := r.Routes.match(newroute)
-		r.Outlet.AsElement().Root.Set("navigation", "targetviewid", String(v.AsElement().ID))
+		r.Outlet.AsElement().Root.Set(navigationNS, "targetviewid", String(v.AsElement().ID))
 		if err != nil {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
@@ -424,7 +423,7 @@ func (r *Router) handler() *MutationHandler {
 			}
 
 			if found {
-				r.Outlet.AsElement().Root.Set("navigation", "hash", String(hash))
+				r.Outlet.AsElement().Root.Set(navigationNS, "hash", String(hash))
 			}
 		}
 
@@ -461,7 +460,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 
 		// 1. Let's see if the URI matches any of the registered routes.
 		v, _, a, err := r.Routes.match(newroute)
-		r.Outlet.AsElement().Root.Set("navigation", "targetviewid", String(v.AsElement().ID))
+		r.Outlet.AsElement().Root.Set(navigationNS, "targetviewid", String(v.AsElement().ID))
 		if err != nil {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {
@@ -488,7 +487,7 @@ func (r *Router) redirecthandler() *MutationHandler {
 			}
 
 			if found {
-				r.Outlet.AsElement().Root.Set("navigation", "hash", String(hash))
+				r.Outlet.AsElement().Root.Set(navigationNS, "hash", String(hash))
 			}
 		}
 
@@ -529,7 +528,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	root := r.Outlet
 
 	// Let's make sure that all the mounted views have been registered.
-	v, ok := r.Outlet.AsElement().Root.Get("internals", "views")
+	v, ok := r.Outlet.AsElement().Root.Get(internalsNS, "views")
 	if ok {
 		l, ok := v.(List)
 		if ok {
@@ -659,7 +658,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 func (r *Router) verifyLinkActivation() {
 	for _, l := range r.Links {
-		_, ok := l.Raw.Get("event", "verified")
+		_, ok := l.Raw.Get(eventNS, "verified")
 		if !ok {
 			panic("Link activation failure: " + l.URI())
 		}
@@ -906,7 +905,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 
 			// TODO set queryparams object as a property of the last view
 			if queryparams != nil && i == viewcount {
-				r.ViewElement.AsElement().Set("navigation", "query", *queryparams)
+				r.ViewElement.AsElement().Set(navigationNS, "query", *queryparams)
 			}
 
 			if !ok {
@@ -1057,7 +1056,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 
 	nh := NewMutationHandler(func(evt MutationEvent) bool {
 		if isValidLink(Link{e}) {
-			_, ok := e.Get("event", "verified")
+			_, ok := e.Get(eventNS, "verified")
 			if !ok {
 				e.TriggerEvent("verified")
 			}
@@ -1074,7 +1073,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	}).RunASAP())
 
 	// make sure that the link is set to 'active' when the route is the same as the link
-	e.Watch("ui", "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Watch(uiNS, "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String).String()
 		lnk, _ := e.GetUI("uri")
 		link := lnk.(String).String()
@@ -1140,10 +1139,10 @@ var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
 
 func (l Link) MonitorActivity(b bool) Link {
 	if b {
-		l.Raw.Watch("ui", "currentroute", l.Raw.Root, linkActivityMonitor)
+		l.Raw.Watch(uiNS, "currentroute", l.Raw.Root, linkActivityMonitor)
 		return l
 	}
-	l.Raw.RemoveMutationHandler("ui", "currentroute", l.Raw.Root, linkActivityMonitor)
+	l.Raw.RemoveMutationHandler(uiNS, "currentroute", l.Raw.Root, linkActivityMonitor)
 	return l
 }
 */
@@ -1256,12 +1255,12 @@ type NavHistory struct {
 
 // Get is used to retrieve a Value from the history state.
 func (n *NavHistory) Get(propname string) (Value, bool) {
-	return n.State[n.Cursor].Get("data", propname)
+	return n.State[n.Cursor].Get(dataNS, propname)
 }
 
 // Set is used to insert a value in the history state.
 func (n *NavHistory) Set(propname string, val Value) {
-	n.State[n.Cursor].Set("data", propname, val)
+	n.State[n.Cursor].Set(dataNS, propname, val)
 	n.AppRoot.TriggerEvent("history-change", String(propname)) // TODO more finegrained change persistence using propname event value
 }
 
@@ -1283,7 +1282,7 @@ func NewNavigationHistory(approot *Element) *NavHistory {
 		return o
 	}
 	n.RecoverState = func(o Observable) Observable {
-		o.Set("data", "new", Bool(false))
+		o.Set(dataNS, "new", Bool(false))
 		return o
 	}
 	n.Length = 1024
@@ -1359,7 +1358,7 @@ func (n *NavHistory) ImportState(v Value) *NavHistory {
 			}
 			recstate := Observable{stobj}
 
-			_, ok := recstate.Get("data", "new")
+			_, ok := recstate.Get(dataNS, "new")
 			if !ok {
 				recstate = n.RecoverState(recstate)
 			}
@@ -1370,7 +1369,7 @@ func (n *NavHistory) ImportState(v Value) *NavHistory {
 
 	/*
 		for _,s:= range n.State{
-			s.Set("data","new",Bool(false))
+			s.Set(dataNS,"new",Bool(false))
 		}
 	*/
 	n.Cursor = cursor
@@ -1383,18 +1382,18 @@ func (n *NavHistory) Push(URI string) *NavHistory {
 		panic("navstack capacity overflow")
 	}
 	if n.Cursor >= 0 {
-		n.State[n.Cursor].Set("data", "new", Bool(false)) // used to discover whether the current navigation entry is accessed for the first time or not
+		n.State[n.Cursor].Set(dataNS, "new", Bool(false)) // used to discover whether the current navigation entry is accessed for the first time or not
 	}
 	n.Cursor++
 	n.Stack = append(n.Stack[:n.Cursor], URI)
 	n.State = append(n.State[:n.Cursor], n.NewState("hstate"+strconv.Itoa(n.Cursor)))
-	n.State[n.Cursor].Set("data", "new", Bool(true))
+	n.State[n.Cursor].Set(dataNS, "new", Bool(true))
 
 	return n
 }
 
 func (n *NavHistory) CurrentEntryIsNew() bool {
-	v, ok := n.State[n.Cursor].Get("data", "new")
+	v, ok := n.State[n.Cursor].Get(dataNS, "new")
 	if !ok {
 		panic("Unable to find (data, new) cursor is : " + fmt.Sprint(n.Cursor))
 	}
@@ -1404,7 +1403,7 @@ func (n *NavHistory) CurrentEntryIsNew() bool {
 func (n *NavHistory) Replace(URI string) *NavHistory {
 	n.Stack[n.Cursor] = URI
 	n.State[n.Cursor] = n.NewState("hstate" + strconv.Itoa(n.Cursor))
-	n.State[n.Cursor].Set("data", "new", Bool(false))
+	n.State[n.Cursor].Set(dataNS, "new", Bool(false))
 
 	// TODO what to do here? perhaps nothing, perhaps the state should be labeled new or the reverse?
 	return n
@@ -1413,7 +1412,7 @@ func (n *NavHistory) Replace(URI string) *NavHistory {
 func (n *NavHistory) Back() string {
 	if n.BackAllowed() {
 		if n.Cursor == len(n.Stack)-1 {
-			n.State[n.Cursor].Set("data", "new", Bool(false)) // TODO should we check the value or use memoization to avoid unnecessary ops on forward()?
+			n.State[n.Cursor].Set(dataNS, "new", Bool(false)) // TODO should we check the value or use memoization to avoid unnecessary ops on forward()?
 		}
 		n.Cursor--
 	}
@@ -1423,18 +1422,18 @@ func (n *NavHistory) Back() string {
 func (n *NavHistory) Forward() string {
 	if n.ForwardAllowed() {
 		if n.Cursor >= 0 {
-			n.State[n.Cursor].Set("data", "new", Bool(false))
+			n.State[n.Cursor].Set(dataNS, "new", Bool(false))
 		}
 		n.Cursor++
-		n.State[n.Cursor].Set("data", "new", Bool(false))
+		n.State[n.Cursor].Set(dataNS, "new", Bool(false))
 	}
 
-	/*v,ok := n.State[n.Cursor].Get("data","new")
+	/*v,ok := n.State[n.Cursor].Get(dataNS,"new")
 	if !ok{
-		//n.State[n.Cursor].Set("data","new", Bool(true))
+		//n.State[n.Cursor].Set(dataNS,"new", Bool(true))
 		panic("unable to find new page marker")
 	} else{
-		n.State[n.Cursor].Set("data","new", v)
+		n.State[n.Cursor].Set(dataNS,"new", v)
 	}
 	*/
 	return n.Stack[n.Cursor]

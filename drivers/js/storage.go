@@ -141,12 +141,12 @@ func loader(s string) func(e *ui.Element) error {
 			}
 
 			//log.Print(categories, properties) //DEBUG
-			lch := ui.NewLifecycleHandlers(e.Root)
-			lch.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			//lch := ui.NewLifecycleHandlers(e.Root)
+			e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				for _, load := range uiloaders {
 					load()
 				}
-				ui.Rerender(e)
+				ui.Rerender(evt.Origin())
 				return false
 			}).RunOnce().RunASAP())
 

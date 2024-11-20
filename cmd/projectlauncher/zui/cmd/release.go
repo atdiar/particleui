@@ -1,25 +1,20 @@
 /*
 Copyright © 2023 NAME HERE <EMAIL ADDRESS> TODO DEBUG
-
 */
 package cmd
 
 import (
 	"fmt"
 
+	"net/url"
 	"os"
 	"os/exec"
-	"net/url"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
 
 var tinygo bool
-var release bool
-
-var tinygoinstallerURL string = "github.com/atdiar/particleui/cmd/tinygoinstall"
-var binaryeninstallerURL string = "github.com/atdiar/particleui/cmd/binaryeninstall"
 
 // TODO update the URL for the installers once the project is moved to its final location. (DEBUG)
 
@@ -32,10 +27,10 @@ var releaseCmd = &cobra.Command{
 		Release is the command to build the project for production.
 		It prepares a new release of the project.
 		It builds the source and create an optimized executable.
-		(TBC) // TODO
 	
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
+		releaseMode = true
 		err := LoadConfig()
 		if err != nil {
 			fmt.Println(err)
@@ -46,14 +41,14 @@ var releaseCmd = &cobra.Command{
 		if On("web") {
 			// basepath needs to be validated
 			// It needs to start with a slash
-			b,err:= url.Parse(basepath)
-			if err != nil{
+			b, err := url.Parse(basepath)
+			if err != nil {
 				fmt.Println("invalid basepath")
 				os.Exit(1)
 				return
 			}
-			if b.Path != "/"{
-				if b.Path[0] != '/'{
+			if b.Path != "/" {
+				if b.Path[0] != '/' {
 					fmt.Println("invalid basepath: basepath needs to start with a slash")
 					os.Exit(1)
 					return
@@ -91,9 +86,36 @@ var releaseCmd = &cobra.Command{
 
 			// if csr
 			if csr {
-				err = Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
+				// if ./release/build/app does not exist,
+				// Build the development version in releaseMode=true and then copy the files to the release directory
+				// The output file should be in release/build/app/main.wasm
+
+				if tinygo {
+					err = CopyWasmExecJsTinygo(filepath.Join(".", "dev", "build", "app", basepath))
+					if err != nil {
+						fmt.Println("Error: unable to copy the wasm_exec.js file.\n", err)
+						os.Exit(1)
+						return
+					}
+				} else {
+					err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app", basepath))
+					if err != nil {
+						fmt.Println("Error: unable to copy the wasm_exec.js file.\n", err)
+						os.Exit(1)
+						return
+					}
+				}
+
+				err = Build(filepath.Join(".", "dev", "build", "app", basepath, "main.wasm"), nil)
 				if err != nil {
-					fmt.Println("Error: unable to build the default app.")
+					fmt.Println("Error: unable to build the default app.", err)
+					os.Exit(1)
+					return
+				}
+
+				err = copyDirectory(filepath.Join(".", "dev", "build", "app", basepath), filepath.Join(".", "release", "app", basepath))
+				if err != nil {
+					fmt.Println("Error: unable to copy the default app.")
 					os.Exit(1)
 					return
 				}
@@ -124,15 +146,39 @@ var releaseCmd = &cobra.Command{
 				}
 
 			} else if ssr {
-				err = Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
-				if err != nil {
-					fmt.Println("Error: unable to build the default app.")
-					os.Exit(1)
-					return
+				// if ./release/build/app does not exist,
+				// Build the development version in releaseMode=true and then copy the files to the release directory
+				// The output file should be in release/build/app/main.wasm
+
+				if _, err := os.Stat(filepath.Join(".", "release", "app", basepath)); os.IsNotExist(err) {
+					err = Build(filepath.Join(".", "dev", "build", "app", basepath, "main.wasm"), nil)
+					if err != nil {
+						fmt.Println("Error: unable to build the default app.", err)
+						os.Exit(1)
+						return
+					}
+					// let's copy ./dev/build/app to ./release/build/app
+					err = copyDirectory(filepath.Join(".", "dev", "build", "app", basepath), filepath.Join(".", "release", "app", basepath))
+					if err != nil {
+						fmt.Println("Error: unable to copy the app folder.")
+						os.Exit(1)
+						return
+					}
+				} else {
+					err = Build(filepath.Join(".", "release", "app", basepath, "main.wasm"), nil)
+					if err != nil {
+						fmt.Println("Error: unable to build the default app.")
+						os.Exit(1)
+						return
+					}
 				}
 
 				if verbose {
 					fmt.Println("wasm app built.")
+				}
+
+				if tinygo {
+					CopyWasmExecJsTinygo(filepath.Join(".", "release", "app", basepath))
 				}
 
 				// Let's build the default server.
@@ -156,7 +202,7 @@ var releaseCmd = &cobra.Command{
 				}
 
 				if verbose {
-					fmt.Println("ssg server built.")
+					fmt.Println("ssg server built. Can be found in ./dev/build/server/ssg/main")
 				}
 
 				// Now we need to build the pages by running the server executable
@@ -175,36 +221,72 @@ var releaseCmd = &cobra.Command{
 					}
 				}
 
+				if releaseMode {
+					// let's copy ./dev/build/ssg to ./release/build/ssg
+					err = copyDirectory(filepath.Join(".", "dev", "build", "ssg"), filepath.Join(".", "release", "app", "ssg"))
+					if err != nil {
+						fmt.Println("Error: unable to copy the ssg pages.")
+						os.Exit(1)
+						return
+					}
+				}
+
 				os.Exit(1)
 				return
 			}
 
 			// Now we may want to try and optimize the output file  with binaryen's wasm-opt.
 			// First, let's check whether binaryen's wasm-opt is installed.
-			// If not, let's install it:
 			if _, err := exec.LookPath("wasm-opt"); err != nil {
 				// wasm-opt is not available
-				if err := installBinaryenGo(verbose); err != nil {
-					fmt.Println(err)
+				fmt.Println("wasm-opt is not installed.")
+			} else {
+				// Now we can optimize the wasm file with wasm-opt
+				// wasm-opt -Oz -o main.wasm main.wasm
+
+				// First let's get the initial size of the file so that we can compute statistics about file size optimization later.
+				// We can use the stat command to get the size of the file.
+				// stat -c %s main.wasm
+				// The output of the command will be the size of the file in bytes.
+				var size int64
+				cmd := exec.Command("stat", "-c", "%s", filepath.Join(".", "release", "app", basepath, "main.wasm"))
+				out, err := cmd.Output()
+				if err != nil {
+					fmt.Println("Error: unable to get the size of the wasm file.")
 					os.Exit(1)
 					return
 				}
+				fmt.Sscanf(string(out), "%d", &size)
+
+				cmd = exec.Command("wasm-opt", "-Oz", "-o", filepath.Join(".", "release", "app", basepath, "main.wasm"), filepath.Join(".", "release", "app", basepath, "main.wasm"))
+				err = cmd.Run()
+				if err != nil {
+					fmt.Println("Error: unable to optimize the wasm file.") // TODO tinygo works but when using the default gc it errors out. // DEBUG
+					os.Exit(1)
+					return
+				}
+
+				if verbose {
+					fmt.Println("wasm file optimized.")
+				}
+
+				var endsize int64
+				cmd = exec.Command("stat", "-c", "%s", filepath.Join(".", "release", "app", basepath, "main.wasm"))
+				out, err = cmd.Output()
+				if err != nil {
+					fmt.Println("Error: unable to get the size of the wasm file.")
+					os.Exit(1)
+					return
+				}
+				fmt.Sscanf(string(out), "%d", &endsize)
+
+				if verbose {
+					fmt.Printf("wasm file size before optimization: %d bytes\n", size)
+					fmt.Printf("wasm file size after optimization: %d bytes\n", endsize)
+					fmt.Printf("Optimization ratio: %.2f%%\n", (float64(size)-float64(endsize))/float64(size)*100)
+				}
 			}
 
-			// Now we can optimize the wasm file with wasm-opt
-			// wasm-opt -Oz -o main.wasm main.wasm
-			cmd := exec.Command("wasm-opt", "-Oz", "-o", filepath.Join(".", "dev", "build", "app", "main.wasm"), filepath.Join(".", "dev", "build", "app", "main.wasm"))
-			err = cmd.Run()
-			if err != nil {
-				fmt.Println("Error: unable to optimize the wasm file.")
-				os.Exit(1)
-				return
-			}
-
-			if verbose {
-				fmt.Println("wasm file optimized.")
-			}
-			
 		} else if On("mobile") {
 			// TODO
 			// Make sure that only acceptable flags have been passed.
@@ -225,55 +307,48 @@ var releaseCmd = &cobra.Command{
 			return
 		}
 
-		// TODO when building wasm remove debug info
-		// And any other potential optimization
-
-		// Add -tinygo flag to build with the tinygo compiler if present
-
-		// remove debug info from wasm binary by using ldlflags="-s -w" (TODO)
-
-		// if bynaryen wasm-opt is present, use it to optimize the wasm file (TODO)
+		// if binaryen wasm-opt is present, use it to optimize the wasm file (TODO)
 		// On project init check if wasm-opt is present, set a flag on the project manifest
-		// to notify that it can be optimnized with wasm-opt
-		// otherwise, there should be an option to install it from our mirror
+		// to notify that it can be optimized with wasm-opt
 	},
 }
 
-func installBinaryenGo(verbosity bool) error {
-	var response string
-	fmt.Print("Would you like to install the binaryen toolchain? (y/n): ")
-	_, err := fmt.Scan(&response)
+func copyDirectory(src string, dst string) error {
+	// Get properties of source directory
+	srcInfo, err := os.Stat(src)
 	if err != nil {
-		return fmt.Errorf("error reading input: %v", err)
+		return fmt.Errorf("error getting source directory info: %v", err)
 	}
 
-	if response == "y" {
-		// Prepare the command for installing binaryen
-		installCmdArgs := []string{"install"}
-		if verbosity {
-			// Append the verbosity flag based on the verbosity argument
-			installCmdArgs = append(installCmdArgs, "-verbose")
-		}
-		installCmdArgs = append(installCmdArgs, binaryeninstallerURL)
-		cmd := exec.Command("go", installCmdArgs...)
-		err := cmd.Run()
-		if err != nil {
-			return fmt.Errorf("error installing binaryen: %v", err)
-		}
+	// Create destination directory with same permissions
+	err = os.MkdirAll(dst, srcInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("error creating destination directory: %v", err)
+	}
 
-		// Prepare the command to run the binaryen installer, assuming it also accepts a verbosity flag
-		binaryenInstallCmd := []string{"binaryeninstall"}
-		if verbosity {
-			// Append the verbosity flag based on the verbosity argument
-			binaryenInstallCmd = append(binaryenInstallCmd, "-verbose")
+	// Get directory contents
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("error reading source directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// Recursively copy subdirectory
+			err = copyDirectory(srcPath, dstPath)
+			if err != nil {
+				return fmt.Errorf("error copying subdirectory: %v", err)
+			}
+		} else {
+			// Copy file
+			err = copyFile(srcPath, dstPath)
+			if err != nil {
+				return fmt.Errorf("error copying file: %v", err)
+			}
 		}
-		cmd = exec.Command(binaryenInstallCmd[0], binaryenInstallCmd[1:]...)
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("error running binaryen installer: %v", err)
-		}
-	} else {
-		return fmt.Errorf("binaryen toolchain installation aborted")
 	}
 
 	return nil
@@ -289,7 +364,6 @@ func init() {
 
 	releaseCmd.Flags().BoolVarP(&tinygo, "tinygo", "", false, "build with the tinygo toolchain.")
 }
-
 
 /*
 

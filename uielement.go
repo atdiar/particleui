@@ -15,6 +15,12 @@ import (
 var (
 	ErrReplayFailure = errors.New("mutation replay failed")
 	DEBUG            = log.Println // DEBUG
+
+	uiNS         = "ui"
+	dataNS       = "data"
+	eventNS      = "event"
+	navigationNS = "navigation"
+	internalsNS  = "internals"
 )
 
 // newIDgenerator returns a function used to create new IDs. It uses
@@ -99,23 +105,23 @@ type ConstructorOption struct {
 
 func NewConstructorOption(name string, configuratorFn func(*Element) *Element) ConstructorOption {
 	fn := func(e *Element) *Element {
-		a, ok := e.Get("internals", "constructoroptions")
+		a, ok := e.Get(internalsNS, "constructoroptions")
 		if !ok {
 			a = NewList(String(name)).Commit()
-			e.Set("internals", "constructoroptions", a)
+			e.Set(internalsNS, "constructoroptions", a)
 		}
 		l, ok := a.(List)
 		if !ok {
 			log.Print("Unexpected error. constructoroptions should be stored as a ui.List")
 			a := NewList(String(name))
-			e.Set("internals", "constructoroptions", a.Commit())
+			e.Set(internalsNS, "constructoroptions", a.Commit())
 		}
 		for _, copt := range l.UnsafelyUnwrap() {
 			if copt == String(name) {
 				return configuratorFn(e)
 			}
 		}
-		e.Set("internals", "constructoroptions", l.MakeCopy().Append(String(name)).Commit())
+		e.Set(internalsNS, "constructoroptions", l.MakeCopy().Append(String(name)).Commit())
 
 		return configuratorFn(e)
 	}
@@ -137,10 +143,10 @@ func NewConfiguration(storeid string, doctype string) *Configuration {
 		false,
 		false,
 	}
-	es.RuntimePropTypes["event"] = true
-	es.RuntimePropTypes["navigation"] = true
+	es.RuntimePropTypes[eventNS] = true
+	es.RuntimePropTypes[navigationNS] = true
 	es.RuntimePropTypes["runtime"] = true
-	es.RuntimePropTypes["ui"] = true
+	es.RuntimePropTypes[uiNS] = true
 	es.PersistentStorer = make(map[string]storageFunctions, 8)
 	es.newUID = newIDgenerator(16, time.Now().UnixNano())
 
@@ -202,7 +208,7 @@ func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Eleme
 	el.path = &Elements{make([]*Element, 0)}
 	el.pathvalid = true
 
-	el.Set("internals", "root", Bool(true))
+	el.Set(internalsNS, "root", Bool(true))
 	el.TriggerEvent("mounted", Bool(true))
 	el.TriggerEvent("mountable", Bool(true))
 	el.isroot = true
@@ -244,9 +250,9 @@ func registerElementfn(root, e *Element) {
 
 	}
 	l[e.ID] = e
-	e.BindValue("internals", "mutation-replaying", root)
-	e.BindValue("internals", "mutation-capturing", root)
-	e.BindValue("internals", "documentstate", root)
+	e.BindValue(internalsNS, "mutation-replaying", root)
+	e.BindValue(internalsNS, "mutation-capturing", root)
+	e.BindValue(internalsNS, "documentstate", root)
 
 }
 
@@ -297,7 +303,7 @@ func (e *Configuration) NewConstructor(elementtype string, constructor func(id s
 	// Then we create the element constructor to return
 	c := func(id string, optionNames ...string) *Element {
 		element := constructor(id)
-		element.Set("internals", "constructor", String(elementtype))
+		element.Set(internalsNS, "constructor", String(elementtype))
 		element.Configuration = e
 
 		element.WatchEvent("registered", element, NewMutationHandler(func(evt MutationEvent) bool {
@@ -470,7 +476,7 @@ func (c *Configuration) NewElement(id string, doctype string) *Element {
 	e.subtreeRoot = e
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{"internals", "deleted"}, "/"), NewMutationHandler(func(event MutationEvent) bool {
+		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{internalsNS, "deleted"}, "/"), NewMutationHandler(func(event MutationEvent) bool {
 			d := event.Origin()
 
 			d.path.free()
@@ -487,7 +493,7 @@ func (c *Configuration) NewElement(id string, doctype string) *Element {
 func (c *Configuration) NewObservable(id string, options ...string) Observable {
 
 	o := newObservable(id).AsElement()
-	o.Set("internals", "constructor", String("observable"))
+	o.Set(internalsNS, "constructor", String("observable"))
 	o.Configuration = c
 
 	o.WatchEvent("registered", o, NewMutationHandler(func(evt MutationEvent) bool {
@@ -531,7 +537,7 @@ func (e *Element) IsRoot() bool {
 
 func PersistenceMode(e *Element) string {
 	mode := ""
-	v, ok := e.Get("internals", "persistence")
+	v, ok := e.Get(internalsNS, "persistence")
 	if ok {
 		s, ok := v.(String)
 		if ok {
@@ -1165,12 +1171,12 @@ func (e *Element) DeleteChild(childEl AnyElement) *Element {
 	if child.isViewElement() {
 		for _, view := range child.InactiveViews {
 			for _, el := range view.Elements().List {
-				el.Set("internals", "deleted", Bool(true))
+				el.Set(internalsNS, "deleted", Bool(true))
 			}
 		}
 	}
 
-	child.Set("internals", "deleted", Bool(true))
+	child.Set(internalsNS, "deleted", Bool(true))
 
 	return e
 }
@@ -1184,7 +1190,7 @@ func (e *Element) DeleteChildren() *Element {
 			if child.isViewElement() {
 				for _, view := range child.InactiveViews {
 					for _, el := range view.Elements().List {
-						el.Set("internals", "deleted", Bool(true))
+						el.Set(internalsNS, "deleted", Bool(true))
 					}
 				}
 			}
@@ -1195,7 +1201,7 @@ func (e *Element) DeleteChildren() *Element {
 			}
 
 			defer finalize()
-			defer child.Set("internals", "deleted", Bool(true))
+			defer child.Set(internalsNS, "deleted", Bool(true))
 		}
 		e.Children.RemoveAll()
 	}
@@ -1225,13 +1231,13 @@ func Delete(e *Element) {
 	if e.isViewElement() {
 		for _, view := range e.InactiveViews {
 			for _, el := range view.Elements().List {
-				el.Set("internals", "deleted", Bool(true))
+				el.Set(internalsNS, "deleted", Bool(true))
 			}
 			view.Elements().RemoveAll()
 		}
 	}
 
-	e.Set("internals", "deleted", Bool(true))
+	e.Set(internalsNS, "deleted", Bool(true))
 }
 
 func (e *Element) hasChild(any *Element) (int, bool) {
@@ -1296,6 +1302,7 @@ func (e *Element) SetChildren(any ...*Element) *Element {
 	e.RemoveChildren()
 	for _, el := range any {
 		if el == nil {
+			DEBUG("nil element in SetChildren")
 			continue
 		}
 		e.AppendChild(el)
@@ -1349,7 +1356,7 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 		return false
 	}).binder()
 
-	if category != "event" {
+	if category != eventNS {
 		hdl = hdl.RunASAP()
 	}
 	e.Watch(category, propname, source, hdl)
@@ -1386,7 +1393,7 @@ func (e *Element) bound(category string, propname string, source *Element) bool 
 }
 
 func (e *Element) fetching(propname string) bool {
-	p, ok := e.Properties.Categories["data"]
+	p, ok := e.Properties.Categories[dataNS]
 	if !ok {
 		return false
 	}
@@ -1399,7 +1406,7 @@ func (e *Element) fetching(propname string) bool {
 		return false
 	}
 
-	mh, ok := e.PropMutationHandlers.list[strings.Join([]string{e.ID, "data", propname}, "/")]
+	mh, ok := e.PropMutationHandlers.list[strings.Join([]string{e.ID, dataNS, propname}, "/")]
 	if !ok {
 		return false
 	}
@@ -1425,7 +1432,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 	}
 
 	/*
-		if category == "ui" {
+		if category == uiNS {
 			if e.ID != owner.AsElement().ID {
 				panic(fmt.Sprint("A UI property can only be watched by the element that owns it. ", e.ID, " is not ", owner.AsElement().ID, "\n", "You might want to watch (data, ", propname, " instead.", ")"))
 			}
@@ -1452,10 +1459,10 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 
 	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, category, propname}, "/"), h)
 
-	eventcat, ok := owner.AsElement().Properties.Categories["internals"]
+	eventcat, ok := owner.AsElement().Properties.Categories[internalsNS]
 	if !ok {
 		eventcat = newProperties()
-		owner.AsElement().Properties.Categories["internals"] = eventcat
+		owner.AsElement().Properties.Categories[internalsNS] = eventcat
 	}
 	alreadywatching = eventcat.IsWatching("deleted", e)
 
@@ -1463,7 +1470,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		eventcat.NewWatcher("deleted", e)
 	}
 
-	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, "internals", "deleted"}, "/"), NewMutationHandler(func(evt MutationEvent) bool {
+	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, internalsNS, "deleted"}, "/"), NewMutationHandler(func(evt MutationEvent) bool {
 		if e.ID != owner.AsElement().ID {
 			e.Unwatch(category, propname, owner)
 		}
@@ -1608,7 +1615,7 @@ func (e *Element) Mountable() bool {
 	if e.Root == nil {
 		return false
 	}
-	_, isroot := e.Root.Get("internals", "root")
+	_, isroot := e.Root.Get(internalsNS, "root")
 	return isroot
 }
 
@@ -1664,10 +1671,10 @@ func (e *Element) OnUnmounted(h *MutationHandler) {
 
 // TODO make behaviour similar to running AsAP and Once.
 func (e *Element) OnDeleted(h *MutationHandler) {
-	eventcat, ok := e.Properties.Categories["internals"]
+	eventcat, ok := e.Properties.Categories[internalsNS]
 	if !ok {
 		eventcat = newProperties()
-		e.Properties.Categories["internals"] = eventcat
+		e.Properties.Categories[internalsNS] = eventcat
 	}
 	alreadywatching := eventcat.IsWatching("deleted", e)
 
@@ -1675,20 +1682,20 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 		eventcat.NewWatcher("deleted", e)
 	}
 
-	val, ok := e.Get("internals", "deleted")
+	val, ok := e.Get(internalsNS, "deleted")
 	if ok {
-		h.Handle(e.NewMutationEvent("internals", "deleted", val, nil))
+		h.Handle(e.NewMutationEvent(internalsNS, "deleted", val, nil))
 		return
 	}
 	var g *MutationHandler
 	g = NewMutationHandler(func(evt MutationEvent) bool {
 		e.CancelAllTransitions()
 		b := h.Handle(evt)
-		evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{evt.Origin().ID, "internals", "deleted"}, "/"), g)
+		evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{evt.Origin().ID, internalsNS, "deleted"}, "/"), g)
 		return b
 	})
 
-	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, "internals", "deleted"}, "/"), g)
+	e.PropMutationHandlers.Add(strings.Join([]string{e.ID, internalsNS, "deleted"}, "/"), g)
 }
 
 func (e *Element) TriggerEvent(name string, value ...Value) {
@@ -1706,16 +1713,16 @@ func (e *Element) TriggerEvent(name string, value ...Value) {
 		}
 		val = l.Commit()
 	}
-	e.Set("event", name, val)
+	e.Set(eventNS, name, val)
 }
 
 // WatchEvent enables an elements to watch for an event occuring on any Element including itself.
 func (e *Element) WatchEvent(name string, target Watchable, h *MutationHandler) {
-	e.Watch("event", name, target, h)
+	e.Watch(eventNS, name, target, h)
 }
 
 func (e *Element) GetEventValue(name string) (Value, bool) {
-	return e.Properties.Get("event", name)
+	return e.Properties.Get(eventNS, name)
 }
 
 // AfterEvent registers a mutation handler that gets called each time an mutation event occurs and
@@ -1764,7 +1771,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok && category != "event" {
+	if ok && category != eventNS {
 		if Equal(value, oldvalue) { // idempotency
 			return
 		}
@@ -1772,11 +1779,11 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	if MutationReplaying(e) {
 		if !shouldSkip(category, propname) {
-			idx, ok := e.Root.Get("internals", "mutation-list-index")
+			idx, ok := e.Root.Get(internalsNS, "mutation-list-index")
 			if !ok {
-				e.Root.Set("internals", "mutation-list-index", Number(1))
+				e.Root.Set(internalsNS, "mutation-list-index", Number(1))
 			} else {
-				e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+				e.Root.Set(internalsNS, "mutation-list-index", idx.(Number)+1)
 			}
 		}
 	}
@@ -1838,7 +1845,7 @@ func MutationReplaying(e *Element) bool {
 		return false
 	}
 
-	v, ok := e.Get("internals", "mutation-replaying")
+	v, ok := e.Get(internalsNS, "mutation-replaying")
 	if !ok {
 		return false
 	}
@@ -1847,23 +1854,23 @@ func MutationReplaying(e *Element) bool {
 }
 
 func shouldSkip(category, propname string) bool {
-	if category == "internals" && propname == "mutation-list-index" {
+	if category == internalsNS && propname == "mutation-list-index" {
 		return true
 	}
 
-	if category == "data" && propname == "mutationlist" { // TODO: make it less broad a condition
+	if category == dataNS && propname == "mutationlist" { // TODO: make it less broad a condition
 		return true
 	}
 
-	if category == "internals" && (propname == "mutation-replaying" || propname == "mutation-capturing") {
+	if category == internalsNS && (propname == "mutation-replaying" || propname == "mutation-capturing") {
 		return true
 	}
 
-	if category == "event" && propname == "new-mutation" {
+	if category == eventNS && propname == "new-mutation" {
 		return true
 	}
 
-	if category == "event" {
+	if category == eventNS {
 		switch propname {
 		case "before-unactive":
 			return true
@@ -1890,7 +1897,7 @@ func mutationcapturing(e *Element) bool {
 		return false
 	}
 
-	v, ok := e.Root.Get("internals", "mutation-capturing")
+	v, ok := e.Root.Get(internalsNS, "mutation-capturing")
 	if !ok {
 		return false
 	}
@@ -1909,7 +1916,7 @@ func ReplayMutation(e *Element, category string, propname string, value Value, s
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok && category != "event" {
+	if ok && category != eventNS {
 		if Equal(value, oldvalue) { // idempotency
 			return
 		}
@@ -1959,20 +1966,20 @@ func ReplayMutation(e *Element, category string, propname string, value Value, s
 }
 
 func (e *Element) GetData(propname string) (Value, bool) {
-	return e.Get("data", propname)
+	return e.Get(dataNS, propname)
 }
 
 // SetData inserts a key/value pair under the "data" category in the element property store.
 // It does not automatically update any potential property representation stored
 // for rendering use in the "ui" category/namespace.
 func (e *Element) SetData(propname string, value Value) *Element {
-	e.Set("data", propname, value)
+	e.Set(dataNS, propname, value)
 	return e
 }
 
 // GetUI returns the value of a property stored under the "ui" category in the element property store.
 func (e *Element) GetUI(propname string) (Value, bool) {
-	return e.Get("ui", propname)
+	return e.Get(uiNS, propname)
 }
 
 // SetUI inserts a key/value pair under the "ui" category in the element property store.
@@ -1983,7 +1990,7 @@ func (e *Element) GetUI(propname string) (Value, bool) {
 //
 // SetUI strictly handles UI data as opposed to SetDataSetUI which handles representable business/model data.
 func (e *Element) SetUI(propname string, value Value) *Element {
-	e.Set("ui", propname, value)
+	e.Set(uiNS, propname, value)
 	return e
 }
 
@@ -2007,23 +2014,23 @@ func (e *Element) SyncUI(propname string, value Value) *Element {
 	}
 
 	if MutationReplaying(e) {
-		if !shouldSkip("ui", propname) {
-			idx, ok := e.Root.Get("internals", "mutation-list-index")
+		if !shouldSkip(uiNS, propname) {
+			idx, ok := e.Root.Get(internalsNS, "mutation-list-index")
 			if !ok {
-				e.Root.Set("internals", "mutation-list-index", Number(1))
+				e.Root.Set(internalsNS, "mutation-list-index", Number(1))
 			} else {
-				e.Root.Set("internals", "mutation-list-index", idx.(Number)+1)
+				e.Root.Set(internalsNS, "mutation-list-index", idx.(Number)+1)
 			}
 		}
 	}
 
-	e.Properties.Set("ui", propname, value)
+	e.Properties.Set(uiNS, propname, value)
 
 	if mutationcapturing(e) {
 		if e.Registered() {
 			m := NewObject()
 			m.Set("id", String(e.ID))
-			m.Set("cat", String("ui"))
+			m.Set("cat", String(uiNS))
 			m.Set("prop", String(propname))
 			m.Set("val", value)
 			m.Set("sync", Bool(true))
@@ -2067,7 +2074,7 @@ func LoadProperty(e *Element, category string, propname string, value Value) {
 // ATTENTION: in fact the UI should be a "pure" function of the "ui" properties. Which means that
 // rendering of an element should not have side-effects, notably should not mutate another element's UI.
 func Rerender(e *Element) *Element {
-	category := "ui"
+	category := uiNS
 	p, ok := e.Properties.Categories[category]
 	if !ok {
 		return e
@@ -2107,7 +2114,7 @@ func (e *Element) computeRoute() string {
 	for k, n := range e.ViewAccessPath.Nodes {
 		view := n.Name
 		if n.Element.Mounted() {
-			v, ok := n.Element.Get("ui", "activeview")
+			v, ok := n.Element.Get(uiNS, "activeview")
 			if ok {
 				view = string(v.(String))
 			}
@@ -2136,7 +2143,7 @@ func (e *Element) Route() string {
 	for k, n := range e.ViewAccessPath.Nodes {
 		view := n.Name
 		if n.Element.Mounted() {
-			v, ok := n.Element.Get("ui", "activeview")
+			v, ok := n.Element.Get(uiNS, "activeview")
 			if !ok {
 				panic("couldn't find current view name while generating route string")
 			}

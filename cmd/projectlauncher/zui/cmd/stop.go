@@ -14,9 +14,9 @@ import (
 
 // stopCmd represents the stop command
 var stopCmd = &cobra.Command{
-    Use:   "stop",
-    Short: "Stops the running dev server",
-    Run: func(cmd *cobra.Command, args []string) {
+	Use:   "stop",
+	Short: "Stops the running dev server",
+	Run: func(cmd *cobra.Command, args []string) {
 		err := LoadConfig()
 		if err != nil {
 			fmt.Println(err)
@@ -26,17 +26,17 @@ var stopCmd = &cobra.Command{
 
 		if On("web") {
 			// Get the port number
-			port,ok:= config["port"]
-			if !ok{
-				if verbose{
+			port, ok := config["port"]
+			if !ok {
+				if verbose {
 					fmt.Println("No port number found in config file")
 				}
 				os.Exit(0)
 			}
 
-			host,ok:= config["host"]
-			if !ok{
-				if verbose{
+			host, ok := config["host"]
+			if !ok {
+				if verbose {
 					fmt.Println("No host found in config file")
 				}
 				os.Exit(0)
@@ -51,8 +51,7 @@ var stopCmd = &cobra.Command{
 			}
 		}
 
-		
-    },
+	},
 }
 
 func init() {

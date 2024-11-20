@@ -3,19 +3,19 @@
 package doc
 
 import (
+	"strings"
+
 	js "github.com/atdiar/particleui/drivers/js/compat"
 
 	//"net/url"
 	"encoding/json"
-	"fmt"
 	"log"
-	"runtime"
 
 	ui "github.com/atdiar/particleui"
 )
 
 var DEBUG = log.Print // DEBUG
-
+/*
 func SDEBUG() {
 	pc := make([]uintptr, 30)
 	n := runtime.Callers(0, pc)
@@ -38,6 +38,7 @@ func SDEBUG() {
 	}
 
 }
+*/
 
 type NativeEvent struct {
 	Value js.Value
@@ -198,6 +199,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			if typ == "popstate" {
 
 				path := js.Global().Get("location").Get("pathname").String()
+				path = strings.TrimPrefix(path, BasePath)
 				rv.Set("value", ui.String(path))
 
 				// Given that events are not handled concurrently

@@ -494,6 +494,29 @@ func CopyWasmExecJs(destinationDir string) error {
 	return nil
 }
 
+func CopyWasmExecJsTinygo(destinationDir string) error {
+	// get the file from where it should be installed i.e. /usr/local/lib/tinygo/targets/wasm_exec.js
+	// Source wasm_exec.js path
+	source := filepath.Join("/usr/local/lib/tinygo/targets", "wasm_exec.js")
+	err := os.MkdirAll(destinationDir, 0755) // Create the destination directory if it does not exist
+	if err != nil {
+		return fmt.Errorf("error creating destination directory: %v", err)
+	}
+
+	// Destination wasm_exec.js path
+	destination := filepath.Join(destinationDir, "wasm_exec.js")
+
+	// Copy the wasm_exec.js file
+	err = copyFile(source, destination)
+	if err != nil {
+		return fmt.Errorf("error copying file: %v", err)
+	}
+	if verbose {
+		fmt.Println("wasm_exec.js file copied from tinygo distribution.")
+	}
+	return nil
+}
+
 func initGoModule(moduleName string) error {
 	// Check if the current directory is already a go module
 	_, err := os.Stat("go.mod")
@@ -523,6 +546,12 @@ func copyFile(src, dst string) error {
 	}
 	defer sourceFile.Close()
 
+	// Get source file info for permissions
+	stat, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -534,7 +563,14 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	return destFile.Sync()
+	// Sync to ensure write to disk
+	err = destFile.Sync()
+	if err != nil {
+		return err
+	}
+
+	// Set the same permissions as source file
+	return os.Chmod(dst, stat.Mode())
 }
 
 func tryAddToWorkspace() error {
@@ -570,64 +606,9 @@ func isGoWorkSet() (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
-func installTinyGo(verbosity bool) error {
-	var response string
-	fmt.Print("Would you like to install the tinygo toolchain? (y/n): ")
-	_, err := fmt.Scan(&response)
-	if err != nil {
-		return fmt.Errorf("error reading input: %v", err)
-	}
-
-	if response == "y" {
-		// Prepare the command for installing tinygo
-		installCmdArgs := []string{"install"}
-		if verbosity {
-			// Append the verbosity flag based on the verbosity argument
-			installCmdArgs = append(installCmdArgs, "-verbose")
-		}
-		installCmdArgs = append(installCmdArgs, tinygoinstallerURL)
-		cmd := exec.Command("go", installCmdArgs...)
-		err := cmd.Run()
-		if err != nil {
-			return fmt.Errorf("error installing tinygo: %v", err)
-		}
-
-		// Prepare the command to run the tinygo installer, assuming it also accepts a verbosity flag
-		tinyGoInstallCmd := []string{"tinygoinstall"}
-		if verbosity {
-			// Append the verbosity flag based on the verbosity argument
-			tinyGoInstallCmd = append(tinyGoInstallCmd, "-verbose")
-		}
-		cmd = exec.Command(tinyGoInstallCmd[0], tinyGoInstallCmd[1:]...)
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("error running tinygo installer: %v", err)
-		}
-	} else {
-		return fmt.Errorf("tinygo toolchain installation aborted")
-	}
-
-	return nil
-}
-
 func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
 		toolchain := "go"
-		if tinygo {
-			// let's check whether the tinygo toolchain is available, otherwise error out
-			_, err := exec.LookPath("tinygo")
-			if err != nil {
-				err := installTinyGo(verbose)
-				if err != nil {
-					fmt.Printf("error installing tinygo: %v", err)
-					os.Exit(1)
-				}
-				if verbose {
-					fmt.Println("tinygo installed successfully.")
-				}
-			}
-			toolchain = "tinygo"
-		}
 
 		// Check if the build is for WebAssembly and save the current environment
 		isWasm := strings.HasSuffix(outputPath, ".wasm")
@@ -640,6 +621,15 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			}
 			if goos == "windows" && !strings.HasSuffix(outputPath, ".exe") {
 				outputPath += ".exe"
+			}
+		} else {
+			if tinygo {
+				// let's check whether the tinygo toolchain is available, otherwise error out
+				_, err := exec.LookPath("tinygo")
+				if err != nil {
+					return fmt.Errorf("tinygo is not installed")
+				}
+				toolchain = "tinygo"
 			}
 		}
 
@@ -656,16 +646,29 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 				return fmt.Errorf("error creating output directory: %v", err)
 			}
 		*/
-
-		outputPath, err := filepath.Rel(filepath.Join(".", "dev"), outputPath)
-		if err != nil {
-			return err
+		var err error
+		if isWasm && tinygo {
+			outputPath, err = filepath.Rel(filepath.Join(".", "release"), outputPath)
+			if err != nil {
+				print("this is the error")
+				return err
+			}
+		} else {
+			outputPath, err = filepath.Rel(filepath.Join(".", "dev"), outputPath)
+			if err != nil {
+				return err
+			}
 		}
 
 		args := []string{"build"}
 
 		// add ldflags if any relevant
 		if ldflags := ldflags(); ldflags != "" {
+			if releaseMode {
+				if !tinygo {
+					ldflags = "-s -w " + ldflags
+				}
+			}
 			args = append(args, "-ldflags="+ldflags)
 		}
 
@@ -698,6 +701,10 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 		cmd.Stderr = os.Stderr
 		if isWasm {
 			cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
+		}
+
+		if tinygo {
+			cmdArgs = append(cmdArgs, "no-debug", "=target=wasm", "-gc=conservative")
 		}
 
 		err = cmd.Run()

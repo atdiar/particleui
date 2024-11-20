@@ -387,10 +387,10 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		// Upon transition end, we should  cleanup the transition mutation handlers which didn't get
 		// called (e.g. error, cancel)
 		evnt.Origin().WatchEvent(TransitionPhase(name, "ended"), evnt.Origin(), NewMutationHandler(func(ev MutationEvent) bool {
-			ev.Origin().Unwatch("event", "cancelalltransitions", ev.Origin())
-			ev.Origin().Unwatch("event", TransitionPhase(name, "cancel"), ev.Origin())
-			ev.Origin().Unwatch("event", TransitionPhase(name, "error"), ev.Origin())
-			ev.Origin().Unwatch("event", TransitionPhase(name, "end"), ev.Origin())
+			ev.Origin().Unwatch(eventNS, "cancelalltransitions", ev.Origin())
+			ev.Origin().Unwatch(eventNS, TransitionPhase(name, "cancel"), ev.Origin())
+			ev.Origin().Unwatch(eventNS, TransitionPhase(name, "error"), ev.Origin())
+			ev.Origin().Unwatch(eventNS, TransitionPhase(name, "end"), ev.Origin())
 			return false
 		}).RunOnce())
 
@@ -451,28 +451,28 @@ func (e *Element) OnTransitionError(name string, h *MutationHandler) {
 	e.WatchEvent(onerrorRegistrationHook(name), e, NewMutationHandler(func(evnt MutationEvent) bool {
 		evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), h.RunOnce())
 		return false
-	}).RunOnce())
+	}).RunOnce().RunASAP())
 }
 
 func (e *Element) OnTransitionCancel(name string, h *MutationHandler) {
 	e.WatchEvent(oncancelRegistrationHook(name), e, NewMutationHandler(func(evnt MutationEvent) bool {
 		evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), h.RunOnce())
 		return false
-	}).RunOnce())
+	}).RunOnce().RunASAP())
 }
 
 func (e *Element) OnTransitionEnd(name string, h *MutationHandler) {
 	e.WatchEvent(onendRegistrationHook(name), e, NewMutationHandler(func(evnt MutationEvent) bool {
 		evnt.Origin().WatchEvent(TransitionPhase(name, "end"), evnt.Origin(), h.RunOnce())
 		return false
-	}).RunOnce())
+	}).RunOnce().RunASAP())
 }
 
 func (e *Element) AfterTransition(name string, h *MutationHandler) {
 	e.WatchEvent(onendedRegistrationHook(name), e, NewMutationHandler(func(evt MutationEvent) bool {
 		evt.Origin().WatchEvent(TransitionPhase(name, "ended"), evt.Origin(), h)
 		return false
-	}).RunOnce())
+	}).RunOnce().RunASAP())
 }
 
 func (e *Element) transitionIsDefined(name string) bool {
@@ -567,7 +567,7 @@ func TransitionStarted(e *Element, transitionname string) bool {
 }
 
 func TransitionEndValue(e *Element, transitionname string) (Value, error) {
-	v, ok := e.Get("event", TransitionPhase(transitionname, "end"))
+	v, ok := e.Get(eventNS, TransitionPhase(transitionname, "end"))
 	if !ok {
 		return nil, errors.New("transition doesn't seem to have completed yet")
 	}
@@ -689,7 +689,7 @@ func (l LifecycleHandlers) SetReady() {
 
 // MutationShouldReplay
 func (l LifecycleHandlers) MutationShouldReplay(b bool) {
-	_, ok := l.root.Get("internals", "mutation-should-replay")
+	_, ok := l.root.Get(internalsNS, "mutation-should-replay")
 	if !ok {
 		l.root.OnTransitionStart("load", NewMutationHandler(func(evt MutationEvent) bool {
 			if l.MutationWillReplay() {
@@ -698,12 +698,12 @@ func (l LifecycleHandlers) MutationShouldReplay(b bool) {
 			return false
 		}))
 	}
-	l.root.Set("internals", "mutation-should-replay", Bool(b))
+	l.root.Set(internalsNS, "mutation-should-replay", Bool(b))
 }
 
 // MutationWillReplay
 func (l LifecycleHandlers) MutationWillReplay() bool {
-	v, ok := l.root.Get("internals", "mutation-should-replay")
+	v, ok := l.root.Get(internalsNS, "mutation-should-replay")
 	if !ok {
 		return false
 	}

@@ -50,18 +50,18 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	v.SetAuthorization("", true)
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
-		l, ok := evt.Origin().Root.Get("internals", "views")
+		l, ok := evt.Origin().Root.Get(internalsNS, "views")
 		if !ok {
 			list := NewList(String((evt.Origin().ID)))
-			evt.Origin().Root.Set("internals", "views", list.Commit())
+			evt.Origin().Root.Set(internalsNS, "views", list.Commit())
 		} else {
 			list, ok := l.(List)
 			if !ok {
 				list = NewList(String(evt.Origin().ID)).Commit()
-				evt.Origin().Root.Set("internals", "views", list)
+				evt.Origin().Root.Set(internalsNS, "views", list)
 			} else {
 				list = list.MakeCopy().Append(String(evt.Origin().ID)).Commit()
-				evt.Origin().Root.Set("internals", "views", list)
+				evt.Origin().Root.Set(internalsNS, "views", list)
 			}
 		}
 		return false
@@ -72,21 +72,28 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	e.OnMounted(defaultViewMounter) // TODO remove
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		l, ok := evt.Origin().Root.Get("internals", "views")
+		l, ok := evt.Origin().Root.Get(internalsNS, "views")
 		if ok {
 			list, ok := l.(List)
 			if ok {
 				list = list.Filter(func(v Value) bool {
 					return !Equal(v, String(evt.Origin().ID))
 				})
-				evt.Origin().Root.Set("internals", "views", list)
+				evt.Origin().Root.Set(internalsNS, "views", list)
 			}
 		}
 		return false
 	}))
 
-	e.Watch("ui", "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
-		// TODO sync e.ActiveView with evt.NewValue()
+	e.Watch(uiNS, "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
+		vname := evt.NewValue().(String).String()
+		if v.HasStaticView(vname) {
+			e.ActiveView = vname
+		} else if pv, ok := v.hasParameterizedView(); ok {
+			e.ActiveView = ":" + pv
+		} else {
+			e.ActiveView = ""
+		}
 		evt.Origin().TriggerEvent("viewactivated", evt.NewValue())
 		return false
 	}))
@@ -108,13 +115,13 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 	// onerror MutationHandler
 	onerror := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().Set("internals", "viewactivation", evt.NewValue())
+		evt.Origin().Set(internalsNS, "viewactivation", evt.NewValue())
 		return false
 	})
 
 	// oncancel MutationHandler
 	oncancel := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().Set("internals", "viewactivation", evt.NewValue())
+		evt.Origin().Set(internalsNS, "viewactivation", evt.NewValue())
 		return false
 	})
 
@@ -154,7 +161,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	var ok bool
 
-	_, ok = e.Get("internals", "mountdefaultview")
+	_, ok = e.Get(internalsNS, "mountdefaultview")
 	if ok {
 		v := e.retrieveView("")
 		if v == nil {
@@ -183,7 +190,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 // a ViewElement mounts.
 func (v ViewElement) ChangeDefaultView(elements ...*Element) ViewElement {
 	e := v.AsElement()
-	e.Set("internals", "mountdefaultview", Bool(true))
+	e.Set(internalsNS, "mountdefaultview", Bool(true))
 	n := NewView("", elements...)
 	v.AddView(n)
 	return v
@@ -254,7 +261,7 @@ func (v ViewElement) ActivateView(name string) error {
 // OnParamChange registers a MutationHandler that will be triggered when a view parameter changes.
 // The view parameter holds the current name of the active, parametered, view.
 func (v ViewElement) OnParamChange(h *MutationHandler) {
-	v.AsElement().Watch("ui", "viewparameter", v, h)
+	v.AsElement().Watch(uiNS, "viewparameter", v, h)
 }
 
 // OnActivated registers a MutationHandler that will be triggered each time a view has been activated.
@@ -278,7 +285,7 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ..
 	v.AsElement().WatchEvent("viewactivated", v.AsElement(), nh)
 
 	for _, qh := range onquery {
-		v.AsElement().Watch("navigation", "query", v, qh)
+		v.AsElement().Watch(navigationNS, "query", v, qh)
 	}
 }
 
@@ -348,9 +355,10 @@ func (e *Element) activateView(name string) {
 
 	if e.ActiveView == name {
 		// TODO handle the case where name == "" and e.ActiveView == ""
-		// In thatr case, depending whether there is a default view,
+		// In that case, depending whether there is a default view,
 		// might want to activate it.
 		if name != "" {
+			//DEBUG("View %s is already active", name)
 			e.EndTransition("activateview", String(name)) // already active
 			return
 		}
@@ -358,7 +366,7 @@ func (e *Element) activateView(name string) {
 		if !ok {
 			// if there is a default view, then it is active, otherwise
 			// there must be a mistake.
-			_, ok := e.Get("internals", "mountdefaultview")
+			_, ok := e.Get(internalsNS, "mountdefaultview")
 			if ok {
 				e.EndTransition("activateview", String(name)) // already active
 				return
@@ -380,7 +388,7 @@ func (e *Element) activateView(name string) {
 		if name == "" {
 			// TODO handle the case where there is no default
 			// view defined.
-			_, ok := e.Get("internals", "mountdefaultview")
+			_, ok := e.Get(internalsNS, "mountdefaultview")
 			if ok {
 				e.EndTransition("activateview", String(name)) // already active
 				return
@@ -391,7 +399,7 @@ func (e *Element) activateView(name string) {
 
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
-			n, ok := e.Get("ui", "activeview")
+			n, ok := e.Get(uiNS, "activeview")
 			if !ok {
 				panic("FAILURE: parameterized view is activated but no activeview name exists in state")
 			}
@@ -400,7 +408,7 @@ func (e *Element) activateView(name string) {
 				return
 			}
 
-			e.Set("ui", "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
+			e.Set(uiNS, "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
 			e.EndTransition("activateview", String(name))
 			return
 		}
@@ -417,7 +425,7 @@ func (e *Element) activateView(name string) {
 
 		e.SetChildren(view.elements.List...)
 
-		e.Set("ui", "viewparameter", String(name))
+		e.Set(uiNS, "viewparameter", String(name))
 		e.EndTransition("activateview", String(name))
 		return
 	}

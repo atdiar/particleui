@@ -116,6 +116,18 @@ func Run(buildtags ...string) error {
 			return err
 		}
 
+		if tinygo {
+			err = CopyWasmExecJsTinygo(filepath.Join(".", "dev", "build", "app", basepathseg))
+			if err != nil {
+				return err
+			}
+		} else {
+			err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app", basepathseg))
+			if err != nil {
+				return err
+			}
+		}
+
 		serverbinpath := filepath.Join(".", "dev", "build", "server", "csr", basepathseg, "main")
 		if ssr {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
@@ -134,7 +146,7 @@ func Run(buildtags ...string) error {
 		}
 
 		args := []string{"-host", host, "-port", port}
-		if nohmr {
+		if nohmr || releaseMode {
 			args = append(args, "--nohmr")
 		}
 
@@ -180,7 +192,7 @@ func ldflags() string {
 	if ssg {
 		flags[uipkg+"/drivers/js.SSGMode"] = "true"
 	}
-	if !nohmr {
+	if !nohmr && !releaseMode {
 		flags[uipkg+"/drivers/js.HMRMode"] = "true"
 	} else {
 		flags[uipkg+"/drivers/js.HMRMode"] = "false"
@@ -190,7 +202,7 @@ func ldflags() string {
 		flags[uipkg+"/drivers/js.BasePath"] = basepath
 	}
 
-	var ldflags []string
+	var ldflags = []string{}
 	for key, value := range flags {
 		ldflags = append(ldflags, fmt.Sprintf("-X %s=%s", key, value))
 	}
