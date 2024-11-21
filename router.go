@@ -382,7 +382,7 @@ func (r *Router) handler() *MutationHandler {
 				}
 			} else if r.History.Cursor < n {
 				// we are going forward
-				r.History.ImportState(h)
+				//r.History.ImportState(h)
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
@@ -1318,7 +1318,6 @@ func (n *NavHistory) ImportState(v Value) *NavHistory {
 	h, ok := v.(Object)
 	if !ok {
 		return n
-
 	}
 	stk, ok := h.Get("stack")
 	if !ok {

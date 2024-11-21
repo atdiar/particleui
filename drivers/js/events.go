@@ -217,6 +217,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 						if !ok {
 							panic("popstate event fired but the state object has no cursor which is unexpected")
 						}
+
 						GetDocument(listener).AsElement().SyncUISetData("history", hso)
 
 					}
