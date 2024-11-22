@@ -242,7 +242,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			}
 
 			if evt.InstanceOf(jsInputEvent) {
-				rv = rv.Set("data", ui.String(evt.Get("data").String()))
+				rv = rv.Set(Namespace.Data, ui.String(evt.Get("data").String()))
 				rv = rv.Set("inputType", ui.String(evt.Get("inputType").String()))
 				if !v.Truthy() {
 					rv = rv.Set("value", ui.String(""))

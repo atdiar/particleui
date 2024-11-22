@@ -194,10 +194,10 @@ func (e *Element) setDataPrefetcher(propname string, reqfunc func(e *Element) *h
 // The fetching occurs during the "fetch" event ("event","fetch") that is triggered each time an element
 // is mounted.
 func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http.Request, responsehandler func(*http.Response) (Value, error), prefetchable bool) {
-	_, ok := e.Get(internalsNS, "fetching")
+	_, ok := e.Get(Namespace.Internals, "fetching")
 	if !ok {
 		e.enablefetching()
-		e.Set(internalsNS, "fetching", Bool(true))
+		e.Set(Namespace.Internals, "fetching", Bool(true))
 	}
 	// TODO panic if data fetcher already exists for this propname
 	if e.fetching(fetchTxName(propname, "start")) { // todo this is not the right propname to check. should use the fetching transition prop name
@@ -241,7 +241,7 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the r.URL
 		evt.Origin().OnRegistered(NewMutationHandler(func(event MutationEvent) bool {
-			event.Origin().RemoveMutationHandler(eventNS, "request-"+requestID(r), event.Origin().Root, reqmonitor)
+			event.Origin().RemoveMutationHandler(Namespace.Event, "request-"+requestID(r), event.Origin().Root, reqmonitor)
 			event.Origin().WatchEvent("request-"+requestID(r), event.Origin().Root, reqmonitor)
 			return false
 		}).RunOnce().RunASAP())
@@ -881,7 +881,7 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 			ctx, cancelFn = context.WithCancel(r.Context())
 			r = r.WithContext(ctx)
 
-			e.Properties.Delete(eventNS, "request-error-"+requestID(r))
+			e.Properties.Delete(Namespace.Event, "request-error-"+requestID(r))
 
 			DoAsync(e, func(execution context.Context) {
 
@@ -1000,7 +1000,7 @@ func (e *Element) OnRequestError(r *http.Request, h *MutationHandler) {
 // Otherwise it returns nil.
 // It is typically used when handling OnRequestEnd.
 func RetrieveResponse(e *Element, r *http.Request) (Value, error) {
-	v, ok := e.Get(eventNS, TransitionPhase("request-"+requestID(r), "end"))
+	v, ok := e.Get(Namespace.Event, TransitionPhase("request-"+requestID(r), "end"))
 	if !ok {
 		return nil, nil
 	}

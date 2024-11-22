@@ -50,18 +50,18 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	v.SetAuthorization("", true)
 
 	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
-		l, ok := evt.Origin().Root.Get(internalsNS, "views")
+		l, ok := evt.Origin().Root.Get(Namespace.Internals, "views")
 		if !ok {
 			list := NewList(String((evt.Origin().ID)))
-			evt.Origin().Root.Set(internalsNS, "views", list.Commit())
+			evt.Origin().Root.Set(Namespace.Internals, "views", list.Commit())
 		} else {
 			list, ok := l.(List)
 			if !ok {
 				list = NewList(String(evt.Origin().ID)).Commit()
-				evt.Origin().Root.Set(internalsNS, "views", list)
+				evt.Origin().Root.Set(Namespace.Internals, "views", list)
 			} else {
 				list = list.MakeCopy().Append(String(evt.Origin().ID)).Commit()
-				evt.Origin().Root.Set(internalsNS, "views", list)
+				evt.Origin().Root.Set(Namespace.Internals, "views", list)
 			}
 		}
 		return false
@@ -72,20 +72,20 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	e.OnMounted(defaultViewMounter) // TODO remove
 
 	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		l, ok := evt.Origin().Root.Get(internalsNS, "views")
+		l, ok := evt.Origin().Root.Get(Namespace.Internals, "views")
 		if ok {
 			list, ok := l.(List)
 			if ok {
 				list = list.Filter(func(v Value) bool {
 					return !Equal(v, String(evt.Origin().ID))
 				})
-				evt.Origin().Root.Set(internalsNS, "views", list)
+				evt.Origin().Root.Set(Namespace.Internals, "views", list)
 			}
 		}
 		return false
 	}))
 
-	e.Watch(uiNS, "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Watch(Namespace.UI, "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
 		vname := evt.NewValue().(String).String()
 		if v.HasStaticView(vname) {
 			e.ActiveView = vname
@@ -105,7 +105,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 		if !auth {
 			DEBUG("unauthorized view: ", vname)
-			v.AsElement().ErrorTransition("activateview", String("Unauthorized"))
+			v.AsElement().ErrorTransition(prop.ActivateView, String("Unauthorized"))
 			return false
 		}
 		evt.Origin().activateView(vname)
@@ -115,27 +115,27 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 	// onerror MutationHandler
 	onerror := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().Set(internalsNS, "viewactivation", evt.NewValue())
+		evt.Origin().Set(Namespace.Internals, prop.ViewActivation, evt.NewValue())
 		return false
 	})
 
 	// oncancel MutationHandler
 	oncancel := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().Set(internalsNS, "viewactivation", evt.NewValue())
+		evt.Origin().Set(Namespace.Internals, prop.ViewActivation, evt.NewValue())
 		return false
 	})
 
 	// onend MutationHandler
 	onend := NewMutationHandler(func(evt MutationEvent) bool {
 		// If no transition Error, then the transition was successful
-		if !TransitionError(evt.Origin(), "activateview") && !TransitionCancelled(evt.Origin(), "activateview") {
+		if !TransitionError(evt.Origin(), prop.ActivateView) && !TransitionCancelled(evt.Origin(), prop.ActivateView) {
 			evt.Origin().SetUI("activeview", evt.NewValue())
 		}
 
 		return false
 	})
 
-	e.DefineTransition("activateview", onstart, onerror, oncancel, onend)
+	e.DefineTransition(prop.ActivateView, onstart, onerror, oncancel, onend)
 
 	return v
 }
@@ -161,7 +161,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	var ok bool
 
-	_, ok = e.Get(internalsNS, "mountdefaultview")
+	_, ok = e.Get(Namespace.Internals, "mountdefaultview")
 	if ok {
 		v := e.retrieveView("")
 		if v == nil {
@@ -190,7 +190,7 @@ var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
 // a ViewElement mounts.
 func (v ViewElement) ChangeDefaultView(elements ...*Element) ViewElement {
 	e := v.AsElement()
-	e.Set(internalsNS, "mountdefaultview", Bool(true))
+	e.Set(Namespace.Internals, "mountdefaultview", Bool(true))
 	n := NewView("", elements...)
 	v.AddView(n)
 	return v
@@ -245,10 +245,10 @@ func (v ViewElement) HasStaticView(name string) bool { // name should not start 
 // If no View exists for the name argument or is not authorized, an error is returned.
 func (v ViewElement) ActivateView(name string) error {
 	e := v.AsElement()
-	e.StartTransition("activateview", String(name))
+	e.StartTransition(prop.ActivateView, String(name))
 
-	if TransitionError(e, "activateview") {
-		v, err := TransitionEndValue(e, "activateview")
+	if TransitionError(e, prop.ActivateView) {
+		v, err := TransitionEndValue(e, prop.ActivateView)
 		if err != nil {
 			panic(err)
 		}
@@ -261,7 +261,7 @@ func (v ViewElement) ActivateView(name string) error {
 // OnParamChange registers a MutationHandler that will be triggered when a view parameter changes.
 // The view parameter holds the current name of the active, parametered, view.
 func (v ViewElement) OnParamChange(h *MutationHandler) {
-	v.AsElement().Watch(uiNS, "viewparameter", v, h)
+	v.AsElement().Watch(Namespace.UI, "viewparameter", v, h)
 }
 
 // OnActivated registers a MutationHandler that will be triggered each time a view has been activated.
@@ -285,7 +285,7 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ..
 	v.AsElement().WatchEvent("viewactivated", v.AsElement(), nh)
 
 	for _, qh := range onquery {
-		v.AsElement().Watch(navigationNS, "query", v, qh)
+		v.AsElement().Watch(Namespace.Navigation, "query", v, qh)
 	}
 }
 
@@ -359,25 +359,25 @@ func (e *Element) activateView(name string) {
 		// might want to activate it.
 		if name != "" {
 			//DEBUG("View %s is already active", name)
-			e.EndTransition("activateview", String(name)) // already active
+			e.EndTransition(prop.ActivateView, String(name)) // already active
 			return
 		}
 		newview, ok := e.InactiveViews[name]
 		if !ok {
 			// if there is a default view, then it is active, otherwise
 			// there must be a mistake.
-			_, ok := e.Get(internalsNS, "mountdefaultview")
+			_, ok := e.Get(Namespace.Internals, "mountdefaultview")
 			if ok {
-				e.EndTransition("activateview", String(name)) // already active
+				e.EndTransition(prop.ActivateView, String(name)) // already active
 				return
 			}
 			// TODO panic or silently return? Or transition Error
-			e.ErrorTransition("activateview", String(name), String("no default view defined"))
+			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined"))
 			return
 		}
 		e.SetChildren(newview.elements.List...)
 		delete(e.InactiveViews, name)
-		e.EndTransition("activateview", String(name))
+		e.EndTransition(prop.ActivateView, String(name))
 		return
 	}
 
@@ -388,35 +388,35 @@ func (e *Element) activateView(name string) {
 		if name == "" {
 			// TODO handle the case where there is no default
 			// view defined.
-			_, ok := e.Get(internalsNS, "mountdefaultview")
+			_, ok := e.Get(Namespace.Internals, "mountdefaultview")
 			if ok {
-				e.EndTransition("activateview", String(name)) // already active
+				e.EndTransition(prop.ActivateView, String(name)) // already active
 				return
 			}
-			e.ErrorTransition("activateview", String(name), String("no default view defined"))
+			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined"))
 			return
 		}
 
 		if isParameter(e.ActiveView) {
 			// let's check the name recorded in the state
-			n, ok := e.Get(uiNS, "activeview")
+			n, ok := e.Get(Namespace.UI, "activeview")
 			if !ok {
 				panic("FAILURE: parameterized view is activated but no activeview name exists in state")
 			}
 			if nm := string(n.(String)); nm == name {
-				e.EndTransition("activateview", String(name)) // already active
+				e.EndTransition(prop.ActivateView, String(name)) // already active
 				return
 			}
 
-			e.Set(uiNS, "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
-			e.EndTransition("activateview", String(name))
+			e.Set(Namespace.UI, "viewparameter", String(name)) // necessary because not every change of (ui,activeview) is a viewparameter change.
+			e.EndTransition(prop.ActivateView, String(name))
 			return
 		}
 		// Support for parameterized views
 
 		p, ok := ViewElement{e}.hasParameterizedView()
 		if !ok {
-			e.ErrorTransition("activateview", String(name), String("this view does not exist"))
+			e.ErrorTransition(prop.ActivateView, String(name), String("this view does not exist"))
 			return
 		}
 		view := e.InactiveViews[":"+p]
@@ -425,8 +425,8 @@ func (e *Element) activateView(name string) {
 
 		e.SetChildren(view.elements.List...)
 
-		e.Set(uiNS, "viewparameter", String(name))
-		e.EndTransition("activateview", String(name))
+		e.Set(Namespace.UI, "viewparameter", String(name))
+		e.EndTransition(prop.ActivateView, String(name))
 		return
 	}
 
@@ -441,7 +441,7 @@ func (e *Element) activateView(name string) {
 
 	delete(e.InactiveViews, name)
 
-	e.EndTransition("activateview", String(name))
+	e.EndTransition(prop.ActivateView, String(name))
 }
 
 // AddView is an *Element modifier that is used to add an activable named view to an element.

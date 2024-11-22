@@ -63,6 +63,8 @@ var (
 			AddConstructorOptionsTo("observable", AllowSessionStoragePersistence, AllowAppLocalStoragePersistence).
 			WithGlobalConstructorOption(allowdatapersistence).
 			WithGlobalConstructorOption(allowDataFetching)
+
+	Namespace = ui.Namespace
 )
 
 var SSEscript = `
@@ -294,7 +296,7 @@ func ConnectNative(e *ui.Element, tag string) {
 			statenode := js.Global().Get("document)").Call("getElementById", SSRStateElementID)
 			state := statenode.Get("textContent").String()
 
-			e.Set("internals", "mutationtrace", ui.String(state))
+			e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
 
 			e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				statenode.Call("remove")
@@ -775,7 +777,7 @@ var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Eleme
 	e.WatchEvent("ui-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
 		e.OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			evt.Origin().RemoveMutationHandler("event", "unmounted", evt.Origin(), fetcher)
+			evt.Origin().RemoveMutationHandler(Namespace.Event, "unmounted", evt.Origin(), fetcher)
 			return false
 		}).RunOnce())
 		return false
@@ -819,7 +821,7 @@ var routerConfig = func(r *ui.Router) {
 	SetInlineCSS(pnf.AsElement(), `all: initial;`)
 
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		v, ok := r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
+		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
 		}
@@ -845,7 +847,7 @@ var routerConfig = func(r *ui.Router) {
 	// unauthorized
 	ui.AddView("unauthorized", doc.Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
 	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		v, ok := r.Outlet.AsElement().Root.Get("navigation", "targetviewid")
+		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
 		}
@@ -1146,7 +1148,7 @@ func (d *Document) Window() Window {
 	ui.RegisterElement(d.AsElement(), wd.Raw)
 	wd.Raw.TriggerEvent("mounted", ui.Bool(true))
 	wd.Raw.TriggerEvent("mountable", ui.Bool(true))
-	d.AsElement().BindValue("ui", "title", wd.AsElement())
+	d.AsElement().BindValue(Namespace.UI, "title", wd.AsElement())
 	return wd
 }
 
@@ -1567,7 +1569,7 @@ func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
 	observable.WatchEvent("new", observable, new)
 	observable.WatchEvent("enable", observable, enable)
 	observable.WatchEvent("disable", observable, disable)
-	observable.Watch("ui", "stylesheet", observable, update)
+	observable.Watch(Namespace.UI, "stylesheet", observable, update)
 	observable.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		// TODO remove from adopted stylesheets
 		d, ok := JSValue(GetDocument(evt.Origin()))
@@ -1654,7 +1656,7 @@ func (d *Document) SetActiveStyleSheets(ids ...string) *Document {
 		}
 	}
 
-	d.Set("internals", "activestylesheets", l.Commit())
+	d.Set(Namespace.Internals, "activestylesheets", l.Commit())
 	return d
 }
 
@@ -1708,12 +1710,12 @@ func (m *mutationRecorder) Capture() {
 
 	d := GetDocument(m.raw)
 
-	c, ok := d.Get("internals", "mutation-capturing")
+	c, ok := d.Get(Namespace.Internals, "mutation-capturing")
 	if ok && c.(ui.Bool).Bool() {
 		panic("mutation capture already enabled/ongoing")
 	}
-	d.Set("internals", "mutation-replaying", ui.Bool(false))
-	d.Set("internals", "mutation-capturing", ui.Bool(true))
+	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
+	d.Set(Namespace.Internals, "mutation-capturing", ui.Bool(true))
 
 	// capture of the list of mutations
 	var h *ui.MutationHandler
@@ -1738,9 +1740,9 @@ func (m *mutationRecorder) Capture() {
 		return false
 	})
 
-	m.raw.Watch("internals", "mutation-capturing", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	m.raw.Watch(Namespace.Internals, "mutation-capturing", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		if !evt.NewValue().(ui.Bool) {
-			m.raw.RemoveMutationHandler("event", "new-mutation", d, h)
+			m.raw.RemoveMutationHandler(Namespace.Event, "new-mutation", d, h)
 		}
 		return false
 	}).RunOnce())
@@ -1755,19 +1757,19 @@ func (m *mutationRecorder) Replay() error {
 	}
 
 	d := GetDocument(m.raw)
-	d.Set("internals", "mutation-capturing", ui.Bool(false))
-	d.Set("internals", "mutation-replaying", ui.Bool(true))
+	d.Set(Namespace.Internals, "mutation-capturing", ui.Bool(false))
+	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(true))
 
 	if r := d.Router(); r != nil {
 		r.CancelNavigation()
 	}
 	err := mutationreplay(d)
 	if err != nil {
-		d.Set("internals", "mutation-replaying", ui.Bool(false))
+		d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
 		return ui.ErrReplayFailure
 	}
 
-	d.Set("internals", "mutation-replaying", ui.Bool(false))
+	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
 	d.TriggerEvent("mutation-replayed")
 
 	return nil
@@ -1782,7 +1784,7 @@ func (m *mutationRecorder) Clear() {
 func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
 
-	trace, ok := d.Get("internals", "mutationtrace")
+	trace, ok := d.Get(Namespace.Internals, "mutationtrace")
 	if ok {
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
 		if err != nil {
@@ -1860,20 +1862,20 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	ConnectNative(e, "html")
 
-	e.Watch("ui", "lang", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "lang", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), "lang", string(evt.NewValue().(ui.String)))
 		return false
 	}).RunASAP())
 
-	e.Watch("ui", "history", e, historyMutationHandler)
+	e.Watch(Namespace.UI, "history", e, historyMutationHandler)
 
 	// makes ViewElements focusable (focus management support)
-	e.Watch("internals", "views", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.Internals, "views", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		l := evt.NewValue().(ui.List)
 		viewstr := l.Get(len(l.UnsafelyUnwrap()) - 1).(ui.String)
 		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view, "tabindex", "-1")
-		e.Watch("ui", "activeview", view, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch(Namespace.UI, "activeview", view, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			e.SetDataSetUI("focus", ui.String(view.ID))
 			return false
 		}))
@@ -1972,8 +1974,8 @@ func mutationreplay(d *Document) error {
 			return ui.ErrReplayFailure
 		}
 
-		el.BindValue("event", "connect-native", e)
-		el.BindValue("event", "mutation-replayed", e)
+		el.BindValue(Namespace.Event, "connect-native", e)
+		el.BindValue(Namespace.Event, "mutation-replayed", e)
 
 		_, ok = op.Get("sync")
 		if !ok {
@@ -1982,7 +1984,7 @@ func mutationreplay(d *Document) error {
 			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
 		}
 
-		i, ok := d.Get("internals", "mutation-list-index")
+		i, ok := d.Get(Namespace.Internals, "mutation-list-index")
 		if !ok {
 			if m.pos == 0 {
 				i = ui.Number(0)
@@ -1992,7 +1994,7 @@ func mutationreplay(d *Document) error {
 		}
 		m.pos = int(i.(ui.Number).Float64())
 		m.pos = m.pos + 1
-		d.Set("internals", "mutation-list-index", ui.Number(m.pos))
+		d.Set(Namespace.Internals, "mutation-list-index", ui.Number(m.pos))
 	}
 
 	return nil
@@ -2439,7 +2441,7 @@ func NewDocument(id string, options ...string) *Document {
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
-	d.Watch("ui", "favicon", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.Watch(Namespace.UI, "favicon", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		var l LinkElement
 		f := d.GetElementById("favicon")
 		if f != nil {
@@ -2454,7 +2456,7 @@ func NewDocument(id string, options ...string) *Document {
 
 	e.OnRouterMounted(routerConfig)
 	d.OnReady(navinitHandler)
-	e.Watch("ui", "title", e, documentTitleHandler)
+	e.Watch(Namespace.UI, "title", e, documentTitleHandler)
 
 	activityStateSupport(e)
 
@@ -2469,7 +2471,7 @@ func NewDocument(id string, options ...string) *Document {
 
 var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	var route string
-	r, ok := evt.Origin().Get("ui", "currentroute")
+	r, ok := evt.Origin().Get(Namespace.UI, "currentroute")
 	if !ok {
 		panic("current route is unknown")
 	}
@@ -2732,7 +2734,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 		// focus restoration if applicable
 		v, ok := router.History.Get("focusedElementId")
 		if !ok {
-			v, ok = e.Get("ui", "focus")
+			v, ok = e.Get(Namespace.UI, "focus")
 			if !ok {
 				return false
 			}
@@ -3097,7 +3099,7 @@ var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 	withStringAttributeWatcher(e, "referrerpolicy")
 	withStringAttributeWatcher(e, "loading")
 
-	e.Watch("ui", "sandboxmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "sandboxmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		o := evt.NewValue().(ui.List).UnsafelyUnwrap()
 		var res strings.Builder
 		for _, v := range o {
@@ -3108,7 +3110,7 @@ var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.Watch("ui", "allowmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "allowmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		o := evt.NewValue().(ui.Object)
 		// stringBuilder
 		var res strings.Builder
@@ -3447,7 +3449,7 @@ var newBody = Elements.NewConstructor("body", func(id string) *ui.Element {
 	ConnectNative(e, "body")
 
 	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		evt.Origin().Root.Set("ui", "body", ui.String(evt.Origin().ID))
+		evt.Origin().Root.Set(Namespace.UI, "body", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
 
@@ -3474,7 +3476,7 @@ var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 	ConnectNative(e, "head")
 
 	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		evt.Origin().Root.Set("ui", "head", ui.String(evt.Origin().ID))
+		evt.Origin().Root.Set(Namespace.UI, "head", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
 
@@ -3573,7 +3575,7 @@ var newTitle = Elements.NewConstructor("title", func(id string) *ui.Element {
 
 	tag := "title"
 	ConnectNative(e, tag)
-	e.Watch("ui", "title", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "title", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetTextContent(evt.Origin(), evt.NewValue().(ui.String).String())
 		return false
 	}))
@@ -3704,7 +3706,7 @@ var newBase = Elements.NewConstructor("base", func(id string) *ui.Element {
 	tag := "base"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "href", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "href", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), "href", string(evt.NewValue().(ui.String)))
 		return false
 	}))
@@ -3830,7 +3832,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	tag := "div"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "contenteditable", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "contenteditable", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b, ok := evt.NewValue().(ui.Bool)
 		if !ok {
 			return true
@@ -3841,7 +3843,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
@@ -4167,7 +4169,7 @@ var newH1 = Elements.NewConstructor("h1", func(id string) *ui.Element {
 	tag := "h1"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4194,7 +4196,7 @@ var newH2 = Elements.NewConstructor("h2", func(id string) *ui.Element {
 	tag := "h2"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4221,7 +4223,7 @@ var newH3 = Elements.NewConstructor("h3", func(id string) *ui.Element {
 	tag := "h3"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4247,7 +4249,7 @@ var newH4 = Elements.NewConstructor("h4", func(id string) *ui.Element {
 	tag := "h4"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4274,7 +4276,7 @@ var newH5 = Elements.NewConstructor("h5", func(id string) *ui.Element {
 	tag := "h5"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4301,7 +4303,7 @@ var newH6 = Elements.NewConstructor("h6", func(id string) *ui.Element {
 	tag := "h6"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -4328,7 +4330,7 @@ var newSpan = Elements.NewConstructor("span", func(id string) *ui.Element {
 	tag := "span"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -4421,7 +4423,7 @@ var newParagraph = Elements.NewConstructor("p", func(id string) *ui.Element {
 	tag := "p"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -4486,7 +4488,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 		return false
 	}).RunASAP()))
 
-	a.AsElement().Watch("ui", "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		a.SetDataSetUI("active", evt.NewValue())
 		return false
 	}).RunASAP())
@@ -4508,7 +4510,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 
 	a.SetDataSetUI("link", ui.String(link.AsElement().ID))
 
-	pm, ok := a.AsElement().Get("internals", "prefetchmode")
+	pm, ok := a.AsElement().Get(Namespace.Internals, "prefetchmode")
 	if ok && !prefetchDisabled() {
 		switch t := string(pm.(ui.String)); t {
 		case "intent":
@@ -4533,7 +4535,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 }
 
 func (a AnchorElement) OnActive(h *ui.MutationHandler) AnchorElement {
-	a.AsElement().Watch("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if !b {
 			return false
@@ -4544,7 +4546,7 @@ func (a AnchorElement) OnActive(h *ui.MutationHandler) AnchorElement {
 }
 
 func (a AnchorElement) OnInactive(h *ui.MutationHandler) AnchorElement {
-	a.AsElement().Watch("ui", "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if b {
 			return false
@@ -4584,14 +4586,14 @@ func (c anchorConstructor) WithID(id string, options ...string) AnchorElement {
 
 var AllowPrefetchOnIntent = ui.NewConstructorOption("prefetchonintent", func(e *ui.Element) *ui.Element {
 	if !prefetchDisabled() {
-		e.Set("internals", "prefetchmode", ui.String("intent"))
+		e.Set(Namespace.Internals, "prefetchmode", ui.String("intent"))
 	}
 	return e
 })
 
 var AllowPrefetchOnRender = ui.NewConstructorOption("prefetchonrender", func(e *ui.Element) *ui.Element {
 	if !prefetchDisabled() {
-		e.Set("internals", "prefetchmode", ui.String("render"))
+		e.Set(Namespace.Internals, "prefetchmode", ui.String("render"))
 	}
 	return e
 })
@@ -4680,7 +4682,7 @@ var newButton = Elements.NewConstructor("button", func(id string) *ui.Element {
 	withStringAttributeWatcher(e, "type")
 	withStringAttributeWatcher(e, "name")
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence,
@@ -4759,7 +4761,7 @@ var newLabel = Elements.NewConstructor("label", func(id string) *ui.Element {
 	ConnectNative(e, tag)
 
 	withStringAttributeWatcher(e, "for")
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
 
@@ -5051,7 +5053,7 @@ func inputOption(name string) ui.ConstructorOption {
 		if newset("text", "search", "url", "tel", "email", "password").Contains(name) {
 			withStringAttributeWatcher(e, "pattern")
 			withNumberAttributeWatcher(e, "size")
-			e.Watch("ui", "maxlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "maxlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "maxlength", strconv.Itoa(int(i)))
 					return false
@@ -5060,7 +5062,7 @@ func inputOption(name string) ui.ConstructorOption {
 				return false
 			}))
 
-			e.Watch("ui", "minlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "minlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "minlength", strconv.Itoa(int(i)))
 					return false
@@ -5091,7 +5093,7 @@ func inputOption(name string) ui.ConstructorOption {
 		}
 
 		if newset("date", "month", "week", "time", "datetime-local", "range").Contains(name) {
-			e.Watch("ui", "step", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "step", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "step", strconv.Itoa(int(i)))
 					return false
@@ -6260,7 +6262,7 @@ var newSummary = Elements.NewConstructor("summary", func(id string) *ui.Element 
 	tag := "summary"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -6310,7 +6312,7 @@ var newDetails = Elements.NewConstructor("details", func(id string) *ui.Element 
 	tag := "details"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 	withBoolAttributeWatcher(e, "open")
 
 	return e
@@ -6389,7 +6391,7 @@ var newCode = Elements.NewConstructor("code", func(id string) *ui.Element {
 	tag := "code"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -6480,7 +6482,7 @@ func (o objectModifier) Type(typ string) func(*ui.Element) *ui.Element {
 // Data sets the path to the resource.
 func (o objectModifier) Data(u url.URL) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.SetUI("data", ui.String(u.String()))
+		e.SetUI(Namespace.Data, ui.String(u.String()))
 		return e
 	}
 }
@@ -6742,7 +6744,7 @@ var newLegend = Elements.NewConstructor("legend", func(id string) *ui.Element {
 	tag := "legend"
 	ConnectNative(e, tag)
 
-	e.Watch("ui", "text", e, textContentHandler)
+	e.Watch(Namespace.UI, "text", e, textContentHandler)
 
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence)
@@ -6969,7 +6971,7 @@ var newForm = Elements.NewConstructor("form", func(id string) *ui.Element {
 	ConnectNative(e, tag)
 
 	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-		_, ok := e.Get("ui", "action")
+		_, ok := e.Get(Namespace.UI, "action")
 		if !ok {
 			evt.Origin().SetDataSetUI("action", ui.String(evt.Origin().Route()))
 		}
@@ -7139,7 +7141,7 @@ func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 
 // watches ("ui",attr) for a ui.String value.
 func withStringAttributeWatcher(e *ui.Element, attr string) {
-	e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), attr, string(evt.NewValue().(ui.String)))
 		return false
 	}).RunOnce())
@@ -7149,7 +7151,7 @@ func withStringAttributeWatcher(e *ui.Element, attr string) {
 
 // watches ("ui",attr) for a ui.Number value.
 func withNumberAttributeWatcher(e *ui.Element, attr string) {
-	e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), attr, strconv.Itoa(int(evt.NewValue().(ui.Number))))
 		return false
 	}).RunOnce())
@@ -7159,7 +7161,7 @@ func withNumberAttributeWatcher(e *ui.Element, attr string) {
 // watches ("ui",attr) for a ui.Bool value.
 func withBoolAttributeWatcher(e *ui.Element, attr string) {
 	if !InBrowser() {
-		e.Watch("ui", attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			if evt.NewValue().(ui.Bool) {
 				SetAttribute(evt.Origin(), attr, "")
 				return false
@@ -7183,19 +7185,19 @@ func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element {
 }
 
 func withStringPropertyWatcher(e *ui.Element, propname string) {
-	e.Watch("ui", propname, e, stringPropertyWatcher(propname))
+	e.Watch(Namespace.UI, propname, e, stringPropertyWatcher(propname))
 }
 
 func withBoolPropertyWatcher(e *ui.Element, propname string) {
-	e.Watch("ui", propname, e, boolPropertyWatcher(propname))
+	e.Watch(Namespace.UI, propname, e, boolPropertyWatcher(propname))
 }
 
 func withNumberPropertyWatcher(e *ui.Element, propname string) {
-	e.Watch("ui", propname, e, numericPropertyWatcher(propname))
+	e.Watch(Namespace.UI, propname, e, numericPropertyWatcher(propname))
 }
 
 func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, max int) {
-	e.Watch("ui", propname, e, clampedValueWatcher(propname, min, max))
+	e.Watch(Namespace.UI, propname, e, clampedValueWatcher(propname, min, max))
 }
 
 func clampedValueWatcher(propname string, min int, max int) *ui.MutationHandler {
@@ -7308,7 +7310,7 @@ func GetAttribute(target *ui.Element, name string) string {
 func SetAttribute(target *ui.Element, name string, value string) {
 	var attrmap ui.Object
 	var am = ui.NewObject()
-	m, ok := target.Get("data", "attrs")
+	m, ok := target.Get(Namespace.Data, "attrs")
 	if ok {
 		attrmap, ok = m.(ui.Object)
 		if !ok {
@@ -7328,7 +7330,7 @@ func SetAttribute(target *ui.Element, name string, value string) {
 }
 
 func RemoveAttribute(target *ui.Element, name string) {
-	m, ok := target.Get("data", "attrs")
+	m, ok := target.Get(Namespace.Data, "attrs")
 	if !ok {
 		return
 	}

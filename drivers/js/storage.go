@@ -44,7 +44,7 @@ func (s jsStore) Delete(key string) {
 
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-		if category != "data" && category != "ui" {
+		if category != Namespace.Data && category != Namespace.UI {
 			return
 		}
 		store := jsStore{js.Global().Get(s)}
@@ -91,7 +91,7 @@ func loader(s string) func(e *ui.Element) error {
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
 
-		categories := []string{"data", "ui"}
+		categories := []string{Namespace.Data, Namespace.UI}
 		uiloaders := make([]func(), 0, 64)
 
 		for _, category := range categories {
@@ -127,11 +127,11 @@ func loader(s string) func(e *ui.Element) error {
 					}
 					val := ui.ValueFrom(rawvalue)
 
-					if category == "data" {
+					if category == Namespace.Data {
 						ui.LoadProperty(e, category, propname, val)
 					}
 
-					if category == "ui" {
+					if category == Namespace.UI {
 						uiloaders = append(uiloaders, func() { // TODO remove since unused
 							e.SetUI(propname, val)
 						})
@@ -167,7 +167,7 @@ func clearer(s string) func(element *ui.Element) {
 			return
 		}
 		id := element.ID
-		categories := []string{"data", "ui"}
+		categories := []string{Namespace.Data, Namespace.UI}
 
 		for _, category := range categories {
 			// Let's retrieve the category index for this element, if it exists in the sessionstore
@@ -269,7 +269,7 @@ func PutInStorage(a ui.AnyElement) *ui.Element {
 	}
 
 	for cat, props := range e.Properties.Categories {
-		if cat != "data" && cat != "ui" {
+		if cat != Namespace.Data && cat != Namespace.UI {
 			continue
 		}
 		for prop, val := range props.Local {
@@ -315,7 +315,7 @@ func EnableLocalPersistence() string {
 }
 
 func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element {
-	e.Watch("data", propname, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.Data, propname, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
 	}))

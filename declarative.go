@@ -121,7 +121,7 @@ func (e elementSwitch) Default(elem *Element) func(*Element) *Element {
 		}
 
 		for _, propname := range e.boundDataProps {
-			el.Watch(dataNS, propname, el, NewMutationHandler(func(evt MutationEvent) bool {
+			el.Watch(Namespace.Data, propname, el, NewMutationHandler(func(evt MutationEvent) bool {
 				for _, elm := range e.elements {
 					elm.SetDataSetUI(propname, evt.NewValue())
 				}
@@ -129,7 +129,7 @@ func (e elementSwitch) Default(elem *Element) func(*Element) *Element {
 			}))
 
 			for _, elm := range e.elements {
-				el.Watch(dataNS, propname, elm, NewMutationHandler(func(evt MutationEvent) bool {
+				el.Watch(Namespace.Data, propname, elm, NewMutationHandler(func(evt MutationEvent) bool {
 					for _, element := range e.elements {
 						if element.ID == elm.ID {
 							continue
@@ -178,7 +178,7 @@ That should allow for the tree to be reactive to display changes.
 // Already existing elements would not need it) for instance.
 func ForEachIn(uiprop string, f func(int, Value) *Element) func(*Element) *Element {
 	return func(e *Element) *Element {
-		e.Watch(uiNS, uiprop, e, NewMutationHandler(func(evt MutationEvent) bool {
+		e.Watch(Namespace.UI, uiprop, e, NewMutationHandler(func(evt MutationEvent) bool {
 			v := evt.NewValue()
 			switch v := v.(type) {
 			case List:
