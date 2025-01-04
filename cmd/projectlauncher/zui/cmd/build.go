@@ -117,7 +117,7 @@ var buildCmd = &cobra.Command{
 
 			// if csr
 			if csr {
-				err = Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
+				err = Build(true, nil)
 				if err != nil {
 					fmt.Println("Error: unable to build the default app.")
 					os.Exit(1)
@@ -137,8 +137,8 @@ var buildCmd = &cobra.Command{
 
 				if buildall {
 					// Let's build the default server.
-					// The output file should be in dev/build/server/csr/
-					err = Build(filepath.Join(".", "dev", "build", "server", "csr", "main"), []string{"server", "csr"})
+					// The output file should be in dist/server/csr/tmp/ or dist/server/csr/release/
+					err = Build(false, []string{"server", "csr"})
 					if err != nil {
 						fmt.Println("Error: unable to build the default server.")
 						os.Exit(1)
@@ -149,8 +149,47 @@ var buildCmd = &cobra.Command{
 					}
 				}
 
+				// TODO using the server build, we should be able to generate the index page, taking into account basepath etc.
+				// But only if it hasn't been generated yet.
+				// The output directory is dist/client/tmp/ or dist/client/release/
+
+				// 1. let's find out if the index.html file exists
+				folder := ".root"
+				if basepath != "/" {
+					folder = basepath[1:]
+				}
+
+				var indexhtmlExists bool
+				if releaseMode {
+					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "release", "index.html"))
+					if err == nil {
+						indexhtmlExists = true
+					}
+				} else {
+					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "tmp", "index.html"))
+					if err == nil {
+						indexhtmlExists = true
+					}
+				}
+				if indexhtmlExists {
+					if verbose {
+						fmt.Println("index.html exists. No need to render it.")
+						fmt.Println("To force a re-render, delete the index.html file.")
+						fmt.Println("Build successful.")
+					}
+					return
+				}
+
+				// 2. The index.html file does not exist, we need to render it.
+				outputDir := filepath.Join(".", "dist", "client", folder, "tmp")
+				if releaseMode {
+					outputDir = filepath.Join(".", "dist", "client", folder, "release")
+				}
+
+				renderPages("/", outputDir, releaseMode)
+
 			} else if ssr {
-				err = Build(filepath.Join(".", "dev", "build", "app", "main.wasm"), nil)
+				err = Build(true, nil)
 				if err != nil {
 					fmt.Println("Error: unable to build the default app.")
 					os.Exit(1)
@@ -162,8 +201,8 @@ var buildCmd = &cobra.Command{
 				}
 
 				// Let's build the default server.
-				// The output file should be in dev/build/server/ssr/
-				err = Build(filepath.Join(".", "dev", "build", "server", "ssr", "main"), []string{"server", "ssr"})
+				// The output file should be in in dist/server/ssr/tmp/ or dist/server/ssr/release/
+				err = Build(false, []string{"server", "ssr"})
 				if err != nil {
 					fmt.Println("Error: unable to build the ssr server.")
 					os.Exit(1)
@@ -173,8 +212,42 @@ var buildCmd = &cobra.Command{
 				if verbose {
 					fmt.Println("ssr server built.")
 				}
+				// TODO using the server build, we should be able to generate the index page, taking into acocunt basepath etc.
+				folder := ".root"
+				if basepath != "/" {
+					folder = basepath[1:]
+				}
+
+				var indexhtmlExists bool
+				if releaseMode {
+					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "release", "index.html"))
+					if err == nil {
+						indexhtmlExists = true
+					}
+				} else {
+					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "tmp", "index.html"))
+					if err == nil {
+						indexhtmlExists = true
+					}
+				}
+				if indexhtmlExists {
+					if verbose {
+						fmt.Println("index.html exists. No need to render it.")
+						fmt.Println("To force a re-render, delete the index.html file.")
+						fmt.Println("Build successful.")
+					}
+					return
+				}
+				// 2. The index.html file does not exist, we need to render it.
+				outputDir := filepath.Join(".", "dist", "client", folder, "tmp")
+				if releaseMode {
+					outputDir = filepath.Join(".", "dist", "client", folder, "release")
+				}
+
+				renderPages("/", outputDir, releaseMode)
+
 			} else if ssg {
-				err = Build(filepath.Join(".", "dev", "build", "server", "ssg", "main"), []string{"server", "ssg"})
+				err = Build(false, []string{"server", "ssg"})
 				if err != nil {
 					fmt.Println("Error: unable to build the ssg server.")
 					os.Exit(1)
@@ -187,12 +260,20 @@ var buildCmd = &cobra.Command{
 
 				// Now we need to build the pages by running the server executable
 				// at least once.
-				// The output files will be found in dev/build/ssg/static
-				cmd := exec.Command(filepath.Join(".", "dev", "build", "server", "ssg", "main"), "noserver")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				cmd.Dir = filepath.Join(".", "dev", "build", "server", "ssg")
-				err = cmd.Run()
+				// The output files will be found in ./dist/client/.ssg/
+				pathtoserverbin := filepath.Join(".", "dist", "server", "ssg", "tmp", "main")
+				if releaseMode {
+					pathtoserverbin = filepath.Join(".", "dist", "server", "ssg", "release", "main")
+				}
+				outputDir := filepath.Join(".", "dist", "client", ".ssg", "tmp")
+				if releaseMode {
+					outputDir = filepath.Join(".", "dist", "client", ".ssg", "release")
+				}
+				command := exec.Command(pathtoserverbin, "--noserver", "--render", ".", "--outputDir", outputDir)
+				command.Stdout = os.Stdout
+				command.Stderr = os.Stderr
+				command.Dir = filepath.Dir(pathtoserverbin)
+				err = command.Run()
 				if err != nil {
 					fmt.Println("Error: unable to build the ssg pages.")
 				} else {
@@ -224,6 +305,36 @@ var buildCmd = &cobra.Command{
 			return
 		}
 	},
+}
+
+func renderPages(renderPath string, renderOutputDir string, releasebuild bool) error {
+	pathToServerBinary := filepath.Join(".", "dist", "server", "csr", "tmp", "main")
+	if releasebuild {
+		pathToServerBinary = filepath.Join(".", "dist", "server", "csr", "release", "main")
+	}
+
+	cmd := exec.Command(pathToServerBinary, "--render", renderPath, "--outputDir", renderOutputDir)
+	if basepath != "" {
+		cmd.Args = append(cmd.Args, "--basepath", basepath)
+	}
+
+	// Set working directory to where the binary lives
+	// This ensures it can find its source content using relative paths
+	cmd.Dir = filepath.Join(".", "dist", "server", "csr", "tmp")
+	if releasebuild {
+		cmd.Dir = filepath.Join(".", "dist", "server", "csr", "release")
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("render failed: %w\noutput: %s", err, output)
+	}
+
+	if verbose {
+		fmt.Println("render successful")
+	}
+
+	return nil
 }
 
 func init() {

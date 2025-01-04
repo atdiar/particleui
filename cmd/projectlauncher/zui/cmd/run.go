@@ -111,7 +111,7 @@ func Run(buildtags ...string) error {
 		basepathseg := strings.TrimSuffix(basepath, "/")
 		basepathseg = strings.TrimPrefix(basepathseg, "/")
 
-		err := Build(filepath.Join(".", "dev", "build", "app", basepathseg, "main.wasm"), nil) // TODO add build options, e.g. nohmr should be propagated to client
+		err := Build(true, nil) // TODO add build options, e.g. nohmr should be propagated to client
 		if err != nil {
 			return err
 		}
@@ -136,7 +136,7 @@ func Run(buildtags ...string) error {
 			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
 		}
 
-		err = Build(serverbinpath, append(buildtags, "server", servmod))
+		err = Build(false, append(buildtags, "server", servmod))
 		if err != nil {
 			return err
 		}

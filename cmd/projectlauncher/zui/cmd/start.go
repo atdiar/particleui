@@ -115,7 +115,7 @@ func Start(buildtags ...string) error {
 			}
 		}
 
-		err := Build(serverbinpath, append(buildtags, "server", servmod))
+		err := Build(false, append(buildtags, "server", servmod))
 		if err != nil {
 			return err
 		}

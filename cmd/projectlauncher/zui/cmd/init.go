@@ -76,6 +76,47 @@ func SaveConfig() error {
 	return encoder.Encode(config)
 }
 
+func createNewProject() error {
+	dirs := []string{
+		"src",
+		"src/assets",
+		"src/assets/client",
+		"src/assets/server",
+		"dist",
+	}
+
+	for _, dir := range dirs {
+		if err := createDirectory(dir); err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	gitignoreContent := `# Build directories
+/dist/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE specific
+.idea/
+.vscode/
+*.sublime-*
+
+# Go specific
+*.exe
+*.test
+*.prof`
+
+	if err := createFile(".gitignore", gitignoreContent); err != nil {
+		return fmt.Errorf("failed to create .gitignore: %v", err)
+	}
+
+	return nil
+}
+
 // initCmd represents the init command
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -170,16 +211,6 @@ var initCmd = &cobra.Command{
 
 		config = make(map[string]string)
 
-		// git should ignore the release directory
-		// TODO remove this?
-		/*
-			createFile(".gitignore", `
-				/release
-				/dev/build/*
-				!/dev/build/app
-			`)
-		*/
-
 		if web {
 			// handle web project initialization
 			config["projectName"] = projectName
@@ -221,64 +252,44 @@ var initCmd = &cobra.Command{
 				}
 
 				// Create dev directory if it doesn't already exists
-				err = createDirectory(filepath.Join(".", "dev"))
+				err = createNewProject()
 				if err != nil {
-					fmt.Println("Error: Unable to create dev directory.")
+					fmt.Println("Error: Unable to create new project.\n", err)
 					os.Exit(1)
 					return
 				}
 
-				// dev holds the source code for the app.
+				// /src holds the source code for the app.
 				//
 				// zui build compiles in CSR mode by default.
-				// It also builds the server executable in dev/server/csr.
+				// It also builds the server executable in /dist/server/csr/tmp.
 				//
-				// zui build --ssr compiles in CSR mode and
-				// puts the code for the CSR server in dev/server/ssr
-				// the index.html file in dev/bin won't be served by the dev server.
 				//
-				// zui build --ssg compiles in SSG mode and output the file in dev/build/ssg.
+				// zui build --ssg "." compiles the full sitem rendering static files in /dist/ssg.
+				// zui build --ssg "/" builds the index page only etc.
 				//
-				// zui run -dev starts the dev server in CSR mode by default.
-				// It serves the index.html file in dev/build as well as the
-				// compiled app and the assets.
-				//
+				// zui run -dev starts the dev server (default is csr mode).
 				// zui run -dev -ssr starts the dev server in SSR mode.
-				//
 				// zui run -dev -ssg starts the dev server in SSG mode.
-				// It serves the dev/build/ssg directory.
+				// It serves the files in /dist/static/tmp/ directory.
 				//
-				// -port might be an option for the dev server.
+				// -port might be an option for the development server.
 				//
 
 				// Default build: on project initialization, a default project is
-				// created in the dev directory.
+				// created and built in CSR mode. (unless --template= none is specified)
 				// A sort of hello world app that can be run with zui run -dev.
 				//
-				// In the future, it should be possible to run zui init -template= template_URL
+				// In the future, it should be possible to run zui init --web -template= template_URL
 				// to create a project from a template. (TODO: use go new)
 
-				// Let's create the default main.go file in the dev directory.
+				// Let's create the default main.go file in the /src directory.
 				// This will contain a default app that outputs a hello world, a game or something.
 				// The default app should be a module, so run go mod init in the current directory.
 				// The module name should be the project name.
 
-				err = createDirectory(filepath.Join(".", "dev", "build"))
-				if err != nil {
-					fmt.Println("Error: unable to create dev/build directory.", err)
-					os.Exit(1)
-					return
-				}
-
-				err = createDirectory(filepath.Join(".", "dev", "build", "app"))
-				if err != nil {
-					fmt.Println("Error: Unable to create dev/build/app directory.")
-					os.Exit(1)
-					return
-				}
-
 				// Default main.go file
-				err = createFile(filepath.Join(".", "dev", "main.go"), defaultprojectfile)
+				err = createFile(filepath.Join(".", "src", "main.go"), defaultprojectfile)
 				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/main.go file.")
 					os.Exit(1)
@@ -289,39 +300,7 @@ var initCmd = &cobra.Command{
 					fmt.Println("default main.go file created.")
 				}
 
-				// Default index.html file
-				err = createFile(filepath.Join(".", "dev", "build", "app", "index.html"), defaultindexfile)
-				if err != nil {
-					fmt.Println("Error: Unable to create dev/build/app/index.html file.")
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("default index.html file created.")
-				}
-
-				// copy wasm_exec.js to the ./dev/build/app directory
-				err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app"))
-				if err != nil {
-					fmt.Println("Error: Unable to copy wasm_exec.js file.", err)
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("wasm_exec.js file copied from Go distribution.")
-				}
-
-				// Create asset folder and put a default favicon.ico in it
-				err = createDirectory(filepath.Join(".", "dev", "build", "app", "assets"))
-				if err != nil {
-					fmt.Println("Error: Unable to create dev/build/app/assets directory.")
-					os.Exit(1)
-					return
-				}
-
-				err = createFile(filepath.Join(".", "dev", "build", "app", "assets", "favicon.ico"), "")
+				err = createFile(filepath.Join(".", "src", "assets", "favicon.ico"), "")
 				if err != nil {
 					fmt.Println("Error: Unable to create dev/build/app/assets/favicon.ico file.")
 					os.Exit(1)
@@ -360,6 +339,9 @@ var initCmd = &cobra.Command{
 				// TODO
 				// run $go new template_URL projectname
 			}
+
+			// TODO build the default project in deve mode with HMR enabled ****************
+			// the index.html needs to be generated.
 
 			// Config file should be valid now.
 			if err := SaveConfig(); err != nil {
@@ -606,15 +588,54 @@ func isGoWorkSet() (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
-func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
+func Build(client bool, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
-		toolchain := "go"
 
-		// Check if the build is for WebAssembly and save the current environment
-		isWasm := strings.HasSuffix(outputPath, ".wasm")
+		toolchain := "go"
+		// input path is the current directory which should correspond to /src from the project root
+		// i.e. filepath.Join(".", "src")
+		// In fact, we can find out the outputpath easily without relying on the function argument since
+		// the structure is known. Basically, /dist/client/{root | basepath}/tmp/main.wasm in non-release mode for the client
+		// and /dist/server/{csr  | ssr | ssg}/tmp/main for the server, still in non release mode.
+		// The server binaries can be executed in a basepath-aware mode via linker flags ldflags, handled by the custom build command options.
+		// In release mode, replace tmp by release.
+		// Ensure the output directory exists
+		folder := "root"
+		if basepath != "/" {
+			folder = basepath[1:]
+		}
+
+		var outputPath string
+		if client {
+			if releaseMode {
+				outputPath = filepath.Join("..", "dist", "client", folder, "release", "main.wasm")
+			} else {
+				outputPath = filepath.Join("..", "dist", "client", folder, "tmp", "main.wasm")
+			}
+		} else {
+			if csr {
+				if releaseMode {
+					outputPath = filepath.Join("..", "dist", "server", "csr", folder, "release", "main")
+				} else {
+					outputPath = filepath.Join("..", "dist", "server", "csr", folder, "tmp", "main")
+				}
+			} else if ssr {
+				if releaseMode {
+					outputPath = filepath.Join("..", "dist", "server", "ssr", folder, "release", "main")
+				} else {
+					outputPath = filepath.Join("..", "dist", "server", "ssr", folder, "tmp", "main")
+				}
+			} else if ssg {
+				if releaseMode {
+					outputPath = filepath.Join("..", "dist", "server", "ssg", folder, "release", "main")
+				} else {
+					outputPath = filepath.Join("..", "dist", "server", "ssg", folder, "tmp", "main")
+				}
+			}
+		}
 
 		// Determine the correct file extension for the executable for non-WASM builds
-		if !isWasm {
+		if !client {
 			goos := os.Getenv("GOOS")
 			if goos == "" {
 				goos = runtime.GOOS // Default to the current system's OS if GOOS is not set
@@ -632,32 +653,28 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 				toolchain = "tinygo"
 			}
 		}
+		outputDir := filepath.Dir(outputPath)
+		if !ssg {
+			if tinygo {
+				err := CopyWasmExecJsTinygo(outputDir)
+				if err != nil {
+					return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
+				}
+			} else {
+				if client {
+					err := CopyWasmExecJs(outputDir)
+					if err != nil {
+						return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
+					}
+				}
+			}
+		}
 
-		// Ensure the output directory exists
-		//outputDir := filepath.Dir(outputPath)
-		/*
-			outputDirRel,err := filepath.Rel(filepath.Join("."),outputPath)
-			if err!= nil{
-				return err
-			}
-			outputDir := filepath.Dir(outputDirRel)
-
-			if err := os.MkdirAll(outputDir, 0755); err != nil {
-				return fmt.Errorf("error creating output directory: %v", err)
-			}
-		*/
-		var err error
-		if isWasm && tinygo {
-			outputPath, err = filepath.Rel(filepath.Join(".", "release"), outputPath)
-			if err != nil {
-				print("this is the error")
-				return err
-			}
+		// Also copy assets folder in the corresponding subdirectory in dist
+		if client {
+			copyDirectory(filepath.Join(".", "src", "assets", "client"), filepath.Join(outputDir, "assets", "client"))
 		} else {
-			outputPath, err = filepath.Rel(filepath.Join(".", "dev"), outputPath)
-			if err != nil {
-				return err
-			}
+			copyDirectory(filepath.Join(".", "src", "assets", "server"), filepath.Join(outputDir, "assets", "server"))
 		}
 
 		args := []string{"build"}
@@ -695,11 +712,11 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 
 		// Execute the build command
 		cmd := exec.Command(toolchain, args...)
-		cmd.Dir = filepath.Join(".", "dev")
+		cmd.Dir = filepath.Join(".", "src")
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		if isWasm {
+		if client {
 			cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 		}
 
@@ -707,7 +724,7 @@ func Build(outputPath string, buildTags []string, cmdArgs ...string) error {
 			cmdArgs = append(cmdArgs, "no-debug", "=target=wasm", "-gc=conservative")
 		}
 
-		err = cmd.Run()
+		err := cmd.Run()
 		if err != nil {
 			return fmt.Errorf("build failed: %v", err)
 		}

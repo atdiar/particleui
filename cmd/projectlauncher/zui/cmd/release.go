@@ -85,116 +85,38 @@ var releaseCmd = &cobra.Command{
 			}
 
 			// if csr
-			if csr {
-				// if ./release/build/app does not exist,
-				// Build the development version in releaseMode=true and then copy the files to the release directory
-				// The output file should be in release/build/app/main.wasm
-
-				if tinygo {
-					err = CopyWasmExecJsTinygo(filepath.Join(".", "dev", "build", "app", basepath))
-					if err != nil {
-						fmt.Println("Error: unable to copy the wasm_exec.js file.\n", err)
-						os.Exit(1)
-						return
-					}
-				} else {
-					err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app", basepath))
-					if err != nil {
-						fmt.Println("Error: unable to copy the wasm_exec.js file.\n", err)
-						os.Exit(1)
-						return
-					}
-				}
-
-				err = Build(filepath.Join(".", "dev", "build", "app", basepath, "main.wasm"), nil)
+			if !csr {
+				err := Build(true, nil)
 				if err != nil {
-					fmt.Println("Error: unable to build the default app.", err)
+					fmt.Println("Error: unable to build the release version of the project.", err)
 					os.Exit(1)
 					return
 				}
-
-				err = copyDirectory(filepath.Join(".", "dev", "build", "app", basepath), filepath.Join(".", "release", "app", basepath))
+				err = Build(false, []string{"server", "csr"})
 				if err != nil {
-					fmt.Println("Error: unable to copy the default app.")
+					fmt.Println("Error: unable to build the server.", err)
 					os.Exit(1)
 					return
 				}
-
-				if verbose {
-					fmt.Println("default app built.")
-				}
-
-				var buildall bool
-				for _, a := range args {
-					if a == "." {
-						buildall = true
-					}
-				}
-
-				if buildall {
-					// Let's build the default server.
-					// The output file should be in dev/build/server/csr/
-					err = Build(filepath.Join(".", "dev", "build", "server", "csr", "main"), []string{"server", "csr"})
-					if err != nil {
-						fmt.Println("Error: unable to build the default server.")
-						os.Exit(1)
-						return
-					}
-					if verbose {
-						fmt.Println("default server built.")
-					}
-				}
-
+				// TODO run the server executable in order to build the index.html file.
+				//
 			} else if ssr {
-				// if ./release/build/app does not exist,
-				// Build the development version in releaseMode=true and then copy the files to the release directory
-				// The output file should be in release/build/app/main.wasm
-
-				if _, err := os.Stat(filepath.Join(".", "release", "app", basepath)); os.IsNotExist(err) {
-					err = Build(filepath.Join(".", "dev", "build", "app", basepath, "main.wasm"), nil)
-					if err != nil {
-						fmt.Println("Error: unable to build the default app.", err)
-						os.Exit(1)
-						return
-					}
-					// let's copy ./dev/build/app to ./release/build/app
-					err = copyDirectory(filepath.Join(".", "dev", "build", "app", basepath), filepath.Join(".", "release", "app", basepath))
-					if err != nil {
-						fmt.Println("Error: unable to copy the app folder.")
-						os.Exit(1)
-						return
-					}
-				} else {
-					err = Build(filepath.Join(".", "release", "app", basepath, "main.wasm"), nil)
-					if err != nil {
-						fmt.Println("Error: unable to build the default app.")
-						os.Exit(1)
-						return
-					}
-				}
-
-				if verbose {
-					fmt.Println("wasm app built.")
-				}
-
-				if tinygo {
-					CopyWasmExecJsTinygo(filepath.Join(".", "release", "app", basepath))
-				}
-
-				// Let's build the default server.
-				// The output file should be in dev/build/server/ssr/
-				err = Build(filepath.Join(".", "dev", "build", "server", "ssr", "main"), []string{"server", "ssr"})
+				err := Build(true, nil)
 				if err != nil {
-					fmt.Println("Error: unable to build the ssr server.")
+					fmt.Println("Error: unable to build the release version of the project.", err)
 					os.Exit(1)
 					return
 				}
-
-				if verbose {
-					fmt.Println("ssr server built.")
+				err = Build(false, []string{"server", "ssr"})
+				if err != nil {
+					fmt.Println("Error: unable to build the server.", err)
+					os.Exit(1)
+					return
 				}
+				// TODO run the server executable in order to build the index.html file.
+				//
 			} else if ssg {
-				err = Build(filepath.Join(".", "dev", "build", "server", "ssg", "main"), []string{"server", "ssg"})
+				err = Build(false, []string{"server", "ssg"})
 				if err != nil {
 					fmt.Println("Error: unable to build the ssg server.")
 					os.Exit(1)
@@ -202,16 +124,16 @@ var releaseCmd = &cobra.Command{
 				}
 
 				if verbose {
-					fmt.Println("ssg server built. Can be found in ./dev/build/server/ssg/main")
+					fmt.Println("ssg server built. Can be found in ../dist/server/ssg/release")
 				}
 
 				// Now we need to build the pages by running the server executable
 				// at least once.
-				// The output files will be found in dev/build/ssg/static
-				cmd := exec.Command(filepath.Join(".", "dev", "build", "server", "ssg", "main"), "noserver")
+				// The output files will be found in dist/client/ssg/{basepath | root}/release/
+				cmd := exec.Command(filepath.Join(".", "dist", "server", "ssg", "release", "main"), "--noserver")
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
-				cmd.Dir = filepath.Join(".", "dev", "build", "server", "ssg")
+				cmd.Dir = filepath.Join(".")
 				err = cmd.Run()
 				if err != nil {
 					fmt.Println("Error: unable to build the ssg pages.")
@@ -222,7 +144,7 @@ var releaseCmd = &cobra.Command{
 				}
 
 				if releaseMode {
-					// let's copy ./dev/build/ssg to ./release/build/ssg
+
 					err = copyDirectory(filepath.Join(".", "dev", "build", "ssg"), filepath.Join(".", "release", "app", "ssg"))
 					if err != nil {
 						fmt.Println("Error: unable to copy the ssg pages.")

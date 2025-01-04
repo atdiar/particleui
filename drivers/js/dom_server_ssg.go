@@ -24,12 +24,8 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-	absStaticPath  = filepath.Join(".", "dev", "build", "server", "ssg", "static")
-	absIndexPath   = filepath.Join(absStaticPath, "index.html")
-	absCurrentPath = filepath.Join(".", "dev", "build", "server", "ssg")
-
-	StaticPath, _ = filepath.Rel(absCurrentPath, absStaticPath)
-	IndexPath, _  = filepath.Rel(absCurrentPath, absIndexPath)
+	StaticPath string
+	IndexPath  string
 
 	host string
 	port string
@@ -37,6 +33,9 @@ var (
 	release  bool
 	nohmr    bool
 	noserver bool
+
+	renderedRoute string
+	outputDir     string
 
 	ServeMux *http.ServeMux
 	Server   *http.Server = newDefaultServer()
@@ -59,6 +58,9 @@ func init() {
 	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 
+	flags.StringVar(&outputDir, "output", "../../../../client", "Output directory for the static files")
+	flags.StringVar(&renderedRoute, "route", ".", "Route to render")
+
 	flag.Parse()
 
 	if !release {
@@ -69,6 +71,12 @@ func init() {
 		HMRMode = "true"
 	}
 
+	exe, _ := os.Executable()
+	exeDir := filepath.Dir(exe)
+	relPath, _ := filepath.Rel(exeDir, outputDir)
+
+	StaticPath = relPath
+	IndexPath = filepath.Join(StaticPath, "index.html")
 }
 
 func (n NativeElement) SetChildren(children ...*ui.Element) {
@@ -233,10 +241,40 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 
 	if noserver {
 		return func(ctx context.Context) {
+			if renderedRoute != "" {
+				if renderedRoute == "." {
+					// we want to render every possible route. This should generate the whole website
+					// in the output directory under the form of sattic files in nested directories.
+					n, err := CreatePages(document)
+					if err != nil {
+						fmt.Printf("Error creating pages: %v\n", err)
+						os.Exit(1)
+					} else {
+						if verbose {
+							fmt.Printf("Created %d pages\n", n)
+						}
+					}
+
+				} else {
+					// We render the route that was specified in the command line.
+					// This should generate the corresponding file in the output directory.
+					document.Router().GoTo(renderedRoute)
+					err := document.CreatePage(filepath.Join(StaticPath, renderedRoute, "index.html"))
+					if err != nil {
+						fmt.Printf("Error creating page for route '%s': %v\n", renderedRoute, err)
+						os.Exit(1)
+					} else {
+						if verbose {
+							fmt.Printf("Created page for route '%s'\n", renderedRoute)
+						}
+					}
+				}
+
+			}
 		}
 	}
 
-	// TODO modify HMR mode to accouunt for ssg structural changes. (no wasm etc, different output directory etc.)
+	// TODO modify HMR mode to account for ssg structural changes. (no wasm etc, different output directory etc.)
 	// ******************************
 	return func(ctx context.Context) {
 		ctx, shutdown := context.WithCancel(ctx)
@@ -317,21 +355,16 @@ func recoverStateHistory() {}
 var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func CreatePages(doc Document) (int, error) {
-	basePath := "/dev/build/server/ssg"
-	router := doc.Router() // Retrieve the router from the document
+	// Use StaticPath instead of hardcoded path
+	router := doc.Router()
 	if router == nil {
-		err := doc.CreatePage("/")
-		if err != nil {
-			return 0, err
-		}
-		return 1, nil
+		err := doc.CreatePage(filepath.Join(StaticPath, "index.html"))
+		return 1, err
 	}
-
-	routes := router.RouteList()
 
 	var count int
 	for _, route := range routes {
-		fullPath := filepath.Join(basePath, route, "index.html")
+		fullPath := filepath.Join(StaticPath, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
 		}
@@ -364,7 +397,8 @@ func (d Document) CreatePage(filePath string) error {
 	}
 
 	// Append stylesheet link to the document head
-	link := d.Link().SetAttribute("href", cssFilePath).SetAttribute("rel", "stylesheet")
+	cssRelPath := "./style.css"
+	link := d.Link().SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
 	d.Head().AppendChild(link)
 
 	// Create and open the file
