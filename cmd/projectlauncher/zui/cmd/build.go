@@ -15,36 +15,46 @@ import (
 
 var csr, ssr, ssg bool
 var basepath string
+var static string
+var clientonly bool
 
 // buildCmd represents the build command
 var buildCmd = &cobra.Command{
 	Use:   "build",
-	Short: "build is the command to build the project",
+	Short: "build is the command that builds the project",
 	Long: `
-		Build is the command to build the project.
-		It does not prepare a new release of the project.
-		It simply builds the source and create an unoptimized executable for
+		Build is the command that triggers a developpement build of the project.
+		It does not prepare a new release build of the project.
+		It simply creates an unoptimized executable for
 		development purposes.
 
 		Depending on the platform (web, mobile, desktop, terminal), the command may
 		accept different flags.
 		For example, the web platform accepts the following flags:
 		- csr (default): compile the project for client-side rendering 
-			o app is compiled as main.wasm and found in ./dev/build/app/
-			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/csr
+			o app is compiled as main.wasm and found in ./bin/tmp/client/{rootdirectory}/
+			o the server is compiled as main (.exe on windows) and found in ./bin/tmp/server/csr/
+			o the index page is rendered as index.html in ./bin/tmp/client/{rootdirectory}/
 
 		- ssr: compile the project for server-side rendering
-			o app is compiled as main.wasm and found in ./dev/build/app/ (same as in csr)
-			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/ssr
+			o app is compiled as main.wasm and found in ./bin/tmp/client/{rootdirectory}/
+			o the server is compiled as main (.exe on windows) and found in ./bin/tmp/server/ssr/
 
 		- ssg: compile the project, producing the static html files (static site generation)
-			o the different pages are found in ./dev/build/ssg/pages/
-			o the server is compiled as main (.exe on windows) and found in ./dev/build/server/ssg
+			o the different pages are found in ./bin/tmp/client/{rootdirectory}/
+			o the server is compiled as main (.exe on windows) and found in ./bin/tmp/server/ssg/
+
+		- static: compile a specific page of the project when in csr or ssg mode.
+			In order to output the html file, the server build is invoked.
+
+		- "client": the command will only build the client.
+			It is needed since the web platform builds both the client and the server by default.
 
 		The mobile platform has its build target specified at initialization time.
 		It does not need to be supplied at build time.
 
 		The desktop and terminal platforms have their build target determined by the OS the command is run on.
+		Nothing additional needs to be supplied.
 	`,
 	Example: `
 		# building a web project
@@ -52,13 +62,19 @@ var buildCmd = &cobra.Command{
 		zui build -ssr
 		zui build -ssg
 
-		# building a mobile, desktop or terminal  project
-		zui build
+		# building a page for a web project
+		zui build -csr -static= '/' --> renders the index page as index.html in /_root/ or /{basepath}/ if a basepath command line argument is also passed.
+		zui build -csr -static= '/people/list/partners' ==> renders the page as index.html in /bin/tmp/client/_root/people/list/partners/ or /bin/tmp/client/{basepath}/people/list/partners/ if a basepath is applicable as previously.
 
 		# building a project with a given basepath
 		zui build -basepath=/path
 		The path needs to use a leading slash so as to be relative to the root.
 
+
+		# building a mobile, desktop or terminal  project
+		zui build
+
+		
 		
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -115,6 +131,10 @@ var buildCmd = &cobra.Command{
 				}
 			}
 
+			// TODO implement zui build -csr -clean, that will erase the content
+			// of the bin/tmp/client/{rootdirectory} and bin/tmp/server/csr/{rootdirectory} directories
+			// before (re)building.
+
 			// if csr
 			if csr {
 				err = Build(true, nil)
@@ -128,16 +148,9 @@ var buildCmd = &cobra.Command{
 					fmt.Println("default app built.")
 				}
 
-				var buildall bool
-				for _, a := range args {
-					if a == "." {
-						buildall = true
-					}
-				}
-
-				if buildall {
+				if !clientonly {
 					// Let's build the default server.
-					// The output file should be in dist/server/csr/tmp/ or dist/server/csr/release/
+					// The output file should be in /bin/tmp/server/csr/
 					err = Build(false, []string{"server", "csr"})
 					if err != nil {
 						fmt.Println("Error: unable to build the default server.")
@@ -145,48 +158,53 @@ var buildCmd = &cobra.Command{
 						return
 					}
 					if verbose {
-						fmt.Println("default server built.")
+						fmt.Println("csr server built.")
 					}
 				}
 
-				// TODO using the server build, we should be able to generate the index page, taking into account basepath etc.
-				// But only if it hasn't been generated yet.
-				// The output directory is dist/client/tmp/ or dist/client/release/
+				// TODO using the special we should be able to generate the index page, taking into account basepath etc.
+				// The output directory for the rendered html file is /bin/tmp/client/{rootdirectory}
+				// The output directory for the rendering server is /bin/tmp/server
+				// This is for csr mode only.
 
-				// 1. let's find out if the index.html file exists
-				folder := ".root"
+				rootdirectory := "_root"
 				if basepath != "/" {
-					folder = basepath[1:]
+					rootdirectory = basepath[1:] // remove the leading slash
 				}
 
-				var indexhtmlExists bool
-				if releaseMode {
-					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "release", "index.html"))
-					if err == nil {
-						indexhtmlExists = true
-					}
-				} else {
-					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "tmp", "index.html"))
-					if err == nil {
-						indexhtmlExists = true
-					}
+				// We can copy the assets from the source directory to the output directory.
+				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
+				if err != nil {
+					fmt.Println("Error: unable to copy assets to the output directory.")
+					os.Exit(1)
+					return
 				}
-				if indexhtmlExists {
-					if verbose {
-						fmt.Println("index.html exists. No need to render it.")
-						fmt.Println("To force a re-render, delete the index.html file.")
-						fmt.Println("Build successful.")
-					}
+				if verbose {
+					fmt.Println("assets copied to the output directory.")
+				}
+
+				err = renderPages("/", releaseMode || tinygo)
+				if err != nil {
+					fmt.Println("Error: unable to render the index page.", err)
+					os.Exit(1)
 					return
 				}
 
-				// 2. The index.html file does not exist, we need to render it.
-				outputDir := filepath.Join(".", "dist", "client", folder, "tmp")
-				if releaseMode {
-					outputDir = filepath.Join(".", "dist", "client", folder, "release")
+				// TODO -static flag handling
+				// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
+				if static != "" {
+					err = renderPages(static, releaseMode || tinygo)
+					if err != nil {
+						fmt.Println("Error: unable to render the page at", static, err)
+						os.Exit(1)
+						return
+					}
 				}
 
-				renderPages("/", outputDir, releaseMode)
+				if verbose {
+					fmt.Println("Build successful.")
+				}
 
 			} else if ssr {
 				err = Build(true, nil)
@@ -200,51 +218,50 @@ var buildCmd = &cobra.Command{
 					fmt.Println("wasm app built.")
 				}
 
-				// Let's build the default server.
-				// The output file should be in in dist/server/ssr/tmp/ or dist/server/ssr/release/
-				err = Build(false, []string{"server", "ssr"})
+				if clientonly {
+					err = Build(false, []string{"server", "ssr"})
+					if err != nil {
+						fmt.Println("Error: unable to build the ssr server.")
+						os.Exit(1)
+						return
+					}
+
+					if verbose {
+						fmt.Println("ssr server built.")
+					}
+				}
+
+				rootdirectory := "_root"
+				if basepath != "/" {
+					rootdirectory = basepath[1:] // remove the leading slash
+				}
+
+				// We can copy the assets from the source directory to the output directory.
+				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
 				if err != nil {
-					fmt.Println("Error: unable to build the ssr server.")
+					fmt.Println("Error: unable to copy assets to the output directory.")
 					os.Exit(1)
 					return
 				}
+				if verbose {
+					fmt.Println("assets copied to the output directory.")
+				}
+
+				// TODO -static flag handling
+				// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
+				if static != "" {
+					err = renderPages(static, releaseMode || tinygo)
+					if err != nil {
+						fmt.Println("Error: unable to render the page at", static, err)
+						os.Exit(1)
+						return
+					}
+				}
 
 				if verbose {
-					fmt.Println("ssr server built.")
+					fmt.Println("Build successful.")
 				}
-				// TODO using the server build, we should be able to generate the index page, taking into acocunt basepath etc.
-				folder := ".root"
-				if basepath != "/" {
-					folder = basepath[1:]
-				}
-
-				var indexhtmlExists bool
-				if releaseMode {
-					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "release", "index.html"))
-					if err == nil {
-						indexhtmlExists = true
-					}
-				} else {
-					_, err = os.Stat(filepath.Join(".", "dist", "client", folder, "tmp", "index.html"))
-					if err == nil {
-						indexhtmlExists = true
-					}
-				}
-				if indexhtmlExists {
-					if verbose {
-						fmt.Println("index.html exists. No need to render it.")
-						fmt.Println("To force a re-render, delete the index.html file.")
-						fmt.Println("Build successful.")
-					}
-					return
-				}
-				// 2. The index.html file does not exist, we need to render it.
-				outputDir := filepath.Join(".", "dist", "client", folder, "tmp")
-				if releaseMode {
-					outputDir = filepath.Join(".", "dist", "client", folder, "release")
-				}
-
-				renderPages("/", outputDir, releaseMode)
 
 			} else if ssg {
 				err = Build(false, []string{"server", "ssg"})
@@ -258,32 +275,37 @@ var buildCmd = &cobra.Command{
 					fmt.Println("ssg server built.")
 				}
 
-				// Now we need to build the pages by running the server executable
-				// at least once.
-				// The output files will be found in ./dist/client/.ssg/
-				pathtoserverbin := filepath.Join(".", "dist", "server", "ssg", "tmp", "main")
-				if releaseMode {
-					pathtoserverbin = filepath.Join(".", "dist", "server", "ssg", "release", "main")
-				}
-				outputDir := filepath.Join(".", "dist", "client", ".ssg", "tmp")
-				if releaseMode {
-					outputDir = filepath.Join(".", "dist", "client", ".ssg", "release")
-				}
-				command := exec.Command(pathtoserverbin, "--noserver", "--render", ".", "--outputDir", outputDir)
-				command.Stdout = os.Stdout
-				command.Stderr = os.Stderr
-				command.Dir = filepath.Dir(pathtoserverbin)
-				err = command.Run()
-				if err != nil {
-					fmt.Println("Error: unable to build the ssg pages.")
-				} else {
-					if verbose {
-						fmt.Println("ssg pages built.")
-					}
+				rootdirectory := "_root"
+				if basepath != "/" {
+					rootdirectory = basepath[1:] // remove the leading slash
 				}
 
-				os.Exit(1)
-				return
+				// We can copy the assets from the source directory to the output directory.
+				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
+				if err != nil {
+					fmt.Println("Error: unable to copy assets to the output directory.")
+					os.Exit(1)
+					return
+				}
+				if verbose {
+					fmt.Println("assets copied to the output directory.")
+				}
+
+				// TODO -static flag handling
+				// if empty, renders every page
+				// otherwise, renders the specified page(s)
+				err = renderPages(static, releaseMode || tinygo)
+				if err != nil {
+					fmt.Println("Error: unable to render the page at", static, err)
+					os.Exit(1)
+					return
+				}
+
+				if verbose {
+					fmt.Println("Build successful.")
+				}
+
 			}
 		} else if On("mobile") {
 			// TODO
@@ -307,26 +329,56 @@ var buildCmd = &cobra.Command{
 	},
 }
 
-func renderPages(renderPath string, renderOutputDir string, releasebuild bool) error {
-	pathToServerBinary := filepath.Join(".", "dist", "server", "csr", "tmp", "main")
-	if releasebuild {
-		pathToServerBinary = filepath.Join(".", "dist", "server", "csr", "release", "main")
+func renderPages(renderPath string, releasebuild bool) error {
+	if verbose {
+		fmt.Println("rendering pages...")
+		fmt.Println("renderPath: ", renderPath)
+	}
+	rootdirectory := "_root"
+	if basepath != "/" {
+		if verbose {
+			fmt.Println("basepath is: ", basepath)
+		}
+		rootdirectory = filepath.Join(rootdirectory, basepath)
 	}
 
-	cmd := exec.Command(pathToServerBinary, "--render", renderPath, "--outputDir", renderOutputDir)
+	// To render pages, we need to run the server binary with the --render flag.
+	// The server binary is located in ./bin/tmp/server/csr/{rootdirectory}/main (respectively ssr or ssg)
+
+	pathToServerBinary := filepath.Join(".", "bin", "tmp", "server", "csr", rootdirectory, "main")
+	if releasebuild {
+		pathToServerBinary = filepath.Join(".", "bin", "release", "server", "csr", rootdirectory, "main")
+	}
+
+	if ssr {
+		pathToServerBinary = filepath.Join(".", "bin", "tmp", "server", "ssr", rootdirectory, "main")
+		if releasebuild {
+			pathToServerBinary = filepath.Join(".", "bin", "release", "server", "ssr", rootdirectory, "main")
+		}
+	}
+
+	if ssg {
+		pathToServerBinary = filepath.Join(".", "bin", "tmp", "server", "ssg", rootdirectory, "main")
+		if releasebuild {
+			pathToServerBinary = filepath.Join(".", "bin", "release", "server", "ssg", rootdirectory, "main")
+		}
+	}
+
+	cmd := exec.Command(pathToServerBinary, "--render", renderPath)
 	if basepath != "" {
 		cmd.Args = append(cmd.Args, "--basepath", basepath)
 	}
 
 	// Set working directory to where the binary lives
 	// This ensures it can find its source content using relative paths
-	cmd.Dir = filepath.Join(".", "dist", "server", "csr", "tmp")
-	if releasebuild {
-		cmd.Dir = filepath.Join(".", "dist", "server", "csr", "release")
-	}
+	cmd.Dir = pathToServerBinary
 
 	output, err := cmd.CombinedOutput()
+	if verbose {
+		fmt.Println("output: ", string(output))
+	}
 	if err != nil {
+		fmt.Println("err: ", err)
 		return fmt.Errorf("render failed: %w\noutput: %s", err, output)
 	}
 
@@ -344,6 +396,8 @@ func init() {
 	buildCmd.Flags().BoolVarP(&csr, "csr", "c", false, "build for client-side rendering")
 	buildCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "build for server-side rendering")
 	buildCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "build for static site generation")
+	buildCmd.Flags().StringVarP(&static, "static", "", "", "build one or several pages of the project. If none are explicitly specified, using this flag builds the root.")
+	buildCmd.Flags().BoolVarP(&clientonly, "client", "", false, "build only the client (default is to build both client and server)")
 	buildCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "build in release mode")
 	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	buildCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "disable hot module replacement")

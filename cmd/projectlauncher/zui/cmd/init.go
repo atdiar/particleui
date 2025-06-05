@@ -80,9 +80,10 @@ func createNewProject() error {
 	dirs := []string{
 		"src",
 		"src/assets",
-		"src/assets/client",
-		"src/assets/server",
-		"dist",
+		"src/assets/images",
+		"src/assets/styles",
+		"src/assets/scripts",
+		"bin",
 	}
 
 	for _, dir := range dirs {
@@ -92,7 +93,7 @@ func createNewProject() error {
 	}
 
 	gitignoreContent := `# Build directories
-/dist/
+/bin/tmp/
 
 # OS specific files
 .DS_Store
@@ -151,8 +152,8 @@ var initCmd = &cobra.Command{
 			o macOS (darwin)
 		
 		An initialized project may only target one platform, and sometimes even
-		only one target for that platform as seen in the mobile case whre it's either iOS
-		or andorid but not both.
+		only one target for that platform as seen in the mobile case where it's either iOS
+		or android but not both.
 	
 	`,
 	Example: `
@@ -175,7 +176,7 @@ var initCmd = &cobra.Command{
 		if len(args) > 0 {
 			projectName = args[0]
 		} else {
-			fmt.Println("Error: Project name is required.")
+			runInteractiveMode() // if call to zui init without arguments, run the interactive mode
 			return
 		}
 
@@ -217,9 +218,9 @@ var initCmd = &cobra.Command{
 			config["platform"] = "web"
 			config["web"] = ""
 
-			if template == "" {
+			if template == "default" {
 				// project initialization logic
-				// should create the directories, basic template file, dev directory with dev server runnable source
+				// should create the directories, default template file, dev directory with dev server runnable source
 
 				// Check that the project directory is empty.
 				// If the project directory is not empty,
@@ -262,23 +263,29 @@ var initCmd = &cobra.Command{
 				// /src holds the source code for the app.
 				//
 				// zui build compiles in CSR mode by default.
-				// It also builds the server executable in /dist/server/csr/tmp.
+				// It also builds the server executable in /bin/tmp/server/csr/
+				//
+				// zui build --ssr compiles the server executable in /bin/tmp/server/ssr/
+				// While a client-side rendering server binary defers HTML rendering to the client,
+				// an server-side rendering server binary generates the HTML page on the first hit.
 				//
 				//
-				// zui build --ssg "." compiles the full sitem rendering static files in /dist/ssg.
+				// zui build --ssg "." compiles the full site, rendering static files in /bin/tmp/server/ssg.
 				// zui build --ssg "/" builds the index page only etc.
+				// To note that the entry point iindex.html file will be located in the /_root/ directory or if
+				// a basepath is specified, in the /basepath/ directory.
 				//
 				// zui run -dev starts the dev server (default is csr mode).
 				// zui run -dev -ssr starts the dev server in SSR mode.
 				// zui run -dev -ssg starts the dev server in SSG mode.
-				// It serves the files in /dist/static/tmp/ directory.
+				// It serves the files in /bin/tmp/client/_root/ directory (respectively /bin/tmp/client/{basepath} if applicable).
 				//
-				// -port might be an option for the development server.
+				// -port allows to change the port number for the development server.
 				//
 
 				// Default build: on project initialization, a default project is
-				// created and built in CSR mode. (unless --template= none is specified)
-				// A sort of hello world app that can be run with zui run -dev.
+				// created and built in CSR mode. (unless --template=none is specified)
+				// A default app is built from a template and can be run by the command zui run -dev.
 				//
 				// In the future, it should be possible to run zui init --web -template= template_URL
 				// to create a project from a template. (TODO: use go new)
@@ -291,7 +298,7 @@ var initCmd = &cobra.Command{
 				// Default main.go file
 				err = createFile(filepath.Join(".", "src", "main.go"), defaultprojectfile)
 				if err != nil {
-					fmt.Println("Error: Unable to create dev/build/app/main.go file.")
+					fmt.Println("Error: Unable to create src/main.go file.")
 					os.Exit(1)
 					return
 				}
@@ -300,15 +307,13 @@ var initCmd = &cobra.Command{
 					fmt.Println("default main.go file created.")
 				}
 
+				// TODO replace the favicon with the default one for zui
 				err = createFile(filepath.Join(".", "src", "assets", "favicon.ico"), "")
 				if err != nil {
-					fmt.Println("Error: Unable to create dev/build/app/assets/favicon.ico file.")
+					fmt.Println("Error: Unable to create src/assets/favicon.ico file.")
 					os.Exit(1)
 					return
 				}
-
-				// Create directory for the HMR source code that can then be run
-				// to watch over the app files and recompile
 
 				// This should be a module, so run go mod init in the current directory.
 				// The module name should be the project name.
@@ -340,7 +345,7 @@ var initCmd = &cobra.Command{
 				// run $go new template_URL projectname
 			}
 
-			// TODO build the default project in deve mode with HMR enabled ****************
+			// TODO build the default project in dev mode with HMR enabled ****************
 			// the index.html needs to be generated.
 
 			// Config file should be valid now.
@@ -594,42 +599,48 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 		toolchain := "go"
 		// input path is the current directory which should correspond to /src from the project root
 		// i.e. filepath.Join(".", "src")
-		// In fact, we can find out the outputpath easily without relying on the function argument since
-		// the structure is known. Basically, /dist/client/{root | basepath}/tmp/main.wasm in non-release mode for the client
-		// and /dist/server/{csr  | ssr | ssg}/tmp/main for the server, still in non release mode.
+		// It holds the source code.
+		//
+		// The output path is also known since the project structure remains fixed:
+		// Building the client in development mode will output the files in /bin/tmp/client/_root/ or /bin/tmp/client/{basepath} if a basepath is specified.
+		// Building the server in development mode will output the files in /bin/tmp/server/csr/ or /bin/tmp/server/ssr/ or /bin/tmp/server/ssg/ depending on the server type
+		// mentioned in the buildtags.
 		// The server binaries can be executed in a basepath-aware mode via linker flags ldflags, handled by the custom build command options.
-		// In release mode, replace tmp by release.
-		// Ensure the output directory exists
-		folder := "root"
+		// In release mode, replace 'tmp' by 'release'.
+
+		rootdirectory := "_root"
 		if basepath != "/" {
-			folder = basepath[1:]
+			if verbose {
+				fmt.Println("basepath is: ", basepath)
+			}
+			rootdirectory = filepath.Join(rootdirectory, basepath)
 		}
 
 		var outputPath string
 		if client {
 			if releaseMode {
-				outputPath = filepath.Join("..", "dist", "client", folder, "release", "main.wasm")
+				outputPath = filepath.Join(".", "bin", "release", "client", rootdirectory, "main.wasm")
 			} else {
-				outputPath = filepath.Join("..", "dist", "client", folder, "tmp", "main.wasm")
+				outputPath = filepath.Join(".", "bin", "tmp", "client", rootdirectory, "main.wasm")
 			}
 		} else {
 			if csr {
 				if releaseMode {
-					outputPath = filepath.Join("..", "dist", "server", "csr", folder, "release", "main")
+					outputPath = filepath.Join(".", "bin", "release", "server", "csr", rootdirectory, "main")
 				} else {
-					outputPath = filepath.Join("..", "dist", "server", "csr", folder, "tmp", "main")
+					outputPath = filepath.Join(".", "bin", "tmp", "server", "csr", rootdirectory, "main")
 				}
 			} else if ssr {
 				if releaseMode {
-					outputPath = filepath.Join("..", "dist", "server", "ssr", folder, "release", "main")
+					outputPath = filepath.Join(".", "bin", "release", "server", "ssr", rootdirectory, "main")
 				} else {
-					outputPath = filepath.Join("..", "dist", "server", "ssr", folder, "tmp", "main")
+					outputPath = filepath.Join(".", "bin", "tmp", "server", "ssr", rootdirectory, "main")
 				}
 			} else if ssg {
 				if releaseMode {
-					outputPath = filepath.Join("..", "dist", "server", "ssg", folder, "release", "main")
+					outputPath = filepath.Join(".", "bin", "release", "server", "ssg", rootdirectory, "main")
 				} else {
-					outputPath = filepath.Join("..", "dist", "server", "ssg", folder, "tmp", "main")
+					outputPath = filepath.Join(".", "bin", "tmp", "server", "ssg", rootdirectory, "main")
 				}
 			}
 		}
@@ -654,18 +665,20 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			}
 		}
 		outputDir := filepath.Dir(outputPath)
-		if !ssg {
-			if tinygo {
-				err := CopyWasmExecJsTinygo(outputDir)
+		if verbose {
+			fmt.Println("output directory is: ", outputDir)
+		}
+
+		if tinygo {
+			err := CopyWasmExecJsTinygo(outputDir)
+			if err != nil {
+				return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
+			}
+		} else {
+			if client {
+				err := CopyWasmExecJs(outputDir)
 				if err != nil {
 					return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
-				}
-			} else {
-				if client {
-					err := CopyWasmExecJs(outputDir)
-					if err != nil {
-						return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
-					}
 				}
 			}
 		}
@@ -675,6 +688,27 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			copyDirectory(filepath.Join(".", "src", "assets", "client"), filepath.Join(outputDir, "assets", "client"))
 		} else {
 			copyDirectory(filepath.Join(".", "src", "assets", "server"), filepath.Join(outputDir, "assets", "server"))
+		}
+
+		// If csr mode, also copy the index.html file in bin/tmp/client/_root/ or bin/tmp/client/{basepath}/
+		if client && csr {
+			indexFilePath := filepath.Join(".", "src", "index.html")
+			err := copyFile(indexFilePath, filepath.Join(outputDir, "index.html"))
+			if err != nil {
+				return fmt.Errorf("failed to copy index.html: %v", err)
+			}
+		}
+
+		// TODO
+		// for ssr, we need to make sure that the server code can cache static pages.
+
+		// TODO
+		if client && ssg {
+			// generate the pages that will be found in /bin/tmp/client/_root/ or /bin/tmp/client/{basepath}/
+			// It consists in generating the page from a specific build of the ssg server hidden behind
+			// a build tag which will render the pages to files in the output directory.
+			// the ssg server itself is different as it is simply a fileserving server that is
+			// basepath aware.
 		}
 
 		args := []string{"build"}
@@ -699,8 +733,8 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			args = append(args, cmdArgs...)
 		}
 
-		// Set the output file
-		args = append(args, "-o", outputPath)
+		// Set the path to the output file
+		args = append(args, "-o", filepath.Join("..", outputPath))
 
 		// Specify the source file
 		sourceFile := "."
@@ -836,7 +870,7 @@ func init() {
 	initCmd.Flags().StringVar(&mobile, "mobile", "", "Specify a mobile target option (android, ios)")
 	initCmd.Flags().BoolVarP(&desktop, "desktop", "d", false, "Specify a desktop target option (windows, darwin, linux)")
 	initCmd.Flags().BoolVarP(&terminal, "terminal", "t", false, "Specify a terminal target option (any additional terminal option can be added here)")
-	initCmd.Flags().StringVar(&template, "template", "", "Specify a template URL to initialize the project from")
+	initCmd.Flags().StringVar(&template, "template", "default", "Specify a template URL to initialize the project from")
 
 	rootCmd.AddCommand(initCmd)
 }
@@ -890,7 +924,7 @@ func App() *Document {
 		return false
 	}))
 	
-	return document
+	return *document
 }
 
 func main(){
@@ -899,6 +933,9 @@ func main(){
 }
 `
 
+// TODO this should be part of the go code and rendered as html at build time in csr mode.
+// At that point, this variable will be removed. We will only need go files with the html renderer being used
+// at build time.
 var defaultindexfile = `
 <!doctype html>
 <html>

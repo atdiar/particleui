@@ -108,8 +108,23 @@ func Run(buildtags ...string) error {
 			servmod = "ssg"
 		}
 
-		basepathseg := strings.TrimSuffix(basepath, "/")
-		basepathseg = strings.TrimPrefix(basepathseg, "/")
+		/*
+			if tinygo {
+				releaseMode = true
+			} else {
+				releaseMode = false
+			}
+		*/
+
+		rmode := "tmp"
+		if releaseMode {
+			rmode = "release"
+		}
+
+		folder := ".root"
+		if basepath != "/" {
+			folder = filepath.Join(folder, basepath)
+		}
 
 		err := Build(true, nil) // TODO add build options, e.g. nohmr should be propagated to client
 		if err != nil {
@@ -117,23 +132,23 @@ func Run(buildtags ...string) error {
 		}
 
 		if tinygo {
-			err = CopyWasmExecJsTinygo(filepath.Join(".", "dev", "build", "app", basepathseg))
+			err = CopyWasmExecJsTinygo(filepath.Join(".", "dist", rmode, "client", folder))
 			if err != nil {
 				return err
 			}
 		} else {
-			err = CopyWasmExecJs(filepath.Join(".", "dev", "build", "app", basepathseg))
+			err = CopyWasmExecJs(filepath.Join(".", "dist", rmode, "client", folder))
 			if err != nil {
 				return err
 			}
 		}
 
-		serverbinpath := filepath.Join(".", "dev", "build", "server", "csr", basepathseg, "main")
+		serverbinpath := filepath.Join(".", "dist", rmode, "server", "csr", folder, "main")
 		if ssr {
-			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
+			serverbinpath = filepath.Join(".", "dist", rmode, "server", "ssr", folder, "main")
 		}
 		if ssg {
-			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
+			serverbinpath = filepath.Join(".", "dist", rmode, "server", "ssr", folder, "main")
 		}
 
 		err = Build(false, append(buildtags, "server", servmod))

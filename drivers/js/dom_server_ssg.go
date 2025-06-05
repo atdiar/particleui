@@ -24,7 +24,7 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-	StaticPath string
+	SourcePath = filepath.Join("..", "..", "..", "src")
 	IndexPath  string
 
 	host string
@@ -32,17 +32,16 @@ var (
 
 	release  bool
 	nohmr    bool
-	noserver bool
+	basepath string = "./_root/"
 
-	renderedRoute string
-	outputDir     string
+	render    string
+	StaticDir string
 
 	ServeMux *http.ServeMux
-	Server   *http.Server = newDefaultServer()
+	Server   *http.Server
 
 	RenderHTMLhandler http.Handler
-
-	verbose bool
+	verbose           bool
 )
 
 // NOTE: the default entry path is stored in the BasePath variable stored in dom.go
@@ -51,15 +50,13 @@ func init() {
 	flag.StringVar(&host, "host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
-	flag.BoolVar(&noserver, "noserver", false, "Generate the pages without starting a server")
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 
-	flags.StringVar(&outputDir, "output", "../../../../client", "Output directory for the static files")
-	flags.StringVar(&renderedRoute, "route", ".", "Route to render")
+	flag.StringVar(&render, "render", "", "Route to render")
 
 	flag.Parse()
 
@@ -71,12 +68,10 @@ func init() {
 		HMRMode = "true"
 	}
 
-	exe, _ := os.Executable()
-	exeDir := filepath.Dir(exe)
-	relPath, _ := filepath.Rel(exeDir, outputDir)
+	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
+	IndexPath = filepath.Join(StaticDir, "index.html")
 
-	StaticPath = relPath
-	IndexPath = filepath.Join(StaticPath, "index.html")
+	Server = newDefaultServer()
 }
 
 func (n NativeElement) SetChildren(children ...*ui.Element) {
@@ -172,13 +167,13 @@ func (w *responseRecorder) Result() *http.Response {
 // On the client, these are client side javascrip events.
 // On the server, these events are http requests to a given UI endpoint, translated then in a navigation event
 // for the document.
-func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe func(ctx context.Context)) {
-	fileServer := http.FileServer(http.Dir(StaticPath))
+func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe func(ctx context.Context)) {
+	fileServer := http.FileServer(DisableDirectoryListing(http.Dir(StaticDir)))
 
 	// First we need to create the document and render the pages
 	// ssg is basically about atomically serving a prenavigated app.
 	document := f()
-	withNativejshelpers(&document)
+	withNativejshelpers(document)
 
 	err := document.mutationRecorder().Replay()
 	if err != nil {
@@ -188,7 +183,7 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 
 	// Creating the sitemap.xml file and putting it under the static directory
 	// that should have been created in the output directory.
-	err = CreateSitemap(document, filepath.Join(StaticPath, "sitemap.xml"))
+	err = CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
 	if err != nil {
 		panic(err)
 	}
@@ -217,66 +212,67 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 		cleanedPath := filepath.Clean(r.URL.Path)
 
 		// Join the cleaned path with the static directory
-		path := filepath.Join(StaticPath, cleanedPath)
+		path := filepath.Join(StaticDir, cleanedPath)
 
-		// Check if the requested file exists
-		_, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			// If the file does not exist, serve index.html
-			http.ServeFile(w, r, IndexPath) // Use IndexPath directly since it's already joined with StaticPath
-			return
-		} else if err != nil {
-			// If there's an error checking the file, return an internal server error
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		fi, err := os.Stat(path)
+		if err == nil && !fi.IsDir() {
+			fileServer.ServeHTTP(w, r)
 			return
 		}
 
-		// If the file exists, serve it
-		fileServer.ServeHTTP(w, r)
+		// TODO if fi is Dir, check whether it has an index.html file
+		if fi != nil && fi.IsDir() {
+			// If it's a directory, check for index.html
+			indexPath := filepath.Join(path, "index.html")
+			if _, err := os.Stat(indexPath); err == nil {
+				// Serve the index.html file if it exists
+				http.ServeFile(w, r, indexPath)
+				return
+			}
+			// Otherwise, we return a 403 Forbidden error
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		}
 	})
 
 	for _, m := range buildEnvModifiers {
 		m()
 	}
 
-	if noserver {
-		return func(ctx context.Context) {
-			if renderedRoute != "" {
-				if renderedRoute == "." {
-					// we want to render every possible route. This should generate the whole website
-					// in the output directory under the form of sattic files in nested directories.
-					n, err := CreatePages(document)
-					if err != nil {
-						fmt.Printf("Error creating pages: %v\n", err)
-						os.Exit(1)
-					} else {
-						if verbose {
-							fmt.Printf("Created %d pages\n", n)
-						}
-					}
-
+	return func(ctx context.Context) {
+		if render != "" {
+			if render == "." {
+				// we want to render every possible route. This should generate the whole website
+				// in the output directory under the form of sattic files in nested directories.
+				n, err := CreatePages(document)
+				if err != nil {
+					fmt.Printf("Error creating pages: %v\n", err)
+					os.Exit(1)
 				} else {
-					// We render the route that was specified in the command line.
-					// This should generate the corresponding file in the output directory.
-					document.Router().GoTo(renderedRoute)
-					err := document.CreatePage(filepath.Join(StaticPath, renderedRoute, "index.html"))
-					if err != nil {
-						fmt.Printf("Error creating page for route '%s': %v\n", renderedRoute, err)
-						os.Exit(1)
-					} else {
-						if verbose {
-							fmt.Printf("Created page for route '%s'\n", renderedRoute)
-						}
+					if verbose {
+						fmt.Printf("Created %d pages\n", n)
 					}
 				}
 
+			} else {
+				// We render the route that was specified in the command line.
+				// This should generate the corresponding file in the output directory.
+				document.Router().GoTo(render)
+				err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+				if err != nil {
+					fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+					os.Exit(1)
+				} else {
+					if verbose {
+						fmt.Printf("Created page for route '%s'\n", render)
+					}
+				}
 			}
+			return
 		}
-	}
 
-	// TODO modify HMR mode to account for ssg structural changes. (no wasm etc, different output directory etc.)
-	// ******************************
-	return func(ctx context.Context) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		ctx, shutdown := context.WithCancel(ctx)
 
 		ServeMux.Handle(BasePath, RenderHTMLhandler)
@@ -314,10 +310,12 @@ func NewBuilder(f func() Document, buildEnvModifiers ...func()) (ListenAndServe 
 				os.Exit(0)
 			}
 		}
-
 	}
 
 }
+
+// TODO modify HMR mode to account for ssg structural changes. (no wasm etc, different output directory etc.)
+// *****************************
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -354,17 +352,17 @@ func recoverStateHistory() {}
 
 var recoverStateHistoryHandler = ui.NoopMutationHandler
 
-func CreatePages(doc Document) (int, error) {
+func CreatePages(doc *Document) (int, error) {
 	// Use StaticPath instead of hardcoded path
 	router := doc.Router()
 	if router == nil {
-		err := doc.CreatePage(filepath.Join(StaticPath, "index.html"))
+		err := doc.CreatePage(filepath.Join(StaticDir, "index.html"))
 		return 1, err
 	}
 
 	var count int
-	for _, route := range routes {
-		fullPath := filepath.Join(StaticPath, route, "index.html")
+	for route := range router.Links {
+		fullPath := filepath.Join(StaticDir, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
 		}
@@ -450,4 +448,74 @@ func ldflags() string {
 		ldflags = append(ldflags, fmt.Sprintf("-X %s=%s", key, value))
 	}
 	return strings.Join(ldflags, " ")
+}
+
+func DisableDirectoryListing(fs http.FileSystem, allowedPaths ...string) http.FileSystem {
+	return &noDirectoryFS{
+		fs:           fs,
+		allowedPaths: allowedPaths,
+	}
+}
+
+type noDirectoryFS struct {
+	fs           http.FileSystem
+	allowedPaths []string
+}
+
+func (nfs *noDirectoryFS) Open(name string) (http.File, error) {
+	f, err := nfs.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+
+	// If it's a directory, check if it's allowed or has index.html
+	if s.IsDir() {
+		// Check if this path is in the allowed list
+		if nfs.isPathAllowed(name) {
+			return f, nil // Allow directory listing
+		}
+
+		// Not in allowed list, check for index.html
+		indexPath := filepath.Join(name, "index.html")
+		if _, err := nfs.fs.Open(indexPath); err != nil {
+			f.Close()
+			return nil, os.ErrPermission // Returns 403 Forbidden
+		}
+	}
+
+	return f, nil
+}
+
+func (nfs *noDirectoryFS) isPathAllowed(requestPath string) bool {
+	// Clean the path to handle different formats
+	cleanPath := filepath.Clean(requestPath)
+	if cleanPath == "." {
+		cleanPath = "/"
+	}
+	if !strings.HasPrefix(cleanPath, "/") {
+		cleanPath = "/" + cleanPath
+	}
+
+	for _, allowedPath := range nfs.allowedPaths {
+		// Clean the allowed path too
+		cleanAllowed := filepath.Clean(allowedPath)
+		if cleanAllowed == "." {
+			cleanAllowed = "/"
+		}
+		if !strings.HasPrefix(cleanAllowed, "/") {
+			cleanAllowed = "/" + cleanAllowed
+		}
+
+		// Exact match or subdirectory match
+		if cleanPath == cleanAllowed || strings.HasPrefix(cleanPath, cleanAllowed+"/") {
+			return true
+		}
+	}
+	return false
 }

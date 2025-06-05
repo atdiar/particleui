@@ -3,6 +3,7 @@
 package doc
 
 import (
+	"fmt"
 	"strings"
 
 	js "github.com/atdiar/particleui/drivers/js/compat"
@@ -292,7 +293,9 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		tgt = js.Global().Get("document")
 	}
 	if !tgt.Truthy() {
-		panic("trying to add an event listener to non-existing HTML element on the JS side")
+		fmt.Println(tgt)
+		// DEBUG panic("trying to add an event listener to non-existing HTML element on the JS side")
+		return
 	}
 	tgt.Call("addEventListener", NativeEventName, cb, capture)
 	if listener.NativeEventUnlisteners.List == nil {

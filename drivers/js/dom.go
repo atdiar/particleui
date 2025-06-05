@@ -470,14 +470,15 @@ func ConnectNative(e *ui.Element, tag string) {
 	if tag == "window" {
 		wd := js.Global().Get("document").Get("defaultView")
 		if !wd.Truthy() {
-			panic("unable to access windows")
+			panic("unable to access windows") // commented out for DEBUG purposes
+			fmt.Println("unable to access windows")
 		}
 		e.Native = NewNativeElementWrapper(wd, "Window")
 		return
 	}
 
 	if tag == "html" {
-		// connect localStorage and sessionSTtorage
+		// connect localStorage and sessionStorage
 		ls := jsStore{js.Global().Get("localStorage")}
 		ss := jsStore{js.Global().Get("sessionStorage")}
 		ls.Set("zui-connected", js.ValueOf(true))

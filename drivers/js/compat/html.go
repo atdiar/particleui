@@ -3,8 +3,10 @@
 package js
 
 import (
-	"golang.org/x/net/html"
+	"fmt"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 type Type int
@@ -20,6 +22,8 @@ const (
 	TypeFunction
 )
 
+var global = &html.Node{}
+
 type Value struct {
 	data interface{}
 }
@@ -29,9 +33,14 @@ func ValueOf(i interface{}) Value {
 }
 
 func (v Value) Node() *html.Node {
+	if v.data == nil {
+		return &html.Node{} // DEBUG
+	}
+
 	if node, ok := v.data.(*html.Node); ok {
 		return node
 	}
+	fmt.Println("Value is not a *html.Node", v, v.data) // DEBUG
 	panic("Value is not a *html.Node")
 }
 
@@ -64,7 +73,7 @@ func (v Value) nodes() []*html.Node {
 }
 
 func Global() Value {
-	return Undefined()
+	return ValueOf(global)
 }
 
 func Null() Value {
@@ -76,6 +85,9 @@ func Undefined() Value {
 }
 
 func (v Value) Call(method string, args ...interface{}) Value {
+	if v.data == nil {
+		return Undefined()
+	}
 	switch method {
 	case "appendChild":
 		node := v.Node() // This will panic if v is not a Node
@@ -303,7 +315,20 @@ func removeAttribute(n *html.Node, name string) {
 }
 
 func (v Value) Get(property string) Value {
-	node := v.Node() // Ensure that v is a Node; this will panic if not
+	if v.data == nil {
+		return Undefined()
+	}
+
+	if property == "defaultView" {
+		node := &html.Node{
+			Type: html.ElementNode,
+		}
+		return ValueOf(node)
+	}
+
+	fmt.Println("Get", property) // DEBUG
+	fmt.Println("Value", v)      // DEBUG
+	node := v.Node()             // Ensure that v is a Node; this will panic if not
 
 	switch property {
 	case "children":
@@ -377,13 +402,25 @@ func (v Value) Get(property string) Value {
 
 	case "nodeType":
 		return ValueOf(node.Type)
-
+	case "document":
+		node := &html.Node{
+			Type: html.DocumentNode,
+		}
+		return ValueOf(node)
+	case "documentElement":
+		node := &html.Node{
+			Type: html.ElementNode,
+		}
+		return ValueOf(node)
 	default:
 		return Undefined()
 	}
 }
 
 func (v Value) Set(property string, value interface{}) {
+	if v.data == nil {
+		return
+	}
 	node := v.Node() // This will panic if v is not a Node
 
 	switch property {
@@ -463,7 +500,10 @@ func (v Value) SetIndex(i int, x interface{}) {}
 
 // Truthy is a no-op in server context.
 func (v Value) Truthy() bool {
-	return false
+	if v.data == nil {
+		return false
+	}
+	return true
 }
 
 // Type returns the type of the Value.
@@ -472,7 +512,14 @@ func (v Value) Type() Type {
 		return TypeNull
 	}
 	// TODO needs to type switch for determination logic
-
+	switch v.data.(type) {
+	case bool:
+		return TypeBoolean
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return TypeNumber
+	case string:
+		return TypeString
+	}
 	// Add more detailed type determination logic if needed.
 	return TypeObject
 }

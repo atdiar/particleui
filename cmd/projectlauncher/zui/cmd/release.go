@@ -31,6 +31,7 @@ var releaseCmd = &cobra.Command{
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		releaseMode = true
+		// Load the project configuration
 		err := LoadConfig()
 		if err != nil {
 			fmt.Println(err)
@@ -143,14 +144,11 @@ var releaseCmd = &cobra.Command{
 					}
 				}
 
-				if releaseMode {
-
-					err = copyDirectory(filepath.Join(".", "dev", "build", "ssg"), filepath.Join(".", "release", "app", "ssg"))
-					if err != nil {
-						fmt.Println("Error: unable to copy the ssg pages.")
-						os.Exit(1)
-						return
-					}
+				err = copyDirectory(filepath.Join(".", "dev", "build", "ssg"), filepath.Join(".", "release", "app", "ssg"))
+				if err != nil {
+					fmt.Println("Error: unable to copy the ssg pages.")
+					os.Exit(1)
+					return
 				}
 
 				os.Exit(1)
@@ -243,9 +241,11 @@ func copyDirectory(src string, dst string) error {
 	}
 
 	// Create destination directory with same permissions
-	err = os.MkdirAll(dst, srcInfo.Mode())
-	if err != nil {
-		return fmt.Errorf("error creating destination directory: %v", err)
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		err = os.MkdirAll(dst, srcInfo.Mode())
+		if err != nil {
+			return fmt.Errorf("error creating destination directory: %v", err)
+		}
 	}
 
 	// Get directory contents
