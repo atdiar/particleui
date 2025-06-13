@@ -520,7 +520,7 @@ func (r *Router) OnRouteChangeRequest(m *MutationHandler) {
 // Example of JS bridging : the nativeEventBridge should add a popstate event listener to window
 // It should also dispatch a RouteChangeEvent to bridge browser url mutation into the Go side
 // after receiving notice of popstate event firing.
-func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyElement) {
+func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyElement, readynessPoller ...chan struct{}) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -645,12 +645,20 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		target.AsElement().AddEventListener(event, routeChangeHandler)
 	}
 
+	for _, isready := range readynessPoller {
+		select {
+		case <-isready:
+		default:
+			close(isready) // close the channel if it is not already closed
+		}
+	}
+
 	r.Outlet.AsElement().Root.TriggerEvent("ui-idle")
 
 	for {
 		select {
 		case <-ctx.Done():
-		case f := <-WorkQueue:
+		case f := <-r.Outlet.AsElement().Root.WorkQueue:
 			f()
 		}
 	}

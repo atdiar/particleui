@@ -21,6 +21,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 	//"golang.org/x/net/html/atom"
 )
 
@@ -35,7 +36,7 @@ var (
 
 	release  bool
 	nohmr    bool
-	basepath string = "./_root/"
+	basepath string
 
 	render    string
 	StaticDir string
@@ -71,7 +72,9 @@ func init() {
 	if !nohmr {
 		HMRMode = "true"
 	}
-
+	if basepath == "" || basepath == "/" {
+		basepath = filepath.Join(".", "_root")
+	}
 	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
 	IndexPath = filepath.Join(StaticDir, "index.html")
 
@@ -199,9 +202,16 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 	return func(ctx context.Context) {
 		if render != "" {
 			document := f()
+
+			start := make(chan struct{})
+			go func() {
+				document.ListenAndServe(ctx, start)
+			}()
+			start <- struct{}{} // wait for the document to be ready
 			if render == "." {
 				// we want to render every possible route. This should generate the whole website
 				// in the output directory under the form of static index.html files in nested directories.
+				// DEBUG TODO use ui.DoSync(document.AsElement(), func() {
 				n, err := CreatePages(document)
 				if err != nil {
 					fmt.Printf("Error creating pages: %v\n", err)
@@ -211,22 +221,26 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 						fmt.Printf("Created %d pages\n", n)
 					}
 				}
-
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				if router := document.Router(); router != nil {
-					router.GoTo(render)
-					err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
-					if err != nil {
-						fmt.Printf("Error creating page for route '%s': %v\n", render, err)
-						os.Exit(1)
-					} else {
+				ui.DoSync(document.AsElement(), func() {
+					router := document.Router()
+					if router != nil {
+						router.GoTo(render)
+						err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+						if err != nil {
+							fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+							os.Exit(1)
+						}
 						if verbose {
 							fmt.Printf("Created page for route '%s'\n", render)
 						}
+						fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
+					} else {
+						DEBUG("router was nil")
 					}
-				}
+				})
 			}
 			return
 		}
@@ -372,28 +386,42 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-func (d Document) Render(w io.Writer) error {
-	return html.Render(w, newHTMLDocument(d))
+func (d *Document) Render(w io.Writer) error {
+	return html.Render(w, newHTMLDocument(d).Parent)
 }
 
-func newHTMLDocument(document Document) *html.Node {
-	doc := document.AsElement()
-	h := &html.Node{Type: html.DoctypeNode}
-	n := doc.Native.(NativeElement).Value.Node()
-	h.AppendChild(n)
-
-	return h
+func newHTMLDocument(document *Document) *html.Node {
+	h, ok := JSValue(document.AsElement())
+	if !ok {
+		panic("Error converting Document to HTML Node")
+	}
+	return h.Node()
 }
 
 func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
-	state := SerializeStateHistory(root)
-	script := `<script id='` + SSRStateElementID + `' type="application/json">
-	` + state + `
-	<script>`
-	scriptNode, err := html.Parse(strings.NewReader(script))
-	if err != nil {
-		panic(err)
+	state := SerializeStateHistory(root) // Assuming SerializeStateHistory returns a string
+
+	// 1. Create the <script> element node
+	scriptNode := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "script",
+		DataAtom: atom.Script, // Using atom for better performance/correctness
+		Attr: []html.Attribute{ // Set attributes directly
+			{Key: "id", Val: SSRStateElementID},
+			{Key: "type", Val: "application/json"},
+		},
 	}
+
+	// 2. Create the text node for the script's content
+	// It's good practice to wrap the state in newlines/tabs for readability if rendered.
+	scriptContentNode := &html.Node{
+		Type: html.TextNode,
+		Data: "\n\t" + state + "\n\t",
+	}
+
+	// 3. Append the text node as a child of the script node
+	scriptNode.AppendChild(scriptContentNode)
+
 	return scriptNode
 }
 
@@ -469,7 +497,7 @@ func (d Document) CreatePage(filePath string) error {
 	// Create and open the file
 	file, err := os.Create(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating file '%s': %w", filePath, err)
 	}
 	defer file.Close()
 

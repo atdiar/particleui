@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base32"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,17 +13,29 @@ import (
 
 var PrefetchMaxAge = 5 * time.Second
 
-// WorkQueue is a queue of UI mutating function that can be built from multiple goroutines.
-// Only the UI thread read from this to do work on the UI tree.
-var WorkQueue = make(chan func())
-
 // DoSync sends a function to the main goroutine that is in charge of the UI to be run.
 // Goroutines launched from the main thread that need access to the main UI tree must use it.
 // Only a single DoSync must be used within a DoAsync.
-func DoSync(fn func()) {
+func DoSync(e *Element, fn func()) {
+	if e == nil {
+		panic("DoSync requires a non-nil Element")
+	}
+
+	if e.Root == nil {
+		log.Println("DoSync called on an Element that is not registered. This is a noop.")
+		return
+	}
+
+	if e.Root.router == nil {
+		log.Println("DoSync called on an Element that has no router. This is a noop.")
+		return
+	}
+
+	wq := e.Root.WorkQueue
+
 	ch := make(chan struct{})
 	go func() {
-		WorkQueue <- newwork(fn, ch)
+		wq <- newwork(fn, ch)
 	}()
 	<-ch
 }
@@ -55,15 +68,15 @@ func newwork(f func(), signalDone chan struct{}) func() {
 // goroutine to see the fully updated tree and not a partially updated one.
 // (reminder that a DoSync represent a critical section for the UI tree and in-between calls
 // the UI goroutine is preemptable).
-func DoAsync(e *Element, f func(context.Context)) {
+func DoAsync(e AnyElement, f func(context.Context)) {
 	var executionCtx context.Context
 	var cancel context.CancelFunc
 
 	var ctxchan <-chan struct{}
 
 	if e != nil {
-		if e.Root != nil {
-			if r := e.Root.router; r != nil {
+		if e.AsElement().Root != nil {
+			if r := e.AsElement().Root.router; r != nil {
 				ctxchan = r.NavContext.Done()
 				executionCtx, cancel = context.WithCancel(r.NavContext)
 			} else {
@@ -92,9 +105,9 @@ func DoAsync(e *Element, f func(context.Context)) {
 }
 
 // DoAfter schedules a function to be executed after a certain duration.
-// Similarly to DoAfter, if attached to a regsitered Element,
+// Similarly to DoAfter, if attached to a registered Element,
 // the function is cancellable when navigating.
-// When f is supposed to update the UI tree, it needs to use a single DoSync call when it does so.
+// When f is supposed to update the UI tree, it needs to do it within a single DoSync call.
 func DoAfter(d time.Duration, e *Element, f func(ectx context.Context)) {
 	t := time.NewTimer(d)
 
@@ -343,7 +356,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 
 	DoAsync(e, func(execution context.Context) {
 
-		DoSync(func() {
+		DoSync(e, func() {
 			go func() {
 				select {
 				case <-execution.Done():
@@ -356,7 +369,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 
 		res, err := e.Root.HttpClient.Do(r)
 		if err != nil {
-			DoSync(func() {
+			DoSync(e, func() {
 				if prefetching {
 					e.endprefetchTransition(propname, Bool(false))
 				} else {
@@ -370,7 +383,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 
 		v, err := responsehandler(res)
 		if err != nil {
-			DoSync(func() {
+			DoSync(e, func() {
 				if prefetching {
 					e.endprefetchTransition(propname, Bool(false))
 				} else {
@@ -380,7 +393,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 			})
 			return
 		}
-		DoSync(func() {
+		DoSync(e, func() {
 			e.SetData(propname, v)
 			if prefetching {
 				e.endprefetchTransition(propname)
@@ -421,7 +434,7 @@ func (e *Element) enablefetching() *Element {
 			panic("unexpected prefetchlist type")
 		}
 
-		if prefetchlist.Size() == 0 {
+		if prefetchlist.Length() == 0 {
 			e.EndTransition("prefetch")
 		}
 
@@ -885,7 +898,7 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 
 			DoAsync(e, func(execution context.Context) {
 
-				DoSync(func() {
+				DoSync(e, func() {
 					go func() {
 						select {
 						case <-execution.Done():
@@ -897,7 +910,7 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 
 				res, err := e.Root.HttpClient.Do(r)
 				if err != nil {
-					DoSync(func() {
+					DoSync(e, func() {
 						e.TriggerEvent("request-error-"+requestID(r), newRequestStateObject(nil, err))
 					})
 					return
@@ -908,12 +921,12 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 				}
 				v, err := responsehandler(res)
 				if err != nil {
-					DoSync(func() {
+					DoSync(e, func() {
 						e.TriggerEvent("request-error-"+requestID(r), newRequestStateObject(nil, err))
 					})
 					return
 				}
-				DoSync(func() {
+				DoSync(e, func() {
 					e.endrequestTransition(r.URL.String(), newRequestStateObject(v, nil))
 				})
 			})

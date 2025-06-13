@@ -67,6 +67,12 @@ var (
 	Namespace = ui.Namespace
 )
 
+const (
+	// common mutation events
+	natively_connected = "natively-connected"
+	registered         = "registered"
+)
+
 var SSEscript = `
 
 	// Create a new EventSource instance to connect to the SSE endpoint
@@ -150,6 +156,10 @@ func DeserializeStateHistory(rawstate string) (ui.Value, error) {
 }
 
 var dEBUGJS = func(v js.Value, isJsonString ...bool) {
+	if !js.Global().Truthy() {
+		log.Println("js.Global() is not truthy, cannot log to console")
+		return
+	}
 	if isJsonString != nil {
 		o := js.Global().Get("JSON").Call("parse", v)
 		js.Global().Get("console").Call("log", o)
@@ -288,22 +298,38 @@ func nativeDocumentAlreadyRendered() bool {
 }
 
 func ConnectNative(e *ui.Element, tag string) {
+	e.WatchEvent(registered, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		connectNative(e, tag)
+		evt.Origin().TriggerEvent(natively_connected)
+		return false
+	}).RunOnce().RunASAP())
+}
+
+func connectNative(e *ui.Element, tag string) {
 	id := e.ID
+	document := e.Root
+
+	// TODO make sure the below can only happens after the document is connected to the native object.
+	// In which case, using js.Global.Get("document") should not be necessary (it is actually wrong on the server)
+	// Rather, we should be able to retrieve the native document object from the Element's Native property.
+	// Then call getElementById on it.
 	if e.IsRoot() {
-		if nativeDocumentAlreadyRendered() && e.Configuration.MutationReplay {
-			e.Configuration.Disconnected = true
+		if js.Global().Truthy() {
+			if nativeDocumentAlreadyRendered() && e.Configuration.MutationReplay {
+				e.Configuration.Disconnected = true
 
-			statenode := js.Global().Get("document)").Call("getElementById", SSRStateElementID)
-			state := statenode.Get("textContent").String()
+				statenode := js.Global().Get("document)").Call("getElementById", SSRStateElementID)
+				state := statenode.Get("textContent").String()
 
-			e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
+				e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
 
-			e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-				statenode.Call("remove")
-				evt.Origin().TriggerEvent("connect-native")
-				evt.Origin().Configuration.Disconnected = false
-				return false
-			}))
+				e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					statenode.Call("remove")
+					evt.Origin().TriggerEvent("connect-native")
+					evt.Origin().Configuration.Disconnected = false
+					return false
+				}))
+			}
 		}
 	}
 
@@ -313,24 +339,33 @@ func ConnectNative(e *ui.Element, tag string) {
 			if tag == "window" {
 				wd := js.Global().Get("document").Get("defaultView")
 				if !wd.Truthy() {
-					panic("unable to access windows")
+					//panic("unable to access window object")
+					if DebugMode {
+						log.Println("unable to access window object in this environment")
+					}
 				}
 				evt.Origin().Native = NewNativeElementWrapper(wd, "Window")
 				return false
 			}
 
 			if tag == "html" {
-				// connect localStorage and sessionStorage
-				ls := jsStore{js.Global().Get("localStorage")}
-				ss := jsStore{js.Global().Get("sessionStorage")}
-				ls.Set("zui-connected", js.ValueOf(true))
-				ss.Set("zui-connected", js.ValueOf(true))
+				var root js.Value
+				if !js.Global().Truthy() {
+					// we are not in a browser environment
+					root = js.Global().Get("document").Get("implementation").Call("createHTMLDocument")
+				} else {
+					// connect localStorage and sessionStorage
+					ls := jsStore{js.Global().Get("localStorage")}
+					ss := jsStore{js.Global().Get("sessionStorage")}
+					ls.Set("zui-connected", js.ValueOf(true))
+					ss.Set("zui-connected", js.ValueOf(true))
 
-				root := js.Global().Get("document").Call("getElementById", id)
-				if !root.Truthy() {
-					root = js.Global().Get("document").Get("documentElement")
+					root = js.Global().Get("document").Call("getElementById", id)
 					if !root.Truthy() {
-						panic("failed to instantiate root element for the document")
+						root = js.Global().Get("document").Get("documentElement")
+						if !root.Truthy() {
+							panic("failed to instantiate root element for the document")
+						}
 					}
 				}
 				evt.Origin().Native = NewNativeHTMLElement(root)
@@ -358,6 +393,9 @@ func ConnectNative(e *ui.Element, tag string) {
 				if !element.Truthy() {
 					if !cancreeatewithID {
 						element = js.Global().Get("document").Call("createElement", tag)
+						evt.Origin().Native = NewNativeHTMLElement(element)
+						SetAttribute(e, "id", evt.Origin().ID)
+						return false
 					} else {
 						element = js.Global().Call("createElementWithID", tag, id)
 					}
@@ -446,10 +484,10 @@ func ConnectNative(e *ui.Element, tag string) {
 				if !element.Truthy() {
 					element = js.Global().Get("document").Get(tag)
 					if !element.Truthy() {
+						DEBUG("*********** creating head element ***********")
 						element = js.Global().Call("createElement", tag)
 					}
 				}
-
 				evt.Origin().Native = NewNativeHTMLElement(element)
 				SetAttribute(e, "id", e.ID)
 				return false
@@ -457,7 +495,18 @@ func ConnectNative(e *ui.Element, tag string) {
 
 			element := js.Global().Call("getElement", id)
 			if !element.Truthy() {
-				element = js.Global().Call("createElementWithID", tag, id)
+				element = js.Global().Get("document").Call("getElementById", id)
+				if !element.Truthy() {
+					cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
+					if !cancreeatewithID {
+						element = js.Global().Get("document").Call("createElement", tag)
+						e.Native = NewNativeHTMLElement(element)
+						SetAttribute(e, "id", e.ID)
+						return false
+					} else {
+						element = js.Global().Call("createElementWithID", tag, id)
+					}
+				}
 			}
 			evt.Origin().Native = NewNativeHTMLElement(element)
 
@@ -468,204 +517,409 @@ func ConnectNative(e *ui.Element, tag string) {
 		return
 	}
 	if tag == "window" {
-		wd := js.Global().Get("document").Get("defaultView")
+		docNative, ok := JSValue(document)
+		if !ok {
+			DEBUG("unable to access native document object ", e.Root.ID)
+			panic("unable to access native document object")
+		}
+		if !docNative.Truthy() {
+			panic("unable to access native document object. It is not truthy.")
+		}
+		wd := docNative.Get("defaultView")
 		if !wd.Truthy() {
-			panic("unable to access windows") // commented out for DEBUG purposes
-			fmt.Println("unable to access windows")
+			if DebugMode {
+				log.Println("unable to access window object in this environment")
+			}
 		}
 		e.Native = NewNativeElementWrapper(wd, "Window")
 		return
 	}
 
 	if tag == "html" {
-		// connect localStorage and sessionStorage
-		ls := jsStore{js.Global().Get("localStorage")}
-		ss := jsStore{js.Global().Get("sessionStorage")}
-		ls.Set("zui-connected", js.ValueOf(true))
-		ss.Set("zui-connected", js.ValueOf(true))
+		var root js.Value
+		if !js.Global().Truthy() {
+			// we are not in a browser environment
+			root = js.Global().Get("document").Get("implementation").Call("createHTMLDocument")
+		} else {
+			// connect localStorage and sessionStorage
+			ls := jsStore{js.Global().Get("localStorage")}
+			ss := jsStore{js.Global().Get("sessionStorage")}
+			ls.Set("zui-connected", js.ValueOf(true))
+			ss.Set("zui-connected", js.ValueOf(true))
 
-		root := js.Global().Get("document").Call("getElementById", id)
-		if !root.Truthy() {
-			root = js.Global().Get("document").Get("documentElement")
+			root = js.Global().Get("document").Call("getElementById", id)
 			if !root.Truthy() {
-				panic("failed to instantiate root element for the document")
+				root = js.Global().Get("document").Get("documentElement")
+				if !root.Truthy() {
+					panic("failed to instantiate root element for the document")
+				}
 			}
-			e.Native = NewNativeHTMLElement(root)
-			return
 		}
 		e.Native = NewNativeHTMLElement(root)
 		SetAttribute(e, "id", e.ID)
-
 		return
 	}
 
 	if tag == "body" {
-		element := js.Global().Get("document").Call("getElementById", id)
-		if !element.Truthy() {
-			element = js.Global().Get("document").Get(tag)
+		if !js.Global().Truthy() {
+			// We are not in a browser environment.
+			// On the other hand we should have access to the document node
+			root, ok := JSValue(document)
+			if !ok {
+				DEBUG("unable to access native document object ", e.Root.ID)
+				panic("unable to access native document object")
+			}
+			if !root.Truthy() {
+				panic("unable to access native document object. It is not truthy.")
+			}
+			element := root.Call("getElementById", id)
 			if !element.Truthy() {
-				element = js.Global().Get("document").Call("createElement", tag)
+				element = root.Get("body")
+				if !element.Truthy() {
+					//element = root.Call("createElement", tag)
+					panic("Unable to access existing body element in the document.")
+				}
 			}
 			e.Native = NewNativeHTMLElement(element)
-			SetAttribute(e, "id", e.ID)
-			return
+		} else {
+			element := js.Global().Get("document").Call("getElementById", id)
+			if !element.Truthy() {
+				element = js.Global().Get("document").Get(tag)
+				if !element.Truthy() {
+					element = js.Global().Get("document").Call("createElement", tag)
+				}
+			}
+			e.Native = NewNativeHTMLElement(element)
 		}
-		e.Native = NewNativeHTMLElement(element)
 		SetAttribute(e, "id", e.ID)
 		return
 	}
 
 	if tag == "script" {
-		cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
-		element := js.Global().Get("document").Call("getElementById", id)
-		if !element.Truthy() {
-			if !cancreeatewithID {
-				element = js.Global().Get("document").Call("createElement", tag)
-			} else {
-				element = js.Global().Call("createElementWithID", tag, id)
+		if !js.Global().Truthy() {
+			// We are not in a browser environment.
+			// On the other hand we should have access to the document node
+			root, ok := JSValue(document)
+			if !ok {
+				DEBUG("unable to access native document object ", e.Root.ID)
+				panic("unable to access native document object")
+			}
+			if !root.Truthy() {
+				panic("unable to access native document object. It is not truthy.")
+			}
+			element := root.Call("getElementById", id)
+			if !element.Truthy() {
+				element = root.Call("createElement", tag)
+			}
+			e.Native = NewNativeHTMLElement(element)
+		} else {
+			cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
+			element := js.Global().Get("document").Call("getElementById", id)
+			if !element.Truthy() {
+				if !cancreeatewithID {
+					element = js.Global().Get("document").Call("createElement", tag)
+				} else {
+					element = js.Global().Call("createElementWithID", tag, id)
+				}
+				e.Native = NewNativeHTMLElement(element)
 			}
 		}
-		e.Native = NewNativeHTMLElement(element)
 		SetAttribute(e, "id", e.ID)
 		return
 	}
 
 	if tag == "head" {
-		element := js.Global().Get("document").Call("getElementById", id)
-		defer func() {
-			// We should also add the scrip that enables batch execution:
-			batchscript := js.Global().Get("document").Call("createElement", "script")
-			batchscript.Set("textContent", `
-			window.elements = {};
-
-			window.getElement = function(id) {
-				let element = document.getElementById(id);
-				if (!element) {
-				  element = window.elements[id];
-				}
-				return element;
-			};
-
-			window.createElementWithID = function(tagName, id) {
-			  let element = document.createElement(tagName);
-			  element.id = id;
-			  window.elements[id] = element;
-			  return element;
-			};
-			
-			window.deleteElementWithID = function(id) {
-			  let element = window.elements[id];
-			  if (element) {
-				if (element.parentNode) {
-				  element.parentNode.removeChild(element);
-				}
-				delete window.elements[id];
-			  }
-			};
-
-			
-			window.applyBatchOperations = function(parentElementID, encodedOperations) {
-				const operationsBinary = atob(encodedOperations);
-				const operationsData = new DataView(new Uint8Array(operationsBinary.split('').map(ch => ch.charCodeAt(0))).buffer);
-
-			
-				for (let i = 0; i < operationsBinary.length; i++) {
-					operationsData.setUint8(i, operationsBinary.charCodeAt(i));
-				}
-			
-				let offset = 0;
-				const fragment = document.createDocumentFragment();
-				const parentElement = window.getElement(parentElementID); // get parent element using its ID
-			
-				while (offset < operationsData.byteLength) {
-					const operationLen = operationsData.getUint8(offset++);
-					const operation = operationsBinary.slice(offset, offset + operationLen);
-					offset += operationLen;
-			
-					const idLen = operationsData.getUint8(offset++);
-					const elementID = operationsBinary.slice(offset, offset + idLen);
-					offset += idLen;
-			
-					const index = operationsData.getUint32(offset);
-					offset += 4;
-			
-					const element = window.getElement(elementID);
-					if (!element) continue;
-			
-					switch (operation) {
-						case "Insert":
-							if (fragment.children.length > index) {
-								fragment.insertBefore(element, fragment.children[index]);
-							} else {
-								fragment.appendChild(element);
-							}
-							break;
-						case "Remove":
-							if (element.parentNode) {
-								element.parentNode.removeChild(element);
-							}
-							break;
-					}
-				}
-				
-				parentElement.appendChild(fragment);
-			};
-			
-			(function() {
-				const originalDocumentElement = document.documentElement;
-	
-				const handler = {
-					get: function(target, propKey) {
-						const origMethod = target[propKey];
-						if (typeof origMethod === 'function') {
-							return function(...args) {
-								if (propKey === 'scrollTo') {
-									console.log('scrollTo', args);
-								}
-								return origMethod.apply(this, args);
-							};
-						} else if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
-							return target[propKey];
-						}
-					},
-					set: function(target, propKey, value) {
-						if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
-							console.log(propKey, value);
-						}
-						target[propKey] = value;
-						return true;
-					}
-				};
-	
-				const proxy = new Proxy(originalDocumentElement, handler);
-				document.documentElement = proxy;
-			})();
-			
-			`)
-			element.Call("append", batchscript)
-		}()
-		if !element.Truthy() {
-			element = js.Global().Get("document").Get(tag)
+		if !js.Global().Truthy() {
+			// We are not in a browser environment.createElement
+			// On the other hand we should have access to the document node
+			root, ok := JSValue(document)
+			if !ok {
+				DEBUG("unable to access native document object ", e.Root.ID, document.Native)
+				panic("unable to access native document object")
+			}
+			if !root.Truthy() {
+				panic("unable to access native document object. It is not truthy.")
+			}
+			element := root.Call("getElementById", id)
 			if !element.Truthy() {
-				element = js.Global().Call("createElement", tag)
+				element = root.Get(tag)
+				if !element.Truthy() {
+					panic("Unable to access existing head element in the document.")
+				}
 			}
 			e.Native = NewNativeHTMLElement(element)
 			SetAttribute(e, "id", e.ID)
-			return
+			// We should also add the scrip that enables batch execution:
+			func() {
+				// We should also add the scrip that enables batch execution:
+				batchscript := root.Call("createElement", "script")
+				batchscript.Set("textContent", `
+				window.elements = {};
+	
+				window.getElement = function(id) {
+					let element = document.getElementById(id);
+					if (!element) {
+					  element = window.elements[id];
+					}
+					return element;
+				};
+	
+				window.createElementWithID = function(tagName, id) {
+				  let element = document.createElement(tagName);
+				  element.id = id;
+				  window.elements[id] = element;
+				  return element;
+				};
+				
+				window.deleteElementWithID = function(id) {
+				  let element = window.elements[id];
+				  if (element) {
+					if (element.parentNode) {
+					  element.parentNode.removeChild(element);
+					}
+					delete window.elements[id];
+				  }
+				};
+	
+				
+				window.applyBatchOperations = function(parentElementID, encodedOperations) {
+					const operationsBinary = atob(encodedOperations);
+					const operationsData = new DataView(new Uint8Array(operationsBinary.split('').map(ch => ch.charCodeAt(0))).buffer);
+	
+				
+					for (let i = 0; i < operationsBinary.length; i++) {
+						operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+					}
+				
+					let offset = 0;
+					const fragment = document.createDocumentFragment();
+					const parentElement = window.getElement(parentElementID); // get parent element using its ID
+				
+					while (offset < operationsData.byteLength) {
+						const operationLen = operationsData.getUint8(offset++);
+						const operation = operationsBinary.slice(offset, offset + operationLen);
+						offset += operationLen;
+				
+						const idLen = operationsData.getUint8(offset++);
+						const elementID = operationsBinary.slice(offset, offset + idLen);
+						offset += idLen;
+				
+						const index = operationsData.getUint32(offset);
+						offset += 4;
+				
+						const element = window.getElement(elementID);
+						if (!element) continue;
+				
+						switch (operation) {
+							case "Insert":
+								if (fragment.children.length > index) {
+									fragment.insertBefore(element, fragment.children[index]);
+								} else {
+									fragment.appendChild(element);
+								}
+								break;
+							case "Remove":
+								if (element.parentNode) {
+									element.parentNode.removeChild(element);
+								}
+								break;
+						}
+					}
+					
+					parentElement.appendChild(fragment);
+				};
+				
+				(function() {
+					const originalDocumentElement = document.documentElement;
+		
+					const handler = {
+						get: function(target, propKey) {
+							const origMethod = target[propKey];
+							if (typeof origMethod === 'function') {
+								return function(...args) {
+									if (propKey === 'scrollTo') {
+										console.log('scrollTo', args);
+									}
+									return origMethod.apply(this, args);
+								};
+							} else if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+								return target[propKey];
+							}
+						},
+						set: function(target, propKey, value) {
+							if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+								console.log(propKey, value);
+							}
+							target[propKey] = value;
+							return true;
+						}
+					};
+		
+					const proxy = new Proxy(originalDocumentElement, handler);
+					document.documentElement = proxy;
+				})();
+				
+				`)
+				element.Call("append", batchscript)
+			}()
+		} else {
+			element := js.Global().Get("document").Call("getElementById", id)
+			if !element.Truthy() {
+				element = js.Global().Get("document").Get(tag)
+				if !element.Truthy() {
+					element = js.Global().Get("document").Call("createElement", tag)
+				}
+			}
+			e.Native = NewNativeHTMLElement(element)
+			SetAttribute(e, "id", e.ID)
+			func() {
+				// We should also add the scrip that enables batch execution:
+				batchscript := js.Global().Get("document").Call("createElement", "script")
+				batchscript.Set("textContent", `
+				window.elements = {};
+	
+				window.getElement = function(id) {
+					let element = document.getElementById(id);
+					if (!element) {
+					  element = window.elements[id];
+					}
+					return element;
+				};
+	
+				window.createElementWithID = function(tagName, id) {
+				  let element = document.createElement(tagName);
+				  element.id = id;
+				  window.elements[id] = element;
+				  return element;
+				};
+				
+				window.deleteElementWithID = function(id) {
+				  let element = window.elements[id];
+				  if (element) {
+					if (element.parentNode) {
+					  element.parentNode.removeChild(element);
+					}
+					delete window.elements[id];
+				  }
+				};
+	
+				
+				window.applyBatchOperations = function(parentElementID, encodedOperations) {
+					const operationsBinary = atob(encodedOperations);
+					const operationsData = new DataView(new Uint8Array(operationsBinary.split('').map(ch => ch.charCodeAt(0))).buffer);
+	
+				
+					for (let i = 0; i < operationsBinary.length; i++) {
+						operationsData.setUint8(i, operationsBinary.charCodeAt(i));
+					}
+				
+					let offset = 0;
+					const fragment = document.createDocumentFragment();
+					const parentElement = window.getElement(parentElementID); // get parent element using its ID
+				
+					while (offset < operationsData.byteLength) {
+						const operationLen = operationsData.getUint8(offset++);
+						const operation = operationsBinary.slice(offset, offset + operationLen);
+						offset += operationLen;
+				
+						const idLen = operationsData.getUint8(offset++);
+						const elementID = operationsBinary.slice(offset, offset + idLen);
+						offset += idLen;
+				
+						const index = operationsData.getUint32(offset);
+						offset += 4;
+				
+						const element = window.getElement(elementID);
+						if (!element) continue;
+				
+						switch (operation) {
+							case "Insert":
+								if (fragment.children.length > index) {
+									fragment.insertBefore(element, fragment.children[index]);
+								} else {
+									fragment.appendChild(element);
+								}
+								break;
+							case "Remove":
+								if (element.parentNode) {
+									element.parentNode.removeChild(element);
+								}
+								break;
+						}
+					}
+					
+					parentElement.appendChild(fragment);
+				};
+				
+				(function() {
+					const originalDocumentElement = document.documentElement;
+		
+					const handler = {
+						get: function(target, propKey) {
+							const origMethod = target[propKey];
+							if (typeof origMethod === 'function') {
+								return function(...args) {
+									if (propKey === 'scrollTo') {
+										console.log('scrollTo', args);
+									}
+									return origMethod.apply(this, args);
+								};
+							} else if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+								return target[propKey];
+							}
+						},
+						set: function(target, propKey, value) {
+							if (propKey === 'scrollTop' || propKey === 'scrollLeft') {
+								console.log(propKey, value);
+							}
+							target[propKey] = value;
+							return true;
+						}
+					};
+		
+					const proxy = new Proxy(originalDocumentElement, handler);
+					document.documentElement = proxy;
+				})();
+				
+				`)
+				element.Call("append", batchscript)
+			}()
 		}
-
-		e.Native = NewNativeHTMLElement(element)
-		SetAttribute(e, "id", e.ID)
 		return
 	}
 
-	element := js.Global().Call("getElement", id)
-	if !element.Truthy() {
-		element = js.Global().Call("createElementWithID", tag, id)
+	if !js.Global().Truthy() {
+		// We are not in a browser environment.
+		// On the other hand we should have access to the document node
+		root, ok := JSValue(document)
+		if !ok {
+			DEBUG("unable to access native document object ", e.Root.ID)
+			panic("unable to access native document object")
+		}
+		if !root.Truthy() {
+			panic("unable to access native document object. It is not truthy.")
+		}
+		element := root.Call("getElementById", id)
+		if !element.Truthy() {
+			element = root.Call("createElement", tag)
+		}
 		e.Native = NewNativeHTMLElement(element)
-		return
+	} else {
+		element := js.Global().Call("getElement", id)
+		if !element.Truthy() {
+			element = js.Global().Get("document").Call("getElementById", id)
+			if !element.Truthy() {
+				cancreeatewithID := js.Global().Get("createElementWithID").Truthy()
+				if !cancreeatewithID {
+					element = js.Global().Get("document").Call("createElement", tag)
+				} else {
+					element = js.Global().Call("createElementWithID", tag, id)
+				}
+			}
+		}
+		e.Native = NewNativeHTMLElement(element)
 	}
-	e.Native = NewNativeHTMLElement(element)
+	SetAttribute(e, "id", e.ID)
 	return
 }
 
@@ -819,7 +1073,7 @@ var routerConfig = func(r *ui.Router) {
 	// notfound:
 	pnf := doc.Div.WithID(r.Outlet.AsElement().Root.ID + "-notfound").SetText("Page Not Found.")
 	SetAttribute(pnf.AsElement(), "role", "alert")
-	SetInlineCSS(pnf.AsElement(), `all: initial;`)
+	SetInlineCSS(pnf, `all: initial;`)
 
 	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
@@ -1354,7 +1608,7 @@ func (d *Document) Head() *ui.Element {
 	if e == nil {
 		panic("document HEAD seems to be missing for some odd reason...")
 	}
-	return e //d.NewComponent(e)
+	return e
 }
 
 func (d *Document) Body() *ui.Element {
@@ -1405,7 +1659,7 @@ func (d *Document) Router() *ui.Router {
 }
 
 func (d *Document) Delete() { // TODO check for dangling references
-	ui.DoSync(func() {
+	ui.DoSync(d.AsElement(), func() {
 		e := d.AsElement()
 		d.Router().CancelNavigation()
 		ui.Delete(e)
@@ -1518,7 +1772,7 @@ func (s StyleSheet) String() string {
 	return res.String()
 }
 
-func makeStyleSheet(observable *ui.Element, id string) *ui.Element {
+func makeStyleSheet(observable *ui.Element) *ui.Element {
 
 	new := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 		rss := js.Global().New("CSSStyleSheet", struct {
@@ -1598,7 +1852,7 @@ func (d *Document) NewStyleSheet(id string) StyleSheet {
 	}
 	o := d.NewObservable(id).AsElement()
 	o.DocType = "text/css"
-	makeStyleSheet(o, id)
+	makeStyleSheet(o)
 	o.TriggerEvent("new")
 	s := StyleSheet{raw: o}
 	d.StyleSheets[id] = s
@@ -1808,19 +2062,28 @@ func (d *Document) mutationRecorder() *mutationRecorder {
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
 // coming from the browser such as popstate.
 // It needs to run at the end, after the UI tree has been built.
-func (d *Document) ListenAndServe(ctx context.Context) {
+func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan struct{}) {
 	if d.Element == nil {
 		panic("document is missing")
 	}
 
-	d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
+	// If we are not in a windowed environment, we should trigger the PageReady event manually
+	w, ok := JSValue(d.Window())
+	if w.Truthy() && ok {
 		d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
 			return false
 		}).RunASAP().RunOnce())
+	} else {
+		d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
+			d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				ui.NewLifecycleHandlers(evt.Origin()).SetReady()
+				return false
+			}).RunASAP().RunOnce())
 
-		return false
-	}))
+			return false
+		}))
+	}
 
 	if d.Router() == nil {
 		var main ui.ViewElement
@@ -1832,7 +2095,7 @@ func (d *Document) ListenAndServe(ctx context.Context) {
 		main = ui.NewViewElement(b).ChangeDefaultView(c...)
 		ui.NewRouter(main)
 	}
-	d.Router().ListenAndServe(ctx, "popstate", d.Window())
+	d.Router().ListenAndServe(ctx, "popstate", d.Window(), startsignals...)
 }
 
 func GetDocument(e *ui.Element) *Document {
@@ -2471,6 +2734,9 @@ func NewDocument(id string, options ...string) *Document {
 }
 
 var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	if !js.Global().Truthy() {
+		return false
+	}
 	var route string
 	r, ok := evt.Origin().Get(Namespace.UI, "currentroute")
 	if !ok {
@@ -2508,6 +2774,10 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 })
 
 var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	if !js.Global().Truthy() {
+		return false
+	}
+
 	route := js.Global().Get("location").Get("pathname").String()
 
 	// We need to get the value of the base element from the head
@@ -2530,6 +2800,10 @@ var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 }).RunASAP()
 
 func loadNavHistory(d *Document) {
+	if !js.Global().Truthy() {
+		return
+	}
+
 	// Retrieve history and deserialize URL into corresponding App state.
 	hstate := js.Global().Get("history").Get("state")
 
@@ -2591,7 +2865,10 @@ func isScrollable(property string) bool {
 }
 
 var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(el *ui.Element) *ui.Element {
-	el.WatchEvent("registered", el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+	if !js.Global().Truthy() {
+		return el
+	}
+	el.WatchEvent(registered, el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
 		e := event.Origin()
 		if e.IsRoot() {
 			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
@@ -2614,6 +2891,9 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 					return false
 				}
 				wjs := js.Global().Get("document").Get("defaultView")
+				if !wjs.Truthy() {
+					return false
+				}
 
 				stylesjs := wjs.Call("getComputedStyle", ejs)
 				overflow := stylesjs.Call("getPropertyValue", "overflow").String()
@@ -2696,6 +2976,9 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 })
 
 var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
+	if !js.Global().Truthy() {
+		return root
+	}
 	e := root
 	n := e.Native.(NativeElement).Value
 	r := ui.GetRouter(root)
@@ -3043,9 +3326,9 @@ func withStdConstructors(d *Document) *Document {
 	d.Ol = olgconstructor[OlElement, olConstructor](func(typ string, offset int) OlElement {
 		e := OlElement{newOl(d.newID())}
 		o := e.AsElement()
+		ui.RegisterElement(d.Element, o)
 		SetAttribute(o, "type", typ)
 		SetAttribute(o, "start", strconv.Itoa(offset))
-		ui.RegisterElement(d.Element, o)
 		return e
 	})
 	d.Ol.ownedBy(d)
@@ -3490,10 +3773,14 @@ var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 // will have been rendered page by page in advance
 func (d *Document) enableWasm() *Document {
 	if SSGMode != "false" {
+		DEBUG("SSGMode is set to %s, not enabling wasm loader script\n", SSGMode)
 		return d
 	}
+
 	h := d.Head()
-	h.AppendChild(d.Script.WithID("wasmVM").Src("./wasm_exec.js"))
+
+	h.AppendChild(d.Script.WithID("wasmVM").Src("./wasm_exec.js")) // TODO DEBUG check this path
+
 	h.AppendChild(d.Script.WithID("goruntime").
 		SetInnerHTML(
 			`
@@ -3524,6 +3811,7 @@ func (d *Document) enableWasm() *Document {
 			`,
 		),
 	)
+
 	return d
 }
 
@@ -3590,19 +3878,19 @@ func SetTextContent(e *ui.Element, text string) {
 		if !ok {
 			panic("trying to set text content on a non-DOM element")
 		}
-		nat.Value.Set("textContent", string(text))
+		nat.Value.Set("textContent", text)
 	}
 }
 
 // SetInnerHTML sets the innerHTML property of HTML elements.
 // Please note that it is unsafe (risk of XSS)
 // Do not use it to dynamically inject unsanitized text inputs.
-func SetInnerHTML(e *ui.Element, html string) *ui.Element {
+func SetInnerHTML(e *ui.Element, inner string) *ui.Element {
 	jsv, ok := JSValue(e)
 	if !ok {
 		return e
 	}
-	jsv.Set("innerHTML", html)
+	jsv.Set("innerHTML", inner)
 	return e
 }
 
@@ -4429,7 +4717,7 @@ var newParagraph = Elements.NewConstructor("p", func(id string) *ui.Element {
 		if !ok {
 			return false
 		}
-		j.Set("innerText", string(evt.NewValue().(ui.String)))
+		j.Set("textContent", string(evt.NewValue().(ui.String)))
 		return false
 	}))
 	return e
@@ -4781,7 +5069,9 @@ func (i InputElement) Blur() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	js.Global().Call("queueBlur", native.Value)
+	if js.Global().Truthy() {
+		js.Global().Call("queueBlur", native.Value)
+	}
 }
 
 func (i InputElement) Focus() {
@@ -4789,8 +5079,9 @@ func (i InputElement) Focus() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	js.Global().Call("queueFocus", native.Value)
-
+	if js.Global().Truthy() {
+		js.Global().Call("queueFocus", native.Value)
+	}
 }
 
 func (i InputElement) Clear() {
@@ -4798,8 +5089,9 @@ func (i InputElement) Clear() {
 	if !ok {
 		panic("native element should be of doc.NativeELement type")
 	}
-	js.Global().Call("queueClear", native.Value)
-
+	if js.Global().Truthy() {
+		js.Global().Call("queueClear", native.Value)
+	}
 }
 
 func (i InputElement) SetAttribute(name, value string) InputElement {
@@ -7039,7 +7331,7 @@ func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *
 					for {
 						select {
 						case <-t.C:
-							ui.DoSync(func() {
+							ui.DoSync(e, func() {
 								e.TriggerEvent(tickname)
 							})
 						case <-stop:
@@ -7113,15 +7405,15 @@ func Classes(target *ui.Element) []string {
 }
 
 // TODO check that the string is well formatted style
-func SetInlineCSS(target *ui.Element, str string) {
+func SetInlineCSS(target ui.AnyElement, str string) {
 	SetAttribute(target, "style", str)
 }
 
-func GetInlineCSS(target *ui.Element) string {
+func GetInlineCSS(target ui.AnyElement) string {
 	return GetAttribute(target, "style")
 }
 
-func AppendInlineCSS(target *ui.Element, str string) { // TODO space separated?
+func AppendInlineCSS(target ui.AnyElement, str string) { // TODO space separated?
 	css := GetInlineCSS(target)
 	css = css + str
 	SetInlineCSS(target, css)
@@ -7295,8 +7587,8 @@ var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
 	return false
 }).RunASAP() // TODO DEBUG just added RunASAP
 
-func GetAttribute(target *ui.Element, name string) string {
-	native, ok := target.Native.(NativeElement)
+func GetAttribute(target ui.AnyElement, name string) string {
+	native, ok := target.AsElement().Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot retrieve Attribute on non-expected wrapper type")
 		return ""
@@ -7308,10 +7600,10 @@ func GetAttribute(target *ui.Element, name string) string {
 	return res.String()
 }
 
-func SetAttribute(target *ui.Element, name string, value string) {
+func SetAttribute(target ui.AnyElement, name string, value string) {
 	var attrmap ui.Object
 	var am = ui.NewObject()
-	m, ok := target.Get(Namespace.Data, "attrs")
+	m, ok := target.AsElement().Get(Namespace.Data, "attrs")
 	if ok {
 		attrmap, ok = m.(ui.Object)
 		if !ok {
@@ -7321,8 +7613,8 @@ func SetAttribute(target *ui.Element, name string, value string) {
 	}
 
 	attrmap = am.Set(name, ui.String(value)).Commit()
-	target.SetData("attrs", attrmap)
-	native, ok := target.Native.(NativeElement)
+	target.AsElement().SetData("attrs", attrmap)
+	native, ok := target.AsElement().Native.(NativeElement)
 	if !ok {
 		log.Print("Cannot set Attribute on non-expected wrapper type")
 		return

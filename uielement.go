@@ -253,6 +253,7 @@ func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Eleme
 	el.TriggerEvent(prop.Mounted, Bool(true))
 	el.TriggerEvent(prop.Mountable, Bool(true))
 	el.isroot = true
+	el.WorkQueue = make(chan func())
 
 	RegisterElement(el, el)
 
@@ -422,10 +423,18 @@ type Element struct {
 	// document state.
 	router     *Router
 	HttpClient *http.Client
+	// WorkQueue queues a document's UI mutating functions.
+	// It essentially makes any change synchronous for a whole UI tree.
+	WorkQueue chan func()
 }
 
-func (e *Element) RootUUID() string {
-	return e.uuid
+// TODO DEBUG export if needed, perhaps more appropriate as a function
+func (e *Element) rootUUID() string {
+	if e.Root == nil {
+		return ""
+	}
+	return e.Root.uuid
+
 }
 
 type registry struct {
@@ -508,6 +517,7 @@ func (c *Configuration) NewElement(id string, doctype string) *Element {
 		"",
 		newViewNodes(),
 		newViewAccessNode(nil, ""),
+		nil,
 		nil,
 		nil,
 		nil,

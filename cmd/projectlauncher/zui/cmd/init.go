@@ -239,8 +239,12 @@ var initCmd = &cobra.Command{
 							continue
 						} else if file.Name() == "go.sum" {
 							continue
+						} else if file.Name() == ".gitignore" {
+							continue
+						} else if file.Name() == ".git" {
+							continue
 						} else {
-							fmt.Println("Error: Project directory is not empty.")
+							fmt.Println("Error: Project directory is not empty.", file)
 							os.Exit(1)
 							return
 						}
@@ -593,6 +597,22 @@ func isGoWorkSet() (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+func getServerBinaryPath(serverType string, releaseBuild bool, rootDirectory string) string {
+	base := "tmp"
+	if releaseBuild {
+		base = "release"
+	}
+
+	path := filepath.Join(".", "bin", base, "server", serverType, rootDirectory, "main")
+
+	// Handle Windows executable extension
+	if runtime.GOOS == "windows" {
+		path += ".exe"
+	}
+
+	return path
+}
+
 func Build(client bool, buildTags []string, cmdArgs ...string) error {
 	if On("web") {
 
@@ -625,23 +645,11 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			}
 		} else {
 			if csr {
-				if releaseMode {
-					outputPath = filepath.Join(".", "bin", "release", "server", "csr", rootdirectory, "main")
-				} else {
-					outputPath = filepath.Join(".", "bin", "tmp", "server", "csr", rootdirectory, "main")
-				}
+				outputPath = getServerBinaryPath("csr", releaseMode, rootdirectory)
 			} else if ssr {
-				if releaseMode {
-					outputPath = filepath.Join(".", "bin", "release", "server", "ssr", rootdirectory, "main")
-				} else {
-					outputPath = filepath.Join(".", "bin", "tmp", "server", "ssr", rootdirectory, "main")
-				}
+				outputPath = getServerBinaryPath("ssr", releaseMode, rootdirectory)
 			} else if ssg {
-				if releaseMode {
-					outputPath = filepath.Join(".", "bin", "release", "server", "ssg", rootdirectory, "main")
-				} else {
-					outputPath = filepath.Join(".", "bin", "tmp", "server", "ssg", rootdirectory, "main")
-				}
+				outputPath = getServerBinaryPath("ssg", releaseMode, rootdirectory)
 			}
 		}
 
@@ -682,25 +690,6 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 				}
 			}
 		}
-
-		// Also copy assets folder in the corresponding subdirectory in dist
-		if client {
-			copyDirectory(filepath.Join(".", "src", "assets", "client"), filepath.Join(outputDir, "assets", "client"))
-		} else {
-			copyDirectory(filepath.Join(".", "src", "assets", "server"), filepath.Join(outputDir, "assets", "server"))
-		}
-
-		// If csr mode, also copy the index.html file in bin/tmp/client/_root/ or bin/tmp/client/{basepath}/
-		if client && csr {
-			indexFilePath := filepath.Join(".", "src", "index.html")
-			err := copyFile(indexFilePath, filepath.Join(outputDir, "index.html"))
-			if err != nil {
-				return fmt.Errorf("failed to copy index.html: %v", err)
-			}
-		}
-
-		// TODO
-		// for ssr, we need to make sure that the server code can cache static pages.
 
 		// TODO
 		if client && ssg {
@@ -924,7 +913,7 @@ func App() *Document {
 		return false
 	}))
 	
-	return *document
+	return document
 }
 
 func main(){

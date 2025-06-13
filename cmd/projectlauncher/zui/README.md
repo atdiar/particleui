@@ -6,3 +6,5 @@ It is also used to run the dev server or build web, mobile, desktop, terminal an
 ready for production.
 
 (TBC)
+
+go install github.com/atdiar/particleui/cmd/projectlauncher/zui

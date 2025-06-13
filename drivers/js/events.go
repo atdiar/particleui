@@ -16,6 +16,8 @@ import (
 )
 
 var DEBUG = log.Print // DEBUG
+var DebugMode bool
+
 /*
 func SDEBUG() {
 	pc := make([]uintptr, 30)
@@ -128,7 +130,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			return nil
 		}
 
-		ui.DoSync(func() {
+		ui.DoSync(listener, func() {
 			if currtargetid.Truthy() {
 				currentTarget = GetDocument(listener).GetElementById(currtargetid.String())
 				if currentTarget == nil {
@@ -293,8 +295,10 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		tgt = js.Global().Get("document")
 	}
 	if !tgt.Truthy() {
-		fmt.Println(tgt)
-		// DEBUG panic("trying to add an event listener to non-existing HTML element on the JS side")
+		// DEBUG
+		if DebugMode {
+			fmt.Println(listener.ID, " : Unable to register event listener. Native object is not available")
+		}
 		return
 	}
 	tgt.Call("addEventListener", NativeEventName, cb, capture)

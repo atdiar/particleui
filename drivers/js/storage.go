@@ -47,7 +47,12 @@ func storer(s string) func(element *ui.Element, category string, propname string
 		if category != Namespace.Data && category != Namespace.UI {
 			return
 		}
-		store := jsStore{js.Global().Get(s)}
+		window := js.Global()
+		if !window.Truthy() {
+			DEBUG("window is not available, cannot store in storage")
+			return
+		}
+		store := jsStore{window.Get(s)}
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return
@@ -81,8 +86,12 @@ var localstoragefn = storer("localStorage")
 
 func loader(s string) func(e *ui.Element) error {
 	return func(e *ui.Element) error {
-
-		store := jsStore{js.Global().Get(s)}
+		window := js.Global()
+		if !window.Truthy() {
+			DEBUG("window is not available, cannot load from storage")
+			return nil
+		}
+		store := jsStore{window.Get(s)}
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return errors.New("storage is disconnected")
@@ -161,7 +170,12 @@ var loadfromlocalstorage = loader("localStorage")
 
 func clearer(s string) func(element *ui.Element) {
 	return func(element *ui.Element) {
-		store := jsStore{js.Global().Get(s)}
+		window := js.Global()
+		if !window.Truthy() {
+			DEBUG("window is not available, cannot clear storage")
+			return
+		}
+		store := jsStore{window.Get(s)}
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return

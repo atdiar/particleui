@@ -139,7 +139,7 @@ var buildCmd = &cobra.Command{
 			if csr {
 				err = Build(true, nil)
 				if err != nil {
-					fmt.Println("Error: unable to build the default app.")
+					fmt.Println("Error: unable to build the app.", err)
 					os.Exit(1)
 					return
 				}
@@ -174,7 +174,7 @@ var buildCmd = &cobra.Command{
 
 				// We can copy the assets from the source directory to the output directory.
 				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
 				if err != nil {
 					fmt.Println("Error: unable to copy assets to the output directory.")
 					os.Exit(1)
@@ -209,7 +209,7 @@ var buildCmd = &cobra.Command{
 			} else if ssr {
 				err = Build(true, nil)
 				if err != nil {
-					fmt.Println("Error: unable to build the default app.")
+					fmt.Println("Error: unable to build the app.", err)
 					os.Exit(1)
 					return
 				}
@@ -238,7 +238,7 @@ var buildCmd = &cobra.Command{
 
 				// We can copy the assets from the source directory to the output directory.
 				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
 				if err != nil {
 					fmt.Println("Error: unable to copy assets to the output directory.")
 					os.Exit(1)
@@ -282,7 +282,7 @@ var buildCmd = &cobra.Command{
 
 				// We can copy the assets from the source directory to the output directory.
 				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), outputDir)
+				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
 				if err != nil {
 					fmt.Println("Error: unable to copy assets to the output directory.")
 					os.Exit(1)
@@ -334,6 +334,13 @@ func renderPages(renderPath string, releasebuild bool) error {
 		fmt.Println("rendering pages...")
 		fmt.Println("renderPath: ", renderPath)
 	}
+
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("error getting current working directory: %w", err)
+	}
+
 	rootdirectory := "_root"
 	if basepath != "/" {
 		if verbose {
@@ -342,50 +349,46 @@ func renderPages(renderPath string, releasebuild bool) error {
 		rootdirectory = filepath.Join(rootdirectory, basepath)
 	}
 
-	// To render pages, we need to run the server binary with the --render flag.
-	// The server binary is located in ./bin/tmp/server/csr/{rootdirectory}/main (respectively ssr or ssg)
-
-	pathToServerBinary := filepath.Join(".", "bin", "tmp", "server", "csr", rootdirectory, "main")
-	if releasebuild {
-		pathToServerBinary = filepath.Join(".", "bin", "release", "server", "csr", rootdirectory, "main")
-	}
-
+	pathToServerBinary := getServerBinaryPath("csr", releasebuild, rootdirectory)
 	if ssr {
-		pathToServerBinary = filepath.Join(".", "bin", "tmp", "server", "ssr", rootdirectory, "main")
-		if releasebuild {
-			pathToServerBinary = filepath.Join(".", "bin", "release", "server", "ssr", rootdirectory, "main")
-		}
+		pathToServerBinary = getServerBinaryPath("ssr", releasebuild, rootdirectory)
 	}
-
 	if ssg {
-		pathToServerBinary = filepath.Join(".", "bin", "tmp", "server", "ssg", rootdirectory, "main")
-		if releasebuild {
-			pathToServerBinary = filepath.Join(".", "bin", "release", "server", "ssg", rootdirectory, "main")
-		}
+		pathToServerBinary = getServerBinaryPath("ssg", releasebuild, rootdirectory)
 	}
 
-	cmd := exec.Command(pathToServerBinary, "--render", renderPath)
+	// Convert to absolute path
+	absoluteBinaryPath := filepath.Join(cwd, pathToServerBinary)
+
+	// Check if the binary exists using absolute path
+	if _, err := os.Stat(absoluteBinaryPath); os.IsNotExist(err) {
+		return fmt.Errorf("server binary does not exist at path: %s", absoluteBinaryPath)
+	}
+
+	// Use the absolute path
+	cmd := exec.Command(absoluteBinaryPath, "--render", renderPath)
 	if basepath != "" {
 		cmd.Args = append(cmd.Args, "--basepath", basepath)
 	}
 
 	// Set working directory to where the binary lives
-	// This ensures it can find its source content using relative paths
-	cmd.Dir = pathToServerBinary
+	cmd.Dir = filepath.Dir(absoluteBinaryPath)
 
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Println("OUTPUT ==============")
+		fmt.Println(string(output))
+		fmt.Println("OUTPUT ==============")
+		return fmt.Errorf("render failed: %s", err)
+	}
+
 	if verbose {
 		fmt.Println("output: ", string(output))
 	}
-	if err != nil {
-		fmt.Println("err: ", err)
-		return fmt.Errorf("render failed: %w\noutput: %s", err, output)
-	}
 
 	if verbose {
-		fmt.Println("render successful")
+		fmt.Println("SUCCESS: rendered page ", renderPath)
 	}
-
 	return nil
 }
 

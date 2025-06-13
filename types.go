@@ -239,7 +239,7 @@ func (o Object) Value() Value {
 	return o.o.Value()
 }
 
-func (o Object) Size() int {
+func (o Object) Length() int {
 	s := len(o.o) - o.offset
 	if s < 0 {
 		panic("zui error: object does not have a valid size")
@@ -561,6 +561,10 @@ func (l List) Range(f func(index int, val Value) (done bool)) {
 			break
 		}
 	}
+}
+
+func (l List) Length() int {
+	return len(l.UnsafelyUnwrap())
 }
 
 func (l *TempList) Append(val ...Value) *TempList {
