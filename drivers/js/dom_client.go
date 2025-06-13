@@ -107,7 +107,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
 
-		d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnTransitionStart("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			// let's recover the baseURL from the document
 			buri := js.Global().Get("document").Get("baseURI")
 			if buri.Truthy() {
@@ -123,7 +123,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return false
 		}).RunASAP())
 
-		d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			err := d.mutationRecorder().Replay()
 			if err != nil {
 				d.ErrorTransition("replay", ui.String(err.Error()))
@@ -133,7 +133,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return false
 		}))
 
-		d.OnTransitionError("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnTransitionError("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d.mutationRecorder().Clear()
 			// Should reload the page
 			log.Println("replay error, we should reload: ", evt.NewValue())
@@ -141,13 +141,13 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return true // here true or false doesn't matter
 		}))
 
-		d.AfterTransition("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.AfterTransition("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
 			return false
 		}))
 
 		// Capture mutations
-		d.AfterEvent("ui-ready", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.AfterEvent("ui-ready", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())
