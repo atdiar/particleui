@@ -153,7 +153,7 @@ func (e *Element) setDataPrefetcher(propname string, reqfunc func(e *Element) *h
 	var ctx context.Context
 	var cancelFn context.CancelFunc
 
-	prefetch := NewMutationHandler(func(evt MutationEvent) bool {
+	prefetch := OnMutation(func(evt MutationEvent) bool {
 		if evt.Origin().isFetchedDataValid(propname) {
 			evt.Origin().endprefetchTransition(propname)
 			return false
@@ -171,12 +171,12 @@ func (e *Element) setDataPrefetcher(propname string, reqfunc func(e *Element) *h
 		return false
 	}).fetcher()
 
-	cancel := NewMutationHandler(func(event MutationEvent) bool {
+	cancel := OnMutation(func(event MutationEvent) bool {
 		cancelFn()
 		return false
 	}).RunOnce()
 
-	end := NewMutationHandler(func(evt MutationEvent) bool {
+	end := OnMutation(func(evt MutationEvent) bool {
 		switch t := evt.NewValue().(type) {
 		case String:
 			if t.String() == "cancelled" {
@@ -226,7 +226,7 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 	var ctx context.Context
 	var cancelFn context.CancelFunc
 
-	reqmonitor := NewMutationHandler(func(ev MutationEvent) bool {
+	reqmonitor := OnMutation(func(ev MutationEvent) bool {
 		if strings.EqualFold(verb(ev.NewValue()), "GET") {
 			return false
 		}
@@ -236,7 +236,7 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 		return false
 	})
 
-	fetch := NewMutationHandler(func(evt MutationEvent) bool {
+	fetch := OnMutation(func(evt MutationEvent) bool {
 		if evt.Origin().isFetchedDataValid(propname) {
 			return false
 		}
@@ -253,7 +253,7 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 
 		// After a new http.Request has been launched and a response has been returned, cancel and refetch
 		// the data corresponding to the r.URL
-		evt.Origin().OnRegistered(NewMutationHandler(func(event MutationEvent) bool {
+		evt.Origin().OnRegistered(OnMutation(func(event MutationEvent) bool {
 			event.Origin().RemoveMutationHandler(Namespace.Event, "request-"+requestID(r), event.Origin().Root, reqmonitor)
 			event.Origin().WatchEvent("request-"+requestID(r), event.Origin().Root, reqmonitor)
 			return false
@@ -262,12 +262,12 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 		return false
 	}).fetcher()
 
-	cancel := NewMutationHandler(func(event MutationEvent) bool {
+	cancel := OnMutation(func(event MutationEvent) bool {
 		cancelFn()
 		return false
 	}).RunOnce()
 
-	end := NewMutationHandler(func(evt MutationEvent) bool {
+	end := OnMutation(func(evt MutationEvent) bool {
 		switch t := evt.NewValue().(type) {
 		case String:
 			if m := t.String(); m == "cancelled" || m == "error" {
@@ -422,7 +422,7 @@ func cloneReq(r *http.Request) (*http.Request){
 
 // enablefetching adds fetch transition support to UI elements.
 func (e *Element) enablefetching() *Element {
-	prefetch := NewMutationHandler(func(evt MutationEvent) bool {
+	prefetch := OnMutation(func(evt MutationEvent) bool {
 		// prefetchstart by iterating on prefetchlist
 		fl, ok := evt.Origin().Get("runtime", "prefetchlist")
 		if !ok {
@@ -446,7 +446,7 @@ func (e *Element) enablefetching() *Element {
 		return false
 	})
 
-	fetch := NewMutationHandler(func(evt MutationEvent) bool {
+	fetch := OnMutation(func(evt MutationEvent) bool {
 		// fetchstart by iterating on fetchlist
 		fl, ok := evt.Origin().Get("runtime", "fetchlist")
 		if !ok {
@@ -459,7 +459,7 @@ func (e *Element) enablefetching() *Element {
 		}
 		for _, v := range fetchlist.UnsafelyUnwrap() {
 			propname := v.(String).String()
-			e.OnTransitionError(strings.Join([]string{"fetch", propname}, "-"), NewMutationHandler(func(evt MutationEvent) bool {
+			e.OnTransitionError(strings.Join([]string{"fetch", propname}, "-"), OnMutation(func(evt MutationEvent) bool {
 				e.errorfetchTransition(propname)
 				return false
 			}))
@@ -469,7 +469,7 @@ func (e *Element) enablefetching() *Element {
 		return false
 	})
 
-	cancel := NewMutationHandler(func(evt MutationEvent) bool {
+	cancel := OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().CancelAllFetches()
 		return false
 	})
@@ -477,7 +477,7 @@ func (e *Element) enablefetching() *Element {
 	e.DefineTransition("prefetch", prefetch, nil, nil, nil)
 	e.DefineTransition("fetch", fetch, nil, cancel, nil)
 
-	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnMounted(OnMutation(func(evt MutationEvent) bool {
 		// DEBUG TODO this should happen once the page is ready
 		// prefetching should be disabled when replaying mutations.
 		evt.Origin().Fetch()
@@ -886,11 +886,11 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 		return
 	}
 
-	e.Root.WatchEvent("ui-load", e.Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Root.WatchEvent("ui-load", e.Root, OnMutation(func(evt MutationEvent) bool {
 		var ctx context.Context
 		var cancelFn context.CancelFunc
 
-		onstart := NewMutationHandler(func(evt MutationEvent) bool {
+		onstart := OnMutation(func(evt MutationEvent) bool {
 			ctx, cancelFn = context.WithCancel(r.Context())
 			r = r.WithContext(ctx)
 
@@ -933,16 +933,16 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 			return false
 		}).RunOnce().RunASAP()
 
-		onerror := NewMutationHandler(func(evt MutationEvent) bool {
+		onerror := OnMutation(func(evt MutationEvent) bool {
 			return false
 		}).RunOnce()
 
-		oncancel := NewMutationHandler(func(evt MutationEvent) bool {
+		oncancel := OnMutation(func(evt MutationEvent) bool {
 			cancelFn()
 			return false
 		}).RunOnce()
 
-		onend := NewMutationHandler(func(evt MutationEvent) bool {
+		onend := OnMutation(func(evt MutationEvent) bool {
 			// initially thought that we could do nothing if req was canceleld or on error
 			// but in fact it doesn't matter because a request in flight may still have mutated data on
 			// the serveer
@@ -953,8 +953,8 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 
 		e.newRequestTransition(requestID(r), onstart, onerror, oncancel, onend)
 
-		e.OnRequestError(r, NewMutationHandler(func(evt MutationEvent) bool {
-			evt.Origin().OnRequestError(r, NewMutationHandler(func(event MutationEvent) bool {
+		e.OnRequestError(r, OnMutation(func(evt MutationEvent) bool {
+			evt.Origin().OnRequestError(r, OnMutation(func(event MutationEvent) bool {
 				event.Origin().endrequestTransition(r.URL.String(), event.NewValue())
 				return false
 			}).RunOnce())
@@ -1049,19 +1049,19 @@ func (e *Element) SyncUISyncDataOptimistically(propname string, value Value, r *
 	}
 	e.SyncUI(propname, value)
 
-	e.OnRequestError(r, NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnRequestError(r, OnMutation(func(evt MutationEvent) bool {
 		e.SetUI(propname, oldv)
 		err := NewObject().Set("prop", String(propname)).Set("value", value).Commit()
 		e.TriggerEvent("optimisticmutationerror", err)
 		return false
 	}).RunOnce())
 
-	e.OnRequestCancel(r, NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnRequestCancel(r, OnMutation(func(evt MutationEvent) bool {
 		e.SetUI(propname, oldv)
 		return false
 	}).RunOnce())
 
-	e.OnRequestEnd(r, NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnRequestEnd(r, OnMutation(func(evt MutationEvent) bool {
 		truev, _ := e.GetUI(propname)
 		e.SetData(propname, truev)
 		return false

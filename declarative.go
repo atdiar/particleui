@@ -39,7 +39,7 @@ func Listen(event string, h *EventHandler) func(*Element) *Element {
 // It defines a starting point for the navigation.
 func InitRouter(options ...func(*Router) *Router) func(*Element) *Element {
 	return func(e *Element) *Element {
-		e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
+		e.OnMounted(OnMutation(func(evt MutationEvent) bool {
 			v, ok := evt.Origin().AsViewElement()
 			if !ok {
 				panic("Router cannot be instantiated with non-ViewElement objects")
@@ -110,7 +110,7 @@ func (e elementSwitch) Default(elem *Element) func(*Element) *Element {
 	e.elements = append(e.elements, elem)
 	return func(el *Element) *Element {
 		for i := 0; i < len(e.cases); i++ {
-			el.Watch(e.category, e.propname, el, NewMutationHandler(func(evt MutationEvent) bool {
+			el.Watch(e.category, e.propname, el, OnMutation(func(evt MutationEvent) bool {
 				if Equal(evt.NewValue(), e.cases[i]) {
 					el.SetChildren(e.elements[i])
 				}
@@ -121,7 +121,7 @@ func (e elementSwitch) Default(elem *Element) func(*Element) *Element {
 		}
 
 		for _, propname := range e.boundDataProps {
-			el.Watch(Namespace.Data, propname, el, NewMutationHandler(func(evt MutationEvent) bool {
+			el.Watch(Namespace.Data, propname, el, OnMutation(func(evt MutationEvent) bool {
 				for _, elm := range e.elements {
 					elm.SetDataSetUI(propname, evt.NewValue())
 				}
@@ -129,7 +129,7 @@ func (e elementSwitch) Default(elem *Element) func(*Element) *Element {
 			}))
 
 			for _, elm := range e.elements {
-				el.Watch(Namespace.Data, propname, elm, NewMutationHandler(func(evt MutationEvent) bool {
+				el.Watch(Namespace.Data, propname, elm, OnMutation(func(evt MutationEvent) bool {
 					for _, element := range e.elements {
 						if element.ID == elm.ID {
 							continue
@@ -178,7 +178,7 @@ That should allow for the tree to be reactive to display changes.
 // Already existing elements would not need it) for instance.
 func ForEachIn(uiprop string, f func(int, Value) *Element) func(*Element) *Element {
 	return func(e *Element) *Element {
-		e.Watch(Namespace.UI, uiprop, e, NewMutationHandler(func(evt MutationEvent) bool {
+		e.Watch(Namespace.UI, uiprop, e, OnMutation(func(evt MutationEvent) bool {
 			v := evt.NewValue()
 			switch v := v.(type) {
 			case List:

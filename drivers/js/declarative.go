@@ -1,7 +1,7 @@
 package doc
 
 import (
-	"github.com/atdiar/particleui"
+	ui "github.com/atdiar/particleui"
 )
 
 var Children = ui.Children
@@ -36,7 +36,7 @@ func WithStrConv(val ui.Value) ui.Value {
 func EnableResponsiveUI(prop string) ui.ConstructorOption {
 	return ui.NewConstructorOption("responsiveUI", func(e *ui.Element) *ui.Element {
 		d := GetDocument(e)
-		e.Watch("ui", prop, d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch("ui", prop, d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e.SetUI(prop, evt.NewValue())
 			return false
 		}).RunASAP())

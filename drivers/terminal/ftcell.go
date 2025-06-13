@@ -3,29 +3,29 @@ package term
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
-	"fmt"
 	"strings"
-	"github.com/atdiar/particleui"
+
+	ui "github.com/atdiar/particleui"
 )
 
 var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
-	d:= getDocumentRef(e)
+	d := getDocumentRef(e)
 
-	e.WatchEvent("datastore-load",e,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{		
+	e.WatchEvent("datastore-load", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		LoadFromStorage(evt.Origin())
 		return false
 	}))
 
-	d.WatchEvent("document-loaded",d,ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	d.WatchEvent("document-loaded", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		e.TriggerEvent("datastore-load")
 		return false
 	}).RunASAP().RunOnce())
-	
 
-	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
+	d.OnBeforeUnactive(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
 	}))
@@ -40,35 +40,34 @@ type diskStore struct {
 }
 
 func initDiskStorage(filePath string) error {
-    diskStorage = &diskStore{
-        filePath: filePath,
-    }
+	diskStorage = &diskStore{
+		filePath: filePath,
+	}
 
-    // Check if file exists
-    if _, err := os.Stat(filePath); os.IsNotExist(err) {
-        // File does not exist, initialize it with "zui-connected"
-        if err := diskStorage.ensureOpen(); err != nil {
-            return err
-        }
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// File does not exist, initialize it with "zui-connected"
+		if err := diskStorage.ensureOpen(); err != nil {
+			return err
+		}
 
-        if err := diskStorage.Set("zui-connected", true); err != nil {
-            return fmt.Errorf("failed to set default key: %v", err)
-        }
-    } else {
-        // File exists, check for the "zui-connected" key to ensure it's not tampered with
-        if err := diskStorage.ensureOpen(); err != nil {
-            return err
-        }
+		if err := diskStorage.Set("zui-connected", true); err != nil {
+			return fmt.Errorf("failed to set default key: %v", err)
+		}
+	} else {
+		// File exists, check for the "zui-connected" key to ensure it's not tampered with
+		if err := diskStorage.ensureOpen(); err != nil {
+			return err
+		}
 
-        val, err := diskStorage.Get("zui-connected")
-        if err != nil || val == nil || val.(bool) != true {
-            return fmt.Errorf("the data file seems to have been tampered with or is not initialized correctly")
-        }
-    }
+		val, err := diskStorage.Get("zui-connected")
+		if err != nil || val == nil || val.(bool) != true {
+			return fmt.Errorf("the data file seems to have been tampered with or is not initialized correctly")
+		}
+	}
 
-    return nil
+	return nil
 }
-
 
 func (s *diskStore) ensureOpen() error {
 	if s.file == nil {
@@ -79,11 +78,10 @@ func (s *diskStore) ensureOpen() error {
 	return nil
 }
 
-
 func (s *diskStore) Close() error {
 	if s.file != nil {
 		err := s.file.Close()
-		s.file = nil 
+		s.file = nil
 		return err
 	}
 	return nil
@@ -169,56 +167,54 @@ func (s *diskStore) writeToFile(storageMap map[string]any) error {
 	return err
 }
 
-
 // Let's add disk storage for Element properties.
 func storer(s string) func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
 	return func(element *ui.Element, category string, propname string, value ui.Value, flags ...bool) {
-		if category != "data"{
-			return 
+		if category != "data" {
+			return
 		}
 		store := diskStorage
-		_,err:= store.Get("zui-connected")
-		if err != nil{
+		_, err := store.Get("zui-connected")
+		if err != nil {
 			log.Print("storage is disconnected")
 			return
 		}
 
 		props := make([]any, 0, 64)
 
-		c,ok:= element.Properties.Categories[category]
-		if !ok{
+		c, ok := element.Properties.Categories[category]
+		if !ok {
 			props = append(props, propname)
-			store.Set(element.ID, props) 
-		} else{
-			for k:= range c.Local{
+			store.Set(element.ID, props)
+		} else {
+			for k := range c.Local {
 				props = append(props, k)
 			}
 			store.Set(element.ID, props)
 		}
-	
+
 		item := value.RawValue()
 		v := stringify(item)
-		store.Set(strings.Join([]string{element.ID, category, propname}, "/"),v)
+		store.Set(strings.Join([]string{element.ID, category, propname}, "/"), v)
 		return
 	}
 }
-
 
 var store = storer("disk")
 
 func loader(s string) func(e *ui.Element) error { // abstractjs
 	return func(e *ui.Element) error {
-		
+
 		store := diskStorage
-		_,err:= store.Get("zui-connected")
-		if err!= nil{
+		_, err := store.Get("zui-connected")
+		if err != nil {
 			return errors.New("storage is disconnected")
 		}
 		id := e.ID
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
 		jsonprops, err := store.Get(id)
-		if jsonprops==nil { // TODO REVIEW THIS AS WE CHANGED FROM A BOOL TO AN ERROR
+		if jsonprops == nil { // TODO REVIEW THIS AS WE CHANGED FROM A BOOL TO AN ERROR
 			return nil // Not necessarily an error in the general case. element just does not exist in store
 		}
 
@@ -228,8 +224,8 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 			return err
 		}
 
-		category:= "data"
-		uiloaders:= make([]func(),0,64)
+		category := "data"
+		uiloaders := make([]func(), 0, 64)
 
 		for _, property := range properties {
 			// let's retrieve the propname (it is suffixed by the proptype)
@@ -238,23 +234,23 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 
 			propname := property
 			jsonvalue, err := store.Get(strings.Join([]string{e.ID, category, propname}, "/"))
-			if err != nil {					
+			if err != nil {
 				var rawvaluemapstring string
 				err = json.Unmarshal([]byte(jsonvalue.(string)), &rawvaluemapstring)
 				if err != nil {
 					return err
 				}
-				
+
 				rawvalue := make(map[string]any)
 				err = json.Unmarshal([]byte(rawvaluemapstring), &rawvalue)
 				if err != nil {
 					return err
 				}
-				val:= ui.ValueFrom(rawvalue)
+				val := ui.ValueFrom(rawvalue)
 
 				ui.LoadProperty(e, category, propname, val)
-				if category == "ui"{
-					uiloaders = append(uiloaders, func(){
+				if category == "ui" {
+					uiloaders = append(uiloaders, func() {
 						e.SetUI(propname, val)
 					})
 				}
@@ -262,31 +258,30 @@ func loader(s string) func(e *ui.Element) error { // abstractjs
 			}
 		}
 
-		
 		//log.Print(categories, properties) //DEBUG
-		
-		e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent)bool{
-			for _,load:= range uiloaders{
+
+		e.OnRegistered(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			for _, load := range uiloaders {
 				load()
 			}
 			return false
 		}).RunOnce())
-		
+
 		return nil
 	}
 }
 
 var load = loader("disk")
 
-func clearer(s string) func(element *ui.Element){ // abstractjs
-	return func(element *ui.Element){
+func clearer(s string) func(element *ui.Element) { // abstractjs
+	return func(element *ui.Element) {
 		store := diskStorage
-		_,err:= store.Get("zui-connected")
-		if err != nil{
-			return 
+		_, err := store.Get("zui-connected")
+		if err != nil {
+			return
 		}
 		id := element.ID
-		category:= "data"
+		category := "data"
 
 		// Let's retrieve the category index for this element, if it exists in the sessionstore
 		jsonproperties, err := store.Get(id)
@@ -295,7 +290,7 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 		}
 
 		properties := make([]string, 0, 50)
-		
+
 		err = json.Unmarshal([]byte(jsonproperties.(string)), &properties)
 		if err != nil {
 			store.Delete(id)
@@ -307,7 +302,7 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 			// then we can retrieve the value
 			// log.Print("debug...", category, property) // DEBUG
 
-			store.Delete(strings.Join([]string{id, category, property}, "/")) 
+			store.Delete(strings.Join([]string{id, category, property}, "/"))
 		}
 
 		store.Delete(id)
@@ -317,11 +312,11 @@ func clearer(s string) func(element *ui.Element){ // abstractjs
 var clear = clearer("disk")
 
 // isPersisted checks whether an element exist in storage already
-func isPersisted(e *ui.Element) bool{
-	pmode:=ui.PersistenceMode(e)
+func isPersisted(e *ui.Element) bool {
+	pmode := ui.PersistenceMode(e)
 
-	switch pmode{
-	case"disk":
+	switch pmode {
+	case "disk":
 		store := diskStorage
 		_, err := store.Get(e.ID)
 		return err == nil
@@ -329,7 +324,6 @@ func isPersisted(e *ui.Element) bool{
 		return false
 	}
 
-	
 }
 
 func stringify(v interface{}) string {

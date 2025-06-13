@@ -264,7 +264,7 @@ func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Eleme
 	return el
 }
 
-var unregisterHandler = NewMutationHandler(func(evt MutationEvent) bool {
+var unregisterHandler = OnMutation(func(evt MutationEvent) bool {
 	evt.Origin().Root.registry.Unregister(evt.Origin().ID)
 	return false
 }).RunOnce()
@@ -348,7 +348,7 @@ func (e *Configuration) NewConstructor(elementtype string, constructor func(id s
 		element.Set(Namespace.Internals, "constructor", String(elementtype))
 		element.Configuration = e
 
-		element.WatchEvent("registered", element, NewMutationHandler(func(evt MutationEvent) bool {
+		element.WatchEvent("registered", element, OnMutation(func(evt MutationEvent) bool {
 			e := evt.Origin().Configuration
 			globsopt := make(map[string]struct{}, 16)
 			// Let's apply the global constructor options
@@ -526,8 +526,8 @@ func (c *Configuration) NewElement(id string, doctype string) *Element {
 
 	e.subtreeRoot = e
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{Namespace.Internals, prop.Deleted}, "/"), NewMutationHandler(func(event MutationEvent) bool {
+	e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
+		evt.Origin().PropMutationHandlers.Add(strings.Join([]string{Namespace.Internals, prop.Deleted}, "/"), OnMutation(func(event MutationEvent) bool {
 			d := event.Origin()
 
 			d.path.free()
@@ -547,7 +547,7 @@ func (c *Configuration) NewObservable(id string, options ...string) Observable {
 	o.Set(Namespace.Internals, "constructor", String("observable"))
 	o.Configuration = c
 
-	o.WatchEvent("registered", o, NewMutationHandler(func(evt MutationEvent) bool {
+	o.WatchEvent("registered", o, OnMutation(func(evt MutationEvent) bool {
 		globsopt := make(map[string]struct{}, 16)
 		for optname, fn := range c.GlobalConstructorOptions {
 			fn(evt.Origin())
@@ -819,7 +819,7 @@ func attach(parent *Element, child *Element) func() {
 		}
 
 		if curr.registry == nil{
-			curr.WatchEvent("registered",parent, NewMutationHandler(func(evt MutationEvent)bool{
+			curr.WatchEvent("registered",parent, OnMutation(func(evt MutationEvent)bool{
 				RegisterElement(evt.Origin().Root,curr)
 				return false
 			}).RunOnce().RunASAP())
@@ -827,7 +827,7 @@ func attach(parent *Element, child *Element) func() {
 		}
 
 		if parent.registry == nil{
-			parent.WatchEvent("registered",curr, NewMutationHandler(func(evt MutationEvent)bool{
+			parent.WatchEvent("registered",curr, OnMutation(func(evt MutationEvent)bool{
 				RegisterElement(evt.Origin().Root,parent)
 				return false
 			}).RunOnce().RunASAP())
@@ -1260,7 +1260,7 @@ func (e *Element) DeleteChildren() *Element {
 	return e
 }
 
-var binddeleteahndler = NewMutationHandler(func(evt MutationEvent) bool {
+var binddeleteahndler = OnMutation(func(evt MutationEvent) bool {
 	Delete(evt.Origin())
 	return false
 }).RunOnce()
@@ -1401,7 +1401,7 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 		return e
 	}
 
-	hdl := NewMutationHandler(func(evt MutationEvent) bool {
+	hdl := OnMutation(func(evt MutationEvent) bool {
 		e.Set(category, propname, evt.NewValue())
 
 		return false
@@ -1521,7 +1521,7 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 		eventcat.NewWatcher(prop.Deleted, e)
 	}
 
-	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, Namespace.Internals, prop.Deleted}, "/"), NewMutationHandler(func(evt MutationEvent) bool {
+	e.PropMutationHandlers.Add(strings.Join([]string{owner.AsElement().ID, Namespace.Internals, prop.Deleted}, "/"), OnMutation(func(evt MutationEvent) bool {
 		if e.ID != owner.AsElement().ID {
 			e.Unwatch(category, propname, owner)
 		}
@@ -1545,13 +1545,13 @@ func (e *Element) Watch(category string, propname string, owner Watchable, h *Mu
 func (e *Element) watchOnce(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	var g *MutationHandler
 	if h.ASAP {
-		g = NewMutationHandler(func(evt MutationEvent) bool {
+		g = OnMutation(func(evt MutationEvent) bool {
 			b := h.Handle(evt)
 			evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{owner.AsElement().ID, category, propname}, "/"), g)
 			return b
 		}).RunASAP()
 	} else {
-		g = NewMutationHandler(func(evt MutationEvent) bool {
+		g = OnMutation(func(evt MutationEvent) bool {
 			b := h.Handle(evt)
 			evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{owner.AsElement().ID, category, propname}, "/"), g)
 			return b
@@ -1603,7 +1603,7 @@ func (e *Element) RemoveEventListener(event string, handler *EventHandler) *Elem
 // the native event will have been transformed into a pure Go Event.
 func (e *Element) AddEventListener(event string, handler *EventHandler) *Element {
 	nativebinding := NativeEventBridge
-	h := NewMutationHandler(func(evt MutationEvent) bool {
+	h := OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().EventHandlers.AddEventHandler(event, handler)
 		if nativebinding != nil {
 			nativebinding(event, evt.Origin(), handler.Capture)
@@ -1612,7 +1612,7 @@ func (e *Element) AddEventListener(event string, handler *EventHandler) *Element
 	})
 	e.OnMounted(h.RunASAP().RunOnce())
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().RemoveEventListener(event, handler)
 		return false
 	}))
@@ -1629,7 +1629,7 @@ func SwapNative(e *Element, newNative NativeElement) *Element {
 			if handlers != nil {
 				if handlerlist := handlers.List; handlerlist != nil {
 					for _, handler := range handlerlist {
-						h := NewMutationHandler(func(evt MutationEvent) bool {
+						h := OnMutation(func(evt MutationEvent) bool {
 							if nativebinding != nil {
 								nativebinding(event, evt.Origin(), handler.Capture)
 							}
@@ -1637,7 +1637,7 @@ func SwapNative(e *Element, newNative NativeElement) *Element {
 						})
 						e.OnMounted(h.RunASAP().RunOnce())
 
-						e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+						e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
 							if NativeEventBridge != nil {
 								if e.NativeEventUnlisteners.List != nil {
 									e.NativeEventUnlisteners.Apply(event)
@@ -1739,7 +1739,7 @@ func (e *Element) OnDeleted(h *MutationHandler) {
 		return
 	}
 	var g *MutationHandler
-	g = NewMutationHandler(func(evt MutationEvent) bool {
+	g = OnMutation(func(evt MutationEvent) bool {
 		e.CancelAllTransitions()
 		b := h.Handle(evt)
 		evt.Origin().PropMutationHandlers.Remove(strings.Join([]string{evt.Origin().ID, Namespace.Internals, prop.Deleted}, "/"), g)
@@ -1790,8 +1790,8 @@ func (e *Element) AfterEvent(eventname string, target Watchable, h *MutationHand
 		}
 	}
 
-	m := NewMutationHandler(func(evt MutationEvent) bool {
-		g := NewMutationHandler(func(ev MutationEvent) bool {
+	m := OnMutation(func(evt MutationEvent) bool {
+		g := OnMutation(func(ev MutationEvent) bool {
 			return h.Handle(evt)
 		}).RunOnce()
 		e.WatchEvent(eventname, evt.Origin(), g)

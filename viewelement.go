@@ -49,7 +49,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	}
 	v.SetAuthorization("", true)
 
-	e.OnMounted(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnMounted(OnMutation(func(evt MutationEvent) bool {
 		l, ok := evt.Origin().Root.Get(Namespace.Internals, "views")
 		if !ok {
 			list := NewList(String((evt.Origin().ID)))
@@ -71,7 +71,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	// a viewElement should have a default view that should activated when mounting, unless
 	e.OnMounted(defaultViewMounter) // TODO remove
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
 		l, ok := evt.Origin().Root.Get(Namespace.Internals, "views")
 		if ok {
 			list, ok := l.(List)
@@ -85,7 +85,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 		return false
 	}))
 
-	e.Watch(Namespace.UI, "activeview", e, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Watch(Namespace.UI, "activeview", e, OnMutation(func(evt MutationEvent) bool {
 		vname := evt.NewValue().(String).String()
 		if v.HasStaticView(vname) {
 			e.ActiveView = vname
@@ -99,7 +99,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	}))
 
 	// onstart MutationHandler
-	onstart := NewMutationHandler(func(evt MutationEvent) bool {
+	onstart := OnMutation(func(evt MutationEvent) bool {
 		vname := evt.NewValue().(String).String()
 		auth := ViewElement{evt.Origin()}.IsViewAuthorized(vname)
 
@@ -114,19 +114,19 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	})
 
 	// onerror MutationHandler
-	onerror := NewMutationHandler(func(evt MutationEvent) bool {
+	onerror := OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().Set(Namespace.Internals, prop.ViewActivation, evt.NewValue())
 		return false
 	})
 
 	// oncancel MutationHandler
-	oncancel := NewMutationHandler(func(evt MutationEvent) bool {
+	oncancel := OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().Set(Namespace.Internals, prop.ViewActivation, evt.NewValue())
 		return false
 	})
 
 	// onend MutationHandler
-	onend := NewMutationHandler(func(evt MutationEvent) bool {
+	onend := OnMutation(func(evt MutationEvent) bool {
 		// If no transition Error, then the transition was successful
 		if !TransitionError(evt.Origin(), prop.ActivateView) && !TransitionCancelled(evt.Origin(), prop.ActivateView) {
 			evt.Origin().SetUI("activeview", evt.NewValue())
@@ -157,7 +157,7 @@ func (v ViewElement) ViewExists(name string) bool {
 	return v.AsElement().ActiveView == name
 }
 
-var defaultViewMounter = NewMutationHandler(func(evt MutationEvent) bool {
+var defaultViewMounter = OnMutation(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	var ok bool
 
@@ -268,7 +268,7 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 // MutationHanlders can be registered to handle the presence of potential
 // query parameters when a view is being activated on navigation.
 func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ...*MutationHandler) {
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
+	nh := OnMutation(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {
 			return false

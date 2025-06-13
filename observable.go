@@ -49,7 +49,7 @@ func newObservable(id string) Observable {
 		nil,
 	}
 
-	e.OnDeleted(NewMutationHandler(func(evt MutationEvent) bool {
+	e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().Root.registry.Unregister(evt.Origin().ID)
 		return false
 	}).RunOnce())

@@ -40,8 +40,8 @@ func (e *Element) OnRouterMounted(fn func(*Router)) {
 // useRouter is a convenience function that allows for an Element to call a
 // router-using function when mounted.
 func useRouter(user AnyElement, fn func(*Router)) {
-	h := NewMutationHandler(func(evt MutationEvent) bool {
-		evt.Origin().WatchEvent("router-mounted", evt.Origin().AsElement().Root, NewMutationHandler(func(event MutationEvent) bool {
+	h := OnMutation(func(evt MutationEvent) bool {
+		evt.Origin().WatchEvent("router-mounted", evt.Origin().AsElement().Root, OnMutation(func(event MutationEvent) bool {
 			fn(GetRouter(event.Origin()))
 			return false
 		}).RunASAP().RunOnce())
@@ -88,7 +88,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 
 	r := &Router{rootview, nil, nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
 
-	r.Outlet.AsElement().Root.WatchEvent("docupdate", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+	r.Outlet.AsElement().Root.WatchEvent("docupdate", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
 		_, navready := evt.Origin().Get(Namespace.Navigation, "ready")
 		if !navready {
 			v, ok := evt.Origin().Get(Namespace.Internals, "views")
@@ -109,7 +109,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 		return false
 	}))
 
-	r.Outlet.AsElement().Root.WatchEvent("navigation-start", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+	r.Outlet.AsElement().Root.WatchEvent("navigation-start", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
 		r.CancelNavigation()
 
 		NavContext, CancelNav := newCancelableNavContext()
@@ -255,7 +255,7 @@ func (r *Router) RedirectTo(route string) {
 // Hijack short-circuits navigation to create a redirection rule for a specific route to an alternate
 // destination.
 func (r *Router) Hijack(route string, destination string) {
-	r.OnRouteChangeRequest(NewMutationHandler(func(evt MutationEvent) bool {
+	r.OnRouteChangeRequest(OnMutation(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
 		if string(navroute) == route {
 			//r.History.Push(route)
@@ -340,7 +340,7 @@ func (r *Router) traverseRoutes(node *rnode, currentPath string, routes *[]strin
 
 // handler returns a mutation handler which deals with route change.
 func (r *Router) handler() *MutationHandler {
-	mh := NewMutationHandler(func(evt MutationEvent) bool {
+	mh := OnMutation(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
@@ -436,7 +436,7 @@ func (r *Router) handler() *MutationHandler {
 
 // redirecthandler returns a mutation handler which deals with route redirections.
 func (r *Router) redirecthandler() *MutationHandler {
-	mh := NewMutationHandler(func(evt MutationEvent) bool {
+	mh := OnMutation(func(evt MutationEvent) bool {
 		nroute, ok := evt.NewValue().(String)
 		if !ok {
 			log.Print("route mutation has wrong type... something must be wrong", evt.NewValue())
@@ -563,7 +563,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 
 	lch := NewLifecycleHandlers(root.AsElement().Root)
 
-	onloadstart := NewMutationHandler(func(evt MutationEvent) bool {
+	onloadstart := OnMutation(func(evt MutationEvent) bool {
 		// Need to load the router state in case we are reloading history
 		h, ok := evt.Origin().GetData("history")
 		if ok {
@@ -571,13 +571,13 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		}
 
 		if lch.MutationWillReplay() {
-			evt.Origin().OnTransitionError("replay", NewMutationHandler(func(ev MutationEvent) bool {
+			evt.Origin().OnTransitionError("replay", OnMutation(func(ev MutationEvent) bool {
 				ev.Origin().ErrorTransition("load", ev.NewValue())
 				return false
 			}))
 
 			// After replay end, the app should be considered loaded. So we will end the load transition.
-			evt.Origin().AfterTransition("replay", NewMutationHandler(func(ev MutationEvent) bool {
+			evt.Origin().AfterTransition("replay", OnMutation(func(ev MutationEvent) bool {
 				ev.Origin().EndTransition("load")
 				return false
 			}).RunOnce())
@@ -587,7 +587,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		return false
 	})
 
-	onloaderror := NewMutationHandler(func(evt MutationEvent) bool {
+	onloaderror := OnMutation(func(evt MutationEvent) bool {
 		if lch.MutationWillReplay() {
 			evt.Origin().CancelTransition("replay", evt.NewValue())
 			return false
@@ -596,7 +596,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		return false
 	})
 
-	onloadcancel := NewMutationHandler(func(evt MutationEvent) bool {
+	onloadcancel := OnMutation(func(evt MutationEvent) bool {
 		if lch.MutationWillReplay() {
 			evt.Origin().CancelTransition("replay", evt.NewValue())
 			return false
@@ -604,7 +604,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		return false
 	})
 
-	onloadend := NewMutationHandler(func(evt MutationEvent) bool {
+	onloadend := OnMutation(func(evt MutationEvent) bool {
 		return false
 	})
 
@@ -613,25 +613,25 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	// That is platform/driver dependent and makes use of the Ready lifecycle handler function which triggers a ui-ready event
 	// at the root of the UI tree.
 	// Note> could use AfterTransition instead of AfterEvent
-	root.AsElement().Root.AfterTransition("load", NewMutationHandler(func(evt MutationEvent) bool {
+	root.AsElement().Root.AfterTransition("load", OnMutation(func(evt MutationEvent) bool {
 
 		evt.Origin().TriggerEvent("ui-loaded")
 		return false
 	}).RunOnce())
 
-	onreplaystart := NewMutationHandler(func(evt MutationEvent) bool {
+	onreplaystart := OnMutation(func(evt MutationEvent) bool {
 		return false
 	})
 
-	onreplayerror := NewMutationHandler(func(evt MutationEvent) bool {
+	onreplayerror := OnMutation(func(evt MutationEvent) bool {
 		return false
 	})
 
-	onreplaycancel := NewMutationHandler(func(evt MutationEvent) bool {
+	onreplaycancel := OnMutation(func(evt MutationEvent) bool {
 		return false
 	})
 
-	onreplayend := NewMutationHandler(func(evt MutationEvent) bool {
+	onreplayend := OnMutation(func(evt MutationEvent) bool {
 		return false
 	})
 
@@ -1062,7 +1062,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	view := ViewElement{GetById(r.Outlet.AsElement().Root, vl.Get(len(vl.UnsafelyUnwrap())-1).(String).String())}
 	//viewname = string(nl[len(nl)-1].(String))
 
-	nh := NewMutationHandler(func(evt MutationEvent) bool {
+	nh := OnMutation(func(evt MutationEvent) bool {
 		if isValidLink(Link{e}) {
 			_, ok := e.Get(eventNS, "verified")
 			if !ok {
@@ -1072,7 +1072,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 
 		return false
 	})
-	e.WatchEvent("mountable", view.AsElement(), NewMutationHandler(func(evt MutationEvent) bool {
+	e.WatchEvent("mountable", view.AsElement(), OnMutation(func(evt MutationEvent) bool {
 		b := evt.NewValue().(Bool)
 		if !b {
 			return false
@@ -1081,7 +1081,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	}).RunASAP())
 
 	// make sure that the link is set to 'active' when the route is the same as the link
-	e.Watch(Namespace.UI, "currentroute", r.Outlet.AsElement().Root, NewMutationHandler(func(evt MutationEvent) bool {
+	e.Watch(Namespace.UI, "currentroute", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
 		route := evt.NewValue().(String).String()
 		lnk, _ := e.GetUI("uri")
 		link := lnk.(String).String()
@@ -1098,7 +1098,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	r.Links[l.URI()] = l
 
 	// TODO do we need to be able to disable navigation if link points to current route?
-	r.Outlet.AsElement().WatchEvent("activate", e, NewMutationHandler(func(evt MutationEvent) bool {
+	r.Outlet.AsElement().WatchEvent("activate", e, OnMutation(func(evt MutationEvent) bool {
 		var hash string
 		if s, ok := evt.NewValue().(String); ok {
 			hash = "#" + string(s)
@@ -1107,7 +1107,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 		return false
 	}))
 
-	r.Outlet.AsElement().WatchEvent("prefetchlink", e, NewMutationHandler(func(evt MutationEvent) bool {
+	r.Outlet.AsElement().WatchEvent("prefetchlink", e, OnMutation(func(evt MutationEvent) bool {
 		p, err := r.Match(l.URI())
 		if err != nil {
 			return true
@@ -1128,7 +1128,7 @@ func (r *Router) CurrentRoute() string {
 }
 
 /*
-var linkActivityMonitor = NewMutationHandler(func(evt MutationEvent) bool {
+var linkActivityMonitor = OnMutation(func(evt MutationEvent) bool {
 	e := evt.Origin()
 	route := evt.NewValue().(String).String()
 	lnk, ok := e.GetUI("uri")

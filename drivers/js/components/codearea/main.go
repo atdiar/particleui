@@ -150,7 +150,7 @@ func (e AreaElement) On(event string, callback func()) AreaElement {
 		callback()
 		return nil
 	})
-	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		cb.Release()
 		return false
 	}).RunOnce().RunASAP())

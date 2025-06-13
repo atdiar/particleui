@@ -298,7 +298,7 @@ func nativeDocumentAlreadyRendered() bool {
 }
 
 func ConnectNative(e *ui.Element, tag string) {
-	e.WatchEvent(registered, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.WatchEvent(registered, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		connectNative(e, tag)
 		evt.Origin().TriggerEvent(natively_connected)
 		return false
@@ -323,7 +323,7 @@ func connectNative(e *ui.Element, tag string) {
 
 				e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
 
-				e.WatchEvent("mutation-replayed", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+				e.WatchEvent("mutation-replayed", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 					statenode.Call("remove")
 					evt.Origin().TriggerEvent("connect-native")
 					evt.Origin().Configuration.Disconnected = false
@@ -334,7 +334,7 @@ func connectNative(e *ui.Element, tag string) {
 	}
 
 	if e.Configuration.Disconnected {
-		e.WatchEvent("connect-native", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 
 			if tag == "window" {
 				wd := js.Global().Get("document").Get("defaultView")
@@ -948,7 +948,7 @@ var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui
 	e.Parent = e
 	ConnectNative(e, "window")
 
-	e.AfterEvent("reload", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.AfterEvent("reload", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if ok {
 			j.Get("location").Call("reload")
@@ -972,7 +972,7 @@ func newWindow(title string, options ...string) Window {
 var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui.Element) *ui.Element {
 	d := getDocumentRef(e)
 
-	d.OnBeforeUnactive(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.OnBeforeUnactive(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
 	}))
@@ -982,15 +982,15 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 	if lch.MutationWillReplay() {
 		// datastore persistence should be disabled until the list of mutations is replayed.
 		if e.ID == "mutation-recorder" && HMRMode != "false" {
-			d.OnTransitionStart("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			d.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 				LoadFromStorage(e)
 				return false
 			}).RunOnce())
 		}
 
-		d.AfterTransition("replay", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.AfterTransition("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			PutInStorage(e)
-			e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+			e.WatchEvent("datastore-load", e, ui.OnMutation(func(event ui.MutationEvent) bool {
 				LoadFromStorage(event.Origin())
 				return false
 			}))
@@ -1004,14 +1004,14 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 			}
 		}
 	} else {
-		e.WatchEvent("datastore-load", e, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+		e.WatchEvent("datastore-load", e, ui.OnMutation(func(event ui.MutationEvent) bool {
 			if !lch.MutationReplaying() {
 				LoadFromStorage(event.Origin())
 			}
 			return false
 		}))
 
-		d.OnTransitionStart("load", ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnTransitionStart("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e.TriggerEvent("datastore-load")
 			return false
 		}).RunASAP().RunOnce())
@@ -1022,16 +1022,16 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 
 var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Element) *ui.Element {
 	d := getDocumentRef(e)
-	fetcher := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	fetcher := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		if ui.FetchingSupported(evt.Origin()) {
 			evt.Origin().Fetch()
 		}
 		return false
 	}).RunASAP()
 
-	e.WatchEvent("ui-loaded", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.WatchEvent("ui-loaded", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
-		e.OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnUnmounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			evt.Origin().RemoveMutationHandler(Namespace.Event, "unmounted", evt.Origin(), fetcher)
 			return false
 		}).RunOnce())
@@ -1063,7 +1063,7 @@ var routerConfig = func(r *ui.Router) {
 	r.History.NewState = ns
 	r.History.RecoverState = rs
 
-	r.History.AppRoot.WatchEvent("history-change", r.History.AppRoot, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	r.History.AppRoot.WatchEvent("history-change", r.History.AppRoot, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		PutInStorage(r.History.State[r.History.Cursor].AsElement())
 		return false
 	}))
@@ -1075,7 +1075,7 @@ var routerConfig = func(r *ui.Router) {
 	SetAttribute(pnf.AsElement(), "role", "alert")
 	SetInlineCSS(pnf, `all: initial;`)
 
-	r.OnNotfound(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	r.OnNotfound(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
@@ -1101,7 +1101,7 @@ var routerConfig = func(r *ui.Router) {
 
 	// unauthorized
 	ui.AddView("unauthorized", doc.Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
-	r.OnUnauthorized(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	r.OnUnauthorized(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
 			panic("targetview should have been set")
@@ -1121,7 +1121,7 @@ var routerConfig = func(r *ui.Router) {
 
 	// appfailure
 	afd := doc.Div.WithID(" -appfailure").SetText("App Failure")
-	r.OnAppfailure(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	r.OnAppfailure(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		document := GetDocument(r.Outlet.AsElement())
 		document.Window().SetTitle("App Failure")
 		r.Outlet.AsElement().Root.SetChildren(afd.AsElement())
@@ -1158,7 +1158,7 @@ func (c *gconstructor[T, U]) WithID(id string, options ...string) T {
 func (c *gconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
 	constructorDocumentLinker[id] = d
-	d.Element.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.Element.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		delete(constructorDocumentLinker, id)
 		return false
 	}))
@@ -1774,7 +1774,7 @@ func (s StyleSheet) String() string {
 
 func makeStyleSheet(observable *ui.Element) *ui.Element {
 
-	new := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	new := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		rss := js.Global().New("CSSStyleSheet", struct {
 			baseURL  string
 			media    []any
@@ -1793,7 +1793,7 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 		return false
 	})
 
-	enable := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	enable := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		s, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -1803,7 +1803,7 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 		return false
 	})
 
-	disable := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	disable := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		s, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -1813,7 +1813,7 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 		return false
 	})
 
-	update := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	update := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		s, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -1825,7 +1825,7 @@ func makeStyleSheet(observable *ui.Element) *ui.Element {
 	observable.WatchEvent("enable", observable, enable)
 	observable.WatchEvent("disable", observable, disable)
 	observable.Watch(Namespace.UI, "stylesheet", observable, update)
-	observable.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	observable.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		// TODO remove from adopted stylesheets
 		d, ok := JSValue(GetDocument(evt.Origin()))
 		if !ok {
@@ -1974,7 +1974,7 @@ func (m *mutationRecorder) Capture() {
 
 	// capture of the list of mutations
 	var h *ui.MutationHandler
-	h = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	h = ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v := evt.NewValue()
 
 		l, ok := m.raw.GetData("mutationlist")
@@ -1995,7 +1995,7 @@ func (m *mutationRecorder) Capture() {
 		return false
 	})
 
-	m.raw.Watch(Namespace.Internals, "mutation-capturing", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	m.raw.Watch(Namespace.Internals, "mutation-capturing", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		if !evt.NewValue().(ui.Bool) {
 			m.raw.RemoveMutationHandler(Namespace.Event, "new-mutation", d, h)
 		}
@@ -2070,13 +2070,13 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 	// If we are not in a windowed environment, we should trigger the PageReady event manually
 	w, ok := JSValue(d.Window())
 	if w.Truthy() && ok {
-		d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
 			return false
 		}).RunASAP().RunOnce())
 	} else {
 		d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
-			d.OnLoaded(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
 				ui.NewLifecycleHandlers(evt.Origin()).SetReady()
 				return false
 			}).RunASAP().RunOnce())
@@ -2126,7 +2126,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 
 	ConnectNative(e, "html")
 
-	e.Watch(Namespace.UI, "lang", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "lang", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), "lang", string(evt.NewValue().(ui.String)))
 		return false
 	}).RunASAP())
@@ -2134,12 +2134,12 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	e.Watch(Namespace.UI, "history", e, historyMutationHandler)
 
 	// makes ViewElements focusable (focus management support)
-	e.Watch(Namespace.Internals, "views", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.Internals, "views", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		l := evt.NewValue().(ui.List)
 		viewstr := l.Get(len(l.UnsafelyUnwrap()) - 1).(ui.String)
 		view := ui.GetById(e, string(viewstr))
 		SetAttribute(view, "tabindex", "-1")
-		e.Watch(Namespace.UI, "activeview", view, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch(Namespace.UI, "activeview", view, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e.SetDataSetUI("focus", ui.String(view.ID))
 			return false
 		}))
@@ -2147,7 +2147,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	}))
 
 	lch := ui.NewLifecycleHandlers(e)
-	lch.OnReady(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	lch.OnReady(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		r := GetDocument(evt.Origin()).Router()
 		if r != nil {
 			evt.Origin().AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
@@ -2174,7 +2174,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 	return e
 }, AllowSessionStoragePersistence, AllowAppLocalStoragePersistence, AllowScrollRestoration)
 
-var documentTitleHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+var documentTitleHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	d := GetDocument(evt.Origin())
 	ot := d.GetElementById("document-title")
 	if ot == nil {
@@ -2349,7 +2349,7 @@ func partiallyVisible(e *ui.Element) bool {
 }
 
 func TrapFocus(e *ui.Element) *ui.Element { // TODO what to do if no eleemnt is focusable? (edge-case)
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		m, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -2388,7 +2388,7 @@ func TrapFocus(e *ui.Element) *ui.Element { // TODO what to do if no eleemnt is 
 		})
 		evt.Origin().Root.AddEventListener("keydown", h)
 		// Watches unmounted once
-		evt.Origin().OnUnmounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		evt.Origin().OnUnmounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			evt.Origin().Root.RemoveEventListener("keydown", h)
 			return false
 		}).RunOnce())
@@ -2401,7 +2401,7 @@ func TrapFocus(e *ui.Element) *ui.Element { // TODO what to do if no eleemnt is 
 }
 
 func Autofocus(e *ui.Element) *ui.Element {
-	e.AfterEvent("navigation-end", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.AfterEvent("navigation-end", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		if !e.Mounted() {
 			return false
 		}
@@ -2668,7 +2668,7 @@ func (d *Document) WithDefaultConstructorOptions(mods ...ui.ConstructorOption) *
 func NewDocument(id string, options ...string) *Document {
 	d := &Document{Element: newDocument(id, options...)}
 	documents.Set(d.Element, d)
-	d.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		documents.Delete(evt.Origin())
 		return false
 	}))
@@ -2705,7 +2705,7 @@ func NewDocument(id string, options ...string) *Document {
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
-	d.Watch(Namespace.UI, "favicon", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.Watch(Namespace.UI, "favicon", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		var l LinkElement
 		f := d.GetElementById("favicon")
 		if f != nil {
@@ -2733,7 +2733,7 @@ func NewDocument(id string, options ...string) *Document {
 	return d
 }
 
-var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+var historyMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	if !js.Global().Truthy() {
 		return false
 	}
@@ -2773,7 +2773,7 @@ var historyMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bo
 	return false
 })
 
-var navinitHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	if !js.Global().Truthy() {
 		return false
 	}
@@ -2841,7 +2841,7 @@ func activityStateSupport(e *ui.Element) *ui.Element {
 		return false
 	}))
 
-	d.WatchEvent("reload", w, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	d.WatchEvent("reload", w, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		d.TriggerEvent("before-unactive")
 		return false
 	}))
@@ -2868,13 +2868,13 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 	if !js.Global().Truthy() {
 		return el
 	}
-	el.WatchEvent(registered, el.Root, ui.NewMutationHandler(func(event ui.MutationEvent) bool {
+	el.WatchEvent(registered, el.Root, ui.OnMutation(func(event ui.MutationEvent) bool {
 		e := event.Origin()
 		if e.IsRoot() {
 			if js.Global().Get("history").Get("scrollRestoration").Truthy() {
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
-			e.WatchEvent("ui-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("ui-ready", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				rootScrollRestorationSupport(evt.Origin())
 				return false
 			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
@@ -2882,8 +2882,8 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 			return false
 		}
 
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
-			e.WatchEvent("ui-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			e.WatchEvent("ui-ready", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				router := ui.GetRouter(evt.Origin())
 
 				ejs, ok := JSValue(e)
@@ -2915,7 +2915,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						return false
 					}))
 
-					h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					h := ui.OnMutation(func(evt ui.MutationEvent) bool {
 						b, ok := e.GetEventValue("shouldscroll")
 						if !ok {
 							return false
@@ -2944,7 +2944,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 						return false
 					}).RunASAP()
 
-					e.WatchEvent("ui-ready", e.Root, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+					e.WatchEvent("ui-ready", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
 						evt.Origin().WatchEvent("navigation-end", evt.Origin().Root, h)
 						return false
 					}).RunASAP().RunOnce())
@@ -2957,7 +2957,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 			return false
 		}).RunASAP().RunOnce())
 
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool { // TODO DEBUG Mounted is not the appopriate event
 
 			sc, ok := e.GetUI("scrollrestore")
 			if !ok {
@@ -2996,7 +2996,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 		return false
 	}))
 
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	h := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		router := ui.GetRouter(evt.Origin().Root)
 		newpageaccess := router.History.CurrentEntryIsNew()
 
@@ -3053,7 +3053,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 		return false
 	}).RunASAP()
 
-	e.WatchEvent("ui-ready", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.WatchEvent("ui-ready", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		evt.Origin().WatchEvent("navigation-end", evt.Origin(), h)
 		return false
 	}).RunASAP().RunOnce())
@@ -3383,7 +3383,7 @@ var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 	withStringAttributeWatcher(e, "referrerpolicy")
 	withStringAttributeWatcher(e, "loading")
 
-	e.Watch(Namespace.UI, "sandboxmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "sandboxmodifier", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		o := evt.NewValue().(ui.List).UnsafelyUnwrap()
 		var res strings.Builder
 		for _, v := range o {
@@ -3394,7 +3394,7 @@ var newIframe = Elements.NewConstructor("iframe", func(id string) *ui.Element {
 		return false
 	}))
 
-	e.Watch(Namespace.UI, "allowmodifier", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "allowmodifier", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		o := evt.NewValue().(ui.Object)
 		// stringBuilder
 		var res strings.Builder
@@ -3732,7 +3732,7 @@ var newBody = Elements.NewConstructor("body", func(id string) *ui.Element {
 
 	ConnectNative(e, "body")
 
-	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnRegistered(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		evt.Origin().Root.Set(Namespace.UI, "body", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
@@ -3759,7 +3759,7 @@ var newHead = Elements.NewConstructor("head", func(id string) *ui.Element {
 
 	ConnectNative(e, "head")
 
-	e.OnRegistered(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnRegistered(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		evt.Origin().Root.Set(Namespace.UI, "head", ui.String(evt.Origin().ID))
 		return false
 	}).RunOnce().RunASAP())
@@ -3864,7 +3864,7 @@ var newTitle = Elements.NewConstructor("title", func(id string) *ui.Element {
 
 	tag := "title"
 	ConnectNative(e, tag)
-	e.Watch(Namespace.UI, "title", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "title", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		SetTextContent(evt.Origin(), evt.NewValue().(ui.String).String())
 		return false
 	}))
@@ -3995,7 +3995,7 @@ var newBase = Elements.NewConstructor("base", func(id string) *ui.Element {
 	tag := "base"
 	ConnectNative(e, tag)
 
-	e.Watch(Namespace.UI, "href", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "href", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), "href", string(evt.NewValue().(ui.String)))
 		return false
 	}))
@@ -4121,7 +4121,7 @@ var newDiv = Elements.NewConstructor("div", func(id string) *ui.Element {
 	tag := "div"
 	ConnectNative(e, tag)
 
-	e.Watch(Namespace.UI, "contenteditable", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "contenteditable", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		b, ok := evt.NewValue().(ui.Bool)
 		if !ok {
 			return true
@@ -4210,10 +4210,10 @@ func (t textAreaModifier) Required(b bool) func(*ui.Element) *ui.Element {
 
 func (t textAreaModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -4712,7 +4712,7 @@ var newParagraph = Elements.NewConstructor("p", func(id string) *ui.Element {
 	tag := "p"
 	ConnectNative(e, tag)
 
-	e.Watch(Namespace.UI, "text", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, "text", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -4772,12 +4772,12 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 		}
 	}
 
-	a.WatchEvent("verified", link, (ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.WatchEvent("verified", link, (ui.OnMutation(func(evt ui.MutationEvent) bool {
 		a.SetHref(strings.TrimPrefix(link.URI()+hash, "/"))
 		return false
 	}).RunASAP()))
 
-	a.AsElement().Watch(Namespace.UI, "active", link, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", link, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		a.SetDataSetUI("active", evt.NewValue())
 		return false
 	}).RunASAP())
@@ -4808,7 +4808,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 				return false
 			}))
 		case "render":
-			a.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			a.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 				link.Prefetch()
 				return false
 			}))
@@ -4824,7 +4824,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 }
 
 func (a AnchorElement) OnActive(h *ui.MutationHandler) AnchorElement {
-	a.AsElement().Watch(Namespace.UI, "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", a, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if !b {
 			return false
@@ -4835,7 +4835,7 @@ func (a AnchorElement) OnActive(h *ui.MutationHandler) AnchorElement {
 }
 
 func (a AnchorElement) OnInactive(h *ui.MutationHandler) AnchorElement {
-	a.AsElement().Watch(Namespace.UI, "active", a, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	a.AsElement().Watch(Namespace.UI, "active", a, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		b := evt.NewValue().(ui.Bool)
 		if b {
 			return false
@@ -4931,10 +4931,10 @@ func (m buttonModifier) Text(str string) func(*ui.Element) *ui.Element {
 
 func (b buttonModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -5028,10 +5028,10 @@ func (l LabelElement) SetText(s string) LabelElement {
 
 // For modifier targets an *Element via a reference to it.
 func (l LabelElement) For(p **ui.Element) LabelElement {
-	l.AsElement().OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	l.AsElement().OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		d := GetDocument(evt.Origin())
 
-		evt.Origin().WatchEvent("ui-idle", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		evt.Origin().WatchEvent("ui-idle", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e := *p
 			l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			return false
@@ -5346,7 +5346,7 @@ func inputOption(name string) ui.ConstructorOption {
 		if newset("text", "search", "url", "tel", "email", "password").Contains(name) {
 			withStringAttributeWatcher(e, "pattern")
 			withNumberAttributeWatcher(e, "size")
-			e.Watch(Namespace.UI, "maxlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "maxlength", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "maxlength", strconv.Itoa(int(i)))
 					return false
@@ -5355,7 +5355,7 @@ func inputOption(name string) ui.ConstructorOption {
 				return false
 			}))
 
-			e.Watch(Namespace.UI, "minlength", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "minlength", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "minlength", strconv.Itoa(int(i)))
 					return false
@@ -5386,7 +5386,7 @@ func inputOption(name string) ui.ConstructorOption {
 		}
 
 		if newset("date", "month", "week", "time", "datetime-local", "range").Contains(name) {
-			e.Watch(Namespace.UI, "step", e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.Watch(Namespace.UI, "step", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if i := evt.NewValue().(ui.Number); int(i) > 0 {
 					SetAttribute(evt.Origin(), "step", strconv.Itoa(int(i)))
 					return false
@@ -5440,10 +5440,10 @@ var OutputModifier outputModifier
 
 func (m outputModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.SetUI("form", ui.String(form.ID))
 				}
@@ -5465,10 +5465,10 @@ func (m outputModifier) Name(name string) func(*ui.Element) *ui.Element {
 func (m outputModifier) For(inputs ...*ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
 		var inputlist string
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 
 				for _, input := range inputs {
 					if input.Mounted() {
@@ -6781,10 +6781,10 @@ func (o objectModifier) Data(u url.URL) func(*ui.Element) *ui.Element {
 }
 func (o objectModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.AsElement().SetUI("form", ui.String(form.ID))
 				}
@@ -6969,10 +6969,10 @@ var FieldsetModifier fieldsetModifier
 
 func (m fieldsetModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.SetUI("form", ui.String(form.ID))
 				}
@@ -7121,10 +7121,10 @@ func (m selectModifier) Disabled(b bool) func(*ui.Element) *ui.Element {
 
 func (m selectModifier) Form(form *ui.Element) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			d := evt.Origin().Root
 
-			evt.Origin().WatchEvent("navigation-end", d, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			evt.Origin().WatchEvent("navigation-end", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 				if form.Mounted() {
 					e.AsElement().SetDataSetUI("form", ui.String(form.ID))
 				}
@@ -7263,7 +7263,7 @@ var newForm = Elements.NewConstructor("form", func(id string) *ui.Element {
 	tag := "form"
 	ConnectNative(e, tag)
 
-	e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		_, ok := e.Get(Namespace.UI, "action")
 		if !ok {
 			evt.Origin().SetDataSetUI("action", ui.String(evt.Origin().Route()))
@@ -7295,7 +7295,7 @@ var Modifier modifier
 
 func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
-		GetDocument(e).OnReady(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+		GetDocument(e).OnReady(ui.OnMutation(func(ui.MutationEvent) bool {
 			tickname := strings.Join([]string{"ticker", interval.String(), time.Now().String()}, "-")
 
 			// Let's check if the ticker has already been initialized.
@@ -7308,21 +7308,21 @@ func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *
 
 			t = time.NewTicker(interval)
 
-			initticker := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			initticker := ui.OnMutation(func(evt ui.MutationEvent) bool {
 				evt.Origin().TriggerEvent(tickname) // for init purposes
 
-				evt.Origin().OnMounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+				evt.Origin().OnMounted(ui.OnMutation(func(ui.MutationEvent) bool {
 					t.Reset(interval)
 					return false
 				}))
 
-				evt.Origin().OnUnmounted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+				evt.Origin().OnUnmounted(ui.OnMutation(func(ui.MutationEvent) bool {
 					t.Stop()
 					return false
 				}))
 
 				var stop chan struct{}
-				evt.Origin().OnDeleted(ui.NewMutationHandler(func(ui.MutationEvent) bool {
+				evt.Origin().OnDeleted(ui.OnMutation(func(ui.MutationEvent) bool {
 					close(stop)
 					return false
 				}).RunOnce())
@@ -7434,7 +7434,7 @@ func Buttonifyier(link ui.Link) func(*ui.Element) *ui.Element {
 
 // watches ("ui",attr) for a ui.String value.
 func withStringAttributeWatcher(e *ui.Element, attr string) {
-	e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, attr, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), attr, string(evt.NewValue().(ui.String)))
 		return false
 	}).RunOnce())
@@ -7444,7 +7444,7 @@ func withStringAttributeWatcher(e *ui.Element, attr string) {
 
 // watches ("ui",attr) for a ui.Number value.
 func withNumberAttributeWatcher(e *ui.Element, attr string) {
-	e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.UI, attr, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		SetAttribute(evt.Origin(), attr, strconv.Itoa(int(evt.NewValue().(ui.Number))))
 		return false
 	}).RunOnce())
@@ -7454,7 +7454,7 @@ func withNumberAttributeWatcher(e *ui.Element, attr string) {
 // watches ("ui",attr) for a ui.Bool value.
 func withBoolAttributeWatcher(e *ui.Element, attr string) {
 	if !InBrowser() {
-		e.Watch(Namespace.UI, attr, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+		e.Watch(Namespace.UI, attr, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			if evt.NewValue().(ui.Bool) {
 				SetAttribute(evt.Origin(), attr, "")
 				return false
@@ -7494,7 +7494,7 @@ func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, m
 }
 
 func clampedValueWatcher(propname string, min int, max int) *ui.MutationHandler {
-	return ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	return ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			return false
@@ -7513,7 +7513,7 @@ func clampedValueWatcher(propname string, min int, max int) *ui.MutationHandler 
 }
 
 func numericPropertyWatcher(propname string) *ui.MutationHandler {
-	return ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	return ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
@@ -7524,7 +7524,7 @@ func numericPropertyWatcher(propname string) *ui.MutationHandler {
 }
 
 func boolPropertyWatcher(propname string) *ui.MutationHandler {
-	return ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	return ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
@@ -7535,7 +7535,7 @@ func boolPropertyWatcher(propname string) *ui.MutationHandler {
 }
 
 func stringPropertyWatcher(propname string) *ui.MutationHandler {
-	return ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	return ui.OnMutation(func(evt ui.MutationEvent) bool {
 		j, ok := JSValue(evt.Origin())
 		if !ok {
 			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
@@ -7546,7 +7546,7 @@ func stringPropertyWatcher(propname string) *ui.MutationHandler {
 }
 
 func enableClasses(e *ui.Element) *ui.Element {
-	h := ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	h := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		target := evt.Origin()
 		native, ok := target.Native.(NativeElement)
 		if !ok {
@@ -7572,7 +7572,7 @@ func enableClasses(e *ui.Element) *ui.Element {
 }
 
 // abstractjs
-var textContentHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+var textContentHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	j, ok := JSValue(evt.Origin())
 	if !ok {
 		return false
@@ -7676,7 +7676,7 @@ func (s set) Add(str string) set {
 	return s
 }
 
-var NoopMutationHandler = ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+var NoopMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	return false
 })
 

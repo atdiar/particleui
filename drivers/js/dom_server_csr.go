@@ -22,7 +22,9 @@ import (
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
 	//"golang.org/x/net/html/atom"
+	"github.com/yosssi/gohtml"
 )
 
 var (
@@ -307,7 +309,14 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 					cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 
 					err = cmd.Run()
-					if err == nil {
+					if err != nil {
+						// Could send error to browser instead of just logging
+						mu.Lock()
+						if SSEChannel != nil {
+							SSEChannel.SendEvent("build-error", err.Error(), "", "")
+						}
+						mu.Unlock()
+					} else {
 						fmt.Println("main.wasm was rebuilt.")
 					}
 				}
@@ -326,11 +335,21 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 				// and not relatively to the current working directory for the server binary.
 
 				wc, err := WatchDir(StaticDir, func(event fsnotify.Event) {
+					// filtering some of the files
+					name := filepath.Base(event.Name)
+					if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".tmp") {
+						return
+					}
+
 					// Send event to trigger a page reload
 					log.Println("Something changed: ", event.String()) // DEBUG
 					mu.Lock()
-					SSEChannel.SendEvent("reload", event.String(), "", "")
-					log.Println("reload Event sent to frontend") // DEBUG
+					if SSEChannel != nil {
+						SSEChannel.SendEvent("reload", event.String(), "", "")
+						log.Println("reload Event sent to frontend") // DEBUG
+					} else {
+						log.Println("No browser connected - reload event skipped")
+					}
 					mu.Unlock()
 				})
 				if err != nil {
@@ -387,7 +406,14 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 func (d *Document) Render(w io.Writer) error {
-	return html.Render(w, newHTMLDocument(d).Parent)
+	var buf bytes.Buffer
+	if err := html.Render(&buf, newHTMLDocument(d).Parent); err != nil {
+		return err
+	}
+
+	formatted := gohtml.Format(buf.String())
+	_, err := w.Write([]byte(formatted))
+	return err
 }
 
 func newHTMLDocument(document *Document) *html.Node {

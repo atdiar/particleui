@@ -151,7 +151,7 @@ func loader(s string) func(e *ui.Element) error {
 
 			//log.Print(categories, properties) //DEBUG
 			//lch := ui.NewLifecycleHandlers(e.Root)
-			e.OnMounted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+			e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 				for _, load := range uiloaders {
 					load()
 				}
@@ -215,7 +215,7 @@ var clearfromsession = clearer("sessionStorage")
 var clearfromlocalstorage = clearer("localStorage")
 
 var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete", func(e *ui.Element) *ui.Element {
-	e.OnDeleted(ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		ClearFromStorage(evt.Origin())
 		if e.Native != nil {
 			j, ok := JSValue(e)
@@ -329,7 +329,7 @@ func EnableLocalPersistence() string {
 }
 
 func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element {
-	e.Watch(Namespace.Data, propname, e, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	e.Watch(Namespace.Data, propname, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		PutInStorage(e)
 		return false
 	}))

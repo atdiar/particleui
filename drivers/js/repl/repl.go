@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/atdiar/particleui"
+	ui "github.com/atdiar/particleui"
 	. "github.com/atdiar/particleui/drivers/js"
 	doc "github.com/atdiar/particleui/drivers/js"
-	"github.com/atdiar/particleui/drivers/js/compat"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 )
 
 var (
@@ -105,7 +105,7 @@ func (r ReplElement) ButtonsContainer() DivElement {
 // Repl returns a ReplElement which is able to compile and render UI code in the browser locally.
 func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...string) ReplElement {
 	repl := d.Div.WithID(id, options...)
-    doc.SyncOnDataMutation(repl.AsElement(), "text")
+	doc.SyncOnDataMutation(repl.AsElement(), "text")
 	// TODO append the gcversion script with the value attribute set to the go compiler version in use
 	textarea := d.TextArea.WithID(id + "-textarea")
 	outputfield := d.Div.WithID(id + "-output")
@@ -117,12 +117,12 @@ func Repl(d *Document, id string, pathToCompilerAssetDir string, options ...stri
 	// double binding between repl and contentarea subcomponent.
 	// on sync mutation event, the repl top div gets synced as well. (caused by input events for instance)
 	// if the repl's code is set from somewhere however, the contentarea will get set to the same value too.
-	repl.Watch("data", "value", textarea, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	repl.Watch("data", "value", textarea, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		repl.SetData("value", evt.NewValue())
 		return false
 	}))
 
-	repl.Watch("data", "value", repl, ui.NewMutationHandler(func(evt ui.MutationEvent) bool {
+	repl.Watch("data", "value", repl, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		TextAreaModifier.Value(evt.NewValue().(ui.String).String())(textarea.AsElement())
 		return false
 	}).RunASAP())
