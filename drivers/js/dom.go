@@ -1075,6 +1075,9 @@ var routerConfig = func(r *ui.Router) {
 	SetAttribute(pnf.AsElement(), "role", "alert")
 	SetInlineCSS(pnf, `all: initial;`)
 
+	// DEBUG TODO check whether notfound is triggered by traversing back to the
+	// main view incrementally. local not found having priority.
+	ui.AddView("notfound", pnf)(r.Outlet.AsElement())
 	r.OnNotfound(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
@@ -2086,6 +2089,7 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 	}
 
 	if d.Router() == nil {
+		DEBUG("no router found, creating a default one")
 		var main ui.ViewElement
 		b := d.Body()
 		var c []*ui.Element
@@ -2289,10 +2293,15 @@ func SetFocus(e ui.AnyElement, scrollintoview bool) {
 }
 
 func focus(e js.Value) {
-	js.Global().Call("queueFocus", e)
+	if js.Global().Truthy() {
+		js.Global().Call("queueFocus", e)
+	}
 }
 
 func IsInViewPort(e *ui.Element) bool {
+	if !js.Global().Truthy() {
+		return true
+	}
 	n, ok := JSValue(e)
 	if !ok {
 		return false
@@ -2321,6 +2330,9 @@ func IsInViewPort(e *ui.Element) bool {
 }
 
 func partiallyVisible(e *ui.Element) bool {
+	if !js.Global().Truthy() {
+		return true
+	}
 	n, ok := JSValue(e)
 	if !ok {
 		return false
@@ -2349,6 +2361,9 @@ func partiallyVisible(e *ui.Element) bool {
 }
 
 func TrapFocus(e *ui.Element) *ui.Element { // TODO what to do if no eleemnt is focusable? (edge-case)
+	if !js.Global().Truthy() {
+		return e
+	}
 	e.OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		m, ok := JSValue(evt.Origin())
 		if !ok {
@@ -2418,6 +2433,9 @@ func Autofocus(e *ui.Element) *ui.Element {
 // ScrollIntoView scrolls the element's ancestor containers such that the element on which it is
 // called is visible to the user.
 func (d *Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
+	if !js.Global().Truthy() {
+		return
+	}
 	var m map[string]any
 	if len(options) > 0 {
 		m = make(map[string]any)

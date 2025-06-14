@@ -180,7 +180,10 @@ func (r *Router) tryNavigate(newroute string) bool {
 	if err != nil {
 		log.Print(err) // DEBUG
 		if err == ErrNotFound {
-			log.Print("this is strange", err) // DEBUG
+			an, err := v.ActiveViewName()
+			// DEBUG
+			log.Print("this is strange, didn't find page", newroute, an, err, v.AsElement().InactiveViews) // DEBUG
+
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-notfound", String(newroute))
 			return false
 		}
@@ -216,6 +219,16 @@ func (r *Router) CancelNavigation() {
 // GoTo changes the application state by updating the current route
 // To make sure that the route provided as argument exists, use the match method.
 func (r *Router) GoTo(route string) {
+	if !r.LeaveTrailingSlash {
+		route = strings.TrimSuffix(route, "/")
+	}
+	r.Outlet.AsElement().Root.TriggerEvent("navigation-new")
+	r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(route))
+}
+
+// not sure it is needed. TODO DEBUG
+// This pushes the route as opposed to the handler for navigation-routechangerequest
+func (r *Router) goTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
 	}
@@ -257,6 +270,7 @@ func (r *Router) RedirectTo(route string) {
 func (r *Router) Hijack(route string, destination string) {
 	r.OnRouteChangeRequest(OnMutation(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
+		DEBUG("Hijack: ", navroute, " == ", route, " -> ", destination) // DEBUG
 		if string(navroute) == route {
 			//r.History.Push(route)
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(destination))
@@ -382,15 +396,21 @@ func (r *Router) handler() *MutationHandler {
 				}
 			} else if r.History.Cursor < n {
 				// we are going forward
-				//r.History.ImportState(h)
 				for i := 0; i < n-cursor; i++ {
 					r.History.Forward()
 				}
 
 			} else {
-				r.History.ImportState(h)
+				// If this is not a page reload buyt a new navigation request, the route needs to be pushed
+				// Otherwise we continue where we left off by importing the history state.
+				newnav, ok := r.Outlet.AsElement().Root.GetEventValue("navigation-new")
+				if ok && newnav.(Bool).Bool() {
+					r.History.Push(newroute)
+					r.Outlet.AsElement().TriggerEvent("navigation-new", Bool(false)) // DEBUG perhpas add this somewhere else below
+				} else {
+					r.History.ImportState(h)
+				}
 			}
-
 		}
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
@@ -760,7 +780,7 @@ func (rn *rnode) insert(nrn *rnode) {
 	// attach iteratively the rnodes
 	refnode := rn
 	viewname := viewpathnodes[0].Name
-	log.Println(viewpathnodes, l, rn)
+
 	for i, node := range viewpathnodes {
 		if i+1 < l {
 			// each ViewElement should be turned into a *rnode and should be attached in succession. The end node is our argument.

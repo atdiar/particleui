@@ -1084,6 +1084,8 @@ func (v Value) Get(property string) Value {
 		}
 	}
 
+	// DEBUG TODO handle .Get("href") for anchor elements?
+
 	switch property {
 	case "children":
 		children := make([]Value, 0)
@@ -1342,6 +1344,18 @@ func (v Value) Set(property string, value interface{}) {
 			} else {
 				panic("Cannot set charset without a <head> element") // Still a good panic
 			}
+		}
+	}
+
+	// if the element is an anchor link, handle text property specifically
+	if node.Type == html.ElementNode && node.Data == "a" && property == "text" {
+		// If the anchor tag has a textContent, we set it as the link text.
+		if text, ok := value.(string); ok {
+			// Set the textContent of the anchor element
+			setChildren(node, &html.Node{Type: html.TextNode, Data: text})
+			return
+		} else {
+			panic("Invalid value for 'text', expected string")
 		}
 	}
 

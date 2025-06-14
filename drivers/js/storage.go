@@ -88,7 +88,10 @@ func loader(s string) func(e *ui.Element) error {
 	return func(e *ui.Element) error {
 		window := js.Global()
 		if !window.Truthy() {
-			DEBUG("window is not available, cannot load from storage")
+			if DebugMode {
+				// DEBUG is a no-op in production builds
+				DEBUG("window is not available, cannot load from storage")
+			}
 			return nil
 		}
 		store := jsStore{window.Get(s)}
