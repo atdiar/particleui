@@ -158,6 +158,7 @@ func init() {
 	startCmd.Flags().StringVarP(&host, "host", "", "localhost", "Host name for the server")
 	startCmd.Flags().StringVarP(&port, "port", "p", "8888", "Port number for the server")
 	startCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Start in release mode")
+	startCmd.Flags().BoolVarP(&csr, "csr", "c", false, "Starts the server in client-side rendering mode")
 	startCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Starts the server in server-side rendering mode")
 	startCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Starts the server in static file mode for ssg.")
 	startCmd.Flags().BoolVarP(&nolr, "nolr", "", false, "Disable live reloading")
