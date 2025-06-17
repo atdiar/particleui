@@ -16,8 +16,8 @@ import (
 	"strings"
 
 	ui "github.com/atdiar/particleui"
+	"github.com/yosssi/gohtml"
 
-	js "github.com/atdiar/particleui/drivers/js/compat"
 	"golang.org/x/net/html"
 	//"golang.org/x/net/html/atom"
 )
@@ -32,7 +32,7 @@ var (
 	port string
 
 	release  bool
-	nohmr    bool
+	nolr     bool
 	basepath string = "./_root/"
 
 	render    string
@@ -55,7 +55,7 @@ func init() {
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
-	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	flag.BoolVar(&nolr, "nolr", false, "Disable live reloading")
 
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 	flag.StringVar(&render, "render", "", "specify the page(s) that will be rendered to html")
@@ -69,8 +69,8 @@ func init() {
 	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
 	IndexPath = filepath.Join(StaticDir, "index.html")
 
-	if !nohmr {
-		HMRMode = "true"
+	if !nolr {
+		LRMode = "true"
 	}
 	Server = newDefaultServer()
 
@@ -160,7 +160,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	fileServer := http.FileServer(DisableDirectoryListing(http.Dir(StaticDir)))
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if HMRMode != "false" || !nohmr {
+		if LRMode != "false" || !nolr {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 
@@ -200,11 +200,12 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}
 		document.mutationRecorder().Capture()
 
+		start := make(chan struct{})
 		go func() {
-			document.ListenAndServe(r.Context()) // launches a new UI thread
+			document.ListenAndServe(r.Context(), start)
 		}()
 
-		ui.DoSync(func() {
+		ui.DoSync(document.AsElement(), func() {
 			router := document.Router()
 			route := r.URL.Path
 			_, routeexist := router.Match(route)
@@ -238,9 +239,16 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	return func(ctx context.Context) {
 		if render != "" {
 			document := f()
+
+			start := make(chan struct{})
+			go func() {
+				document.ListenAndServe(ctx, start)
+			}()
+			start <- struct{}{} // wait for the document to be ready
 			if render == "." {
 				// we want to render every possible route. This should generate the whole website
 				// in the output directory under the form of static index.html files in nested directories.
+				// DEBUG TODO use ui.DoSync(document.AsElement(), func() {
 				n, err := CreatePages(document)
 				if err != nil {
 					fmt.Printf("Error creating pages: %v\n", err)
@@ -250,22 +258,26 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 						fmt.Printf("Created %d pages\n", n)
 					}
 				}
-
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				if router := document.Router(); router != nil {
-					router.GoTo(render)
-					err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
-					if err != nil {
-						fmt.Printf("Error creating page for route '%s': %v\n", render, err)
-						os.Exit(1)
-					} else {
+				ui.DoSync(document.AsElement(), func() {
+					router := document.Router()
+					if router != nil {
+						router.GoTo(render)
+						err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+						if err != nil {
+							fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+							os.Exit(1)
+						}
 						if verbose {
 							fmt.Printf("Created page for route '%s'\n", render)
 						}
+						fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
+					} else {
+						DEBUG("router was nil")
 					}
-				}
+				})
 			}
 			return
 		}
@@ -315,21 +327,29 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-func (d Document) Render(w io.Writer) error {
-	return html.Render(w, newHTMLDocument(d).Node())
-}
-
-func newHTMLDocument(document Document) js.Value {
-	doc := document.AsElement()
-	h := js.ValueOf(&html.Node{Type: html.DoctypeNode})
-	n := doc.Native.(NativeElement).Value
-	h.Call("appendChild", n)
-	statenode := generateStateHistoryRecordElement(doc) // TODO review all this logic
-	if statenode != nil {
-		document.Head().AsElement().Native.(NativeElement).Value.Call("appendChild", statenode)
+func (d *Document) Render(w io.Writer) error {
+	var buf bytes.Buffer
+	if err := html.Render(&buf, newHTMLDocument(d).Parent); err != nil {
+		return err
 	}
 
-	return h
+	formatted := gohtml.Format(buf.String())
+	_, err := w.Write([]byte(formatted))
+	return err
+}
+
+func newHTMLDocument(document *Document) *html.Node {
+	h, ok := JSValue(document.AsElement())
+	if !ok {
+		panic("Error converting Document to HTML Node")
+	}
+
+	statenode := generateStateHistoryRecordElement(document.AsElement()) // TODO review all this logic
+	if statenode != nil {
+		h.Call("appendChild", statenode)
+	}
+
+	return h.Node()
 }
 
 func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
@@ -354,7 +374,7 @@ func ldflags() string {
 	flags[uipkg+"/drivers/js.DevMode"] = DevMode
 	flags[uipkg+"/drivers/js.SSGMode"] = SSGMode
 	flags[uipkg+"/drivers/js.SSRMode"] = SSRMode
-	flags[uipkg+"/drivers/js.HMRMode"] = HMRMode
+	flags[uipkg+"/drivers/js.LRMode"] = LRMode
 
 	var ldflags []string
 	for key, value := range flags {

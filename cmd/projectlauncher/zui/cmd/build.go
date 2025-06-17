@@ -169,7 +169,7 @@ var buildCmd = &cobra.Command{
 
 				rootdirectory := "_root"
 				if basepath != "/" {
-					rootdirectory = basepath[1:] // remove the leading slash
+					rootdirectory = basepath // remove the leading slash? DEBUG
 				}
 
 				// We can copy the assets from the source directory to the output directory.
@@ -233,7 +233,7 @@ var buildCmd = &cobra.Command{
 
 				rootdirectory := "_root"
 				if basepath != "/" {
-					rootdirectory = basepath[1:] // remove the leading slash
+					rootdirectory = basepath // remove the leading slash? DEBUG
 				}
 
 				// We can copy the assets from the source directory to the output directory.
@@ -277,7 +277,7 @@ var buildCmd = &cobra.Command{
 
 				rootdirectory := "_root"
 				if basepath != "/" {
-					rootdirectory = basepath[1:] // remove the leading slash
+					rootdirectory = basepath // DEBUG remove the leading slash if any?
 				}
 
 				// We can copy the assets from the source directory to the output directory.
@@ -346,7 +346,7 @@ func renderPages(renderPath string, releasebuild bool) error {
 		if verbose {
 			fmt.Println("basepath is: ", basepath)
 		}
-		rootdirectory = filepath.Join(rootdirectory, basepath)
+		rootdirectory = basepath
 	}
 
 	pathToServerBinary := getServerBinaryPath("csr", releasebuild, rootdirectory)
@@ -403,5 +403,5 @@ func init() {
 	buildCmd.Flags().BoolVarP(&clientonly, "client", "", false, "build only the client (default is to build both client and server)")
 	buildCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "build in release mode")
 	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-	buildCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "disable hot module replacement")
+	buildCmd.Flags().BoolVarP(&nolr, "nohmr", "", false, "disable live reloading")
 }

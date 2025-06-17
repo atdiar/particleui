@@ -15,7 +15,7 @@ import (
 
 var uipkg = "github.com/atdiar/particleui"
 
-var nohmr, nobuild bool
+var nolr, nobuild bool
 var releaseMode bool
 var port, host string
 
@@ -25,8 +25,8 @@ var runCmd = &cobra.Command{
 	Short: "run starts an instance of the dev server and serves the client in devmode.",
 	Long: `
 		Run starts an instance of the dev server and serves the client in devmode.
-		For the web target, the apps is served at locahost:8888 by default with hot reloading
-		enabled. To disbale hoitreloading, use the --nohmr flag.
+		For the web target, the apps is served at locahost:8888 by default with live reloading
+		enabled. To disbale hoitreloading, use the --nolr flag.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		err := LoadConfig()
@@ -38,40 +38,11 @@ var runCmd = &cobra.Command{
 
 		if On("web") {
 
-			var buildtags = []string{}
-
-			var csr = true
-			if ssr {
-				csr = false
-				buildtags = append(buildtags, "ssr")
-			}
-
-			if ssg {
-				csr = false
-				buildtags = append(buildtags, "ssg")
-			}
-
-			if csr {
-				buildtags = append(buildtags, "csr")
-			}
-
-			// Let's build the app.
-			err = Run(buildtags...)
+			err = BuildAndRun(args...)
 			if err != nil {
 				fmt.Println(err.Error())
 				os.Exit(1)
 				return
-			}
-
-			err = SaveConfig()
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-				return
-			}
-
-			if verbose {
-				fmt.Println("server running on port ", port)
 			}
 
 		} else if On("mobile") {
@@ -93,87 +64,71 @@ var runCmd = &cobra.Command{
 }
 
 // Run builds and run an application.
-func Run(buildtags ...string) error {
+func BuildAndRun(args ...string) error {
 	if On("web") {
-		// Run allows the testing of the application in the browser.
-		// By default it is a client side rendering application.
-		// The server is also built and run in the background since it serves the app locally
-		//
+		// Run launches the webserver used to serve the application.
+		// after having built the client and the server.
 
-		servmod := "csr"
-		if ssr {
-			servmod = "ssr"
-		}
-		if ssg {
-			servmod = "ssg"
-		}
-
-		/*
-			if tinygo {
-				releaseMode = true
-			} else {
-				releaseMode = false
-			}
-		*/
-
-		rmode := "tmp"
-		if releaseMode {
-			rmode = "release"
-		}
-
-		folder := ".root"
-		if basepath != "/" {
-			folder = filepath.Join(folder, basepath)
-		}
-
-		err := Build(true, nil) // TODO add build options, e.g. nohmr should be propagated to client
+		// 1. we run the build command with the same arguments as the run command.
+		buildcmd := exec.Command("zui", append([]string{"build"}, args...)...)
+		buildcmd.Stdout = os.Stdout
+		buildcmd.Stderr = os.Stderr
+		err := buildcmd.Run()
 		if err != nil {
-			return err
+			return fmt.Errorf("error building the application: %w", err)
+		}
+		if verbose {
+			fmt.Println("Now let's try running the server...")
 		}
 
-		if tinygo {
-			err = CopyWasmExecJsTinygo(filepath.Join(".", "dist", rmode, "client", folder))
-			if err != nil {
-				return err
-			}
-		} else {
-			err = CopyWasmExecJs(filepath.Join(".", "dist", rmode, "client", folder))
-			if err != nil {
-				return err
-			}
+		// 2. we run the server command with the same arguments as the run command.
+
+		rootdirectory := "_root"
+		if basepath != "/" {
+			rootdirectory = basepath
 		}
 
-		serverbinpath := filepath.Join(".", "dist", rmode, "server", "csr", folder, "main")
-		if ssr {
-			serverbinpath = filepath.Join(".", "dist", rmode, "server", "ssr", folder, "main")
-		}
-		if ssg {
-			serverbinpath = filepath.Join(".", "dist", rmode, "server", "ssr", folder, "main")
+		var outputPath string
+		if csr {
+			outputPath = getServerBinaryPath("csr", releaseMode, rootdirectory)
+		} else if ssr {
+			outputPath = getServerBinaryPath("ssr", releaseMode, rootdirectory)
+		} else if ssg {
+			outputPath = getServerBinaryPath("ssg", releaseMode, rootdirectory)
 		}
 
-		err = Build(false, append(buildtags, "server", servmod))
+		args := []string{"-host", host, "-port", port}
+		if nolr || releaseMode {
+			args = append(args, "--nolr")
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("error getting current working directory: %w", err)
+		}
+		absoluteBinaryPath := filepath.Join(cwd, outputPath)
+		if _, err := os.Stat(absoluteBinaryPath); os.IsNotExist(err) {
+			return fmt.Errorf("server binary does not exist at path: %s", absoluteBinaryPath)
+		}
+
+		// Let's run the default server.
+		cmd := exec.Command(absoluteBinaryPath, args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		cmd.Dir = filepath.Dir(absoluteBinaryPath)
+		err = cmd.Run()
 		if err != nil {
 			return err
 		}
 
 		if verbose {
-			fmt.Println("client and server built.")
-		}
-
-		args := []string{"-host", host, "-port", port}
-		if nohmr || releaseMode {
-			args = append(args, "--nohmr")
-		}
-
-		// Let's run the default server.
-		cmd := exec.Command(serverbinpath, args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		cmd.Dir = filepath.Join(".")
-		err = cmd.Run()
-		if err != nil {
-			return err
+			// Print the exact command
+			fmt.Printf("Running command: %s %s\n", absoluteBinaryPath, strings.Join(args, " "))
+			// Print the ldglags
+			fmt.Printf("Using ldflags: %s\n", ldflags())
+			// Print the server URL
+			fmt.Printf("Running server at http://%s:%s with base path %s ...\n", host, port, basepath)
 		}
 
 		return nil
@@ -207,10 +162,10 @@ func ldflags() string {
 	if ssg {
 		flags[uipkg+"/drivers/js.SSGMode"] = "true"
 	}
-	if !nohmr && !releaseMode {
-		flags[uipkg+"/drivers/js.HMRMode"] = "true"
+	if !nolr && !releaseMode {
+		flags[uipkg+"/drivers/js.LRMode"] = "true"
 	} else {
-		flags[uipkg+"/drivers/js.HMRMode"] = "false"
+		flags[uipkg+"/drivers/js.LRMode"] = "false"
 	}
 
 	if basepath != "/" {
@@ -232,6 +187,5 @@ func init() {
 	runCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Run in release mode")
 	runCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Runs the server in server-side rendering mode")
 	runCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Runs the server in static file mode for ssg.")
-	runCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "Disable hot reloading")
-	runCmd.Flags().BoolVarP(&nobuild, "nobuild", "", false, "run the app without rebuilding it")
+	runCmd.Flags().BoolVarP(&nolr, "nolr", "", false, "Disable live reloading")
 }

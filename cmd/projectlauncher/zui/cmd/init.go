@@ -349,7 +349,7 @@ var initCmd = &cobra.Command{
 				// run $go new template_URL projectname
 			}
 
-			// TODO build the default project in dev mode with HMR enabled ****************
+			// TODO build the default project in dev mode with LR enabled ****************
 			// the index.html needs to be generated.
 
 			// Config file should be valid now.
@@ -633,7 +633,7 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			if verbose {
 				fmt.Println("basepath is: ", basepath)
 			}
-			rootdirectory = filepath.Join(rootdirectory, basepath)
+			rootdirectory = basepath // DEBUG make sure there is a check for the basepath validity.
 		}
 
 		var outputPath string
@@ -920,52 +920,4 @@ func main(){
 	ListenAndServe := NewBuilder(App)
 	ListenAndServe(nil)
 }
-`
-
-// TODO this should be part of the go code and rendered as html at build time in csr mode.
-// At that point, this variable will be removed. We will only need go files with the html renderer being used
-// at build time.
-var defaultindexfile = `
-<!doctype html>
-<html>
-
-<head>
-	<meta charset="utf-8">
-	<base id="zuibase" href=` + basepath + `>
-	
-	<script id="wasmVM" src="./wasm_exec.js"></script>
-	<script id="goruntime">
-        let wasmLoadedResolver, loadEventResolver;
-        window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
-        window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
-
-        window.onWasmDone = function() {
-            wasmLoadedResolver();
-        }
-
-        window.addEventListener('load', () => {
-            loadEventResolver();
-        });
-
-        const go = new Go();
-        WebAssembly.instantiateStreaming(fetch("./main.wasm"), go.importObject)
-        .then((result) => {
-            go.run(result.instance);
-        });
-
-        Promise.all([window.wasmLoaded, window.loadEventFired]).then(() => {
-            setTimeout(() => {
-                window.dispatchEvent(new Event('PageReady'));
-            }, 50);
-        });
-    </script>
-
-</head>
-
-<body>
-	
-
-</body>
-
-</html>
 `

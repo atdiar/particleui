@@ -31,7 +31,7 @@ var (
 	port string
 
 	release  bool
-	nohmr    bool
+	nolr     bool
 	basepath string = "./_root/"
 
 	render    string
@@ -51,7 +51,7 @@ func init() {
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
-	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	flag.BoolVar(&nolr, "nolr", false, "Disable live reloading")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
@@ -64,8 +64,8 @@ func init() {
 		DevMode = "true"
 	}
 
-	if !nohmr {
-		HMRMode = "true"
+	if !nolr {
+		LRMode = "true"
 	}
 
 	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
@@ -181,19 +181,20 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	}
 	document.mutationRecorder().Capture()
 
-	// Creating the sitemap.xml file and putting it under the static directory
-	// that should have been created in the output directory.
-	err = CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
-	if err != nil {
-		panic(err)
-	}
-
+	start := make(chan struct{})
 	go func() {
-		document.ListenAndServe(nil) // launches a new UI thread
+		document.ListenAndServe(nil, start)
 	}()
 
 	// Should generate the file system based structure of the website.
-	ui.DoSync(func() {
+	ui.DoSync(document.AsElement(), func() {
+		// Creating the sitemap.xml file and putting it under the static directory
+		// that should have been created in the output directory.
+		err = CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
+		if err != nil {
+			panic(err)
+		}
+
 		// Traverse the document routes and generate the corresponding files
 		// in the output directory.
 		numPages, err := CreatePages(document)
@@ -240,9 +241,17 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 	return func(ctx context.Context) {
 		if render != "" {
+			document := f()
+
+			start := make(chan struct{})
+			go func() {
+				document.ListenAndServe(ctx, start)
+			}()
+			start <- struct{}{} // wait for the document to be ready
 			if render == "." {
 				// we want to render every possible route. This should generate the whole website
-				// in the output directory under the form of sattic files in nested directories.
+				// in the output directory under the form of static index.html files in nested directories.
+				// DEBUG TODO use ui.DoSync(document.AsElement(), func() {
 				n, err := CreatePages(document)
 				if err != nil {
 					fmt.Printf("Error creating pages: %v\n", err)
@@ -252,20 +261,26 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 						fmt.Printf("Created %d pages\n", n)
 					}
 				}
-
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				document.Router().GoTo(render)
-				err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
-				if err != nil {
-					fmt.Printf("Error creating page for route '%s': %v\n", render, err)
-					os.Exit(1)
-				} else {
-					if verbose {
-						fmt.Printf("Created page for route '%s'\n", render)
+				ui.DoSync(document.AsElement(), func() {
+					router := document.Router()
+					if router != nil {
+						router.GoTo(render)
+						err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+						if err != nil {
+							fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+							os.Exit(1)
+						}
+						if verbose {
+							fmt.Printf("Created page for route '%s'\n", render)
+						}
+						fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
+					} else {
+						DEBUG("router was nil")
 					}
-				}
+				})
 			}
 			return
 		}
@@ -314,7 +329,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 }
 
-// TODO modify HMR mode to account for ssg structural changes. (no wasm etc, different output directory etc.)
+// TODO modify LR mode to account for ssg structural changes. (no wasm etc, different output directory etc.)
 // *****************************
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -441,7 +456,7 @@ func ldflags() string {
 	flags[uipkg+"/drivers/js.DevMode"] = DevMode
 	flags[uipkg+"/drivers/js.SSGMode"] = SSGMode
 	flags[uipkg+"/drivers/js.SSRMode"] = SSRMode
-	flags[uipkg+"/drivers/js.HMRMode"] = HMRMode
+	flags[uipkg+"/drivers/js.LRMode"] = LRMode
 
 	var ldflags []string
 	for key, value := range flags {

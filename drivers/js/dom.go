@@ -46,7 +46,7 @@ const (
 
 var (
 	DevMode = "false"
-	HMRMode = "false"
+	LRMode  = "false"
 	SSRMode = "false"
 	SSGMode = "false"
 
@@ -981,7 +981,7 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 
 	if lch.MutationWillReplay() {
 		// datastore persistence should be disabled until the list of mutations is replayed.
-		if e.ID == "mutation-recorder" && HMRMode != "false" {
+		if e.ID == "mutation-recorder" && LRMode != "false" {
 			d.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 				LoadFromStorage(e)
 				return false
@@ -997,8 +997,8 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 			return false
 		}).RunOnce())
 
-		// In HMR Mode, we need to load data persisted for the mutation-recorder
-		if HMRMode != "false" && SSRMode == "false" {
+		// In LR Mode, we need to load data persisted for the mutation-recorder
+		if LRMode != "false" && SSRMode == "false" {
 			if e.ID == "mutation-recorder" {
 				LoadFromStorage(e)
 			}
@@ -2171,7 +2171,7 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		})
 	*/
 
-	if e.Configuration.MutationReplay && (HMRMode != "false" || SSRMode != "false") {
+	if e.Configuration.MutationReplay && (LRMode != "false" || SSRMode != "false") {
 		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
 	}
 
@@ -2532,7 +2532,7 @@ func (s ScrollIntoViewOptions) InlineNearest() ScrollOption {
 	}
 }
 
-// withNativejshelpers returns a modifier that appends a script in which naive js functions to be called
+// withNativejshelpers returns a modifier that appends a script in which native js functions to be called
 // from Go are defined
 func withNativejshelpers(d *Document) *Document {
 	s := d.Script.WithID("nativehelpers").
@@ -2628,7 +2628,7 @@ func withNativejshelpers(d *Document) *Document {
 }
 
 func shouldbereplayable() bool {
-	return HMRMode != "false" || SSRMode != "false"
+	return LRMode != "false" || SSRMode != "false"
 }
 
 type scsmap[K comparable, T any] struct {

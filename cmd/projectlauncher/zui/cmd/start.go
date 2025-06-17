@@ -19,8 +19,8 @@ var startCmd = &cobra.Command{
 	Short: "start starts an instance of the dev server and serves the client in devmode.",
 	Long: `
 		start starts an instance of the dev server after having built it.
-		For the web target, the apps is served at locahost:8888 by default with hot reloading
-		enabled. To disbale hoitreloading, use the --nohmr flag.
+		For the web target, the apps is served at locahost:8888 by default with live reloading
+		enabled. To disbale live reloading, use the --nolr flag.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		err := LoadConfig()
@@ -82,62 +82,55 @@ var startCmd = &cobra.Command{
 // Start builds and start the application server.
 func Start(buildtags ...string) error {
 	if On("web") {
-		// Start allows the testing of the application in the browser.
-		// By default it is a client side rendering application.
-		// The server is also built and start in the background since it serves the app locally
-		//
+		// Start launched the webserver that serves the application.
+		// The application client and server are expected to have been built first.
 
-		servmod := "csr"
-		if ssr {
-			servmod = "ssr"
-		}
-		if ssg {
-			servmod = "ssg"
+		rootdirectory := "_root"
+		if basepath != "/" {
+			rootdirectory = basepath
 		}
 
-		basepathseg := strings.TrimSuffix(basepath, "/")
-		basepathseg = strings.TrimPrefix(basepathseg, "/")
-
-		serverbinpath := filepath.Join(".", "dev", "build", "server", "csr", basepathseg, "main")
-		if releaseMode {
-			serverbinpath = filepath.Join(".", "release", "build", "server", "csr", basepathseg, "main")
-		}
-		if ssr {
-			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
-			if releaseMode {
-				serverbinpath = filepath.Join(".", "release", "build", "server", "ssr", basepathseg, "main")
-			}
-		}
-		if ssg {
-			serverbinpath = filepath.Join(".", "dev", "build", "server", "ssr", basepathseg, "main")
-			if releaseMode {
-				serverbinpath = filepath.Join(".", "release", "build", "server", "ssr", basepathseg, "main")
-			}
+		var outputPath string
+		if csr {
+			outputPath = getServerBinaryPath("csr", releaseMode, rootdirectory)
+		} else if ssr {
+			outputPath = getServerBinaryPath("ssr", releaseMode, rootdirectory)
+		} else if ssg {
+			outputPath = getServerBinaryPath("ssg", releaseMode, rootdirectory)
 		}
 
-		err := Build(false, append(buildtags, "server", servmod))
+		args := []string{"-host", host, "-port", port}
+		if nolr || releaseMode {
+			args = append(args, "--nolr")
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("error getting current working directory: %w", err)
+		}
+		absoluteBinaryPath := filepath.Join(cwd, outputPath)
+		if _, err := os.Stat(absoluteBinaryPath); os.IsNotExist(err) {
+			return fmt.Errorf("server binary does not exist at path: %s", absoluteBinaryPath)
+		}
+
+		// Let's run the default server.
+		cmd := exec.Command(absoluteBinaryPath, args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		cmd.Dir = filepath.Dir(absoluteBinaryPath)
+		err = cmd.Run()
 		if err != nil {
 			return err
 		}
 
 		if verbose {
-			fmt.Println("server built.")
-		}
-
-		args := []string{"-host", host, "-port", port}
-		if nohmr || releaseMode {
-			args = append(args, "--nohmr")
-		}
-
-		// Let's start the default server.
-		cmd := exec.Command(serverbinpath, args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		cmd.Dir = filepath.Join(".")
-		err = cmd.Start()
-		if err != nil {
-			return err
+			// Print the exact command
+			fmt.Printf("Running command: %s %s\n", absoluteBinaryPath, strings.Join(args, " "))
+			// Print the ldglags
+			fmt.Printf("Using ldflags: %s\n", ldflags())
+			// Print the server URL
+			fmt.Printf("Running server at http://%s:%s with base path %s ...\n", host, port, basepath)
 		}
 
 		return nil
@@ -167,6 +160,6 @@ func init() {
 	startCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Start in release mode")
 	startCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Starts the server in server-side rendering mode")
 	startCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Starts the server in static file mode for ssg.")
-	startCmd.Flags().BoolVarP(&nohmr, "nohmr", "", false, "Disable hot reloading")
+	startCmd.Flags().BoolVarP(&nolr, "nolr", "", false, "Disable live reloading")
 	startCmd.Flags().BoolVarP(&nobuild, "nobuild", "", false, "run the app without rebuilding it")
 }

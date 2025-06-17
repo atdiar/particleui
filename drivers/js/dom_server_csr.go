@@ -37,7 +37,7 @@ var (
 	port string
 
 	release  bool
-	nohmr    bool
+	nolr     bool
 	basepath string
 
 	render    string
@@ -60,7 +60,7 @@ func init() {
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
-	flag.BoolVar(&nohmr, "nohmr", false, "Disable hot module reloading")
+	flag.BoolVar(&nolr, "nolr", false, "Disable live reloading")
 
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 	flag.StringVar(&render, "render", "", "specify the page(s) that will be rendered to html")
@@ -71,8 +71,8 @@ func init() {
 		DevMode = "true"
 	}
 
-	if !nohmr {
-		HMRMode = "true"
+	if !nolr {
+		LRMode = "true"
 	}
 	if basepath == "" || basepath == "/" {
 		basepath = filepath.Join(".", "_root")
@@ -169,7 +169,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 	fileServer := http.FileServer(DisableDirectoryListing(http.Dir(StaticDir)))
 
 	RenderHTMLhandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if HMRMode != "false" || !nohmr {
+		if LRMode != "false" || !nolr {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 
@@ -251,7 +251,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 			ctx = context.Background()
 		}
 		ctx, shutdown := context.WithCancel(ctx)
-		var activehmr bool
+		var activelr bool
 
 		var SSEChannel *SSEController
 		var mu = &sync.Mutex{}
@@ -266,7 +266,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 			}))
 		}
 
-		if HMRMode == "true" {
+		if LRMode == "true" {
 			// TODO: Implement Server-Sent Event logic for browser reload
 			// Implement filesystem watching and trigger compile on change
 			// (in another goroutine) if it's a go file. If any file change, send SSE message to frontend
@@ -357,7 +357,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 					panic("Unable to watch for changes in ./dev/build/app folder.")
 				}
 				defer wc.Close()
-				activehmr = true
+				activelr = true
 				ServeMux.Handle("/sse", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					log.Println("SSE connection established")
 					s := NewSSEController()
@@ -369,10 +369,10 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 			}
 		}
 
-		// return server info including whether hmr is active
+		// return server info including whether lr is active
 		ServeMux.Handle("/info", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Server is running on port "+port)
-			fmt.Fprintln(w, "HMR status active: ", activehmr)
+			fmt.Fprintln(w, "LR status active: ", activelr)
 		}))
 
 		go func() { // allows for graceful shutdown signaling
@@ -461,7 +461,7 @@ func ldflags() string {
 	flags[uipkg+"/drivers/js.DevMode"] = DevMode
 	flags[uipkg+"/drivers/js.SSGMode"] = SSGMode
 	flags[uipkg+"/drivers/js.SSRMode"] = SSRMode
-	flags[uipkg+"/drivers/js.HMRMode"] = HMRMode
+	flags[uipkg+"/drivers/js.LRMode"] = LRMode
 
 	var ldflags []string
 	for key, value := range flags {
