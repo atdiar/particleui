@@ -47,7 +47,7 @@ func WatchDir(root string, callback func(event fsnotify.Event)) (*fsnotify.Watch
 	// Goroutine for handling all events
 	go func() {
 		var debounceTimer *time.Timer
-		debounceDuration := 100 * time.Millisecond // Set your debounce duration
+		debounceDuration := 500 * time.Millisecond // Set your debounce duration
 		var mu sync.Mutex
 		var lastEvent fsnotify.Event
 

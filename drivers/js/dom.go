@@ -92,13 +92,13 @@ var SSEscript = `
 
 var document *Document
 
-// mutationCaptureMode describes how a Go App may capture textarea value changes
+// textareaStorageMode describes how a Go App may capture textarea value changes
 // that happen in native javascript. For instance, when a blur event is dispatched
 // or when any mutation is observed via the MutationObserver API.
-type mutationCaptureMode int
+type textareaStorageMode int
 
 const (
-	onBlur mutationCaptureMode = iota
+	onBlur textareaStorageMode = iota
 	onInput
 )
 
@@ -337,11 +337,29 @@ func connectNative(e *ui.Element, tag string) {
 		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 
 			if tag == "window" {
-				wd := js.Global().Get("document").Get("defaultView")
-				if !wd.Truthy() {
-					//panic("unable to access window object")
-					if DebugMode {
-						log.Println("unable to access window object in this environment")
+				var wd js.Value
+				if !js.Global().Truthy() {
+					wd = js.Global().Get("document").Get("defaultView")
+					if !wd.Truthy() {
+						if DebugMode {
+							log.Println("unable to access window object in this environment")
+						}
+					}
+				} else {
+					docNative, ok := JSValue(document)
+					if !ok {
+						DEBUG("unable to access native document object ", e.Root.ID)
+						panic("unable to access native document object")
+					}
+					if !docNative.Truthy() {
+						panic("unable to access native document object. It is not truthy.")
+					}
+
+					wd := docNative.Get("ownerDocument").Get("defaultView")
+					if !wd.Truthy() {
+						if DebugMode {
+							log.Println("unable to access window object in this environment")
+						}
 					}
 				}
 				evt.Origin().Native = NewNativeElementWrapper(wd, "Window")
@@ -407,9 +425,22 @@ func connectNative(e *ui.Element, tag string) {
 
 			if tag == "head" {
 				element := js.Global().Get("document").Call("getElementById", id)
-				defer func() {
-					// We should also add the scrip that enables batch execution:
-					batchscript := js.Global().Get("document").Call("createElement", "script")
+				if !element.Truthy() {
+					element = js.Global().Get("document").Get(tag)
+					if !element.Truthy() {
+						DEBUG("debug *********** creating head element ***********")
+						element = js.Global().Call("createElement", tag)
+					}
+				}
+				evt.Origin().Native = NewNativeHTMLElement(element)
+				SetAttribute(e, "id", e.ID)
+				func() {
+					// We should also add the script that enables batch execution if it is not present.
+					batchscript := js.Global().Get("document").Call("getElementById", "batchscript")
+					if batchscript.Truthy() {
+						return
+					}
+					batchscript = js.Global().Get("document").Call("createElement", "script")
 					batchscript.Set("textContent", `
 					window.elements = {};
 		
@@ -479,17 +510,10 @@ func connectNative(e *ui.Element, tag string) {
 					};
 					
 					`)
+					batchscript.Set("type", "text/javascript")
+					batchscript.Set("id", "batchscript")
 					element.Call("append", batchscript)
 				}()
-				if !element.Truthy() {
-					element = js.Global().Get("document").Get(tag)
-					if !element.Truthy() {
-						DEBUG("*********** creating head element ***********")
-						element = js.Global().Call("createElement", tag)
-					}
-				}
-				evt.Origin().Native = NewNativeHTMLElement(element)
-				SetAttribute(e, "id", e.ID)
 				return false
 			}
 
@@ -525,7 +549,8 @@ func connectNative(e *ui.Element, tag string) {
 		if !docNative.Truthy() {
 			panic("unable to access native document object. It is not truthy.")
 		}
-		wd := docNative.Get("defaultView")
+
+		wd := docNative.Get("ownerDocument").Get("defaultView")
 		if !wd.Truthy() {
 			if DebugMode {
 				log.Println("unable to access window object in this environment")
@@ -621,8 +646,8 @@ func connectNative(e *ui.Element, tag string) {
 				} else {
 					element = js.Global().Call("createElementWithID", tag, id)
 				}
-				e.Native = NewNativeHTMLElement(element)
 			}
+			e.Native = NewNativeHTMLElement(element)
 		}
 		SetAttribute(e, "id", e.ID)
 		return
@@ -651,15 +676,26 @@ func connectNative(e *ui.Element, tag string) {
 			SetAttribute(e, "id", e.ID)
 			// We should also add the scrip that enables batch execution:
 			func() {
+				batchscript := root.Call("getElementById", "batchscript")
+				if batchscript.Truthy() {
+					return
+				}
 				// We should also add the scrip that enables batch execution:
-				batchscript := root.Call("createElement", "script")
+				batchscript = root.Call("createElement", "script")
 				batchscript.Set("textContent", `
 				window.elements = {};
 	
 				window.getElement = function(id) {
-					let element = document.getElementById(id);
-					if (!element) {
-					  element = window.elements[id];
+					// 1. Check our custom cache first
+					if (window.elements[id]) {
+						return window.elements[id];
+					}
+					// 2. Fallback to native getElementById
+					const element = document.getElementById(id);
+					if (element) {
+						// If found in DOM, add it to our cache for future lookups if desired
+						// (This might depend on whether all elements are expected to be created via createElementWithID)
+						// window.elements[id] = element;
 					}
 					return element;
 				};
@@ -760,6 +796,8 @@ func connectNative(e *ui.Element, tag string) {
 				})();
 				
 				`)
+				batchscript.Set("type", "text/javascript")
+				batchscript.Set("id", "batchscript")
 				element.Call("append", batchscript)
 			}()
 		} else {
@@ -773,15 +811,25 @@ func connectNative(e *ui.Element, tag string) {
 			e.Native = NewNativeHTMLElement(element)
 			SetAttribute(e, "id", e.ID)
 			func() {
-				// We should also add the scrip that enables batch execution:
-				batchscript := js.Global().Get("document").Call("createElement", "script")
+				batchscript := js.Global().Get("document").Call("getElementById", "batchscript")
+				if batchscript.Truthy() {
+					return
+				}
+				batchscript = js.Global().Get("document").Call("createElement", "script")
 				batchscript.Set("textContent", `
 				window.elements = {};
 	
 				window.getElement = function(id) {
-					let element = document.getElementById(id);
-					if (!element) {
-					  element = window.elements[id];
+					// 1. Check our custom cache first
+					if (window.elements[id]) {
+						return window.elements[id];
+					}
+					// 2. Fallback to native getElementById
+					const element = document.getElementById(id);
+					if (element) {
+						// If found in DOM, add it to our cache for future lookups if desired
+						// (This might depend on whether all elements are expected to be created via createElementWithID)
+						// window.elements[id] = element;
 					}
 					return element;
 				};
@@ -882,6 +930,8 @@ func connectNative(e *ui.Element, tag string) {
 				})();
 				
 				`)
+				batchscript.Set("type", "text/javascript")
+				batchscript.Set("id", "batchscript")
 				element.Call("append", batchscript)
 			}()
 		}
@@ -953,6 +1003,7 @@ var newWindowConstructor = Elements.NewConstructor("window", func(id string) *ui
 		if ok {
 			j.Get("location").Call("reload")
 		}
+		DEBUG("Reloading window ", e.ID)
 		return false
 	}))
 
@@ -981,7 +1032,7 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 
 	if lch.MutationWillReplay() {
 		// datastore persistence should be disabled until the list of mutations is replayed.
-		if e.ID == "mutation-recorder" && LRMode != "false" {
+		if e.ID == "mutation-recorder" && LRMode != "false" { // if not, no need to get it from storage, it is retrieved from the serialized mutation trace already at Document creation/hydration. (SSR)
 			d.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 				LoadFromStorage(e)
 				return false
@@ -989,20 +1040,25 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 		}
 
 		d.AfterTransition("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
-			PutInStorage(e)
+			if LRMode != "false" {
+				PutInStorage(e)
+			}
+
 			e.WatchEvent("datastore-load", e, ui.OnMutation(func(event ui.MutationEvent) bool {
 				LoadFromStorage(event.Origin())
 				return false
-			}))
+			}).RunASAP())
 			return false
 		}).RunOnce())
 
+		// DEBUG it is already handled during the replay transition???
 		// In LR Mode, we need to load data persisted for the mutation-recorder
 		if LRMode != "false" && SSRMode == "false" {
 			if e.ID == "mutation-recorder" {
 				LoadFromStorage(e)
 			}
 		}
+
 	} else {
 		e.WatchEvent("datastore-load", e, ui.OnMutation(func(event ui.MutationEvent) bool {
 			if !lch.MutationReplaying() {
@@ -1029,6 +1085,7 @@ var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Eleme
 		return false
 	}).RunASAP()
 
+	// TODO DEBUG use AfterEvent? observe ui-ready?
 	e.WatchEvent("ui-loaded", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
 		e.OnUnmounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
@@ -1076,8 +1133,9 @@ var routerConfig = func(r *ui.Router) {
 	SetInlineCSS(pnf, `all: initial;`)
 
 	// DEBUG TODO check whether notfound is triggered by traversing back to the
-	// main view incrementally. local not found having priority.
-	ui.AddView("notfound", pnf)(r.Outlet.AsElement())
+	// main view incrementally. local notfound having priority.
+	// Normally the logis is intended for the beahvior to be just that.
+	// ui.AddView("notfound", pnf)(r.Outlet.AsElement())
 	r.OnNotfound(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
 		if !ok {
@@ -1661,8 +1719,9 @@ func (d *Document) Router() *ui.Router {
 	return ui.GetRouter(d.AsElement())
 }
 
-func (d *Document) Delete() { // TODO check for dangling references
-	ui.DoSync(d.AsElement(), func() {
+// / TODO remove? or is it useful for drivers other than web et.al.?
+func (d *Document) drrelete() { // TODO check for dangling references
+	ui.DoSync(context.Background(), d.AsElement(), func() {
 		e := d.AsElement()
 		d.Router().CancelNavigation()
 		ui.Delete(e)
@@ -1962,7 +2021,7 @@ type mutationRecorder struct {
 
 func (m *mutationRecorder) Capture() {
 	if !m.raw.Configuration.MutationCapture {
-		// DEBUG("mutationreccorder capturing... not enabled")
+		DEBUG("mutationreccorder capturing... not enabled")
 		return
 	}
 
@@ -1979,7 +2038,6 @@ func (m *mutationRecorder) Capture() {
 	var h *ui.MutationHandler
 	h = ui.OnMutation(func(evt ui.MutationEvent) bool {
 		v := evt.NewValue()
-
 		l, ok := m.raw.GetData("mutationlist")
 		if !ok {
 			m.raw.SetData("mutationlist", ui.NewList(v).Commit())
@@ -2073,11 +2131,6 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 	// If we are not in a windowed environment, we should trigger the PageReady event manually
 	w, ok := JSValue(d.Window())
 	if w.Truthy() && ok {
-		d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
-			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
-			return false
-		}).RunASAP().RunOnce())
-	} else {
 		d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
 			d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
 				ui.NewLifecycleHandlers(evt.Origin()).SetReady()
@@ -2086,6 +2139,11 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 
 			return false
 		}))
+	} else {
+		d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			ui.NewLifecycleHandlers(evt.Origin()).SetReady()
+			return false
+		}).RunASAP().RunOnce())
 	}
 
 	if d.Router() == nil {
@@ -2115,8 +2173,8 @@ func GetDocument(e *ui.Element) *Document {
 	return d
 }
 
-// getDocumentRef is needed for the definition of constructors wich need to refer to the document
-// such as body, head or title. Indeed, since they
+// getDocumentRef allows to get a partial reference to the document object before it has been
+// fully initialized. Useful during its instantiation to avoid circular calls on GetDocument.
 func getDocumentRef(e *ui.Element) *Document {
 	if document != nil {
 		return document
@@ -2210,7 +2268,7 @@ func mutationreplay(d *Document) error {
 		panic("state history should have been a ui.List. Wrong type. Unexpected error")
 	}
 
-	mutNum := len(mutationtrace.UnsafelyUnwrap())
+	mutNum := mutationtrace.Length()
 
 	for m.pos < mutNum {
 		rawop := mutationtrace.Get(m.pos)
@@ -2712,7 +2770,7 @@ func NewDocument(id string, options ...string) *Document {
 	d.HttpClient.Jar = jar
 
 	d.DBConnections = make(map[string]js.Value)
-	d.newMutationRecorder(EnableSessionPersistence())
+	d.newMutationRecorder(EnableLocalPersistence())
 
 	e := d.Element
 
@@ -2720,6 +2778,10 @@ func NewDocument(id string, options ...string) *Document {
 	e.AppendChild(head)
 	e.AppendChild(d.body.WithID("body"))
 	d.enableWasm()
+
+	// setting the base element
+	base := d.Base.WithID("base").SetHref(BasePath)
+	d.Head().AppendChild(base)
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
@@ -2815,7 +2877,7 @@ var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
-}).RunASAP()
+}).RunASAP().RunOnce()
 
 func loadNavHistory(d *Document) {
 	if !js.Global().Truthy() {
@@ -3822,7 +3884,7 @@ func (d *Document) enableWasm() *Document {
 			
 				Promise.all([window.wasmLoaded, window.loadEventFired]).then(() => {
 					setTimeout(() => {
-						console.log("about to dispatch PageReady event...");
+						// console.log("about to dispatch PageReady event...");
 						window.dispatchEvent(new Event('PageReady'));
 					}, 50);
 				});
@@ -4326,7 +4388,7 @@ func (c textareaConstructor) WithID(id string, options ...string) TextAreaElemen
 	return TextAreaElement{newTextArea(id, options...)}
 }
 
-func enableDataBinding(datacapturemode ...mutationCaptureMode) func(*ui.Element) *ui.Element {
+func enableDataBinding(datacapturemode ...textareaStorageMode) func(*ui.Element) *ui.Element {
 	return func(e *ui.Element) *ui.Element {
 		callback := ui.NewEventHandler(func(evt ui.Event) bool {
 			if evt.Target().ID != e.ID {
@@ -4791,7 +4853,7 @@ func (a AnchorElement) FromLink(link ui.Link, targetid ...string) AnchorElement 
 	}
 
 	a.WatchEvent("verified", link, (ui.OnMutation(func(evt ui.MutationEvent) bool {
-		a.SetHref(strings.TrimPrefix(link.URI()+hash, "/"))
+		a.SetHref(link.URI() + hash)
 		return false
 	}).RunASAP()))
 
@@ -7349,7 +7411,7 @@ func (m modifier) OnTick(interval time.Duration, h *ui.MutationHandler) func(e *
 					for {
 						select {
 						case <-t.C:
-							ui.DoSync(e, func() {
+							ui.DoSync(ctx, e, func() {
 								e.TriggerEvent(tickname)
 							})
 						case <-stop:
@@ -7634,7 +7696,7 @@ func SetAttribute(target ui.AnyElement, name string, value string) {
 	target.AsElement().SetData("attrs", attrmap)
 	native, ok := target.AsElement().Native.(NativeElement)
 	if !ok {
-		log.Print("Cannot set Attribute on non-expected wrapper type")
+		log.Print("Cannot set Attribute on non-expected wrapper type", target.AsElement().ID)
 		return
 	}
 	native.Value.Call("setAttribute", name, value)

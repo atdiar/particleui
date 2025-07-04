@@ -1,3 +1,5 @@
+//go:build terminal
+
 // Package term defines the default set of Element constructors, native interfaces,
 // events and event handlers, and animation properties used to build Terminal UIs.
 package term

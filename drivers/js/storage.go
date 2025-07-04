@@ -279,6 +279,12 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 // PutInStorage stores an element data in storage (localstorage or sessionstorage).
 func PutInStorage(a ui.AnyElement) *ui.Element {
 	e := a.AsElement()
+	if LRMode != "false" {
+		if e.ID != "mutation-recorder" {
+			return e
+		}
+	}
+
 	pmode := ui.PersistenceMode(e)
 	storage, ok := e.Configuration.PersistentStorer[pmode]
 	if !ok {

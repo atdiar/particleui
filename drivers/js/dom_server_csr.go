@@ -30,7 +30,7 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-	SourcePath = filepath.Join("..", "..", "..", "src")
+	SourcePath = filepath.Join("..", "..", "..", "..", "..", "src")
 	IndexPath  string
 
 	host string
@@ -202,6 +202,10 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 	Server.Handler = ServeMux
 
 	return func(ctx context.Context) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
 		if render != "" {
 			document := f()
 
@@ -226,7 +230,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				ui.DoSync(document.AsElement(), func() {
+				ui.DoSync(ctx, document.AsElement(), func() {
 					router := document.Router()
 					if router != nil {
 						router.GoTo(render)
@@ -247,9 +251,6 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 			return
 		}
 
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		ctx, shutdown := context.WithCancel(ctx)
 		var activelr bool
 
@@ -278,16 +279,24 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 
 			watcher, err := WatchDir(SourcePath, func(event fsnotify.Event) {
 				// Only rebuild if the event is for a .go file
-				if filepath.Ext(event.Name) == ".go" {
-					// file name: main.go
-					sourceFile := "main.go"
+				if filepath.Ext(event.Name) == ".go" && (event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create) {
 
 					// Ensure the output directory is already existing
 					if _, err := os.Stat(StaticDir); os.IsNotExist(err) {
 						panic("Output directory should already exist")
 					}
 
-					targetPath, err := filepath.Rel(SourcePath, StaticDir)
+					// Get the absolute paths to make relative calculation reliable
+					absSourcePath, err := filepath.Abs(SourcePath)
+					if err != nil {
+						panic(err)
+					}
+					absStaticDir, err := filepath.Abs(StaticDir)
+					if err != nil {
+						panic(err)
+					}
+
+					targetPath, err := filepath.Rel(absSourcePath, absStaticDir)
 					if err != nil {
 						panic(err)
 					}
@@ -300,7 +309,7 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 						args = append(args, "-ldflags", ldflags)
 					}
 
-					args = append(args, "-o", targetPath, sourceFile)
+					args = append(args, "-o", targetPath)
 
 					cmd := exec.Command("go", args...)
 					cmd.Stdout = os.Stdout
@@ -308,6 +317,8 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 					cmd.Dir = SourcePath // current directory where the build command is run
 					cmd.Env = append(cmd.Environ(), "GOOS=js", "GOARCH=wasm")
 
+					// Print command for debugging
+					DEBUG("Running command: ", cmd.String())
 					err = cmd.Run()
 					if err != nil {
 						// Could send error to browser instead of just logging
@@ -516,9 +527,16 @@ func (d Document) CreatePage(filePath string) error {
 	}
 
 	// Append stylesheet link to the document head
+	// Note here how we have to supply an ID so that there is no conflict when
+	// doing a replay of a server side render. The reason being that the ID generator is
+	// deterministic on purpose for perfect replay but does not allow for difference in rendering
+	// where a new element is introduced on onlyu one platform and might take the ID.
 	cssRelPath := "./style.css"
-	link := d.Link().SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
-	d.Head().AppendChild(link)
+	ss, ok := d.GetCurrentStyleSheet()
+	if ok {
+		link := d.Link.WithID(strings.Join([]string{d.AsElement().ID, ss, "stylesheet"}, "-")).SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
+		d.Head().AppendChild(link)
+	}
 
 	// Create and open the file
 	file, err := os.Create(filePath)

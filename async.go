@@ -16,7 +16,7 @@ var PrefetchMaxAge = 5 * time.Second
 // DoSync sends a function to the main goroutine that is in charge of the UI to be run.
 // Goroutines launched from the main thread that need access to the main UI tree must use it.
 // Only a single DoSync must be used within a DoAsync.
-func DoSync(e *Element, fn func()) {
+func DoSync(ctx context.Context, e *Element, fn func()) {
 	if e == nil {
 		panic("DoSync requires a non-nil Element")
 	}
@@ -35,7 +35,13 @@ func DoSync(e *Element, fn func()) {
 
 	ch := make(chan struct{})
 	go func() {
-		wq <- newwork(fn, ch)
+		select {
+		case <-ctx.Done():
+			// The context was cancelled before we could send the work to the UI queue.
+			close(ch) // Close ch to unblock the caller of DoSync
+			return
+		case wq <- newwork(fn, ch):
+		}
 	}()
 	<-ch
 }
@@ -258,7 +264,9 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 			event.Origin().WatchEvent("request-"+requestID(r), event.Origin().Root, reqmonitor)
 			return false
 		}).RunOnce().RunASAP())
+
 		evt.Origin().fetchData(propname, r, cancelFn, responsehandler, false)
+
 		return false
 	}).fetcher()
 
@@ -298,9 +306,9 @@ func (e *Element) SetURLDataFetcher(propname string, url string, responsehandler
 	e.SetDataFetcher(propname, func(*Element) *http.Request { return r }, responsehandler, prefetchable)
 }
 
-// CancelFetch will abort ongoing fetch requests.
-func (e *Element) CancelAllFetches() {
-	// iterate through alln props registered for fetching (runtime fetchlist)
+// FetchCancelAll will abort ongoing fetch requests.
+func (e *Element) FetchCancelAll() {
+	// iterate through all props registered for fetching (runtime fetchlist)
 	// cancel the fetch transition for each of them
 	f, ok := e.Get("runtime", "fetchlist")
 	if !ok {
@@ -308,11 +316,12 @@ func (e *Element) CancelAllFetches() {
 	}
 	fetchlist := f.(Object).MustGetList("fetch_index")
 	for _, propname := range fetchlist.UnsafelyUnwrap() {
-		e.CancelFetch(propname.(String).String())
+		e.FetchCancel(propname.(String).String())
 	}
 }
 
-func (e *Element) CancelFetch(propname string) {
+// FetchCancel will abort a given fetch request.
+func (e *Element) FetchCancel(propname string) {
 	e.cancelfetchTransition(propname)
 }
 
@@ -320,10 +329,11 @@ func (e *Element) cancelPrefetch(propname string) {
 	e.cancelprefetchTransition(propname)
 }
 
-// WasFetchCancelled answers the question of whether a fecth was cancelled or not.
-// It can be used when handling a "fetched" event (OnFetched) to differentiate fetching failure
-// from fetching cancellation.
-func (e *Element) WasFetchCancelled() bool {
+// FetchCancelled returns true when at least one of the fetch requests got cancelled
+// for a given element.
+// It allows to check the reason for which a fetch did not reach completion, differentiating between
+// cancellation and error.
+func (e *Element) FetchCancelled() bool {
 	_, ok := e.Get("fetchstatus", "cancelled")
 	return ok
 }
@@ -356,20 +366,22 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 
 	DoAsync(e, func(execution context.Context) {
 
-		DoSync(e, func() {
-			go func() {
-				select {
-				case <-execution.Done():
-					cancelFn()
-				case <-r.Context().Done():
-					// the goroutine should be done now
-				}
-			}()
-		})
+		execution, cancelExecCtx := context.WithCancel(execution)
+		// This goroutine watches for external cancellation of the request context
+		go func() {
+			select {
+			case <-r.Context().Done(): // Watch the original request context's cancellation
+				cancelExecCtx()
+			case <-execution.Done(): // If execution is cancelled first, no need to watch r.Context()
+			}
+		}()
+		defer cancelExecCtx()
+
+		r = r.WithContext(execution)
 
 		res, err := e.Root.HttpClient.Do(r)
 		if err != nil {
-			DoSync(e, func() {
+			DoSync(execution, e, func() {
 				if prefetching {
 					e.endprefetchTransition(propname, Bool(false))
 				} else {
@@ -383,7 +395,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 
 		v, err := responsehandler(res)
 		if err != nil {
-			DoSync(e, func() {
+			DoSync(execution, e, func() {
 				if prefetching {
 					e.endprefetchTransition(propname, Bool(false))
 				} else {
@@ -393,7 +405,7 @@ func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.C
 			})
 			return
 		}
-		DoSync(e, func() {
+		DoSync(execution, e, func() {
 			e.SetData(propname, v)
 			if prefetching {
 				e.endprefetchTransition(propname)
@@ -470,7 +482,7 @@ func (e *Element) enablefetching() *Element {
 	})
 
 	cancel := OnMutation(func(evt MutationEvent) bool {
-		evt.Origin().CancelAllFetches()
+		evt.Origin().FetchCancelAll()
 		return false
 	})
 
@@ -576,7 +588,7 @@ func (e *Element) InvalidateFetch(propname string) {
 		r = r.MakeCopy().Set(propname, s).Commit()
 
 		e.Set("runtime", "fetchlist", r)
-		e.CancelFetch(propname)
+		e.FetchCancel(propname)
 	}
 }
 
@@ -898,19 +910,25 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 
 			DoAsync(e, func(execution context.Context) {
 
-				DoSync(e, func() {
-					go func() {
-						select {
-						case <-execution.Done():
-							cancelFn()
-						case <-ctx.Done():
-						}
-					}()
-				})
+				execution, cancelExecCtx := context.WithCancel(execution)
+				// This goroutine watches for external cancellation of the request context
+				go func() {
+					select {
+					case <-r.Context().Done(): // Watch the original request context's cancellation
+						cancelExecCtx()
+					case <-execution.Done(): // If execution is cancelled first, no need to watch r.Context()
+					}
+				}()
+				defer cancelExecCtx()
+
+				r = r.WithContext(execution)
 
 				res, err := e.Root.HttpClient.Do(r)
 				if err != nil {
-					DoSync(e, func() {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return
+					}
+					DoSync(execution, e, func() {
 						e.TriggerEvent("request-error-"+requestID(r), newRequestStateObject(nil, err))
 					})
 					return
@@ -921,12 +939,12 @@ func (e *Element) NewRequest(r *http.Request, responsehandler func(*http.Respons
 				}
 				v, err := responsehandler(res)
 				if err != nil {
-					DoSync(e, func() {
+					DoSync(execution, e, func() {
 						e.TriggerEvent("request-error-"+requestID(r), newRequestStateObject(nil, err))
 					})
 					return
 				}
-				DoSync(e, func() {
+				DoSync(execution, e, func() {
 					e.endrequestTransition(r.URL.String(), newRequestStateObject(v, nil))
 				})
 			})

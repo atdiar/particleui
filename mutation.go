@@ -46,6 +46,11 @@ func (m *MutationCallbacks) RemoveAll(key string) *MutationCallbacks {
 }
 
 func (m *MutationCallbacks) DispatchEvent(evt MutationEvent) {
+	// if the mutation is in the "event" category, we should dispatch
+	// a special event beforehand to mark the event handling start
+	// and finish with a special event to signal the event handling end.
+	// Since Dispatch is called recursively, we also need to make sure
+	// that this special event doesn't itself trigger the same "start" and "end" events.
 	mhs, ok := m.list[evt.ObservedKey()]
 	if !ok {
 		return

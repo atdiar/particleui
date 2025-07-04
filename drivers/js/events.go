@@ -3,6 +3,7 @@
 package doc
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -129,8 +130,14 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 			DEBUG("replaying mutations, skipping event handling")
 			return nil
 		}
-
-		ui.DoSync(listener, func() {
+		// DEBUG is this the correct context or is context.Background relevant here
+		/*doc := GetDocument(listener)
+		navContext:= doc.Router().NavContext
+		For now context.Background() is used because not sure it should be cancelable.
+		We want every user event to be handled, including navigation event.
+		This is higher level than the routing context.
+		*/
+		ui.DoSync(context.Background(), listener, func() {
 			if currtargetid.Truthy() {
 				currentTarget = GetDocument(listener).GetElementById(currtargetid.String())
 				if currentTarget == nil {

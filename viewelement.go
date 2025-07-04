@@ -140,7 +140,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	return v
 }
 
-// ActiveViewName retrieves the name of the current active view if it exists.
+// ActiveViewName retrieves the name of the current active view if it exists. // TODO DEBUG remove bool return and instates a default?
 func (v ViewElement) ActiveViewName() (string, bool) {
 	a, ok := v.AsElement().GetUI("activeview")
 	if ok {
@@ -358,7 +358,6 @@ func (e *Element) activateView(name string) {
 		// In that case, depending whether there is a default view,
 		// might want to activate it.
 		if name != "" {
-			//DEBUG("View %s is already active", name)
 			e.EndTransition(prop.ActivateView, String(name)) // already active
 			return
 		}

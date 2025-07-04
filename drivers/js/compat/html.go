@@ -1087,6 +1087,17 @@ func (v Value) Get(property string) Value {
 	// DEBUG TODO handle .Get("href") for anchor elements?
 
 	switch property {
+	case "ownerDocument":
+		// For any node, ownerDocument returns the Document node it belongs to.
+		if node.Type == html.DocumentNode {
+			return ValueOf(node) // If it's already a Document node, return itself
+		}
+		for p := node.Parent; p != nil; p = p.Parent {
+			if p.Type == html.DocumentNode {
+				return ValueOf(p) // Return the Document node
+			}
+		}
+		return Undefined() // If no Document node found, return Undefined
 	case "children":
 		children := make([]Value, 0)
 		for child := v.Node().FirstChild; child != nil; child = child.NextSibling {

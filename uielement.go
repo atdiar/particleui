@@ -21,6 +21,7 @@ var (
 	eventNS      = "event"
 	navigationNS = "navigation"
 	internalsNS  = "internals"
+	lifecycleNS  = "lifecycle"
 )
 
 type namespace struct {
@@ -29,6 +30,7 @@ type namespace struct {
 	Event      string
 	Navigation string
 	Internals  string
+	lifecycle  string
 }
 
 type props struct {
@@ -49,6 +51,7 @@ var Namespace = namespace{
 	Event:      eventNS,
 	Navigation: navigationNS,
 	Internals:  internalsNS,
+	lifecycle:  lifecycleNS,
 }
 
 var prop = props{
@@ -227,8 +230,7 @@ func (e *Configuration) EnableMutationCapture() *Configuration { e.MutationCaptu
 // to a UI tree that has already been rendered.
 func (e *Configuration) EnableMutationReplay() *Configuration { e.MutationReplay = true; return e }
 
-// NewAppRoot returns the starting point of an app. It is a viewElement whose main
-// view name is the root id string.
+// NewAppRoot returns the starting point of an app.
 func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Element) *Element {
 	el := e.NewElement(id, e.DocType)
 	el.registry = newRegistry()
@@ -237,10 +239,7 @@ func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Eleme
 	el.subtreeRoot = el
 
 	el.Configuration = e
-	// TODO
-	// SHould generate a doucment uuid and store it as the index value in the
-	// Configuration registry
-	// this uuid should be part oif the document state (we need to be able to recover it)
+
 	el.uuid = e.newUID()
 	m := make(map[string]*Element, 4096)
 	m[id] = el
@@ -1776,32 +1775,40 @@ func (e *Element) GetEventValue(name string) (Value, bool) {
 	return e.Properties.Get(Namespace.Event, name)
 }
 
-// AfterEvent registers a mutation handler that gets called each time an mutation event occurs and
+// AfterEvent registers a mutation handler that gets called each time a mutation event occurs and
 // has been handled.
+// If not running ASAP, the handler is registered for the next mutation event that occurs.
+// Otherwise, the handler may run immediately if the event has already been triggered.
 func (e *Element) AfterEvent(eventname string, target Watchable, h *MutationHandler) {
-	if h.ASAP {
-		_, ok := e.GetEventValue(eventname)
-		if ok {
-			e.WatchEvent(eventname, target, h.RunOnce())
-			return
-		}
-		if h.Once {
-			return
+	lifecycleStartPropname := strings.Join([]string{Namespace.Event, eventname, "start"}, "-")
+	lifecycleEndPropname := strings.Join([]string{Namespace.Event, eventname, "end"}, "-")
+	t := target.AsElement()
+
+	isLive := false
+	if val, ok := t.Get(Namespace.lifecycle, lifecycleStartPropname); ok {
+		if liveBool := val.(Bool); liveBool {
+			isLive = true
 		}
 	}
-
-	m := OnMutation(func(evt MutationEvent) bool {
-		g := OnMutation(func(ev MutationEvent) bool {
-			return h.Handle(evt)
-		}).RunOnce()
-		e.WatchEvent(eventname, evt.Origin(), g)
-		return false
-	})
-
-	if h.Once {
-		m = m.RunOnce()
+	eventHadOccured := false
+	_, ok := t.Get(Namespace.lifecycle, lifecycleEndPropname)
+	if ok {
+		eventHadOccured = true
 	}
-	e.WatchEvent(eventname, target, m)
+
+	if eventHadOccured {
+		if h.ASAP && isLive {
+			// If the event has already occurred and the handler is ASAP, we run it immediately after
+			// the event lifecyle end signal. Essentially not runnign it absolutely ASAP as WatchEvent would
+			// have done in case the mutation handler's .ASAP field is set to true.
+			g := *h
+			g.ASAP = false
+			e.Watch(Namespace.lifecycle, lifecycleEndPropname, target, &g)
+			return
+		}
+		// In all other cases, it is run on the next event lifecyle end signal, either waiting for the next signal.
+	}
+	e.Watch(Namespace.lifecycle, lifecycleEndPropname, target, h)
 }
 
 // Get retrieves the value stored for the named property located under the given
@@ -1822,7 +1829,7 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok && category != Namespace.Event {
+	if ok && category != Namespace.Event && category != Namespace.lifecycle {
 		if Equal(value, oldvalue) { // idempotency
 			return
 		}
@@ -1855,6 +1862,9 @@ func (e *Element) Set(category string, propname string, value Value) {
 
 	// Mutation event propagation
 	evt := e.NewMutationEvent(category, propname, value, oldvalue)
+	if category == Namespace.Event {
+		e.Set(Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "start"}, "-"), Bool(true))
+	}
 
 	props, ok := e.Properties.Categories[category]
 	if !ok {
@@ -1889,6 +1899,10 @@ func (e *Element) Set(category string, propname string, value Value) {
 			watchers.List = wl[:index]
 		}
 	}
+	if category == Namespace.Event {
+		e.Set(Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "start"}, "-"), Bool(false))
+		e.Set(Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "end"}, "-"), value)
+	}
 }
 
 func MutationReplaying(e *Element) bool {
@@ -1919,6 +1933,15 @@ func shouldSkip(category, propname string) bool {
 
 	if category == Namespace.Event && propname == "new-mutation" {
 		return true
+	}
+
+	if category == Namespace.lifecycle {
+		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "end"}, "-") {
+			return true
+		}
 	}
 
 	if category == Namespace.Event {
@@ -1967,7 +1990,7 @@ func ReplayMutation(e *Element, category string, propname string, value Value, s
 
 	oldvalue, ok := e.Properties.Get(category, propname)
 
-	if ok && category != Namespace.Event {
+	if ok && category != Namespace.Event && category != Namespace.lifecycle {
 		if Equal(value, oldvalue) { // idempotency
 			return
 		}

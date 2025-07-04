@@ -24,7 +24,7 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-	SourcePath = filepath.Join("..", "..", "..", "src")
+	SourcePath = filepath.Join("..", "..", "..", "..", "..", "src")
 	IndexPath  string
 
 	host string
@@ -32,7 +32,7 @@ var (
 
 	release  bool
 	nolr     bool
-	basepath string = "./_root/"
+	basepath string
 
 	render    string
 	StaticDir string
@@ -187,7 +187,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	}()
 
 	// Should generate the file system based structure of the website.
-	ui.DoSync(document.AsElement(), func() {
+	ui.DoSync(ctx, document.AsElement(), func() {
 		// Creating the sitemap.xml file and putting it under the static directory
 		// that should have been created in the output directory.
 		err = CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
@@ -240,6 +240,10 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	}
 
 	return func(ctx context.Context) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
 		if render != "" {
 			document := f()
 
@@ -264,7 +268,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				ui.DoSync(document.AsElement(), func() {
+				ui.DoSync(ctx, document.AsElement(), func() {
 					router := document.Router()
 					if router != nil {
 						router.GoTo(render)
@@ -285,9 +289,6 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return
 		}
 
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		ctx, shutdown := context.WithCancel(ctx)
 
 		ServeMux.Handle(BasePath, RenderHTMLhandler)

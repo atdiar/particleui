@@ -270,7 +270,7 @@ func (e *EventHandler) TriggerOnce() *EventHandler {
 		return e
 	}
 	n := NewEventHandler(e.Fn)
-	n.Capture = true
+	n.Once = true
 
 	if e.Capture {
 		n.Capture = true
@@ -290,7 +290,6 @@ func (e *EventHandler) NoBubble() *EventHandler {
 		return e
 	}
 	n := NewEventHandler(e.Fn)
-	n.Capture = true
 
 	if e.Capture {
 		n.Capture = true
@@ -311,6 +310,8 @@ func (e *EventHandler) NoBubble() *EventHandler {
 
 // DefineTransition defines a long-form even that can go through different phases (from a start to an end,
 // the end possibly caused by an error or a cancellation).
+// Typically, a transition starts and is ended upon a condition being met.
+// It does not end automatically, it requires an explicit call to EndTransition, CancelTransition or ErrorTransition.
 func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onend *MutationHandler) {
 	if onstart == nil {
 		panic("onstart transition handler cannot be nil")
@@ -400,11 +401,14 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		evnt.Origin().TriggerEvent(onerrorRegistrationHook(name))
 		evnt.Origin().TriggerEvent(onstartRegistrationHook(name))
 
-		if !onstart.Handle(evnt) {
-			evnt.Origin().EndTransition(name, String("transition ended"))
+		/*if !onstart.Handle(evnt) {
+			//evnt.Origin().EndTransition(name, String("transition ended"))
 			return false
 		}
 		return true
+		*/
+
+		return onstart.Handle(evnt)
 	}))
 
 	e.TriggerEvent(strings.Join([]string{name, "transition", "defined"}, "-"))
@@ -687,7 +691,9 @@ func (l LifecycleHandlers) SetReady() {
 	l.root.TriggerEvent("ui-ready")
 }
 
-// MutationShouldReplay
+// MutationShouldReplay indcates that when the load transition starts, the replay transition will
+// also be triggered, enabling mutations to be replayed if this behavior has been implemented
+// and the condition are met (.MutationWillReplay() returns true).
 func (l LifecycleHandlers) MutationShouldReplay(b bool) {
 	_, ok := l.root.Get(Namespace.Internals, "mutation-should-replay")
 	if !ok {

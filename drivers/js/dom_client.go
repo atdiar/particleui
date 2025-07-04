@@ -23,7 +23,7 @@ import (
 
 func init() {
 	Elements.EnableMutationReplay()
-	if DevMode != "false" && HMRMode != "false" {
+	if DevMode != "false" && LRMode != "false" {
 		Elements.EnableMutationCapture()
 	}
 }
@@ -61,6 +61,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	return func(ctx context.Context) {
 		// GC is triggered only when the browser is idle.
 		debug.SetGCPercent(-1)
+		debug.SetMemoryLimit(int64(512 * 1024 * 1024))
 		js.Global().Set("triggerGC", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			runtime.GC()
 			return nil
@@ -80,13 +81,13 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				}
 				
 				let now = Date.now();
-				if (now - lastGC >= 120000) { // Check if at least 2 minutes passed since last GC
+				if (now - lastGC >= 12000) { // Check if at least 12 seconds passed since last GC
 					window.triggerGC(); // Trigger GC
 					lastGC = now;
 				}
 
-				// Schedule a new callback for the next idle time, but not sooner than 2 minutes from now
-				setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 120000); // Schedule next idle callback in 2 minutes
+				// Schedule a new callback for the next idle time, but not sooner than 12 seconds from now
+				setTimeout(() => window.requestIdleCallback(runGCDuringIdlePeriods), 12000); // Schedule next idle callback in 2 minutes
 			}
 
 			// Start the loop
@@ -102,8 +103,8 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		// TODO implement reverse operation that targets a DOM element and creates its zui counterpart.
 		// Usually we create a zui element and link/initialize its native counterpart.
 
-		// sse support if hmr is enabled
-		if HMRMode != "false" {
+		// sse support if lr is enabled
+		if LRMode != "false" {
 			d.Head().AppendChild(d.Script.WithID("ssesupport").SetInnerHTML(SSEscript))
 		}
 
@@ -126,6 +127,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		d.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			err := d.mutationRecorder().Replay()
 			if err != nil {
+				DEBUG("replay error, sending to transition error handler... ", err)
 				d.ErrorTransition("replay", ui.String(err.Error()))
 				return true // DEBUG may want to return false, should check
 			}
@@ -134,12 +136,13 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}))
 
 		d.OnTransitionError("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
+			DEBUG("replay transition error for the document: ", d.ID, " with error: ", evt.NewValue())
 			d.mutationRecorder().Clear()
 			// Should reload the page
-			log.Println("replay error, we should reload: ", evt.NewValue())
+			DEBUG("replay error, we should reload: ", evt.NewValue())
 			d.Window().Reload()
 			return true // here true or false doesn't matter
-		}))
+		}).RunASAP())
 
 		d.AfterTransition("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
@@ -148,7 +151,15 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 		// Capture mutations
 		d.AfterEvent("ui-ready", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
-			d.mutationRecorder().Capture()
+			lch := ui.NewLifecycleHandlers(evt.Origin())
+			if !lch.MutationWillReplay() {
+				d.mutationRecorder().Capture()
+			} else {
+				d.AfterEvent("mutation-replayed", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
+					d.mutationRecorder().Capture()
+					return false
+				}).RunASAP())
+			}
 			return false
 		}).RunOnce())
 

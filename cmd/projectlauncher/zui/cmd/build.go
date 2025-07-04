@@ -101,35 +101,6 @@ var buildCmd = &cobra.Command{
 					return
 				}
 			}
-			if !csr && !ssr && !ssg {
-				// Prompt the user to choose an option
-				fmt.Printf("Please choose one of the following options:\n")
-				fmt.Printf("  1 for CSR (client-side rendering)\n  2 for SSR (server-side rendering)\n 3 for SSG (static site generation)\n")
-
-				// Read the user's input
-				var option int
-				for {
-					fmt.Scanf("%d", &option)
-
-					// If the user enters a valid option, set the value of the CSR or SSR flag and break out of the loop
-					if option == 1 {
-						csr = true
-						break
-					}
-					if option == 2 {
-						ssr = true
-						break
-					}
-
-					if option == 3 {
-						ssg = true
-						break
-					}
-
-					// Otherwise, display feedback and loop back to the prompt again
-					fmt.Fprintf(os.Stderr, "Invalid option: %d\n", option)
-				}
-			}
 
 			// TODO implement zui build -csr -clean, that will erase the content
 			// of the bin/tmp/client/{rootdirectory} and bin/tmp/server/csr/{rootdirectory} directories
@@ -371,6 +342,10 @@ func renderPages(renderPath string, releasebuild bool) error {
 		cmd.Args = append(cmd.Args, "--basepath", basepath)
 	}
 
+	if verbose {
+		cmd.Args = append(cmd.Args, "--verbose")
+	}
+
 	// Set working directory to where the binary lives
 	cmd.Dir = filepath.Dir(absoluteBinaryPath)
 
@@ -383,7 +358,7 @@ func renderPages(renderPath string, releasebuild bool) error {
 	}
 
 	if verbose {
-		fmt.Println("output: ", string(output))
+		fmt.Println("output: ", string(output), renderPath)
 	}
 
 	if verbose {
@@ -404,4 +379,9 @@ func init() {
 	buildCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "build in release mode")
 	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	buildCmd.Flags().BoolVarP(&nolr, "nohmr", "", false, "disable live reloading")
+
+	if !csr && !ssr && !ssg {
+		// If none of the flags are set, we default to csr
+		csr = true
+	}
 }

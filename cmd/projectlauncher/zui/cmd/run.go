@@ -189,4 +189,8 @@ func init() {
 	runCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "Runs the server in server-side rendering mode")
 	runCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "Runs the server in static file mode for ssg.")
 	runCmd.Flags().BoolVarP(&nolr, "nolr", "", false, "Disable live reloading")
+
+	if !csr && !ssr && !ssg {
+		csr = true // Default to client-side rendering if no mode is specified
+	}
 }

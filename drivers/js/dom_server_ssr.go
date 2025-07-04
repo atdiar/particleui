@@ -25,7 +25,7 @@ import (
 var (
 	uipkg = "github.com/atdiar/particleui"
 
-	SourcePath = filepath.Join("..", "..", "..", "src")
+	SourcePath = filepath.Join("..", "..", "..", "..", "..", "src")
 	IndexPath  string
 
 	host string
@@ -33,7 +33,7 @@ var (
 
 	release  bool
 	nolr     bool
-	basepath string = "./_root/"
+	basepath string
 
 	render    string
 	StaticDir string
@@ -205,7 +205,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			document.ListenAndServe(r.Context(), start)
 		}()
 
-		ui.DoSync(document.AsElement(), func() {
+		ui.DoSync(ctx, document.AsElement(), func() {
 			router := document.Router()
 			route := r.URL.Path
 			_, routeexist := router.Match(route)
@@ -237,6 +237,10 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	Server.Handler = ServeMux
 
 	return func(ctx context.Context) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
 		if render != "" {
 			document := f()
 
@@ -261,7 +265,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
-				ui.DoSync(document.AsElement(), func() {
+				ui.DoSync(ctx, document.AsElement(), func() {
 					router := document.Router()
 					if router != nil {
 						router.GoTo(render)
@@ -282,9 +286,6 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return
 		}
 
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		ctx, shutdown := context.WithCancel(ctx)
 
 		if DevMode != "false" {

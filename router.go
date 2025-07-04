@@ -224,6 +224,7 @@ func (r *Router) GoTo(route string) {
 	}
 	r.Outlet.AsElement().Root.TriggerEvent("navigation-new")
 	r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(route))
+	r.Outlet.AsElement().Root.TriggerEvent("navigation-new", Bool(false))
 }
 
 // not sure it is needed. TODO DEBUG
@@ -270,7 +271,6 @@ func (r *Router) RedirectTo(route string) {
 func (r *Router) Hijack(route string, destination string) {
 	r.OnRouteChangeRequest(OnMutation(func(evt MutationEvent) bool {
 		navroute := evt.NewValue().(String)
-		DEBUG("Hijack: ", navroute, " == ", route, " -> ", destination) // DEBUG
 		if string(navroute) == route {
 			//r.History.Push(route)
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(destination))
@@ -362,7 +362,7 @@ func (r *Router) handler() *MutationHandler {
 			return true
 		}
 		newroute := string(nroute)
-		if !r.LeaveTrailingSlash {
+		if !r.LeaveTrailingSlash && len(newroute) > 1 {
 			newroute = strings.TrimSuffix(newroute, "/")
 		}
 
@@ -372,46 +372,45 @@ func (r *Router) handler() *MutationHandler {
 			newroute = route
 		}
 
-		// Determination of navigation history action
-		h, ok := r.Outlet.AsElement().Root.Get(Namespace.Data, "history")
-		if !ok {
+		// If this is not a page reload but a new navigation request, the route needs to be pushed
+		// Otherwise we continue where we left off by importing the history state.
+		newnav, ok := r.Outlet.AsElement().Root.GetEventValue("navigation-new")
+		if ok && newnav.(Bool).Bool() {
 			r.History.Push(newroute)
 		} else {
-			ho, ok := h.(Object)
+			h, ok := r.Outlet.AsElement().Root.Get(Namespace.Data, "history")
 			if !ok {
-				panic("history object of wrong type")
-			}
-			v, ok := ho.Get("cursor")
-			if !ok {
-				panic("unable to retrieve history object cursor value")
-			}
-			n := int(v.(Number))
-			cursor := r.History.Cursor
-
-			if r.History.Cursor > n {
-
-				// we are going back
-				for i := 0; i < cursor-n; i++ {
-					r.History.Back()
-				}
-			} else if r.History.Cursor < n {
-				// we are going forward
-				for i := 0; i < n-cursor; i++ {
-					r.History.Forward()
-				}
-
+				r.History.Push(newroute)
 			} else {
-				// If this is not a page reload buyt a new navigation request, the route needs to be pushed
-				// Otherwise we continue where we left off by importing the history state.
-				newnav, ok := r.Outlet.AsElement().Root.GetEventValue("navigation-new")
-				if ok && newnav.(Bool).Bool() {
-					r.History.Push(newroute)
-					r.Outlet.AsElement().TriggerEvent("navigation-new", Bool(false)) // DEBUG perhpas add this somewhere else below
+				ho, ok := h.(Object)
+				if !ok {
+					panic("history object of wrong type")
+				}
+				v, ok := ho.Get("cursor")
+				if !ok {
+					panic("unable to retrieve history object cursor value")
+				}
+				n := int(v.(Number))
+				cursor := r.History.Cursor
+
+				if r.History.Cursor > n {
+					// we are going back
+					for i := 0; i < cursor-n; i++ {
+						r.History.Back()
+					}
+				} else if r.History.Cursor < n {
+					// we are going forward
+					for i := 0; i < n-cursor; i++ {
+						r.History.Forward()
+					}
 				} else {
 					r.History.ImportState(h)
 				}
 			}
 		}
+
+		// Determination of navigation history action
+
 		r.Outlet.AsElement().Root.SetUI("currentroute", String(newroute))
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
 
@@ -589,7 +588,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 		if ok {
 			r.History.ImportState(h)
 		}
-
 		if lch.MutationWillReplay() {
 			evt.Origin().OnTransitionError("replay", OnMutation(func(ev MutationEvent) bool {
 				ev.Origin().ErrorTransition("load", ev.NewValue())
@@ -634,7 +632,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	// at the root of the UI tree.
 	// Note> could use AfterTransition instead of AfterEvent
 	root.AsElement().Root.AfterTransition("load", OnMutation(func(evt MutationEvent) bool {
-
 		evt.Origin().TriggerEvent("ui-loaded")
 		return false
 	}).RunOnce())
@@ -644,6 +641,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	onreplayerror := OnMutation(func(evt MutationEvent) bool {
+		DEBUG("replay error, sending to transition error handler")
 		return false
 	})
 
@@ -672,7 +670,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			close(isready) // close the channel if it is not already closed
 		}
 	}
-
 	r.Outlet.AsElement().Root.TriggerEvent("ui-idle")
 
 	for {
@@ -812,15 +809,23 @@ func (r *rnode) attach(targetviewname string, nr *rnode) {
 // match verifies that a route passed as arguments corresponds to a given view state.
 func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), activationFn func() error, err error) {
 	route, queryparams := canonicalizeRoute(route)
-
-	activations := make([]func() error, 0, 10)
-	prefetchers := make([]func(), 0, 10)
 	route = strings.TrimPrefix(route, "/")
+
 	segments := strings.Split(route, "/")
+	n := len(segments) + 1
+	activations := make([]func() error, 0, n)
+	prefetchers := make([]func(), 0, n)
+
 	ls := len(segments)
 	targetview = r.ViewElement // DEBUG TODO is it the true targetview?
-	if ls == 0 {
-		return targetview, nil, nil, nil
+	if ls == 0 || (ls == 1 && segments[0] == "") {
+		a := func() error {
+			return targetview.ActivateView(segments[0])
+		}
+		p := func() {
+			r.ViewElement.AsElement().Prefetch()
+		}
+		return targetview, p, a, nil
 	}
 
 	var param string
