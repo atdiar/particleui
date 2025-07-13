@@ -86,7 +86,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 		panic("router can only use a view attached to the main tree as a navigation Outlet.")
 	}
 
-	r := &Router{rootview, nil, nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
+	r := &Router{rootview, context.Background(), nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
 
 	r.Outlet.AsElement().Root.WatchEvent("docupdate", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
 		_, navready := evt.Origin().Get(Namespace.Navigation, "ready")

@@ -13,6 +13,7 @@ import (
 	"encoding/xml"
 
 	//"errors"
+
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -51,6 +52,7 @@ var (
 	SSGMode = "false"
 
 	BasePath = "/"
+	verbose  bool
 )
 
 var (
@@ -373,11 +375,28 @@ func connectNative(e *ui.Element, tag string) {
 					root = js.Global().Get("document").Get("implementation").Call("createHTMLDocument")
 				} else {
 					// connect localStorage and sessionStorage
-					ls := jsStore{js.Global().Get("localStorage")}
-					ss := jsStore{js.Global().Get("sessionStorage")}
-					ls.Set("zui-connected", js.ValueOf(true))
-					ss.Set("zui-connected", js.ValueOf(true))
+					ls := Storage("localstorage")
+					ss := Storage("sessionstorage")
+					//is := Storage("indexeddb")
 
+					if ls == nil {
+						DEBUG("unable to connect localStorage")
+					} else {
+						ls.Set("zui-connected", js.ValueOf(true))
+					}
+
+					if ss == nil {
+						DEBUG("unable to connect sessionStorage")
+					} else {
+						ss.Set("zui-connected", js.ValueOf(true))
+					}
+
+					/*if is == nil {
+						DEBUG("unable to connect indexedDB")
+					} else {
+						is.Set("zui-connected", js.ValueOf(true))
+					}
+					*/
 					root = js.Global().Get("document").Call("getElementById", id)
 					if !root.Truthy() {
 						root = js.Global().Get("document").Get("documentElement")
@@ -566,12 +585,28 @@ func connectNative(e *ui.Element, tag string) {
 			// we are not in a browser environment
 			root = js.Global().Get("document").Get("implementation").Call("createHTMLDocument")
 		} else {
-			// connect localStorage and sessionStorage
-			ls := jsStore{js.Global().Get("localStorage")}
-			ss := jsStore{js.Global().Get("sessionStorage")}
-			ls.Set("zui-connected", js.ValueOf(true))
-			ss.Set("zui-connected", js.ValueOf(true))
+			ls := Storage("localstorage")
+			ss := Storage("sessionstorage")
+			//is := Storage("indexeddb")
 
+			if ls == nil {
+				DEBUG("unable to connect localStorage")
+			} else {
+				ls.Set("zui-connected", js.ValueOf(true))
+			}
+
+			if ss == nil {
+				DEBUG("unable to connect sessionStorage")
+			} else {
+				ss.Set("zui-connected", js.ValueOf(true))
+			}
+
+			/*if is == nil {
+				DEBUG("unable to connect indexedDB")
+			} else {
+				is.Set("zui-connected", js.ValueOf(true))
+			}
+			*/
 			root = js.Global().Get("document").Call("getElementById", id)
 			if !root.Truthy() {
 				root = js.Global().Get("document").Get("documentElement")
@@ -1482,169 +1517,6 @@ func (d *Document) newID() string {
 	return string(b)
 }
 
-// Let's add document storage capabilities in IndexedDB
-// We should be able to persist, retrieve, update, delete data under fthe form of blob or JSON is serializable.
-// ensureDBOpen ensures that a database connection is opened and cached.
-
-func (d *Document) ensureDBOpen(dbname string) (js.Value, error) {
-	db, exists := d.DBConnections[dbname]
-	if exists {
-		return db, nil
-	}
-
-	done := make(chan js.Value)
-	errChan := make(chan error)
-
-	// Encapsulate the setup in a single conceptual block.
-	setupIndexedDBOpen := func() {
-		openRequest := js.Global().Get("indexedDB").Call("open", dbname, 1)
-
-		successCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			db := openRequest.Get("result")
-			d.DBConnections[dbname] = db
-			done <- db
-			return nil
-		})
-		defer successCallback.Release()
-
-		errorCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			errChan <- js.Error{Value: openRequest.Get("error")}
-			return nil
-		})
-		defer errorCallback.Release()
-
-		upgradeCallback := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			db := args[0].Get("target").Get("result")
-			if !db.Call("objectStoreNames").Call("contains", "store").Bool() {
-				db.Call("createObjectStore", "store", map[string]interface{}{"keyPath": "key"})
-			}
-			return nil
-		})
-		defer upgradeCallback.Release()
-
-		openRequest.Set("onsuccess", successCallback)
-		openRequest.Set("onerror", errorCallback)
-		openRequest.Set("onupgradeneeded", upgradeCallback)
-	}
-
-	// Execute the setup function.
-	setupIndexedDBOpen()
-
-	// Wait for the async operation to complete.
-	select {
-	case db := <-done:
-		return db, nil
-	case err := <-errChan:
-		return js.Null(), err
-	}
-}
-
-// StoreInDB allows to store or update a value in a persistent database such as IndexedDB.
-func (d *Document) StoreInDB(dbname, key string, value []byte) error {
-	db, err := d.ensureDBOpen(dbname)
-	if err != nil {
-		return err
-	}
-
-	done := make(chan error)
-
-	storeData := func() {
-		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
-		store := tx.Call("objectStore", "store")
-		putRequest := store.Call("put", js.ValueOf(map[string]interface{}{"key": key, "value": js.Global().Get("Uint8Array").New(value)}))
-
-		putRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			done <- nil
-			return nil
-		}))
-
-		putRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			done <- js.Error{Value: putRequest.Get("error")}
-			return nil
-		}))
-	}
-
-	// Execute the storage operation.
-	storeData()
-
-	return <-done
-}
-
-// RetrieveFromDB allows to retrieve a value from a persistent database such as IndexedDB.
-func (d *Document) RetrieveFromDB(dbname, key string) ([]byte, error) {
-	db, err := d.ensureDBOpen(dbname)
-	if err != nil {
-		return nil, err
-	}
-
-	done := make(chan []byte)
-	errChan := make(chan error)
-
-	retrieveData := func() {
-		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readonly")
-		store := tx.Call("objectStore", "store")
-		getRequest := store.Call("get", key)
-
-		getRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			result := getRequest.Get("result")
-			if !result.Truthy() {
-				done <- nil
-			} else {
-				value := make([]byte, result.Get("value").Get("length").Int())
-				js.CopyBytesToGo(value, result.Get("value"))
-				done <- value
-			}
-			return nil
-		}))
-
-		getRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			errChan <- js.Error{Value: getRequest.Get("error")}
-			return nil
-		}))
-	}
-
-	// Execute the retrieval operation.
-	retrieveData()
-
-	select {
-	case data := <-done:
-		return data, nil
-	case err := <-errChan:
-		return nil, err
-	}
-}
-
-// DeleteFromDB allows to delete a value from a persistent database such as IndexedDB.
-func (d *Document) DeleteFromDB(dbname, key string) error {
-	db, err := d.ensureDBOpen(dbname)
-	if err != nil {
-		return err
-	}
-
-	done := make(chan error)
-
-	deleteData := func() {
-		tx := db.Call("transaction", js.ValueOf([]string{"store"}), "readwrite")
-		store := tx.Call("objectStore", "store")
-		deleteRequest := store.Call("delete", key)
-
-		deleteRequest.Set("onsuccess", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			done <- nil
-			return nil
-		}))
-
-		deleteRequest.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			done <- js.Error{Value: deleteRequest.Get("error")}
-			return nil
-		}))
-	}
-
-	// Execute the deletion operation.
-	deleteData()
-
-	return <-done
-}
-
 // NewObservable returns a new ui.Observable element after registering it for the document.
 // If the observable alreadys existed for this id, it is returned as is.
 // It is up to the caller to check whether an element already exist for this id and possibly clear
@@ -2015,8 +1887,13 @@ func (s StyleSheet) Delete() {
 
 // mutationRecorder holds the log of the property mutations of a document.
 type mutationRecorder struct {
-	raw *ui.Element
-	pos int // current position in the list of mutations
+	raw          *ui.Element
+	pos          int // current position in the list of mutations
+	chunkID      int
+	maxChunkSize int
+	totalCount   int  // total number of mutations captured
+	stored       bool // are all mutations backed-up in indexeddb
+	mu           *sync.Mutex
 }
 
 func (m *mutationRecorder) Capture() {
@@ -2031,26 +1908,222 @@ func (m *mutationRecorder) Capture() {
 	if ok && c.(ui.Bool).Bool() {
 		panic("mutation capture already enabled/ongoing")
 	}
+
 	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
 	d.Set(Namespace.Internals, "mutation-capturing", ui.Bool(true))
+
+	DEBUG("CAPTURE ON...")
+
+	// on the server, indexeddb is not present. We store everything for replay in memory.
+	// On the client, we use indexeddb to store the mutations in chunks.
+	// The chunk size is 4096 by default (TODO DEBUG make it configurable?).
+	// We also need to hook onto the document's Before Unactive event to store
+	// the current chunk of mutations, ie.e the current state of the mutation recorder.
+	d.OnBeforeUnactive(ui.OnMutation(func(evt ui.MutationEvent) bool {
+		// Before unactive, we need to store the current chunk of mutations
+		l, ok := m.raw.GetData("mutationlist")
+		storage := Storage("indexeddb")
+
+		if storage == nil {
+			// we are likely not in the browser, the more likely outcome
+			// is for the state to be destroyed
+			// alternatively, we might want ot think about a way to recover
+			// session but by default the mutation list is not stored in session,
+			// only in memory.
+			return false
+		}
+		if !ok {
+			// There is no recorded mutations, nothing to store.
+			return false
+		}
+		list := l.(ui.List)
+
+		storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+		// apply zlib compression
+		val := stringify(list.RawValue()) // turns the raw list object into json
+		b, err := CompressStringZlib(val) // compress the string using zlib
+		if err != nil {
+			DEBUG("error while compressing mutation list: %v", err)
+			return false
+		}
+		// Now we need to create the Uint8Array and use js.CopyBytesToJS
+		// to copy the bytes to the JS value.
+		// b holds the byte source
+		var dst js.Value
+		dst = js.Global().Get("Uint8Array").New(len(b))
+		if !dst.Truthy() {
+			DEBUG("error while creating Uint8Array for mutation list")
+			return false
+		}
+		js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
+
+		metadata := map[string]interface{}{
+			"chunkID":   m.chunkID,
+			"chunkSize": m.maxChunkSize,
+			"Count":     m.totalCount,
+		}
+		metadataKey := "mutationlist-metadata"
+		metadataValue := stringify(metadata)
+
+		go func() {
+			// DEBUG not sure that DoSync is adequate here.
+			storage.Set(storagekey, dst)
+			storage.Set(metadataKey, js.ValueOf(metadataValue))
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			m.stored = true
+		}()
+
+		return false
+	}))
+
+	// We need to implement periodic storage of the mutation list in indexeddb if applicable.
+	// Of course, that only needs to happen if there has been new mutations since the last
+	// storage event.
+	ctx, cancelfn := context.WithCancel(context.Background())
+	storage := Storage("indexeddb")
+	if storage != nil {
+		t := time.NewTicker(time.Millisecond * 750)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					DEBUG("mutationreccorder periodic storage of mutations cancelled")
+					return
+				case <-t.C:
+					m.mu.Lock()
+					stored := m.stored
+					m.mu.Unlock()
+					if !stored {
+						DEBUG("mutationreccorder periodic storage of unstored mutations")
+						// we need to store the current chunk of mutations
+						l, ok := m.raw.GetData("mutationlist")
+						if !ok {
+							DEBUG("no mutation list to store")
+							return
+						}
+						list := l.(ui.List)
+						storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+						// apply zlib compression
+						val := stringify(list.RawValue()) // turns the raw list object into json
+						b, err := CompressStringZlib(val) // compress the string using zlib
+						if err != nil {
+							DEBUG("error while compressing mutation list: %v", err)
+							return
+						}
+						// Now we need to create the Uint8Array and use js.CopyBytesToJS
+						// to copy the bytes to the JS value.
+						// b holds the byte source
+						var dst js.Value
+						dst = js.Global().Get("Uint8Array").New(len(b))
+						js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
+
+						metadata := map[string]interface{}{
+							"chunkID":   m.chunkID,
+							"chunkSize": m.maxChunkSize,
+							"Count":     m.totalCount,
+						}
+						metadataKey := "mutationlist-metadata"
+						metadataValue := stringify(metadata)
+
+						go func() {
+							// DEBUG not sure that DoSync is adequate here.
+							storage.Set(storagekey, dst)
+							storage.Set(metadataKey, js.ValueOf(metadataValue))
+							m.mu.Lock()
+							defer m.mu.Unlock()
+							m.stored = true
+						}()
+					}
+				}
+			}
+		}()
+	}
 
 	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.OnMutation(func(evt ui.MutationEvent) bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		v := evt.NewValue()
 		l, ok := m.raw.GetData("mutationlist")
+		storage := Storage("indexeddb")
+		m.totalCount++
+
+		if storage == nil {
+			// In-memory storage if indexeddb not available
+			// This is also used on the server to store mutations before serializing them
+			// before they are sent to the frontend for replay during hydration.
+			DEBUG("indexeddb is not available, storing mutatiions iun-memory. Beware of OOMe")
+			if !ok {
+				m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+			} else {
+				list, ok := l.(ui.List)
+				if !ok {
+					m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+				}
+				m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
+			}
+			return false
+		}
+
 		if !ok {
 			m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+			m.stored = false // reset the stored flag as we are about to store a new mutation
 		} else {
 			list, ok := l.(ui.List)
 			if !ok {
 				m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+				m.stored = false // reset the stored flag as we are about to store a new mutation
 			} else {
-				if len(list.UnsafelyUnwrap()) > CaptureLimit {
-					DEBUG("mutation capture limit reached")
-					return false
+				if list.Length() == m.maxChunkSize-1 {
+					// we reached the max chunk size, we should store the current list (compressed format) and start a new one
+					list.MakeCopy().Append(v).Commit()
+					storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+					// apply zlib compression
+					val := stringify(list.RawValue()) // turns the raw list object into json
+					b, err := CompressStringZlib(val) // compress the string using zlib
+					if err != nil {
+						DEBUG("error while compressing mutation list: %v", err)
+						return false
+					}
+					// Now we need to create the Uint8Array and use js.CopyBytesToJS
+					// to copy the bytes to the JS value.
+					// b holds the byte source
+					var dst js.Value
+					dst = js.Global().Get("Uint8Array").New(len(b))
+					if !dst.Truthy() {
+						DEBUG("error while creating Uint8Array for mutation list")
+						return false
+					}
+					js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
+
+					// now we need to store the metadata ofr the mutation list
+					// it needs to encode the chunk ID, the chunk size and the
+					// number of entries in the list.
+					metadata := map[string]interface{}{
+						"chunkID":   m.chunkID,
+						"chunkSize": m.maxChunkSize,
+						"Count":     m.totalCount,
+					}
+					metadataKey := "mutationlist-metadata"
+					metadataValue := stringify(metadata)
+
+					// DEBUG does they need to be launched in their own goroutines
+					// think not because it is registered and called in the main thread/goroutine.
+					DEBUG(dst.Type(), " Uint8Array length:", dst.Get("length").Int())
+					storage.Set(storagekey, dst)
+					storage.Set(metadataKey, js.ValueOf(metadataValue))
+
+					// reset the list and increment the chunk ID
+					m.raw.SetData("mutationlist", ui.NewList().Commit()) // could have put a non-list value such as Bool(false) so next mutation event, the new empty list would have been created.
+					m.chunkID++
+					m.pos = 0
+					m.stored = true // reset the stored flag as we are about to store a new mutation
+				} else {
+					m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
+					m.stored = false // reset the stored flag as we are about to store a new mutation
 				}
-				m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
 			}
 		}
 		return false
@@ -2059,6 +2132,7 @@ func (m *mutationRecorder) Capture() {
 	m.raw.Watch(Namespace.Internals, "mutation-capturing", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		if !evt.NewValue().(ui.Bool) {
 			m.raw.RemoveMutationHandler(Namespace.Event, "new-mutation", d, h)
+			cancelfn() // stops the indexedbd storage timer if applicable.
 		}
 		return false
 	}).RunOnce())
@@ -2081,6 +2155,7 @@ func (m *mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(d)
 	if err != nil {
+		DEBUG(err)
 		d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
 		return ui.ErrReplayFailure
 	}
@@ -2092,9 +2167,30 @@ func (m *mutationRecorder) Replay() error {
 }
 
 func (m *mutationRecorder) Clear() {
-	m.raw.SetData("mutationlist", ui.NewList().Commit())
-	PutInStorage(m.raw)
+	d := GetDocument(m.raw)
+	storage := Storage("indexeddb")
+	if storage == nil {
+		m.raw.SetData("mutationlist", ui.NewList().Commit())
+		PutInStorage(m.raw)
+	} else {
+		// clear the indexeddb storage
+		chunksCount := int((m.totalCount + m.maxChunkSize - 1) / m.maxChunkSize)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		ui.DoAsync(d, func(context.Context) {
+			for i := range chunksCount {
+				storage.Delete(fmt.Sprintf("mutationlist-chunk-%d", i))
+			}
+			defer wg.Done()
+			storage.Delete("mutationlist-metadata")
+		})
+		wg.Wait()
+
+	}
 	m.pos = 0
+	m.chunkID = 0
+	m.totalCount = 0
 }
 
 func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
@@ -2107,9 +2203,12 @@ func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 			panic(err)
 		}
 		m.AsElement().SetData("mutationlist", v)
+		l := v.(ui.List).Length()
+		return &mutationRecorder{m.AsElement(), 0, 0, 4096, l, true, &sync.Mutex{}}
 	}
 
-	return &mutationRecorder{m.AsElement(), 0}
+	mr := &mutationRecorder{m.AsElement(), 0, 0, 4096, 0, true, &sync.Mutex{}}
+	return mr
 }
 
 func (d *Document) mutationRecorder() *mutationRecorder {
@@ -2117,7 +2216,7 @@ func (d *Document) mutationRecorder() *mutationRecorder {
 	if m == nil {
 		panic("mutation recorder is missing")
 	}
-	return &mutationRecorder{m, 0}
+	return &mutationRecorder{m, 0, 0, 4096, 0, true, &sync.Mutex{}}
 }
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
@@ -2258,71 +2357,187 @@ func mutationreplay(d *Document) error {
 		return nil
 	}
 
-	rh, ok := e.GetData("mutationlist")
-	if !ok {
-		DEBUG("mutation recordings are missing")
-		return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
-	}
-	mutationtrace, ok := rh.(ui.List)
-	if !ok {
-		panic("state history should have been a ui.List. Wrong type. Unexpected error")
-	}
-
-	mutNum := mutationtrace.Length()
-
-	for m.pos < mutNum {
-		rawop := mutationtrace.Get(m.pos)
-		op := rawop.(ui.Object)
-		id, ok := op.Get("id")
+	// We need to retrieve the metadata for the list of mutations from storage.
+	// If storage is not available, the mutations can only be replayed from memory if any.
+	storage := Storage("indexeddb")
+	if storage == nil {
+		rh, ok := e.GetData("mutationlist")
 		if !ok {
-			panic("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
+			DEBUG("mutation recordings are missing")
+			return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
+		}
+		mutationtrace, ok := rh.(ui.List)
+		if !ok {
+			panic("state history should have been a ui.List. Wrong type. Unexpected error")
 		}
 
-		cat, ok := op.Get("cat")
-		if !ok {
-			panic("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
-		}
+		mutNum := mutationtrace.Length()
 
-		prop, ok := op.Get("prop")
-		if !ok {
-			panic("mutation entry badly encoded. Expectted a ui.Object with a 'prop' property")
-		}
-
-		val, ok := op.Get("val")
-		if !ok {
-			panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
-		}
-
-		el := GetDocument(e).GetElementById(id.(ui.String).String())
-		if el == nil {
-			// Unable to recover state for this element id. Element  doesn't exist"
-			DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
-			return ui.ErrReplayFailure
-		}
-
-		el.BindValue(Namespace.Event, "connect-native", e)
-		el.BindValue(Namespace.Event, "mutation-replayed", e)
-
-		_, ok = op.Get("sync")
-		if !ok {
-			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
-		} else {
-			ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
-		}
-
-		i, ok := d.Get(Namespace.Internals, "mutation-list-index")
-		if !ok {
-			if m.pos == 0 {
-				i = ui.Number(0)
-			} else {
-				panic("mutation list index is missing")
+		for m.pos < mutNum {
+			rawop := mutationtrace.Get(m.pos)
+			op := rawop.(ui.Object)
+			id, ok := op.Get("id")
+			if !ok {
+				panic("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
 			}
+
+			cat, ok := op.Get("cat")
+			if !ok {
+				panic("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
+			}
+
+			prop, ok := op.Get("prop")
+			if !ok {
+				panic("mutation entry badly encoded. Expectted a ui.Object with a 'prop' property")
+			}
+
+			val, ok := op.Get("val")
+			if !ok {
+				panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
+			}
+
+			el := GetDocument(e).GetElementById(id.(ui.String).String())
+			if el == nil {
+				// Unable to recover state for this element id. Element  doesn't exist"
+				DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
+				return ui.ErrReplayFailure
+			}
+
+			el.BindValue(Namespace.Event, "connect-native", e)
+			el.BindValue(Namespace.Event, "mutation-replayed", e)
+
+			_, ok = op.Get("sync")
+			if !ok {
+				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
+			} else {
+				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
+			}
+
+			i, ok := d.Get(Namespace.Internals, "mutation-list-index")
+			if !ok {
+				if m.pos == 0 {
+					i = ui.Number(0)
+				} else {
+					panic("mutation list index is missing")
+				}
+			}
+			m.pos = int(i.(ui.Number).Float64())
+			m.pos = m.pos + 1
+			d.Set(Namespace.Internals, "mutation-list-index", ui.Number(m.pos))
 		}
-		m.pos = int(i.(ui.Number).Float64())
-		m.pos = m.pos + 1
-		d.Set(Namespace.Internals, "mutation-list-index", ui.Number(m.pos))
+		return nil
 	}
 
+	var rawmetadata js.Value
+	var ok bool
+
+	rawmetadata, ok = storage.Get("mutationlist-metadata")
+
+	if !ok {
+		DEBUG("mutation metadata is missing")
+		return nil
+	}
+	metadatastr := rawmetadata.String()
+	var metadata map[string]interface{}
+	err := json.Unmarshal([]byte(metadatastr), &metadata)
+	if err != nil {
+		DEBUG("error while unmarshalling mutation metadata: %v", err)
+		return err
+	}
+	m.chunkID = int(metadata["chunkID"].(float64))
+	m.maxChunkSize = int(metadata["chunkSize"].(float64))
+	m.totalCount = int(metadata["Count"].(float64))
+
+	// Now we can try to retrieve the mutation list in chunks and replay it
+	// each chunk needs to be retrieved first and then zlib decompressed.
+	chunksCount := int((m.totalCount + m.maxChunkSize - 1) / m.maxChunkSize)
+	replayedCount := 0
+
+	for range chunksCount {
+		storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+		var rawchunk js.Value
+		var ok bool
+
+		// Only okay here because we are on the main thread and not a Func wrapper.
+		// Otherwise we would need to call that in a new goroutine.
+		rawchunk, ok = storage.Get(storagekey)
+
+		if !ok {
+			return fmt.Errorf("mutation chunk %d is missing", m.chunkID)
+		}
+		DEBUG(rawchunk.Type(), " mutation chunk type")
+		size := rawchunk.Get("length").Int()
+		b := make([]byte, size)
+		js.CopyBytesToGo(b, rawchunk)
+		decompressedChunk, err := DecompressStringZlib(b)
+		var rawlistobj = make(map[string]interface{})
+		err = json.Unmarshal([]byte(decompressedChunk), &rawlistobj)
+		if err != nil {
+			return fmt.Errorf("error while unmarshalling decompressed mutation chunk %d: %v", m.chunkID, err)
+		}
+		mutationtrace, ok := ui.ValueFrom(rawlistobj).(ui.List)
+		if !ok {
+			return fmt.Errorf("error while converting decompressed mutation chunk %d to ui.List", m.chunkID)
+		}
+
+		m.pos = 0
+		var replayerror error
+
+		mutationtrace.Range(func(k int, v ui.Value) bool {
+			m.pos = k
+			rawop := mutationtrace.Get(m.pos)
+			op := rawop.(ui.Object)
+			id, ok := op.Get("id")
+			if !ok {
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
+				return true
+			}
+
+			cat, ok := op.Get("cat")
+			if !ok {
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
+				return true
+			}
+
+			prop, ok := op.Get("prop")
+			if !ok {
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'prop' property")
+				return true
+			}
+
+			val, ok := op.Get("val")
+			if !ok {
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
+				return true
+			}
+
+			el := GetDocument(e).GetElementById(id.(ui.String).String())
+			if el == nil {
+				// Unable to recover state for this element id. Element  doesn't exist"
+				replayerror = fmt.Errorf("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
+				return true
+			}
+
+			el.BindValue(Namespace.Event, "connect-native", e)
+			el.BindValue(Namespace.Event, "mutation-replayed", e)
+
+			_, ok = op.Get("sync")
+			if !ok {
+				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
+			} else {
+				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
+			}
+
+			d.Set(Namespace.Internals, "mutation-list-index", ui.Number(replayedCount))
+			replayedCount++
+			return false
+		})
+
+		if replayedCount != m.totalCount {
+			return fmt.Errorf("replayed %d mutations but expected %d mutations", replayedCount, m.totalCount)
+		}
+		return replayerror
+	}
 	return nil
 }
 
@@ -2770,7 +2985,7 @@ func NewDocument(id string, options ...string) *Document {
 	d.HttpClient.Jar = jar
 
 	d.DBConnections = make(map[string]js.Value)
-	d.newMutationRecorder(EnableLocalPersistence())
+	d.newMutationRecorder()
 
 	e := d.Element
 
@@ -3864,33 +4079,203 @@ func (d *Document) enableWasm() *Document {
 	h.AppendChild(d.Script.WithID("goruntime").
 		SetInnerHTML(
 			`
-				let wasmLoadedResolver, loadEventResolver;
+				// IndexedDBSync Class: A wrapper around IndexedDB to provide a localStorage-like API.
+				class IndexedDBSync {
+					constructor(dbName = 'myIndexedDB', storeName = 'keyvaluestore') {
+						this.dbName = dbName;
+						this.storeName = storeName;
+						this.db = null; // Will hold the IndexedDB database instance
+					}
+
+					/**
+					* Initializes the IndexedDB database.
+					* Opens the database and creates the object store if it doesn't exist.
+					* @returns {Promise<void>} A promise that resolves when the database is ready.
+					*/
+					async init() {
+						return new Promise((resolve, reject) => {
+							// Request to open the database. Version 1.
+							const request = indexedDB.open(this.dbName, 1);
+
+							// Event handler for when the database needs to be upgraded (e.g., first time creation)
+							request.onupgradeneeded = (event) => {
+								this.db = event.target.result; // Get the database instance
+								// Create an object store if it doesn't already exist
+								if (!this.db.objectStoreNames.contains(this.storeName)) {
+									this.db.createObjectStore(this.storeName);
+								}
+							};
+
+							// Event handler for successful database opening
+							request.onsuccess = (event) => {
+								this.db = event.target.result; // Get the database instance
+								console.log('IndexedDB initialized successfully.');
+								resolve(); // Resolve the promise indicating success
+							};
+
+							// Event handler for errors during database opening
+							request.onerror = (event) => {
+								console.error('IndexedDB error:', event.target.errorCode);
+								reject(new Error('Failed to open IndexedDB: ' + event.target.errorCode)); // Reject with an error
+							};
+						});
+					}
+
+					/**
+					* Performs a transaction on the IndexedDB.
+					* This is a helper method to abstract away transaction logic.
+					* @param {string} mode - The transaction mode ('readonly' or 'readwrite').
+					* @param {function(IDBObjectStore): IDBRequest} operation - A function that takes the object store and returns an IDBRequest.
+					* @returns {Promise<any>} A promise that resolves with the result of the operation or rejects with an error.
+					*/
+					_transaction(mode, operation) {
+						return new Promise((resolve, reject) => {
+							if (!this.db) {
+								return reject(new Error('IndexedDB is not initialized. Call init() first.'));
+							}
+
+							// Start a new transaction
+							const transaction = this.db.transaction([this.storeName], mode);
+							const store = transaction.objectStore(this.storeName);
+
+							// Execute the operation and get the request
+							const request = operation(store);
+
+							// Event handler for successful request completion
+							request.onsuccess = (event) => {
+								resolve(event.target.result); // Resolve with the result of the request
+							};
+
+							// Event handler for request errors
+							request.onerror = (event) => {
+								console.error('IndexedDB request error:', event.target.errorCode);
+								reject(new Error('IndexedDB request failed: ' + event.target.errorCode)); // Reject with an error
+							};
+
+							// Event handler for transaction completion (success or abort)
+							transaction.oncomplete = () => {
+								// console.log('Transaction completed.');
+							};
+
+							// Event handler for transaction abort (e.g., due to an error)
+							transaction.onabort = (event) => {
+								console.error('Transaction aborted:', event.target.error);
+								reject(new Error('Transaction aborted: ' + event.target.error)); // Reject with an error
+							};
+						});
+					}
+
+					/**
+					* Stores a key-value pair in IndexedDB.
+					* @param {string} key - The key to store the value under.
+					* @param {any} value - The value to store.
+					* @returns {Promise<void>} A promise that resolves when the item is set.
+					*/
+					async setItem(key, value) {
+						return this._transaction('readwrite', (store) => store.put(value, key));
+					}
+
+					/**
+					* Retrieves a value from IndexedDB by its key.
+					* @param {string} key - The key of the item to retrieve.
+					* @returns {Promise<any | undefined>} A promise that resolves with the retrieved value, or undefined if not found.
+					*/
+					async getItem(key) {
+						return this._transaction('readonly', (store) => store.get(key));
+					}
+
+					/**
+					* Removes an item from IndexedDB by its key.
+					* @param {string} key - The key of the item to remove.
+					* @returns {Promise<void>} A promise that resolves when the item is removed.
+					*/
+					async removeItem(key) {
+						return this._transaction('readwrite', (store) => store.delete(key));
+					}
+
+					/**
+					* Clears all items from the object store.
+					* @returns {Promise<void>} A promise that resolves when all items are cleared.
+					*/
+					async clear() {
+						return this._transaction('readwrite', (store) => store.clear());
+					}
+				}
+
+				// Instantiate the IndexedDBSync wrapper
+				const dbSync = new IndexedDBSync();
+
+				// Expose the instance globally for Go/WASM to interact with
+				window.indexedDBSyncInstance = dbSync;
+
+				let wasmLoadedResolver, loadEventResolver, indexedDBReadyResolver; // Add new resolver
 				window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
 				window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
-			
+				window.indexedDBReady = new Promise(resolve => indexedDBReadyResolver = resolve); // New Promise for IndexedDB readiness
+
 				window.onWasmDone = function() {
 					wasmLoadedResolver();
 				}
-			
-				window.addEventListener('load', () => {
-					loadEventResolver();
+
+				// Modify the 'load' event listener to be async and await IndexedDB initialization
+				window.addEventListener('load', async () => {
+					loadEventResolver(); // Signal that the browser's load event has fired
+					try {
+						// Ensure the global IndexedDBSync instance exists before calling init
+						if (window.indexedDBSyncInstance) {
+							await window.indexedDBSyncInstance.init(); // Wait for IndexedDB to be fully initialized
+							console.log('IndexedDB Sync Wrapper: Initialized and ready for WASM.');
+							indexedDBReadyResolver(); // Resolve the IndexedDB ready promise
+						} else {
+							// This case should ideally not happen if the script is loaded correctly
+							console.error('IndexedDBSync instance not found on window.load.');
+							indexedDBReadyResolver(new Error('IndexedDBSync instance not found.')); // Resolve with error
+						}
+					} catch (error) {
+						console.error('Error initializing IndexedDB for WASM:', error);
+						indexedDBReadyResolver(error); // Resolve the promise with the error
+					}
 				});
-			
+
 				const go = new Go();
 				WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject)
 				.then((result) => {
 					go.run(result.instance);
 				});
-			
-				Promise.all([window.wasmLoaded, window.loadEventFired]).then(() => {
+
+				// Now, Promise.all waits for WASM, the page load, AND IndexedDB to be ready
+				Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady]).then(() => {
 					setTimeout(() => {
 						// console.log("about to dispatch PageReady event...");
 						window.dispatchEvent(new Event('PageReady'));
 					}, 50);
+				}).catch(error => {
+					console.error("Application startup failed:", error);
+					// Handle critical startup errors, e.g., display a message to the user
 				});
 			`,
 		),
 	)
+
+	if InBrowser() {
+		indexedDBReadyPromise := js.Global().Get("indexedDBReady") // Get the JS Promise
+
+		if indexedDBReadyPromise.Truthy() {
+			// This call will block the current Go WASM goroutine (which is the main one here)
+			// until the 'indexedDBReady' promise resolves in JavaScript.
+			// This will block the UI until IndexedDB is ready.
+			res := <-awaitPromise(indexedDBReadyPromise) // Assuming AwaitPromise is available in this scope
+			if res.error != nil {
+				fmt.Printf("Go WASM (enableWasm): ERROR: Failed to initialize IndexedDB: %v\n", res.error)
+			} else {
+				if verbose {
+					fmt.Println("Go WASM (enableWasm): IndexedDB is now ready.")
+				}
+			}
+		} else {
+			DEBUG("Go WASM (enableWasm): WARNING: 'indexedDBReady' promise not found.")
+		}
+	}
 
 	return d
 }

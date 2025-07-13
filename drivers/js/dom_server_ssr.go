@@ -42,7 +42,6 @@ var (
 	Server   *http.Server
 
 	RenderHTMLhandler http.Handler
-	verbose           bool
 )
 
 func init() {

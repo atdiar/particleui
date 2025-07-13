@@ -4,8 +4,11 @@
 package doc
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	ui "github.com/atdiar/particleui"
@@ -14,26 +17,246 @@ import (
 
 // TODO implement IndexedDB storage backaend
 
+// jsStore provides a synchronous-like wrapper for JavaScript storage APIs (localStorage, sessionStorage, IndexedDB).
 type jsStore struct {
+	// The underlying JavaScript object (e.g., window.localStorage, window.sessionStorage, or window.indexedDBSyncInstance)
 	store js.Value
+	// A flag to indicate if this store is an IndexedDB store, which requires awaiting promises.
+	isIndexedDB bool
 }
 
-func (s jsStore) Get(key string) (js.Value, bool) {
-	v := s.store.Call("getItem", key)
-	if !v.Truthy() {
-		return v, false
+// Storage retrieves a data storage instance based on the storage type.
+// The type can be "sessionstorage", "localstorage", or "indexeddb".
+// Usually it is not needed since storage is mostly meant to happen automatically at the component level.
+// But it can be useful to access the storage directly and manually for some custom use cases.
+// An example of that is chunked data loading and processing for data stored in indexedDB and which
+// might not fit in memory.
+// The API of the storage object is simple, similar to that of the JavaScript storage APIs:
+// - Get(key string) (js.Value, bool): Retrieves a value by key. Returns js.Undefined() and false if the key does not exist.
+// - Set(key string, value js.Value): Stores a key-value pair.
+// - Delete(key string): Removes a key-value pair by key.
+func Storage(typ string) *jsStore {
+	window := js.Global()
+	if !window.Truthy() {
+		DEBUG("window is not available, cannot access storage")
+		return nil
 	}
-	return v, true
+
+	var storeInstance js.Value
+	var isIndexedDB bool
+
+	switch typ {
+	case "sessionstorage":
+		storeInstance = window.Get("sessionStorage")
+		isIndexedDB = false
+	case "localstorage":
+		storeInstance = window.Get("localStorage")
+		isIndexedDB = false
+	case "indexeddb":
+		storeInstance = window.Get("indexedDBSyncInstance")
+		isIndexedDB = true
+		if !storeInstance.Truthy() {
+			DEBUG("window.indexedDBSyncInstance is not available, cannot access IndexedDB")
+			return nil
+		}
+	default:
+		DEBUG("Unsupported storage type:", typ)
+		return nil
+	}
+
+	return &jsStore{store: storeInstance, isIndexedDB: isIndexedDB}
 }
 
-func (s jsStore) Set(key string, value js.Value) {
-	JSON := js.Global().Get("JSON")
-	res := JSON.Call("stringify", value)
-	s.store.Call("setItem", key, res)
+// Get retrieves a value from the JavaScript storage.
+// This function IS SYNCHRONOUS from its Go caller's perspective.
+// It blocks the Go routine until the JS operation completes (via awaitPromise).
+func (s jsStore) Get(key string) (js.Value, bool) {
+	var v js.Value
+
+	if s.isIndexedDB {
+		// For IndexedDB, call the async getItem and await its result
+		resultPromise := s.store.Call("getItem", key)
+		res := <-awaitPromise(resultPromise)
+		if res.error != nil {
+			DEBUG("IndexedDB Get error for key '%s':", key, res.error)
+			// Decide how to handle an error from awaitPromise for 'Get'.
+			// For simplicity here, we'll treat it as not found and log the error.
+			return js.Undefined(), false
+		}
+		v = res.Value // This will be js.Undefined() if the key was not found
+	} else {
+		// For localStorage/sessionStorage, call getItem directly (synchronously)
+		v = s.store.Call("getItem", key)
+	}
+
+	// For both IndexedDB (undefined for not found) and localStorage/sessionStorage (null for not found)
+	// js.Value.Truthy() correctly identifies if a value was found.
+	return v, v.Truthy()
 }
 
-func (s jsStore) Delete(key string) {
-	s.store.Call("removeItem", key)
+// Set stores a key-value pair in the JavaScript storage.
+// This function IS SYNCHRONOUS from its Go caller's perspective.
+// It blocks the Go routine until the JS operation completes (via awaitPromise).
+func (s jsStore) Set(key string, value js.Value) error { // Now returns an error
+	if s.isIndexedDB {
+		// For IndexedDB, call the async setItem and await its completion
+		resultPromise := s.store.Call("setItem", key, value)
+		res := <-awaitPromise(resultPromise) // We only care about errors here
+		if res.error != nil {
+			DEBUG("IndexedDB Set error for key '%s':", key, res.error)
+			return res.error
+		}
+	} else {
+		// For localStorage/sessionStorage, call setItem directly
+		// Stringify value for localStorage/sessionStorage as they only store strings
+		JSON := js.Global().Get("JSON")
+		res := JSON.Call("stringify", value)
+		s.store.Call("setItem", key, res)
+	}
+	return nil // Success
+}
+
+// Delete removes an item from the JavaScript storage.
+// This function IS SYNCHRONOUS from its Go caller's perspective.
+// It blocks the Go routine until the JS operation completes (via awaitPromise).
+func (s jsStore) Delete(key string) error { // Now returns an error
+
+	if s.isIndexedDB {
+		// For IndexedDB, call the async removeItem and await its completion
+		resultPromise := s.store.Call("removeItem", key)
+		res := <-awaitPromise(resultPromise) // We only care about errors here
+		if res.error != nil {
+			DEBUG("IndexedDB Delete error for key '%s':", key, res.error)
+			return res.error
+		}
+	} else {
+		// For localStorage/sessionStorage, call removeItem directly
+		s.store.Call("removeItem", key)
+	}
+	return nil // Success
+}
+
+// Clear all items from the storage.
+// This function IS SYNCHRONOUS from its Go caller's perspective.
+func (s jsStore) Clear() error {
+	if s.isIndexedDB {
+		resultPromise := s.store.Call("clear")
+		res := <-awaitPromise(resultPromise)
+		if res.error != nil {
+			DEBUG("IndexedDB Clear error:", res.error)
+			return res.error
+		}
+	} else {
+		s.store.Call("clear")
+	}
+	return nil
+}
+
+// awaitPromise is a helper to await a JavaScript Promise from Go.
+// It blocks the Go routine until the Promise resolves or rejects.
+func awaitPromise(p js.Value) chan struct {
+	js.Value
+	error
+} {
+	resultChan := make(chan struct {
+		js.Value
+		error
+	}, 1) // Buffered channel so the goroutine doesn't block sending if nobody is listening yet
+
+	go func() { // The actual blocking logic now runs in a new goroutine
+		var result js.Value
+		var err error
+
+		// Create JS functions for resolve and reject callbacks
+		// These functions will be called by JavaScript on the same goroutine as the 'then' call originates from
+		// (which is the goroutine this `go func()` is running on).
+		var resolve js.Func
+		var reject js.Func
+
+		resolve = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			//DEBUG("Promise resolved with:", args[0])
+			result = args[0]
+			resultChan <- struct {
+				js.Value
+				error
+			}{result, nil} // Send result to channel
+			// Release the resolve function to avoid memory leaks
+			resolve.Release() // Release the JS function reference
+			reject.Release()  // Release the reject function reference
+			return nil
+		})
+
+		reject = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			// Check if args[0] is an Error object or a simple string
+			if len(args) > 0 && args[0].Type() == js.TypeObject && args[0].Get("message").Truthy() {
+				err = errors.New(args[0].Get("message").String())
+			} else if len(args) > 0 {
+				DEBUG("Promise rejected with:", args[0])
+				dEBUGJS(args[0])
+				err = errors.New(args[0].String())
+			} else {
+				err = errors.New("unknown promise rejection error")
+			}
+			resultChan <- struct {
+				js.Value
+				error
+			}{js.Undefined(), err} // Send error to channel
+			resolve.Release() // Release the JS function reference
+			reject.Release()  // Release the reject function reference
+			return nil
+		})
+
+		// Call the then method on the promise with our resolve and reject functions
+		p.Call("then", resolve, reject)
+
+		// This goroutine will now simply exit. The result will be sent via the channel
+		// when the JS promise eventually resolves/rejects and calls resolve/reject JS FuncOf callbacks.
+		// There's no need for a 'select {}' or blocking here because the result is sent asynchronously.
+	}()
+
+	return resultChan // Return the channel immediately
+}
+
+// CompressStringZlib compresses a given string using zlib with BestCompression.
+// It returns the compressed data as a byte slice and an error if any occurs.
+func CompressStringZlib(input string) ([]byte, error) {
+	var b bytes.Buffer
+	z, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+	if err != nil {
+		return nil, fmt.Errorf("error creating zlib writer: %w", err)
+	}
+
+	_, err = z.Write([]byte(input))
+	if err != nil {
+		return nil, fmt.Errorf("error writing to zlib writer: %w", err)
+	}
+
+	// Close the writer to flush all compressed data to the buffer
+	err = z.Close()
+	if err != nil {
+		return nil, fmt.Errorf("error closing zlib writer: %w", err)
+	}
+
+	return b.Bytes(), nil
+}
+
+// DecompressStringZlib decompresses a zlib-compressed byte slice back into a string.
+// It returns the decompressed string and an error if any occurs.
+func DecompressStringZlib(compressedData []byte) (string, error) {
+	b := bytes.NewReader(compressedData)
+	r, err := zlib.NewReader(b)
+	if err != nil {
+		return "", fmt.Errorf("error creating zlib reader: %w", err)
+	}
+	defer r.Close() // Ensure the reader is closed
+
+	decompressed := new(bytes.Buffer)
+	_, err = decompressed.ReadFrom(r) // ReadFrom is efficient for this
+	if err != nil {
+		return "", fmt.Errorf("error reading decompressed data: %w", err)
+	}
+
+	return decompressed.String(), nil
 }
 
 // Let's add sessionstorage and localstorage for Element properties.
@@ -52,7 +275,29 @@ func storer(s string) func(element *ui.Element, category string, propname string
 			DEBUG("window is not available, cannot store in storage")
 			return
 		}
-		store := jsStore{window.Get(s)}
+		var storeInstance js.Value
+		var isIndexedDB bool
+
+		switch s {
+		case "sessionstorage":
+			storeInstance = window.Get("sessionStorage")
+			isIndexedDB = false
+		case "localstorage":
+			storeInstance = window.Get("localStorage")
+			isIndexedDB = false
+		case "indexeddb":
+			storeInstance = window.Get("indexedDBSyncInstance")
+			isIndexedDB = true
+			if !storeInstance.Truthy() {
+				DEBUG("window.indexedDBSyncInstance is not available, cannot store in IndexedDB")
+				return
+			}
+		default:
+			DEBUG("Unsupported storage type:", s)
+			return
+		}
+
+		store := jsStore{store: storeInstance, isIndexedDB: isIndexedDB}
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return
@@ -81,8 +326,9 @@ func storer(s string) func(element *ui.Element, category string, propname string
 	}
 }
 
-var sessionstorefn = storer("sessionStorage")
-var localstoragefn = storer("localStorage")
+var sessionstorefn = storer("sessionstorage")
+var localstoragefn = storer("localstorage")
+var indexeddbstorefn = storer("indexeddb")
 
 func loader(s string) func(e *ui.Element) error {
 	return func(e *ui.Element) error {
@@ -94,7 +340,28 @@ func loader(s string) func(e *ui.Element) error {
 			}
 			return nil
 		}
-		store := jsStore{window.Get(s)}
+		var storeInstance js.Value
+		var isIndexedDB bool
+
+		switch s {
+		case "sessionstorage":
+			storeInstance = window.Get("sessionStorage")
+			isIndexedDB = false
+		case "localstorage":
+			storeInstance = window.Get("localStorage")
+			isIndexedDB = false
+		case "indexeddb":
+			storeInstance = window.Get("indexedDBSyncInstance")
+			isIndexedDB = true
+			if !storeInstance.Truthy() {
+				DEBUG("window.indexedDBSyncInstance is not available, cannot load from IndexedDB")
+				return errors.New("IndexedDB instance not available")
+			}
+		default:
+			return errors.New("Unsupported storage type: " + s)
+		}
+
+		store := jsStore{store: storeInstance, isIndexedDB: isIndexedDB}
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return errors.New("storage is disconnected")
@@ -168,8 +435,9 @@ func loader(s string) func(e *ui.Element) error {
 	}
 }
 
-var loadfromsession = loader("sessionStorage")
-var loadfromlocalstorage = loader("localStorage")
+var loadfromsession = loader("sessionstorage")
+var loadfromlocalstorage = loader("localstorage")
+var loadfromindexeddb = loader("indexeddb")
 
 func clearer(s string) func(element *ui.Element) {
 	return func(element *ui.Element) {
@@ -178,7 +446,30 @@ func clearer(s string) func(element *ui.Element) {
 			DEBUG("window is not available, cannot clear storage")
 			return
 		}
-		store := jsStore{window.Get(s)}
+		var storeInstance js.Value
+		var isIndexedDB bool
+
+		switch s {
+		case "sessionstorage":
+			storeInstance = window.Get("sessionStorage")
+			isIndexedDB = false
+		case "localstorage":
+			storeInstance = window.Get("localStorage")
+			isIndexedDB = false
+		case "indexeddb":
+			storeInstance = window.Get("indexedDBSyncInstance")
+			isIndexedDB = true
+			if !storeInstance.Truthy() {
+				DEBUG("window.indexedDBSyncInstance is not available, cannot clear IndexedDB")
+				return
+			}
+		default:
+			DEBUG("Unsupported storage type:", s)
+			return
+		}
+
+		store := jsStore{store: storeInstance, isIndexedDB: isIndexedDB}
+
 		_, ok := store.Get("zui-connected")
 		if !ok {
 			return
@@ -214,8 +505,9 @@ func clearer(s string) func(element *ui.Element) {
 	}
 }
 
-var clearfromsession = clearer("sessionStorage")
-var clearfromlocalstorage = clearer("localStorage")
+var clearfromsession = clearer("sessionstorage")
+var clearfromlocalstorage = clearer("localstorage")
+var clearfromindexeddb = clearer("indexeddb")
 
 var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete", func(e *ui.Element) *ui.Element {
 	e.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
@@ -239,17 +531,22 @@ var cleanStorageOnDelete = ui.NewConstructorOption("cleanstorageondelete", func(
 func isPersisted(e *ui.Element) bool {
 	pmode := ui.PersistenceMode(e)
 
+	var isIndexedDB bool
+
 	var s string
 	switch pmode {
 	case "sessionstorage":
 		s = "sessionStorage"
 	case "localstorage":
 		s = "localStorage"
+	case "indexeddb":
+		s = "indexedDBSyncInstance"
+		isIndexedDB = true
 	default:
 		return false
 	}
 
-	store := jsStore{js.Global().Get(s)}
+	store := jsStore{store: js.Global().Get(s), isIndexedDB: isIndexedDB}
 	_, ok := store.Get(e.ID)
 	return ok
 }
@@ -329,12 +626,22 @@ var AllowAppLocalStoragePersistence = ui.NewConstructorOption("localstorage", fu
 	return e
 })
 
+// AllowIndexedDBPersistence is a constructor option for IndexedDB storage.
+var AllowIndexedDBPersistence = ui.NewConstructorOption("indexeddb", func(e *ui.Element) *ui.Element {
+	e.Set("internals", "persistence", ui.String("indexeddb"))
+	return e
+})
+
 func EnableSessionPersistence() string {
 	return "sessionstorage"
 }
 
 func EnableLocalPersistence() string {
 	return "localstorage"
+}
+
+func EnableIndexedDBPersistence() string {
+	return "indexeddb"
 }
 
 func SyncOnDataMutation(e *ui.Element, propname string) *ui.Element {

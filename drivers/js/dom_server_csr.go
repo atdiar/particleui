@@ -47,7 +47,6 @@ var (
 	Server   *http.Server
 
 	RenderHTMLhandler http.Handler
-	verbose           bool
 )
 
 // NOTE: the default entry path is stored in the BasePath variable stored in dom.go

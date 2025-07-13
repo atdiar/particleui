@@ -336,6 +336,7 @@ func renderPages(renderPath string, releasebuild bool) error {
 		return fmt.Errorf("server binary does not exist at path: %s", absoluteBinaryPath)
 	}
 
+	fmt.Println("about to render.......")
 	// Use the absolute path
 	cmd := exec.Command(absoluteBinaryPath, "--render", renderPath)
 	if basepath != "" {

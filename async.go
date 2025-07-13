@@ -173,7 +173,7 @@ func (e *Element) setDataPrefetcher(propname string, reqfunc func(e *Element) *h
 		ctx, cancelFn = context.WithCancel(r.Context())
 		r = r.WithContext(ctx)
 
-		evt.Origin().fetchData(propname, r, cancelFn, responsehandler, true)
+		evt.Origin().fetchData(propname, r, responsehandler, true)
 		return false
 	}).fetcher()
 
@@ -265,7 +265,7 @@ func (e *Element) SetDataFetcher(propname string, reqfunc func(e *Element) *http
 			return false
 		}).RunOnce().RunASAP())
 
-		evt.Origin().fetchData(propname, r, cancelFn, responsehandler, false)
+		evt.Origin().fetchData(propname, r, responsehandler, false)
 
 		return false
 	}).fetcher()
@@ -349,7 +349,7 @@ func verb(v Value) string {
 	}
 }
 
-func (e *Element) fetchData(propname string, r *http.Request, cancelFn context.CancelFunc, responsehandler func(*http.Response) (Value, error), prefetch bool) {
+func (e *Element) fetchData(propname string, r *http.Request, responsehandler func(*http.Response) (Value, error), prefetch bool) {
 	if responsehandler == nil {
 		panic("response handler is not specified. Will not be able to process the data fetching request")
 	}

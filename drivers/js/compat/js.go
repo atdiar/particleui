@@ -25,3 +25,14 @@ var (
 	CopyBytesToJS = js.CopyBytesToJS
 	FuncOf        = js.FuncOf
 )
+
+const (
+	TypeNull Type = iota
+	TypeBoolean
+	TypeNumber
+	TypeString
+	TypeSymbol
+	TypeObject
+	TypeFunction
+	TypeUndefined
+)
