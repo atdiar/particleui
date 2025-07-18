@@ -1893,7 +1893,48 @@ type mutationRecorder struct {
 	maxChunkSize int
 	totalCount   int  // total number of mutations captured
 	stored       bool // are all mutations backed-up in indexeddb
-	mu           *sync.Mutex
+}
+
+func (m *mutationRecorder) withMetadata(currenpos int, chunkId int, maxChunkSize int, totalCount int, stored bool) ui.Object {
+	m.pos = currenpos
+	m.chunkID = chunkId
+	m.maxChunkSize = maxChunkSize
+	m.totalCount = totalCount
+	m.stored = stored
+	o := ui.NewObject().
+		Set("pos", ui.Number(m.pos)).
+		Set("chunkID", ui.Number(m.chunkID)).
+		Set("chunkSize", ui.Number(m.maxChunkSize)).
+		Set("Count", ui.Number(m.totalCount)).
+		Set("stored", ui.Bool(m.stored)).
+		Commit()
+	return o
+}
+
+func (m *mutationRecorder) setmetadata(stored bool) {
+	o := ui.NewObject().
+		Set("pos", ui.Number(m.pos)).
+		Set("chunkID", ui.Number(m.chunkID)).
+		Set("chunkSize", ui.Number(m.maxChunkSize)).
+		Set("Count", ui.Number(m.totalCount)).
+		Set("stored", ui.Bool(m.stored)).
+		Commit()
+	m.raw.Properties.Set(Namespace.Data, "mutationlist-metadata", o)
+	m.stored = stored
+	// DEBUG("mutationreccorder metadata set: ", o)
+}
+
+func (m *mutationRecorder) loadmetadata() {
+	o, ok := m.raw.GetData("mutationlist-metadata")
+	if !ok {
+		return
+	}
+	mdo := o.(ui.Object)
+	m.pos = int(mdo.MustGetNumber("pos"))
+	m.chunkID = int(mdo.MustGetNumber("chunkID"))
+	m.maxChunkSize = int(mdo.MustGetNumber("chunkSize"))
+	m.totalCount = int(mdo.MustGetNumber("Count"))
+	m.stored = mdo.MustGetBool("stored").Bool()
 }
 
 func (m *mutationRecorder) Capture() {
@@ -1936,6 +1977,12 @@ func (m *mutationRecorder) Capture() {
 			// There is no recorded mutations, nothing to store.
 			return false
 		}
+
+		if m.stored {
+			DEBUG("mutationreccorder: no need to store mutations, already stored")
+			return false
+		}
+
 		list := l.(ui.List)
 
 		storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
@@ -1957,23 +2004,21 @@ func (m *mutationRecorder) Capture() {
 		}
 		js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
 
-		metadata := map[string]interface{}{
-			"chunkID":   m.chunkID,
-			"chunkSize": m.maxChunkSize,
-			"Count":     m.totalCount,
-		}
+		metadata := m.withMetadata(m.pos, m.chunkID, m.maxChunkSize, m.totalCount, false)
 		metadataKey := "mutationlist-metadata"
-		metadataValue := stringify(metadata)
+		metadataValue := stringify(metadata.RawValue())
 
 		go func() {
 			// DEBUG not sure that DoSync is adequate here.
 			storage.Set(storagekey, dst)
 			storage.Set(metadataKey, js.ValueOf(metadataValue))
-			m.mu.Lock()
-			defer m.mu.Unlock()
-			m.stored = true
+			/*
+				ui.DoSync(context.Background(), m.raw, func() {
+					//m.setmetadata(true)
+				})
+			*/
 		}()
-
+		m.setmetadata(true)
 		return false
 	}))
 
@@ -1981,104 +2026,49 @@ func (m *mutationRecorder) Capture() {
 	// Of course, that only needs to happen if there has been new mutations since the last
 	// storage event.
 	ctx, cancelfn := context.WithCancel(context.Background())
-	storage := Storage("indexeddb")
-	if storage != nil {
-		t := time.NewTicker(time.Millisecond * 750)
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					DEBUG("mutationreccorder periodic storage of mutations cancelled")
-					return
-				case <-t.C:
-					m.mu.Lock()
-					stored := m.stored
-					m.mu.Unlock()
-					if !stored {
-						DEBUG("mutationreccorder periodic storage of unstored mutations")
-						// we need to store the current chunk of mutations
-						l, ok := m.raw.GetData("mutationlist")
-						if !ok {
-							DEBUG("no mutation list to store")
-							return
-						}
-						list := l.(ui.List)
-						storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
-						// apply zlib compression
-						val := stringify(list.RawValue()) // turns the raw list object into json
-						b, err := CompressStringZlib(val) // compress the string using zlib
-						if err != nil {
-							DEBUG("error while compressing mutation list: %v", err)
-							return
-						}
-						// Now we need to create the Uint8Array and use js.CopyBytesToJS
-						// to copy the bytes to the JS value.
-						// b holds the byte source
-						var dst js.Value
-						dst = js.Global().Get("Uint8Array").New(len(b))
-						js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
-
-						metadata := map[string]interface{}{
-							"chunkID":   m.chunkID,
-							"chunkSize": m.maxChunkSize,
-							"Count":     m.totalCount,
-						}
-						metadataKey := "mutationlist-metadata"
-						metadataValue := stringify(metadata)
-
-						go func() {
-							// DEBUG not sure that DoSync is adequate here.
-							storage.Set(storagekey, dst)
-							storage.Set(metadataKey, js.ValueOf(metadataValue))
-							m.mu.Lock()
-							defer m.mu.Unlock()
-							m.stored = true
-						}()
-					}
-				}
-			}
-		}()
-	}
 
 	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.OnMutation(func(evt ui.MutationEvent) bool {
-		m.mu.Lock()
-		defer m.mu.Unlock()
+		m.totalCount++
 		v := evt.NewValue()
 		l, ok := m.raw.GetData("mutationlist")
 		storage := Storage("indexeddb")
-		m.totalCount++
 
 		if storage == nil {
 			// In-memory storage if indexeddb not available
 			// This is also used on the server to store mutations before serializing them
 			// before they are sent to the frontend for replay during hydration.
-			DEBUG("indexeddb is not available, storing mutatiions iun-memory. Beware of OOMe")
+			DEBUG("indexeddb is not available, storing mutations in-memory. Beware of OOMe")
 			if !ok {
-				m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+				m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit())
 			} else {
 				list, ok := l.(ui.List)
 				if !ok {
-					m.raw.SetData("mutationlist", ui.NewList(v).Commit())
+					m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit())
 				}
-				m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
+				m.raw.Properties.Set(Namespace.Data, "mutationlist", list.MakeCopy().Append(v).Commit())
 			}
+			m.pos++
 			return false
 		}
 
 		if !ok {
-			m.raw.SetData("mutationlist", ui.NewList(v).Commit())
-			m.stored = false // reset the stored flag as we are about to store a new mutation
+			m.pos = 0
+			m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit()) // DEBUG .. no mutation is triggered sicne we modify the Properties, maybe use m.raw.SetData instead?
+			m.setmetadata(false)                                                         // reset the stored flag as we are about to store a new mutation
+			m.pos++
 		} else {
 			list, ok := l.(ui.List)
 			if !ok {
-				m.raw.SetData("mutationlist", ui.NewList(v).Commit())
-				m.stored = false // reset the stored flag as we are about to store a new mutation
+				m.pos = 0
+				m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit())
+				m.setmetadata(false) // reset the stored flag as we are about to store a new mutation
+				m.pos++
 			} else {
-				if list.Length() == m.maxChunkSize-1 {
+				if m.pos == m.maxChunkSize-1 {
 					// we reached the max chunk size, we should store the current list (compressed format) and start a new one
-					list.MakeCopy().Append(v).Commit()
+					list = list.MakeCopy().Append(v).Commit()
 					storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
 					// apply zlib compression
 					val := stringify(list.RawValue()) // turns the raw list object into json
@@ -2101,28 +2091,33 @@ func (m *mutationRecorder) Capture() {
 					// now we need to store the metadata ofr the mutation list
 					// it needs to encode the chunk ID, the chunk size and the
 					// number of entries in the list.
-					metadata := map[string]interface{}{
-						"chunkID":   m.chunkID,
-						"chunkSize": m.maxChunkSize,
-						"Count":     m.totalCount,
-					}
+					metadata := m.withMetadata(m.pos, m.chunkID, m.maxChunkSize, m.totalCount, false)
 					metadataKey := "mutationlist-metadata"
-					metadataValue := stringify(metadata)
+					metadataValue := stringify(metadata.RawValue())
 
 					// DEBUG does they need to be launched in their own goroutines
 					// think not because it is registered and called in the main thread/goroutine.
 					DEBUG(dst.Type(), " Uint8Array length:", dst.Get("length").Int())
-					storage.Set(storagekey, dst)
-					storage.Set(metadataKey, js.ValueOf(metadataValue))
+					go func() {
+						storage.Set(storagekey, dst)
+						storage.Set(metadataKey, js.ValueOf(metadataValue))
 
-					// reset the list and increment the chunk ID
-					m.raw.SetData("mutationlist", ui.NewList().Commit()) // could have put a non-list value such as Bool(false) so next mutation event, the new empty list would have been created.
+						ui.DoSync(context.Background(), m.raw, func() {
+							// reset the list and increment the chunk ID
+
+						})
+					}()
 					m.chunkID++
-					m.pos = 0
-					m.stored = true // reset the stored flag as we are about to store a new mutation
+					m.pos = 0                                                                   // wraps
+					m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList().Commit()) // could have put a non-list value such as Bool(false) so next mutation event, the new empty list would have been created.
+					m.withMetadata(m.pos, m.chunkID, m.maxChunkSize, m.totalCount, true)
+					m.setmetadata(true) // reset the stored flag as we are about to store a new mutation
+
 				} else {
-					m.raw.SetData("mutationlist", list.MakeCopy().Append(v).Commit())
-					m.stored = false // reset the stored flag as we are about to store a new mutation
+					m.raw.Properties.Set(Namespace.Data, "mutationlist", list.MakeCopy().Append(v).Commit())
+					m.withMetadata(m.pos, m.chunkID, m.maxChunkSize, m.totalCount, false)
+					m.setmetadata(false)
+					m.pos++
 				}
 			}
 		}
@@ -2138,6 +2133,66 @@ func (m *mutationRecorder) Capture() {
 	}).RunOnce())
 
 	m.raw.WatchEvent("new-mutation", d, h)
+
+	storage := Storage("indexeddb")
+	if storage != nil {
+		t := time.NewTicker(time.Millisecond * 750)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					DEBUG("mutationreccorder periodic storage of mutations cancelled")
+					return
+				case <-t.C:
+					ui.DoSync(context.Background(), m.raw, func() {
+						stored := m.stored
+
+						if !stored {
+							// DEBUG("mutationreccorder periodic storage of unstored mutations")
+							// we need to store the current chunk of mutations
+							l, ok := m.raw.GetData("mutationlist")
+							if !ok {
+								DEBUG("no mutation list to store")
+								return
+							}
+							list := l.(ui.List)
+							storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+							// apply zlib compression
+							val := stringify(list.RawValue()) // turns the raw list object into json
+							b, err := CompressStringZlib(val) // compress the string using zlib
+							if err != nil {
+								DEBUG("error while compressing mutation list: %v", err)
+								return
+							}
+							// Now we need to create the Uint8Array and use js.CopyBytesToJS
+							// to copy the bytes to the JS value.
+							// b holds the byte source
+							var dst js.Value
+							dst = js.Global().Get("Uint8Array").New(len(b))
+							js.CopyBytesToJS(dst, b) // copy the bytes to the Uint8Array
+
+							metadata := m.withMetadata(m.pos, m.chunkID, m.maxChunkSize, m.totalCount, false)
+							metadataKey := "mutationlist-metadata"
+							metadataValue := stringify(metadata.RawValue())
+
+							go func() {
+								// DEBUG not sure that DoSync is adequate here.
+								storage.Set(storagekey, dst)
+								storage.Set(metadataKey, js.ValueOf(metadataValue))
+								/*
+									ui.DoSync(context.Background(), m.raw, func() {
+										//m.setmetadata(true)
+									})
+								*/
+							}()
+							m.setmetadata(true)
+						}
+					})
+
+				}
+			}
+		}()
+	}
 }
 
 func (m *mutationRecorder) Replay() error {
@@ -2155,9 +2210,8 @@ func (m *mutationRecorder) Replay() error {
 	}
 	err := mutationreplay(d)
 	if err != nil {
-		DEBUG(err)
 		d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
-		return ui.ErrReplayFailure
+		return err
 	}
 
 	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
@@ -2166,6 +2220,7 @@ func (m *mutationRecorder) Replay() error {
 	return nil
 }
 
+// DEBUG rewrite Clear
 func (m *mutationRecorder) Clear() {
 	d := GetDocument(m.raw)
 	storage := Storage("indexeddb")
@@ -2198,16 +2253,17 @@ func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 
 	trace, ok := d.Get(Namespace.Internals, "mutationtrace")
 	if ok {
+		// TODO DEBUG transform into chunks?
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
 		if err != nil {
 			panic(err)
 		}
 		m.AsElement().SetData("mutationlist", v)
 		l := v.(ui.List).Length()
-		return &mutationRecorder{m.AsElement(), 0, 0, 4096, l, true, &sync.Mutex{}}
+		return &mutationRecorder{m.AsElement(), 0, 0, 4096, l, true}
 	}
 
-	mr := &mutationRecorder{m.AsElement(), 0, 0, 4096, 0, true, &sync.Mutex{}}
+	mr := &mutationRecorder{m.AsElement(), 0, 0, 4096, 0, true}
 	return mr
 }
 
@@ -2216,7 +2272,9 @@ func (d *Document) mutationRecorder() *mutationRecorder {
 	if m == nil {
 		panic("mutation recorder is missing")
 	}
-	return &mutationRecorder{m, 0, 0, 4096, 0, true, &sync.Mutex{}}
+	mo := &mutationRecorder{m, 0, 0, 4096, 0, true}
+	mo.loadmetadata()
+	return mo
 }
 
 // ListenAndServe is used to start listening to state changes to the document (aka navigation)
@@ -2352,6 +2410,7 @@ var documentTitleHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 
 func mutationreplay(d *Document) error {
 	m := d.mutationRecorder()
+
 	e := m.raw
 	if !e.Configuration.MutationReplay {
 		return nil
@@ -2378,12 +2437,12 @@ func mutationreplay(d *Document) error {
 			op := rawop.(ui.Object)
 			id, ok := op.Get("id")
 			if !ok {
-				panic("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
+				panic("mutation entry badly encoded. Expected a ui.Object with an 'id' property")
 			}
 
 			cat, ok := op.Get("cat")
 			if !ok {
-				panic("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
+				panic("mutation entry badly encoded. Expected a ui.Object with a 'cat' property")
 			}
 
 			prop, ok := op.Get("prop")
@@ -2393,7 +2452,7 @@ func mutationreplay(d *Document) error {
 
 			val, ok := op.Get("val")
 			if !ok {
-				panic("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
+				panic("mutation entry badly encoded. Expected a ui.Object with a 'val' property")
 			}
 
 			el := GetDocument(e).GetElementById(id.(ui.String).String())
@@ -2423,7 +2482,7 @@ func mutationreplay(d *Document) error {
 			}
 			m.pos = int(i.(ui.Number).Float64())
 			m.pos = m.pos + 1
-			d.Set(Namespace.Internals, "mutation-list-index", ui.Number(m.pos))
+			d.AsElement().Properties.Set(Namespace.Internals, "mutation-list-index", ui.Number(m.pos))
 		}
 		return nil
 	}
@@ -2444,17 +2503,21 @@ func mutationreplay(d *Document) error {
 		DEBUG("error while unmarshalling mutation metadata: %v", err)
 		return err
 	}
-	m.chunkID = int(metadata["chunkID"].(float64))
-	m.maxChunkSize = int(metadata["chunkSize"].(float64))
-	m.totalCount = int(metadata["Count"].(float64))
+	o := ui.ValueFrom(metadata).(ui.Object)
+	DEBUG("mutation metadata: ", metadata, "raw", rawmetadata)
+	m.chunkID = int(o.MustGetNumber("chunkID"))
+	m.maxChunkSize = int(o.MustGetNumber("chunkSize"))
+	m.totalCount = int(o.MustGetNumber("Count"))
+	DEBUG("Total mutation count: ", m.totalCount)
 
 	// Now we can try to retrieve the mutation list in chunks and replay it
 	// each chunk needs to be retrieved first and then zlib decompressed.
 	chunksCount := int((m.totalCount + m.maxChunkSize - 1) / m.maxChunkSize)
 	replayedCount := 0
+	var replayerror error
 
-	for range chunksCount {
-		storagekey := fmt.Sprintf("mutationlist-chunk-%d", m.chunkID)
+	for i := range chunksCount {
+		storagekey := fmt.Sprintf("mutationlist-chunk-%d", i)
 		var rawchunk js.Value
 		var ok bool
 
@@ -2463,9 +2526,9 @@ func mutationreplay(d *Document) error {
 		rawchunk, ok = storage.Get(storagekey)
 
 		if !ok {
-			return fmt.Errorf("mutation chunk %d is missing", m.chunkID)
+			return fmt.Errorf("mutation chunk %d is missing", i)
 		}
-		DEBUG(rawchunk.Type(), " mutation chunk type")
+
 		size := rawchunk.Get("length").Int()
 		b := make([]byte, size)
 		js.CopyBytesToGo(b, rawchunk)
@@ -2473,15 +2536,23 @@ func mutationreplay(d *Document) error {
 		var rawlistobj = make(map[string]interface{})
 		err = json.Unmarshal([]byte(decompressedChunk), &rawlistobj)
 		if err != nil {
-			return fmt.Errorf("error while unmarshalling decompressed mutation chunk %d: %v", m.chunkID, err)
+			replayerror = fmt.Errorf("error while unmarshalling decompressed mutation chunk %d: %v", m.chunkID, err)
+			break
 		}
 		mutationtrace, ok := ui.ValueFrom(rawlistobj).(ui.List)
 		if !ok {
-			return fmt.Errorf("error while converting decompressed mutation chunk %d to ui.List", m.chunkID)
+			replayerror = fmt.Errorf("error while converting decompressed mutation chunk %d to ui.List", m.chunkID)
+			break
+		}
+		DEBUG("replaying mutation chunk ", i, " with ", mutationtrace.Length(), " mutations")
+		if i == chunksCount-1 {
+			// we need to repopulate the active chunk of mutations in the mutation recorder
+			// without triggering the mutation handlers.
+			e.Properties.Set(ui.Namespace.Data, "mutationlist", mutationtrace)
+
 		}
 
 		m.pos = 0
-		var replayerror error
 
 		mutationtrace.Range(func(k int, v ui.Value) bool {
 			m.pos = k
@@ -2489,25 +2560,25 @@ func mutationreplay(d *Document) error {
 			op := rawop.(ui.Object)
 			id, ok := op.Get("id")
 			if !ok {
-				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with an 'id' property")
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expected a ui.Object with an 'id' property")
 				return true
 			}
 
 			cat, ok := op.Get("cat")
 			if !ok {
-				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'cat' property")
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expected a ui.Object with a 'cat' property")
 				return true
 			}
 
 			prop, ok := op.Get("prop")
 			if !ok {
-				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'prop' property")
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expected a ui.Object with a 'prop' property")
 				return true
 			}
 
 			val, ok := op.Get("val")
 			if !ok {
-				replayerror = fmt.Errorf("mutation entry badly encoded. Expectted a ui.Object with a 'val' property")
+				replayerror = fmt.Errorf("mutation entry badly encoded. Expected a ui.Object with a 'val' property")
 				return true
 			}
 
@@ -2528,17 +2599,21 @@ func mutationreplay(d *Document) error {
 				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, true)
 			}
 
-			d.Set(Namespace.Internals, "mutation-list-index", ui.Number(replayedCount))
+			d.AsElement().Properties.Set(Namespace.Internals, "mutation-list-index", ui.Number(replayedCount))
 			replayedCount++
+
 			return false
 		})
 
-		if replayedCount != m.totalCount {
-			return fmt.Errorf("replayed %d mutations but expected %d mutations", replayedCount, m.totalCount)
-		}
+	}
+	if replayedCount != m.totalCount {
+		replayerror = fmt.Errorf("replayed %d mutations but expected %d mutations", replayedCount, m.totalCount)
 		return replayerror
 	}
-	return nil
+	m.pos = (m.pos + 1) % m.maxChunkSize
+
+	m.setmetadata(true) // set the stored flag to true as we have replayed all mutations
+	return replayerror
 }
 
 //

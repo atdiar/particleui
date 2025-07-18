@@ -1839,9 +1839,9 @@ func (e *Element) Set(category string, propname string, value Value) {
 		if !shouldSkip(category, propname) {
 			idx, ok := e.Root.Get(Namespace.Internals, "mutation-list-index")
 			if !ok {
-				e.Root.Set(Namespace.Internals, "mutation-list-index", Number(1))
+				e.Root.Properties.Set(Namespace.Internals, "mutation-list-index", Number(1))
 			} else {
-				e.Root.Set(Namespace.Internals, "mutation-list-index", idx.(Number)+1)
+				e.Root.Properties.Set(Namespace.Internals, "mutation-list-index", idx.(Number)+1)
 			}
 		}
 	}
@@ -1931,21 +1931,10 @@ func shouldSkip(category, propname string) bool {
 		return true
 	}
 
-	if category == Namespace.Event && propname == "new-mutation" {
-		return true
-	}
-
-	if category == Namespace.lifecycle {
-		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "start"}, "-") {
-			return true
-		}
-		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "end"}, "-") {
-			return true
-		}
-	}
-
 	if category == Namespace.Event {
 		switch propname {
+		case "new-mutation":
+			return true
 		case "before-unactive":
 			return true
 		case "datastore-load":
@@ -1959,6 +1948,63 @@ func shouldSkip(category, propname string) bool {
 		case TransitionPhase("replay", "error"):
 			return true
 		case "mutation-replayed":
+			return true
+		}
+	}
+
+	if category == Namespace.lifecycle {
+		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "new-mutation", "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "before-unactive", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "before-unactive", "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "datastore-load", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "datastore-load", "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "datastore-load", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "datastore-load", "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "mutation-replayed", "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, "mutation-replayed", "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "start"), "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "start"), "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "cancel"), "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "cancel"), "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "error"), "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "error"), "end"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "end"), "start"}, "-") {
+			return true
+		}
+		if propname == strings.Join([]string{Namespace.Event, TransitionPhase("replay", "end"), "end"}, "-") {
 			return true
 		}
 	}
@@ -2003,6 +2049,10 @@ func ReplayMutation(e *Element, category string, propname string, value Value, s
 	}
 
 	evt := e.NewMutationEvent(category, propname, value, oldvalue)
+	if category == Namespace.Event {
+		//  DEBUG we could use ReplayMutation with sync == false here instead of Set
+		ReplayMutation(e, Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "start"}, "-"), Bool(true), false)
+	}
 
 	props, ok := e.Properties.Categories[category]
 	if !ok {
@@ -2036,6 +2086,11 @@ func ReplayMutation(e *Element, category string, propname string, value Value, s
 			}
 			watchers.List = wl[:index]
 		}
+	}
+	if category == Namespace.Event {
+		//  DEBUG we could use ReplayMutation with sync == false here instead of Set
+		ReplayMutation(e, Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "start"}, "-"), Bool(false), false)
+		ReplayMutation(e, Namespace.lifecycle, strings.Join([]string{Namespace.Event, propname, "end"}, "-"), value, false)
 	}
 }
 
