@@ -42,7 +42,7 @@ func init() {
 }
 
 const (
-	CaptureLimit = 1000000
+	CaptureLimit = 10000000
 )
 
 var (
@@ -105,7 +105,7 @@ const (
 )
 
 // InBrowser indicates whether the document is created in a browser environement or not.
-// This
+// This is a runtime helper only: it is not for conditional compilation.
 func InBrowser() bool {
 	if runtime.GOOS == "js" && (runtime.GOARCH == "wasm" || runtime.GOARCH == "ecmascript") {
 		return true
@@ -587,7 +587,6 @@ func connectNative(e *ui.Element, tag string) {
 		} else {
 			ls := Storage("localstorage")
 			ss := Storage("sessionstorage")
-			//is := Storage("indexeddb")
 
 			if ls == nil {
 				DEBUG("unable to connect localStorage")
@@ -601,12 +600,6 @@ func connectNative(e *ui.Element, tag string) {
 				ss.Set("zui-connected", js.ValueOf(true))
 			}
 
-			/*if is == nil {
-				DEBUG("unable to connect indexedDB")
-			} else {
-				is.Set("zui-connected", js.ValueOf(true))
-			}
-			*/
 			root = js.Global().Get("document").Call("getElementById", id)
 			if !root.Truthy() {
 				root = js.Global().Get("document").Get("documentElement")
@@ -1473,23 +1466,6 @@ type Document struct {
 	DBConnections map[string]js.Value
 }
 
-/*
-func (d *Document) initializeIDgenerator() {
-	var seed uint64
-	h := fnv.New64a()
-    h.Write([]byte(d.AsElement().ID))
-	seed = h.Sum64()
-
-	err := binary.Read(crand.Reader, binary.LittleEndian, &seed)
-	if err != nil {
-		panic(err)
-	}
-	d.src = &rand.PCGSource{}
-	d.rng = rand.New(d.src)
-	d.rng.Seed(seed)
-}
-*/
-
 func (d *Document) Window() Window {
 	w := d.GetElementById("window")
 	if w != nil {
@@ -1953,14 +1929,13 @@ func (m *mutationRecorder) Capture() {
 	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
 	d.Set(Namespace.Internals, "mutation-capturing", ui.Bool(true))
 
-	DEBUG("CAPTURE ON...")
-
 	// on the server, indexeddb is not present. We store everything for replay in memory.
 	// On the client, we use indexeddb to store the mutations in chunks.
 	// The chunk size is 4096 by default (TODO DEBUG make it configurable?).
 	// We also need to hook onto the document's Before Unactive event to store
 	// the current chunk of mutations, ie.e the current state of the mutation recorder.
-	d.OnBeforeUnactive(ui.OnMutation(func(evt ui.MutationEvent) bool {
+	var g *ui.MutationHandler
+	g = ui.OnMutation(func(evt ui.MutationEvent) bool {
 		// Before unactive, we need to store the current chunk of mutations
 		l, ok := m.raw.GetData("mutationlist")
 		storage := Storage("indexeddb")
@@ -1979,7 +1954,7 @@ func (m *mutationRecorder) Capture() {
 		}
 
 		if m.stored {
-			DEBUG("mutationreccorder: no need to store mutations, already stored")
+			// DEBUG("mutationreccorder: no need to store mutations, already stored")
 			return false
 		}
 
@@ -2009,18 +1984,17 @@ func (m *mutationRecorder) Capture() {
 		metadataValue := stringify(metadata.RawValue())
 
 		go func() {
-			// DEBUG not sure that DoSync is adequate here.
+			// For now, we are forced to launch these optimistically.
+			// In the future, with JSPI facilitating interop between wasm and js promise reentrancy,
+			// we might be able to wait until the promise resolve.
 			storage.Set(storagekey, dst)
 			storage.Set(metadataKey, js.ValueOf(metadataValue))
-			/*
-				ui.DoSync(context.Background(), m.raw, func() {
-					//m.setmetadata(true)
-				})
-			*/
 		}()
 		m.setmetadata(true)
 		return false
-	}))
+	})
+
+	d.OnBeforeUnactive(g)
 
 	// We need to implement periodic storage of the mutation list in indexeddb if applicable.
 	// Of course, that only needs to happen if there has been new mutations since the last
@@ -2030,8 +2004,18 @@ func (m *mutationRecorder) Capture() {
 	// capture of the list of mutations
 	var h *ui.MutationHandler
 	h = ui.OnMutation(func(evt ui.MutationEvent) bool {
+		if m.totalCount >= 0.9*CaptureLimit {
+			// TODO makes that a warning
+			DEBUG("mutationreccorder: mutation buffer at 90% of the Maximum Capture Limit, think about clearing.")
+		}
+		if m.totalCount >= CaptureLimit {
+			DEBUG("mutationreccorder: mutation buffer at Maximum Capture Limit, mutations are not recorded anymore.")
+			return false
+		}
+
 		m.totalCount++
 		v := evt.NewValue()
+
 		l, ok := m.raw.GetData("mutationlist")
 		storage := Storage("indexeddb")
 
@@ -2095,17 +2079,12 @@ func (m *mutationRecorder) Capture() {
 					metadataKey := "mutationlist-metadata"
 					metadataValue := stringify(metadata.RawValue())
 
-					// DEBUG does they need to be launched in their own goroutines
-					// think not because it is registered and called in the main thread/goroutine.
-					DEBUG(dst.Type(), " Uint8Array length:", dst.Get("length").Int())
 					go func() {
+						// For now, we are forced to launch these optimistically.
+						// In the future, with JSPI facilitating interop between wasm and js promise reentrancy,
+						// we might be able to wait until the promise resolve to increment the chunk counter and so on.
 						storage.Set(storagekey, dst)
 						storage.Set(metadataKey, js.ValueOf(metadataValue))
-
-						ui.DoSync(context.Background(), m.raw, func() {
-							// reset the list and increment the chunk ID
-
-						})
 					}()
 					m.chunkID++
 					m.pos = 0                                                                   // wraps
@@ -2127,6 +2106,7 @@ func (m *mutationRecorder) Capture() {
 	m.raw.Watch(Namespace.Internals, "mutation-capturing", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		if !evt.NewValue().(ui.Bool) {
 			m.raw.RemoveMutationHandler(Namespace.Event, "new-mutation", d, h)
+			d.RemoveMutationHandler((Namespace.Event), "before-unactive", d, g)
 			cancelfn() // stops the indexedbd storage timer if applicable.
 		}
 		return false
@@ -2179,11 +2159,6 @@ func (m *mutationRecorder) Capture() {
 								// DEBUG not sure that DoSync is adequate here.
 								storage.Set(storagekey, dst)
 								storage.Set(metadataKey, js.ValueOf(metadataValue))
-								/*
-									ui.DoSync(context.Background(), m.raw, func() {
-										//m.setmetadata(true)
-									})
-								*/
 							}()
 							m.setmetadata(true)
 						}
@@ -2222,7 +2197,6 @@ func (m *mutationRecorder) Replay() error {
 
 // DEBUG rewrite Clear
 func (m *mutationRecorder) Clear() {
-	d := GetDocument(m.raw)
 	storage := Storage("indexeddb")
 	if storage == nil {
 		m.raw.SetData("mutationlist", ui.NewList().Commit())
@@ -2231,17 +2205,12 @@ func (m *mutationRecorder) Clear() {
 		// clear the indexeddb storage
 		chunksCount := int((m.totalCount + m.maxChunkSize - 1) / m.maxChunkSize)
 
-		var wg sync.WaitGroup
-		wg.Add(1)
-		ui.DoAsync(d, func(context.Context) {
+		go func() {
 			for i := range chunksCount {
 				storage.Delete(fmt.Sprintf("mutationlist-chunk-%d", i))
 			}
-			defer wg.Done()
 			storage.Delete("mutationlist-metadata")
-		})
-		wg.Wait()
-
+		}()
 	}
 	m.pos = 0
 	m.chunkID = 0
@@ -2370,7 +2339,11 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		r := GetDocument(evt.Origin()).Router()
 		if r != nil {
 			evt.Origin().AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
-				r.History.Set("focusedElementId", ui.String(evt.Target().ID))
+				// The goal is to set the focused element id in the history
+				// but only after the first valid navigation end event.
+				if _, ok := evt.Target().GetEventValue("navigation-end"); ok {
+					r.History.Set("focusedElementId", ui.String(evt.Target().ID))
+				}
 				return false
 			}))
 		}
@@ -2408,6 +2381,12 @@ var documentTitleHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	return false
 }).RunASAP()
 
+// mutation replay is mostly idempotent. Mostly only because some replayed events may trigger
+// a listener call back during the capture phase that comes right afterwards instead of immediately.
+// For example, we had to apply the callback on focus events in a delayed manner to avoid deadblocking.
+// This should be solved at some point if Wasm-JS interoperability improves (reentrancy).
+// For now, the SetFocus called during rootScrollrestoration triggers a focus event that is handled
+// in a  microtask.
 func mutationreplay(d *Document) error {
 	m := d.mutationRecorder()
 
@@ -2422,7 +2401,7 @@ func mutationreplay(d *Document) error {
 	if storage == nil {
 		rh, ok := e.GetData("mutationlist")
 		if !ok {
-			DEBUG("mutation recordings are missing")
+			DEBUG("INFO: mutation recordings are missing")
 			return nil //fmt.Errorf("somehow recovering state failed. Unexpected error. Mutation trace absent")
 		}
 		mutationtrace, ok := rh.(ui.List)
@@ -2494,8 +2473,10 @@ func mutationreplay(d *Document) error {
 
 	if !ok {
 		DEBUG("mutation metadata is missing")
+		// TODO clear database?
 		return nil
 	}
+
 	metadatastr := rawmetadata.String()
 	var metadata map[string]interface{}
 	err := json.Unmarshal([]byte(metadatastr), &metadata)
@@ -2504,11 +2485,10 @@ func mutationreplay(d *Document) error {
 		return err
 	}
 	o := ui.ValueFrom(metadata).(ui.Object)
-	DEBUG("mutation metadata: ", metadata, "raw", rawmetadata)
+
 	m.chunkID = int(o.MustGetNumber("chunkID"))
 	m.maxChunkSize = int(o.MustGetNumber("chunkSize"))
 	m.totalCount = int(o.MustGetNumber("Count"))
-	DEBUG("Total mutation count: ", m.totalCount)
 
 	// Now we can try to retrieve the mutation list in chunks and replay it
 	// each chunk needs to be retrieved first and then zlib decompressed.
@@ -2544,12 +2524,11 @@ func mutationreplay(d *Document) error {
 			replayerror = fmt.Errorf("error while converting decompressed mutation chunk %d to ui.List", m.chunkID)
 			break
 		}
-		DEBUG("replaying mutation chunk ", i, " with ", mutationtrace.Length(), " mutations")
+
 		if i == chunksCount-1 {
 			// we need to repopulate the active chunk of mutations in the mutation recorder
 			// without triggering the mutation handlers.
 			e.Properties.Set(ui.Namespace.Data, "mutationlist", mutationtrace)
-
 		}
 
 		m.pos = 0
@@ -2607,7 +2586,8 @@ func mutationreplay(d *Document) error {
 
 	}
 	if replayedCount != m.totalCount {
-		replayerror = fmt.Errorf("replayed %d mutations but expected %d mutations", replayedCount, m.totalCount)
+		DEBUG(fmt.Errorf("replayed %d mutations but expected %d mutations", replayedCount, m.totalCount))
+		DEBUG("replay error: ", replayerror)
 		return replayerror
 	}
 	m.pos = (m.pos + 1) % m.maxChunkSize
@@ -2764,17 +2744,22 @@ func TrapFocus(e *ui.Element) *ui.Element { // TODO what to do if no eleemnt is 
 }
 
 func Autofocus(e *ui.Element) *ui.Element {
-	e.AfterEvent("navigation-end", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
-		if !e.Mounted() {
+	lch := ui.NewLifecycleHandlers(e)
+	lch.OnReady(ui.OnMutation(func(evt ui.MutationEvent) bool {
+		e.AfterEvent("navigation-end", e.Root, ui.OnMutation(func(evt ui.MutationEvent) bool {
+			if !e.Mounted() {
+				return false
+			}
+			r := ui.GetRouter(evt.Origin())
+			if !r.History.CurrentEntryIsNew() {
+				return false
+			}
+			SetFocus(e, true)
 			return false
-		}
-		r := ui.GetRouter(evt.Origin())
-		if !r.History.CurrentEntryIsNew() {
-			return false
-		}
-		SetFocus(e, true)
+		}))
 		return false
-	}))
+	}).RunASAP().RunOnce())
+
 	return e
 }
 
@@ -2893,7 +2878,8 @@ func withNativejshelpers(d *Document) *Document {
 					console.error('Element is not defined');
 				}
 			}
-			
+			// DEBUG made kind of async so as to not block when called from Go with 
+			// a focus event handler also registered.
 			window.queueFocus = function(element) {
 				queueMicrotask(() => window.focusElement(element));
 			}
@@ -3368,6 +3354,7 @@ var rootScrollRestorationSupport = func(root *ui.Element) *ui.Element {
 
 	h := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		router := ui.GetRouter(evt.Origin().Root)
+
 		newpageaccess := router.History.CurrentEntryIsNew()
 
 		t, oktop := router.History.Get(e.ID + "-" + "scrollTop")
@@ -4184,7 +4171,7 @@ func (d *Document) enableWasm() *Document {
 							// Event handler for successful database opening
 							request.onsuccess = (event) => {
 								this.db = event.target.result; // Get the database instance
-								console.log('IndexedDB initialized successfully.');
+								// console.log('IndexedDB opened successfully:', this.dbName);
 								resolve(); // Resolve the promise indicating success
 							};
 
@@ -4283,10 +4270,29 @@ func (d *Document) enableWasm() *Document {
 				// Expose the instance globally for Go/WASM to interact with
 				window.indexedDBSyncInstance = dbSync;
 
-				let wasmLoadedResolver, loadEventResolver, indexedDBReadyResolver; // Add new resolver
+				let indexedDBReadyResolver;
+				window.indexedDBReady = new Promise(resolve => indexedDBReadyResolver = resolve);
+
+				(async () => {
+					try {
+						if (window.indexedDBSyncInstance) {
+							// console.log("IndexedDBSync: Starting IndexedDB initialization...");
+							await window.indexedDBSyncInstance.init(); // Wait for IndexedDB to be fully initialized
+							// console.log("IndexedDBSync: IndexedDB initialized and ready.");
+							indexedDBReadyResolver(); // Resolve this promise much earlier
+						} else {
+							console.error('IndexedDBSync instance not found during early init.');
+							indexedDBReadyResolver(new Error('IndexedDBSync instance not found.'));
+						}
+					} catch (error) {
+						console.error('IndexedDBSync: Error during early IndexedDB initialization:', error);
+						indexedDBReadyResolver(error);
+					}
+				})();
+
+				let wasmLoadedResolver, loadEventResolver;
 				window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
 				window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
-				window.indexedDBReady = new Promise(resolve => indexedDBReadyResolver = resolve); // New Promise for IndexedDB readiness
 
 				window.onWasmDone = function() {
 					wasmLoadedResolver();
@@ -4295,62 +4301,48 @@ func (d *Document) enableWasm() *Document {
 				// Modify the 'load' event listener to be async and await IndexedDB initialization
 				window.addEventListener('load', async () => {
 					loadEventResolver(); // Signal that the browser's load event has fired
-					try {
-						// Ensure the global IndexedDBSync instance exists before calling init
-						if (window.indexedDBSyncInstance) {
-							await window.indexedDBSyncInstance.init(); // Wait for IndexedDB to be fully initialized
-							console.log('IndexedDB Sync Wrapper: Initialized and ready for WASM.');
-							indexedDBReadyResolver(); // Resolve the IndexedDB ready promise
-						} else {
-							// This case should ideally not happen if the script is loaded correctly
-							console.error('IndexedDBSync instance not found on window.load.');
-							indexedDBReadyResolver(new Error('IndexedDBSync instance not found.')); // Resolve with error
-						}
-					} catch (error) {
-						console.error('Error initializing IndexedDB for WASM:', error);
-						indexedDBReadyResolver(error); // Resolve the promise with the error
-					}
 				});
 
 				const go = new Go();
-				WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject)
-				.then((result) => {
-					go.run(result.instance);
-				});
 
-				// Now, Promise.all waits for WASM, the page load, AND IndexedDB to be ready
-				Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady]).then(() => {
-					setTimeout(() => {
-						// console.log("about to dispatch PageReady event...");
-						window.dispatchEvent(new Event('PageReady'));
-					}, 50);
-				}).catch(error => {
-					console.error("Application startup failed:", error);
-					// Handle critical startup errors, e.g., display a message to the user
-				});
+				// 3. Chain the WASM instantiation to the indexedDBReady promise
+				window.indexedDBReady
+					.then(() => {
+						// console.log("IndexedDB is ready. Proceeding to instantiate WebAssembly.");
+						// Only fetch and run WASM once IndexedDB is guaranteed to be ready
+						return WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject);
+					})
+					.then((result) => {
+						// console.log("WebAssembly instantiated. Running Go runtime.");
+						go.run(result.instance); // This will then call your Go main()
+						// wasmLoadedResolver() will be called by Go's onWasmDone later
+					})
+					.catch(error => {
+						console.error("WASM instantiation or IndexedDB initialization failed:", error);
+						// Ensure wasmLoaded is rejected if WASM fails to load after this point
+						wasmLoadedResolver(new Error("WASM failed to load after IndexedDB was ready: " + error.message));
+						// Also ensure PageReady is not dispatched successfully if critical startup fails
+					});
+
+
+				// 4. Promise.all still waits for all components before dispatching PageReady
+				Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady])
+					.then(() => {
+						// console.log("All main startup components (WASM, Page Load, IndexedDB) are ready.");
+						// Small final delay before dispatching, as a safety measure for any final browser flush.
+						setTimeout(() => {
+							// console.log("Dispatching PageReady event...");
+							window.dispatchEvent(new Event('PageReady'));
+						}, 50);
+					})
+					.catch(error => {
+						console.error("Application startup failed:", error);
+						// Handle critical startup errors, e.g., display a message to the user
+					});
+
 			`,
 		),
 	)
-
-	if InBrowser() {
-		indexedDBReadyPromise := js.Global().Get("indexedDBReady") // Get the JS Promise
-
-		if indexedDBReadyPromise.Truthy() {
-			// This call will block the current Go WASM goroutine (which is the main one here)
-			// until the 'indexedDBReady' promise resolves in JavaScript.
-			// This will block the UI until IndexedDB is ready.
-			res := <-awaitPromise(indexedDBReadyPromise) // Assuming AwaitPromise is available in this scope
-			if res.error != nil {
-				fmt.Printf("Go WASM (enableWasm): ERROR: Failed to initialize IndexedDB: %v\n", res.error)
-			} else {
-				if verbose {
-					fmt.Println("Go WASM (enableWasm): IndexedDB is now ready.")
-				}
-			}
-		} else {
-			DEBUG("Go WASM (enableWasm): WARNING: 'indexedDBReady' promise not found.")
-		}
-	}
 
 	return d
 }

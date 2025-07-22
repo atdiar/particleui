@@ -77,227 +77,229 @@ var buildCmd = &cobra.Command{
 		
 		
 	`,
-	Run: func(cmd *cobra.Command, args []string) {
-		err := LoadConfig()
+	Run: buildFunc,
+}
+
+var buildFunc = func(cmd *cobra.Command, args []string) {
+	err := LoadConfig()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+		return
+	}
+
+	if On("web") {
+		// basepath needs to be validated
+		// It needs to start with a slash
+		b, err := url.Parse(basepath)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("invalid basepath")
 			os.Exit(1)
 			return
 		}
-
-		if On("web") {
-			// basepath needs to be validated
-			// It needs to start with a slash
-			b, err := url.Parse(basepath)
-			if err != nil {
-				fmt.Println("invalid basepath")
+		if b.Path != "/" {
+			if b.Path[0] != '/' {
+				fmt.Println("invalid basepath: basepath needs to start with a slash")
 				os.Exit(1)
 				return
 			}
-			if b.Path != "/" {
-				if b.Path[0] != '/' {
-					fmt.Println("invalid basepath: basepath needs to start with a slash")
+		}
+
+		// TODO implement zui build -csr -clean, that will erase the content
+		// of the bin/tmp/client/{rootdirectory} and bin/tmp/server/csr/{rootdirectory} directories
+		// before (re)building.
+
+		// if csr
+		if csr {
+			err = Build(true, nil)
+			if err != nil {
+				fmt.Println("Error: unable to build the app.", err)
+				os.Exit(1)
+				return
+			}
+
+			if verbose {
+				fmt.Println("default app built.")
+			}
+
+			if !clientonly {
+				// Let's build the default server.
+				// The output file should be in /bin/tmp/server/csr/
+				err = Build(false, []string{"server", "csr"})
+				if err != nil {
+					fmt.Println("Error: unable to build the default server.")
 					os.Exit(1)
 					return
+				}
+				if verbose {
+					fmt.Println("csr server built.")
 				}
 			}
 
-			// TODO implement zui build -csr -clean, that will erase the content
-			// of the bin/tmp/client/{rootdirectory} and bin/tmp/server/csr/{rootdirectory} directories
-			// before (re)building.
+			// TODO using the special we should be able to generate the index page, taking into account basepath etc.
+			// The output directory for the rendered html file is /bin/tmp/client/{rootdirectory}
+			// The output directory for the rendering server is /bin/tmp/server
+			// This is for csr mode only.
 
-			// if csr
-			if csr {
-				err = Build(true, nil)
-				if err != nil {
-					fmt.Println("Error: unable to build the app.", err)
-					os.Exit(1)
-					return
-				}
+			rootdirectory := "_root"
+			if basepath != "/" {
+				rootdirectory = basepath // remove the leading slash? DEBUG
+			}
 
-				if verbose {
-					fmt.Println("default app built.")
-				}
+			// We can copy the assets from the source directory to the output directory.
+			outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+			err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
+			if err != nil {
+				fmt.Println("Error: unable to copy assets to the output directory.")
+				os.Exit(1)
+				return
+			}
+			if verbose {
+				fmt.Println("assets copied to the output directory.")
+			}
 
-				if !clientonly {
-					// Let's build the default server.
-					// The output file should be in /bin/tmp/server/csr/
-					err = Build(false, []string{"server", "csr"})
-					if err != nil {
-						fmt.Println("Error: unable to build the default server.")
-						os.Exit(1)
-						return
-					}
-					if verbose {
-						fmt.Println("csr server built.")
-					}
-				}
+			err = renderPages("/", releaseMode || tinygo)
+			if err != nil {
+				fmt.Println("Error: unable to render the index page.", err)
+				os.Exit(1)
+				return
+			}
 
-				// TODO using the special we should be able to generate the index page, taking into account basepath etc.
-				// The output directory for the rendered html file is /bin/tmp/client/{rootdirectory}
-				// The output directory for the rendering server is /bin/tmp/server
-				// This is for csr mode only.
-
-				rootdirectory := "_root"
-				if basepath != "/" {
-					rootdirectory = basepath // remove the leading slash? DEBUG
-				}
-
-				// We can copy the assets from the source directory to the output directory.
-				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
-				if err != nil {
-					fmt.Println("Error: unable to copy assets to the output directory.")
-					os.Exit(1)
-					return
-				}
-				if verbose {
-					fmt.Println("assets copied to the output directory.")
-				}
-
-				err = renderPages("/", releaseMode || tinygo)
-				if err != nil {
-					fmt.Println("Error: unable to render the index page.", err)
-					os.Exit(1)
-					return
-				}
-
-				// TODO -static flag handling
-				// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
-				if static != "" {
-					err = renderPages(static, releaseMode || tinygo)
-					if err != nil {
-						fmt.Println("Error: unable to render the page at", static, err)
-						os.Exit(1)
-						return
-					}
-				}
-
-				if verbose {
-					fmt.Println("Build successful.")
-				}
-
-			} else if ssr {
-				err = Build(true, nil)
-				if err != nil {
-					fmt.Println("Error: unable to build the app.", err)
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("wasm app built.")
-				}
-
-				if clientonly {
-					err = Build(false, []string{"server", "ssr"})
-					if err != nil {
-						fmt.Println("Error: unable to build the ssr server.")
-						os.Exit(1)
-						return
-					}
-
-					if verbose {
-						fmt.Println("ssr server built.")
-					}
-				}
-
-				rootdirectory := "_root"
-				if basepath != "/" {
-					rootdirectory = basepath // remove the leading slash? DEBUG
-				}
-
-				// We can copy the assets from the source directory to the output directory.
-				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
-				if err != nil {
-					fmt.Println("Error: unable to copy assets to the output directory.")
-					os.Exit(1)
-					return
-				}
-				if verbose {
-					fmt.Println("assets copied to the output directory.")
-				}
-
-				// TODO -static flag handling
-				// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
-				if static != "" {
-					err = renderPages(static, releaseMode || tinygo)
-					if err != nil {
-						fmt.Println("Error: unable to render the page at", static, err)
-						os.Exit(1)
-						return
-					}
-				}
-
-				if verbose {
-					fmt.Println("Build successful.")
-				}
-
-			} else if ssg {
-				err = Build(false, []string{"server", "ssg"})
-				if err != nil {
-					fmt.Println("Error: unable to build the ssg server.")
-					os.Exit(1)
-					return
-				}
-
-				if verbose {
-					fmt.Println("ssg server built.")
-				}
-
-				rootdirectory := "_root"
-				if basepath != "/" {
-					rootdirectory = basepath // DEBUG remove the leading slash if any?
-				}
-
-				// We can copy the assets from the source directory to the output directory.
-				outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
-				err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
-				if err != nil {
-					fmt.Println("Error: unable to copy assets to the output directory.")
-					os.Exit(1)
-					return
-				}
-				if verbose {
-					fmt.Println("assets copied to the output directory.")
-				}
-
-				// TODO -static flag handling
-				// if empty, renders every page
-				// otherwise, renders the specified page(s)
+			// TODO -static flag handling
+			// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
+			if static != "" {
 				err = renderPages(static, releaseMode || tinygo)
 				if err != nil {
 					fmt.Println("Error: unable to render the page at", static, err)
 					os.Exit(1)
 					return
 				}
+			}
 
-				if verbose {
-					fmt.Println("Build successful.")
+			if verbose {
+				fmt.Println("Build successful.")
+			}
+
+		} else if ssr {
+			err = Build(true, nil)
+			if err != nil {
+				fmt.Println("Error: unable to build the app.", err)
+				os.Exit(1)
+				return
+			}
+
+			if verbose {
+				fmt.Println("wasm app built.")
+			}
+
+			if clientonly {
+				err = Build(false, []string{"server", "ssr"})
+				if err != nil {
+					fmt.Println("Error: unable to build the ssr server.")
+					os.Exit(1)
+					return
 				}
 
+				if verbose {
+					fmt.Println("ssr server built.")
+				}
 			}
-		} else if On("mobile") {
-			// TODO
-			// Make sure that only acceptable flags have been passed.
-			// csr, ssr, ssg don't make any sense here.
-			fmt.Println("building for mobile is not yet supported")
-			os.Exit(1)
-		} else if On("desktop") {
-			// TODO
-			// Make sure that only acceptable flags have been passed.
-			// csr, ssr, ssg don't make any sense here.
-			fmt.Println("building for desktop is not yet supported")
-			os.Exit(1)
-		} else if On("terminal") {
-			// TODO
-		} else {
-			fmt.Println("unknown platform")
-			os.Exit(1)
-			return
+
+			rootdirectory := "_root"
+			if basepath != "/" {
+				rootdirectory = basepath // remove the leading slash? DEBUG
+			}
+
+			// We can copy the assets from the source directory to the output directory.
+			outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+			err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
+			if err != nil {
+				fmt.Println("Error: unable to copy assets to the output directory.")
+				os.Exit(1)
+				return
+			}
+			if verbose {
+				fmt.Println("assets copied to the output directory.")
+			}
+
+			// TODO -static flag handling
+			// everything that is rendered as a file is served statically with higher priority. (the server needs to check on startup and implement the shortcircuit logic)
+			if static != "" {
+				err = renderPages(static, releaseMode || tinygo)
+				if err != nil {
+					fmt.Println("Error: unable to render the page at", static, err)
+					os.Exit(1)
+					return
+				}
+			}
+
+			if verbose {
+				fmt.Println("Build successful.")
+			}
+
+		} else if ssg {
+			err = Build(false, []string{"server", "ssg"})
+			if err != nil {
+				fmt.Println("Error: unable to build the ssg server.")
+				os.Exit(1)
+				return
+			}
+
+			if verbose {
+				fmt.Println("ssg server built.")
+			}
+
+			rootdirectory := "_root"
+			if basepath != "/" {
+				rootdirectory = basepath // DEBUG remove the leading slash if any?
+			}
+
+			// We can copy the assets from the source directory to the output directory.
+			outputDir := filepath.Join(".", "bin", "tmp", "client", rootdirectory)
+			err = copyDirectory(filepath.Join(".", "src", "assets"), filepath.Join(outputDir, "assets"))
+			if err != nil {
+				fmt.Println("Error: unable to copy assets to the output directory.")
+				os.Exit(1)
+				return
+			}
+			if verbose {
+				fmt.Println("assets copied to the output directory.")
+			}
+
+			// TODO -static flag handling
+			// if empty, renders every page
+			// otherwise, renders the specified page(s)
+			err = renderPages(static, releaseMode || tinygo)
+			if err != nil {
+				fmt.Println("Error: unable to render the page at", static, err)
+				os.Exit(1)
+				return
+			}
+
+			if verbose {
+				fmt.Println("Build successful.")
+			}
+
 		}
-	},
+	} else if On("mobile") {
+		// TODO
+		// Make sure that only acceptable flags have been passed.
+		// csr, ssr, ssg don't make any sense here.
+		fmt.Println("building for mobile is not yet supported")
+		os.Exit(1)
+	} else if On("desktop") {
+		// TODO
+		// Make sure that only acceptable flags have been passed.
+		// csr, ssr, ssg don't make any sense here.
+		fmt.Println("building for desktop is not yet supported")
+		os.Exit(1)
+	} else if On("terminal") {
+		// TODO
+	} else {
+		fmt.Println("unknown platform")
+		os.Exit(1)
+		return
+	}
 }
 
 func renderPages(renderPath string, releasebuild bool) error {
@@ -379,7 +381,7 @@ func init() {
 	buildCmd.Flags().BoolVarP(&clientonly, "client", "", false, "build only the client (default is to build both client and server)")
 	buildCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "build in release mode")
 	buildCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-	buildCmd.Flags().BoolVarP(&nolr, "nohmr", "", false, "disable live reloading")
+	buildCmd.Flags().BoolVarP(&nolr, "nolr", "", false, "disable live reloading")
 
 	if !csr && !ssr && !ssg {
 		// If none of the flags are set, we default to csr

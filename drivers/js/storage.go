@@ -88,7 +88,6 @@ func (s jsStore) Get(key string) (js.Value, bool) {
 		// For localStorage/sessionStorage, call getItem directly (synchronously)
 		v = s.store.Call("getItem", key)
 	}
-
 	// For both IndexedDB (undefined for not found) and localStorage/sessionStorage (null for not found)
 	// js.Value.Truthy() correctly identifies if a value was found.
 	return v, v.Truthy()
@@ -174,7 +173,7 @@ func awaitPromise(p js.Value) chan struct {
 		var reject js.Func
 
 		resolve = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			//DEBUG("Promise resolved with:", args[0])
+			// DEBUG("Promise resolved with:", args[0])
 			result = args[0]
 			resultChan <- struct {
 				js.Value
@@ -577,7 +576,7 @@ func LoadFromStorage(a ui.AnyElement) *ui.Element {
 func PutInStorage(a ui.AnyElement) *ui.Element {
 	e := a.AsElement()
 	if LRMode != "false" {
-		if e.ID != "mutation-recorder" {
+		if e.ID != "mutation-recorder" { // DEBUG TODO that might be why hstate0 is not found
 			return e
 		}
 	}

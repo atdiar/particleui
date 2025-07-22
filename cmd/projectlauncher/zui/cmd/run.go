@@ -37,8 +37,8 @@ var runCmd = &cobra.Command{
 		}
 
 		if On("web") {
-
-			err = BuildAndRun(args...)
+			buildFunc(cmd, args)
+			err = runFunc()
 			if err != nil {
 				fmt.Println(err.Error())
 				os.Exit(1)
@@ -64,23 +64,8 @@ var runCmd = &cobra.Command{
 }
 
 // Run builds and run an application.
-func BuildAndRun(args ...string) error {
+func runFunc() error {
 	if On("web") {
-		// Run launches the webserver used to serve the application.
-		// after having built the client and the server.
-
-		// 1. we run the build command with the same arguments as the run command.
-		buildcmd := exec.Command("zui", append([]string{"build"}, args...)...)
-		buildcmd.Stdout = os.Stdout
-		buildcmd.Stderr = os.Stderr
-		err := buildcmd.Run()
-		if err != nil {
-			return fmt.Errorf("error building the application: %w", err)
-		}
-		if verbose {
-			fmt.Println("Now let's try running the server...")
-		}
-
 		// 2. we run the server command with the same arguments as the run command.
 
 		rootdirectory := "_root"
@@ -97,9 +82,9 @@ func BuildAndRun(args ...string) error {
 			outputPath = getServerBinaryPath("ssg", releaseMode, rootdirectory)
 		}
 
-		args := []string{"-host", host, "-port", port}
+		argz := []string{"-host", host, "-port", port}
 		if nolr || releaseMode {
-			args = append(args, "--nolr")
+			argz = append(argz, "--nolr")
 		}
 
 		cwd, err := os.Getwd()
@@ -112,19 +97,19 @@ func BuildAndRun(args ...string) error {
 		}
 
 		// Let's run the default server.
-		cmd := exec.Command(absoluteBinaryPath, args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		ccmd := exec.Command(absoluteBinaryPath, argz...)
+		ccmd.Stdout = os.Stdout
+		ccmd.Stderr = os.Stderr
 
-		cmd.Dir = filepath.Dir(absoluteBinaryPath)
-		err = cmd.Run()
+		ccmd.Dir = filepath.Dir(absoluteBinaryPath)
+		err = ccmd.Run()
 		if err != nil {
 			return err
 		}
 
 		if verbose {
 			// Print the exact command
-			fmt.Printf("Running command: %s %s\n", absoluteBinaryPath, strings.Join(args, " "))
+			fmt.Printf("Running command: %s %s\n", absoluteBinaryPath, strings.Join(argz, " "))
 			// Print the ldglags
 			fmt.Printf("Using ldflags: %s\n", ldflags())
 			// Print the server URL

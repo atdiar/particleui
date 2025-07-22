@@ -230,21 +230,34 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
 				ui.DoSync(ctx, document.AsElement(), func() {
-					router := document.Router()
-					if router != nil {
-						router.GoTo(render)
-						err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
-						if err != nil {
-							fmt.Printf("Error creating page for route '%s': %v\n", render, err)
-							os.Exit(1)
+					/*
+						router := document.Router()
+						if router != nil {
+							router.GoTo(render)
+
+							err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+							if err != nil {
+								fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+								os.Exit(1)
+							}
+							if verbose {
+								fmt.Printf("Created page for route '%s'\n", render)
+							}
+							fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
 						}
-						if verbose {
-							fmt.Printf("Created page for route '%s'\n", render)
-						}
-						fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
-					} else {
-						DEBUG("router was nil")
+							// NOTE: we are in csr mode, we just need the shell of the app
+							// we can do without the body
+					*/
+					document.Body().SetChildren()
+					err := document.CreatePage(filepath.Join(StaticDir, render, "index.html"))
+					if err != nil {
+						fmt.Printf("Error creating page for route '%s': %v\n", render, err)
+						os.Exit(1)
 					}
+					if verbose {
+						fmt.Printf("Created page for route '%s'\n", render)
+					}
+					fmt.Println("Page created at: ", filepath.Join(StaticDir, render, "index.html"))
 				})
 			}
 			return

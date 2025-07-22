@@ -421,17 +421,17 @@ func (r *Router) handler() *MutationHandler {
 			log.Print("NOTFOUND", err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-notfound", String(newroute))
-				//return false
+				return false
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
-				//return false
+				return false
 			}
 			if err == ErrFrameworkFailure {
 				log.Print("APPFAILURE: ", err) // DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-appfailure", String(newroute))
-				//return false
+				return false
 			}
 		} else {
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-start", String(newroute))
@@ -484,17 +484,17 @@ func (r *Router) redirecthandler() *MutationHandler {
 			log.Print(err, newroute) // DEBUG
 			if err == ErrNotFound {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-notfound", String(newroute))
-				//return false
+				return false
 			}
 			if err == ErrUnauthorized {
 				log.Print("unauthorized for: " + newroute) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
-				//return false
+				return false
 			}
 			if err == ErrFrameworkFailure {
 				log.Print(err) //DEBUG
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-appfailure", String(newroute))
-				//return false
+				return false
 			}
 		} else {
 			r.Outlet.AsElement().Root.TriggerEvent("navigation-start", String(newroute))
