@@ -500,15 +500,6 @@ func initializeContainerLayout[pseudoclass any]() ContainerLayout {
 	// MinWidth
 	c.MinWidth.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("min-width")
 
-	// VerticalAlign
-	c.VerticalAlign.Baseline = newValueFn[pseudoclass](vfn("baseline"), nil).Setter("vertical-align")
-	c.VerticalAlign.Top = newValueFn[pseudoclass](vfn("top"), nil).Setter("vertical-align")
-	c.VerticalAlign.TextTop = newValueFn[pseudoclass](vfn("text-top"), nil).Setter("vertical-align")
-	c.VerticalAlign.Middle = newValueFn[pseudoclass](vfn("middle"), nil).Setter("vertical-align")
-	c.VerticalAlign.Bottom = newValueFn[pseudoclass](vfn("bottom"), nil).Setter("vertical-align")
-	c.VerticalAlign.TextBottom = newValueFn[pseudoclass](vfn("text-bottom"), nil).Setter("vertical-align")
-	c.VerticalAlign.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("vertical-align")
-
 	// PerspectiveOrigin
 	c.PerspectiveOrigin.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("perspective-origin")
 
@@ -605,14 +596,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderTopLeftRadius.Percent = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-left-radius")
 	c.BorderTopLeftRadius.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-left-radius")
 
-	// WhiteSpace
-	c.WhiteSpace.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("white-space")
-	c.WhiteSpace.Nowrap = newValueFn[pseudoclass](vfn("nowrap"), nil).Setter("white-space")
-	c.WhiteSpace.Pre = newValueFn[pseudoclass](vfn("pre"), nil).Setter("white-space")
-	c.WhiteSpace.PreLine = newValueFn[pseudoclass](vfn("pre-line"), nil).Setter("white-space")
-	c.WhiteSpace.PreWrap = newValueFn[pseudoclass](vfn("pre-wrap"), nil).Setter("white-space")
-	c.WhiteSpace.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("white-space")
-
 	// BorderRight
 	c.BorderRight.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-right")
 
@@ -656,30 +639,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderLeftColor.Transparent = newValueFn[pseudoclass](vfn("transparent"), nil).Setter("border-left-color")
 	c.BorderLeftColor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-left-color")
 
-	// FontSize
-	c.FontSize.Medium = newValueFn[pseudoclass](vfn("medium"), nil).Setter("font-size")
-	c.FontSize.XxSmall = newValueFn[pseudoclass](vfn("xx-small"), nil).Setter("font-size")
-	c.FontSize.XSmall = newValueFn[pseudoclass](vfn("x-small"), nil).Setter("font-size")
-	c.FontSize.Small = newValueFn[pseudoclass](vfn("small"), nil).Setter("font-size")
-	c.FontSize.Large = newValueFn[pseudoclass](vfn("large"), nil).Setter("font-size")
-	c.FontSize.XLarge = newValueFn[pseudoclass](vfn("x-large"), nil).Setter("font-size")
-	c.FontSize.XxLarge = newValueFn[pseudoclass](vfn("xx-large"), nil).Setter("font-size")
-	c.FontSize.Smaller = newValueFn[pseudoclass](vfn("smaller"), nil).Setter("font-size")
-	c.FontSize.Larger = newValueFn[pseudoclass](vfn("larger"), nil).Setter("font-size")
-	c.FontSize.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-size")
-
-	// LineHeight
-	c.LineHeight.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("line-height")
-	c.LineHeight.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("line-height")
-
-	// TextDecorationStyle
-	c.TextDecorationStyle.Solid = newValueFn[pseudoclass](vfn("solid"), nil).Setter("text-decoration-style")
-	c.TextDecorationStyle.Double = newValueFn[pseudoclass](vfn("double"), nil).Setter("text-decoration-style")
-	c.TextDecorationStyle.Dotted = newValueFn[pseudoclass](vfn("dotted"), nil).Setter("text-decoration-style")
-	c.TextDecorationStyle.Dashed = newValueFn[pseudoclass](vfn("dashed"), nil).Setter("text-decoration-style")
-	c.TextDecorationStyle.Wavy = newValueFn[pseudoclass](vfn("wavy"), nil).Setter("text-decoration-style")
-	c.TextDecorationStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-style")
-
 	// BackfaceVisibility
 	c.BackfaceVisibility.Visible = newValueFn[pseudoclass](vfn("visible"), nil).Setter("backface-visibility")
 	c.BackfaceVisibility.Hidden = newValueFn[pseudoclass](vfn("hidden"), nil).Setter("backface-visibility")
@@ -697,12 +656,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderRightStyle.Inset = newValueFn[pseudoclass](vfn("inset"), nil).Setter("border-right-style")
 	c.BorderRightStyle.Outset = newValueFn[pseudoclass](vfn("outset"), nil).Setter("border-right-style")
 	c.BorderRightStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-right-style")
-
-	// TextDecoration
-	c.TextDecoration.TextDecorationLine = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-line")
-	c.TextDecoration.TextDecorationColor = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-color")
-	c.TextDecoration.TextDecorationStyle = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-style")
-	c.TextDecoration.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration")
 
 	// Transition
 	c.Transition.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("transition")
@@ -723,11 +676,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	// BorderRadius
 	c.BorderRadius.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-radius")
 
-	// Quotes
-	c.Quotes.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("quotes")
-	c.Quotes.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("quotes")
-	c.Quotes.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("quotes")
-
 	// TabSize
 	c.TabSize.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("tab-size")
 
@@ -744,29 +692,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BackgroundSize.Contain = newValueFn[pseudoclass](vfn("contain"), nil).Setter("background-size")
 	c.BackgroundSize.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("background-size")
 
-	// FontSizeAdjust
-	c.FontSizeAdjust.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("font-size-adjust")
-	c.FontSizeAdjust.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-size-adjust")
-
-	// ListStylePosition
-	c.ListStylePosition.Inside = newValueFn[pseudoclass](vfn("inside"), nil).Setter("list-style-position")
-	c.ListStylePosition.Outside = newValueFn[pseudoclass](vfn("outside"), nil).Setter("list-style-position")
-	c.ListStylePosition.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-position")
-
-	// TextAlign
-	c.TextAlign.Left = newValueFn[pseudoclass](vfn("left"), nil).Setter("text-align")
-	c.TextAlign.Right = newValueFn[pseudoclass](vfn("right"), nil).Setter("text-align")
-	c.TextAlign.Center = newValueFn[pseudoclass](vfn("center"), nil).Setter("text-align")
-	c.TextAlign.Justify = newValueFn[pseudoclass](vfn("justify"), nil).Setter("text-align")
-	c.TextAlign.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-align")
-
-	// TextJustify
-	c.TextJustify.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("text-justify")
-	c.TextJustify.InterWord = newValueFn[pseudoclass](vfn("inter-word"), nil).Setter("text-justify")
-	c.TextJustify.InterCharacter = newValueFn[pseudoclass](vfn("inter-character"), nil).Setter("text-justify")
-	c.TextJustify.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-justify")
-	c.TextJustify.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-justify")
-
 	// BackgroundAttachment
 	c.BackgroundAttachment.Scroll = newValueFn[pseudoclass](vfn("scroll"), nil).Setter("background-attachment")
 	c.BackgroundAttachment.Fixed = newValueFn[pseudoclass](vfn("fixed"), nil).Setter("background-attachment")
@@ -779,9 +704,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderRightWidth.Thick = newValueFn[pseudoclass](vfn("thick"), nil).Setter("border-right-width")
 	c.BorderRightWidth.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-right-width")
 
-	// Font
-	c.Font.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font")
-
 	// BorderLeft
 	c.BorderLeft.BorderLeftWidth = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-left-width")
 	c.BorderLeft.BorderLeftStyle = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-left-style")
@@ -791,10 +713,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	// TransitionDuration
 	c.TransitionDuration.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("transition-duration")
 
-	// WordSpacing
-	c.WordSpacing.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-spacing")
-	c.WordSpacing.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-spacing")
-
 	// AnimationName
 	c.AnimationName.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("animation-name")
 	c.AnimationName.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("animation-name")
@@ -803,10 +721,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.AnimationPlayState.Paused = newValueFn[pseudoclass](vfn("paused"), nil).Setter("animation-play-state")
 	c.AnimationPlayState.Running = newValueFn[pseudoclass](vfn("running"), nil).Setter("animation-play-state")
 	c.AnimationPlayState.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("animation-play-state")
-
-	// LetterSpacing
-	c.LetterSpacing.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("letter-spacing")
-	c.LetterSpacing.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("letter-spacing")
 
 	// BorderBottomStyle
 	c.BorderBottomStyle.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("border-bottom-style")
@@ -821,21 +735,8 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderBottomStyle.Outset = newValueFn[pseudoclass](vfn("outset"), nil).Setter("border-bottom-style")
 	c.BorderBottomStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-bottom-style")
 
-	// WordBreak
-	c.WordBreak.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-break")
-	c.WordBreak.BreakAll = newValueFn[pseudoclass](vfn("break-all"), nil).Setter("word-break")
-	c.WordBreak.KeepAll = newValueFn[pseudoclass](vfn("keep-all"), nil).Setter("word-break")
-	c.WordBreak.BreakWord = newValueFn[pseudoclass](vfn("break-word"), nil).Setter("word-break")
-	c.WordBreak.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-break")
-
 	// BorderBottomRightRadius
 	c.BorderBottomRightRadius.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-bottom-right-radius")
-
-	// FontStyle
-	c.FontStyle.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-style")
-	c.FontStyle.Italic = newValueFn[pseudoclass](vfn("italic"), nil).Setter("font-style")
-	c.FontStyle.Oblique = newValueFn[pseudoclass](vfn("oblique"), nil).Setter("font-style")
-	c.FontStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-style")
 
 	// Order
 	c.Order.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("order")
@@ -860,40 +761,9 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderImageSource.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("border-image-source")
 	c.BorderImageSource.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-image-source")
 
-	// TextAlignLast
-	c.TextAlignLast.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("text-align-last")
-	c.TextAlignLast.Left = newValueFn[pseudoclass](vfn("left"), nil).Setter("text-align-last")
-	c.TextAlignLast.Right = newValueFn[pseudoclass](vfn("right"), nil).Setter("text-align-last")
-	c.TextAlignLast.Center = newValueFn[pseudoclass](vfn("center"), nil).Setter("text-align-last")
-	c.TextAlignLast.Justify = newValueFn[pseudoclass](vfn("justify"), nil).Setter("text-align-last")
-	c.TextAlignLast.Start = newValueFn[pseudoclass](vfn("start"), nil).Setter("text-align-last")
-	c.TextAlignLast.End = newValueFn[pseudoclass](vfn("end"), nil).Setter("text-align-last")
-	c.TextAlignLast.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-align-last")
-
 	// BorderImageWidth
 	c.BorderImageWidth.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("border-image-width")
 	c.BorderImageWidth.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-image-width")
-
-	// FontWeight
-	c.FontWeight.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-weight")
-	c.FontWeight.Bold = newValueFn[pseudoclass](vfn("bold"), nil).Setter("font-weight")
-	c.FontWeight.Bolder = newValueFn[pseudoclass](vfn("bolder"), nil).Setter("font-weight")
-	c.FontWeight.Lighter = newValueFn[pseudoclass](vfn("lighter"), nil).Setter("font-weight")
-	c.FontWeight.S100 = newValueFn[pseudoclass](vfn("100"), nil).Setter("font-weight")
-	c.FontWeight.S200 = newValueFn[pseudoclass](vfn("200"), nil).Setter("font-weight")
-	c.FontWeight.S300 = newValueFn[pseudoclass](vfn("300"), nil).Setter("font-weight")
-	c.FontWeight.S400 = newValueFn[pseudoclass](vfn("400"), nil).Setter("font-weight")
-	c.FontWeight.S500 = newValueFn[pseudoclass](vfn("500"), nil).Setter("font-weight")
-	c.FontWeight.S600 = newValueFn[pseudoclass](vfn("600"), nil).Setter("font-weight")
-	c.FontWeight.S700 = newValueFn[pseudoclass](vfn("700"), nil).Setter("font-weight")
-	c.FontWeight.S800 = newValueFn[pseudoclass](vfn("800"), nil).Setter("font-weight")
-	c.FontWeight.S900 = newValueFn[pseudoclass](vfn("900"), nil).Setter("font-weight")
-	c.FontWeight.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-weight")
-
-	// ListStyleImage
-	c.ListStyleImage.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("list-style-image")
-	c.ListStyleImage.Url = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image") // Special handling might be needed for URL
-	c.ListStyleImage.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image")
 
 	// Opacity
 	c.Opacity.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("opacity")
@@ -941,17 +811,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	// BorderTopRightRadius
 	c.BorderTopRightRadius.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-right-radius")
 
-	// CaptionSide
-	c.CaptionSide.Top = newValueFn[pseudoclass](vfn("top"), nil).Setter("caption-side")
-	c.CaptionSide.Bottom = newValueFn[pseudoclass](vfn("bottom"), nil).Setter("caption-side")
-	c.CaptionSide.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("caption-side")
-
-	// FontFamily
-	c.FontFamily.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-family")
-
-	// TextDecorationColor
-	c.TextDecorationColor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-color")
-
 	// TransitionProperty
 	c.TransitionProperty.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("transition-property")
 	c.TransitionProperty.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("transition-property")
@@ -961,9 +820,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BackgroundOrigin.BorderBox = newValueFn[pseudoclass](vfn("border-box"), nil).Setter("background-origin")
 	c.BackgroundOrigin.ContentBox = newValueFn[pseudoclass](vfn("content-box"), nil).Setter("background-origin")
 	c.BackgroundOrigin.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("background-origin")
-
-	// TextIndent
-	c.TextIndent.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-indent")
 
 	// Visibility
 	c.Visibility.Visible = newValueFn[pseudoclass](vfn("visible"), nil).Setter("visibility")
@@ -977,11 +833,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 
 	// BorderTop
 	c.BorderTop.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-top")
-
-	// FontVariant
-	c.FontVariant.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-variant")
-	c.FontVariant.SmallCaps = newValueFn[pseudoclass](vfn("small-caps"), nil).Setter("font-variant")
-	c.FontVariant.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-variant")
 
 	// Outline
 	c.Outline.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("outline")
@@ -1009,31 +860,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderWidth.Thick = newValueFn[pseudoclass](vfn("thick"), nil).Setter("border-width")
 	c.BorderWidth.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-width")
 
-	// ListStyleType
-	c.ListStyleType.Disc = newValueFn[pseudoclass](vfn("disc"), nil).Setter("list-style-type")
-	c.ListStyleType.Armenian = newValueFn[pseudoclass](vfn("armenian"), nil).Setter("list-style-type")
-	c.ListStyleType.Circle = newValueFn[pseudoclass](vfn("circle"), nil).Setter("list-style-type")
-	c.ListStyleType.CjkIdeographic = newValueFn[pseudoclass](vfn("cjk-ideographic"), nil).Setter("list-style-type")
-	c.ListStyleType.Decimal = newValueFn[pseudoclass](vfn("decimal"), nil).Setter("list-style-type")
-	c.ListStyleType.DecimalLeadingZero = newValueFn[pseudoclass](vfn("decimal-leading-zero"), nil).Setter("list-style-type")
-	c.ListStyleType.Georgian = newValueFn[pseudoclass](vfn("georgian"), nil).Setter("list-style-type")
-	c.ListStyleType.Hebrew = newValueFn[pseudoclass](vfn("hebrew"), nil).Setter("list-style-type")
-	c.ListStyleType.Hiragana = newValueFn[pseudoclass](vfn("hiragana"), nil).Setter("list-style-type")
-	c.ListStyleType.HiraganaIroha = newValueFn[pseudoclass](vfn("hiragana-iroha"), nil).Setter("list-style-type")
-	c.ListStyleType.Katakana = newValueFn[pseudoclass](vfn("katakana"), nil).Setter("list-style-type")
-	c.ListStyleType.KatakanaIroha = newValueFn[pseudoclass](vfn("katakana-iroha"), nil).Setter("list-style-type")
-	c.ListStyleType.LowerAlpha = newValueFn[pseudoclass](vfn("lower-alpha"), nil).Setter("list-style-type")
-	c.ListStyleType.LowerGreek = newValueFn[pseudoclass](vfn("lower-greek"), nil).Setter("list-style-type")
-	c.ListStyleType.LowerLatin = newValueFn[pseudoclass](vfn("lower-latin"), nil).Setter("list-style-type")
-	c.ListStyleType.LowerRoman = newValueFn[pseudoclass](vfn("lower-roman"), nil).Setter("list-style-type")
-	c.ListStyleType.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("list-style-type")
-	c.ListStyleType.Square = newValueFn[pseudoclass](vfn("square"), nil).Setter("list-style-type")
-	c.ListStyleType.UpperAlpha = newValueFn[pseudoclass](vfn("upper-alpha"), nil).Setter("list-style-type")
-	c.ListStyleType.UpperGreek = newValueFn[pseudoclass](vfn("upper-greek"), nil).Setter("list-style-type")
-	c.ListStyleType.UpperLatin = newValueFn[pseudoclass](vfn("upper-latin"), nil).Setter("list-style-type")
-	c.ListStyleType.UpperRoman = newValueFn[pseudoclass](vfn("upper-roman"), nil).Setter("list-style-type")
-	c.ListStyleType.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-type")
-
 	// OutlineOffset
 	c.OutlineOffset.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("outline-offset")
 
@@ -1058,23 +884,9 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderTopWidth.Thick = newValueFn[pseudoclass](vfn("thick"), nil).Setter("border-top-width")
 	c.BorderTopWidth.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-top-width")
 
-	// WordWrap
-	c.WordWrap.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-wrap")
-	c.WordWrap.BreakWord = newValueFn[pseudoclass](vfn("break-word"), nil).Setter("word-wrap")
-	c.WordWrap.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-wrap")
-
 	// BackgroundColor
 	c.BackgroundColor.Transparent = newValueFn[pseudoclass](vfn("transparent"), nil).Setter("background-color")
 	c.BackgroundColor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("background-color")
-
-	// TextOverflow
-	c.TextOverflow.Clip = newValueFn[pseudoclass](vfn("clip"), nil).Setter("text-overflow")
-	c.TextOverflow.Ellipsis = newValueFn[pseudoclass](vfn("ellipsis"), nil).Setter("text-overflow")
-	c.TextOverflow.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-overflow")
-
-	// TextShadow
-	c.TextShadow.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-shadow")
-	c.TextShadow.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-shadow")
 
 	// BackgroundClip
 	c.BackgroundClip.BorderBox = newValueFn[pseudoclass](vfn("border-box"), nil).Setter("background-clip")
@@ -1102,9 +914,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.AnimationDirection.AlternateReverse = newValueFn[pseudoclass](vfn("alternate-reverse"), nil).Setter("animation-direction")
 	c.AnimationDirection.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("animation-direction")
 
-	// Color
-	c.Color.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("color")
-
 	// OutlineColor
 	c.OutlineColor.Invert = newValueFn[pseudoclass](vfn("invert"), nil).Setter("outline-color")
 	c.OutlineColor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("outline-color")
@@ -1115,25 +924,6 @@ func initializeContainerStyle[pseudoclass any]() ContainerStyle {
 	c.BorderImageRepeat.Round = newValueFn[pseudoclass](vfn("round"), nil).Setter("border-image-repeat")
 	c.BorderImageRepeat.Space = newValueFn[pseudoclass](vfn("space"), nil).Setter("border-image-repeat")
 	c.BorderImageRepeat.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("border-image-repeat")
-
-	// FontStretch
-	c.FontStretch.UltraCondensed = newValueFn[pseudoclass](vfn("ultra-condensed"), nil).Setter("font-stretch")
-	c.FontStretch.ExtraCondensed = newValueFn[pseudoclass](vfn("extra-condensed"), nil).Setter("font-stretch")
-	c.FontStretch.Condensed = newValueFn[pseudoclass](vfn("condensed"), nil).Setter("font-stretch")
-	c.FontStretch.SemiCondensed = newValueFn[pseudoclass](vfn("semi-condensed"), nil).Setter("font-stretch")
-	c.FontStretch.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-stretch")
-	c.FontStretch.SemiExpanded = newValueFn[pseudoclass](vfn("semi-expanded"), nil).Setter("font-stretch")
-	c.FontStretch.Expanded = newValueFn[pseudoclass](vfn("expanded"), nil).Setter("font-stretch")
-	c.FontStretch.ExtraExpanded = newValueFn[pseudoclass](vfn("extra-expanded"), nil).Setter("font-stretch")
-	c.FontStretch.UltraExpanded = newValueFn[pseudoclass](vfn("ultra-expanded"), nil).Setter("font-stretch")
-	c.FontStretch.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-stretch")
-
-	// TextTransform
-	c.TextTransform.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-transform")
-	c.TextTransform.Capitalize = newValueFn[pseudoclass](vfn("capitalize"), nil).Setter("text-transform")
-	c.TextTransform.Uppercase = newValueFn[pseudoclass](vfn("uppercase"), nil).Setter("text-transform")
-	c.TextTransform.Lowercase = newValueFn[pseudoclass](vfn("lowercase"), nil).Setter("text-transform")
-	c.TextTransform.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-transform")
 
 	c.Margin.Top = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-top")
 	c.Margin.Right = newValueFn[pseudoclass](nil, cfn).CustomSetter("margin-right")
@@ -1189,19 +979,6 @@ func initializeContentLayout[pseudoclass any]() ContentLayout {
 	c.AlignSelf.Baseline = newValueFn[pseudoclass](vfn("baseline"), nil).Setter("align-self")
 	c.AlignSelf.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("align-self")
 
-	// Content
-	c.Content.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("content")
-	c.Content.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("content")
-	c.Content.Counter = newValueFn[pseudoclass](vfn("counter"), nil).Setter("content")
-	c.Content.Attr = newValueFn[pseudoclass](nil, cfn).CustomSetter("content") // Adjust for attribute-based content.
-	c.Content.String = newValueFn[pseudoclass](vfn("string"), nil).Setter("content")
-	c.Content.OpenQuote = newValueFn[pseudoclass](vfn("open-quote"), nil).Setter("content")
-	c.Content.CloseQuote = newValueFn[pseudoclass](vfn("close-quote"), nil).Setter("content")
-	c.Content.NoOpenQuote = newValueFn[pseudoclass](vfn("no-open-quote"), nil).Setter("content")
-	c.Content.NoCloseQuote = newValueFn[pseudoclass](vfn("no-close-quote"), nil).Setter("content")
-	c.Content.URL = newValueFn[pseudoclass](nil, cfn).CustomSetter("content") // Adjust for URL-based content.
-	c.Content.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("content")
-
 	// ColumnSpan
 	c.ColumnSpan.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("column-span")
 	c.ColumnSpan.All = newValueFn[pseudoclass](vfn("all"), nil).Setter("column-span")
@@ -1217,7 +994,6 @@ func initializeContentLayout[pseudoclass any]() ContentLayout {
 	c.Flex.Inherit = newValueFn[pseudoclass](vfn("inherit"), nil).Setter("flex")
 
 	// FlexShrink
-	c.FlexShrink.Number = newValueFn[pseudoclass](nil, cfn).CustomSetter("flex-shrink")
 	c.FlexShrink.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("flex-shrink")
 
 	// Order
@@ -1234,6 +1010,15 @@ func initializeContentLayout[pseudoclass any]() ContentLayout {
 	c.AlignItems.FlexEnd = newValueFn[pseudoclass](vfn("flex-end"), nil).Setter("align-items")
 	c.AlignItems.Baseline = newValueFn[pseudoclass](vfn("baseline"), nil).Setter("align-items")
 	c.AlignItems.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("align-items")
+
+	// VerticalAlign
+	c.VerticalAlign.Baseline = newValueFn[pseudoclass](vfn("baseline"), nil).Setter("vertical-align")
+	c.VerticalAlign.Top = newValueFn[pseudoclass](vfn("top"), nil).Setter("vertical-align")
+	c.VerticalAlign.TextTop = newValueFn[pseudoclass](vfn("text-top"), nil).Setter("vertical-align")
+	c.VerticalAlign.Middle = newValueFn[pseudoclass](vfn("middle"), nil).Setter("vertical-align")
+	c.VerticalAlign.Bottom = newValueFn[pseudoclass](vfn("bottom"), nil).Setter("vertical-align")
+	c.VerticalAlign.TextBottom = newValueFn[pseudoclass](vfn("text-bottom"), nil).Setter("vertical-align")
+	c.VerticalAlign.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("vertical-align")
 
 	return c
 }
@@ -1319,6 +1104,220 @@ func initializeContentStyle[pseudoclass any]() ContentStyle {
 	c.Cursor.ZoomIn = newValueFn[pseudoclass](vfn("zoom-in"), nil).Setter("cursor")
 	c.Cursor.ZoomOut = newValueFn[pseudoclass](vfn("zoom-out"), nil).Setter("cursor")
 	c.Cursor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("cursor")
+
+	// Content
+	c.Content.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("content")
+	c.Content.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("content")
+	c.Content.Counter = newValueFn[pseudoclass](vfn("counter"), nil).Setter("content")
+	c.Content.Attr = newValueFn[pseudoclass](nil, cfn).CustomSetter("content") // Adjust for attribute-based content.
+	c.Content.String = newValueFn[pseudoclass](vfn("string"), nil).Setter("content")
+	c.Content.OpenQuote = newValueFn[pseudoclass](vfn("open-quote"), nil).Setter("content")
+	c.Content.CloseQuote = newValueFn[pseudoclass](vfn("close-quote"), nil).Setter("content")
+	c.Content.NoOpenQuote = newValueFn[pseudoclass](vfn("no-open-quote"), nil).Setter("content")
+	c.Content.NoCloseQuote = newValueFn[pseudoclass](vfn("no-close-quote"), nil).Setter("content")
+	c.Content.URL = newValueFn[pseudoclass](nil, cfn).CustomSetter("content") // Adjust for URL-based content.
+	c.Content.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("content")
+
+	// WhiteSpace
+	c.WhiteSpace.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("white-space")
+	c.WhiteSpace.Nowrap = newValueFn[pseudoclass](vfn("nowrap"), nil).Setter("white-space")
+	c.WhiteSpace.Pre = newValueFn[pseudoclass](vfn("pre"), nil).Setter("white-space")
+	c.WhiteSpace.PreLine = newValueFn[pseudoclass](vfn("pre-line"), nil).Setter("white-space")
+	c.WhiteSpace.PreWrap = newValueFn[pseudoclass](vfn("pre-wrap"), nil).Setter("white-space")
+	c.WhiteSpace.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("white-space")
+
+	// FontSize
+	c.FontSize.Medium = newValueFn[pseudoclass](vfn("medium"), nil).Setter("font-size")
+	c.FontSize.XxSmall = newValueFn[pseudoclass](vfn("xx-small"), nil).Setter("font-size")
+	c.FontSize.XSmall = newValueFn[pseudoclass](vfn("x-small"), nil).Setter("font-size")
+	c.FontSize.Small = newValueFn[pseudoclass](vfn("small"), nil).Setter("font-size")
+	c.FontSize.Large = newValueFn[pseudoclass](vfn("large"), nil).Setter("font-size")
+	c.FontSize.XLarge = newValueFn[pseudoclass](vfn("x-large"), nil).Setter("font-size")
+	c.FontSize.XxLarge = newValueFn[pseudoclass](vfn("xx-large"), nil).Setter("font-size")
+	c.FontSize.Smaller = newValueFn[pseudoclass](vfn("smaller"), nil).Setter("font-size")
+	c.FontSize.Larger = newValueFn[pseudoclass](vfn("larger"), nil).Setter("font-size")
+	c.FontSize.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-size")
+
+	// LineHeight
+	c.LineHeight.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("line-height")
+	c.LineHeight.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("line-height")
+
+	// TextDecorationStyle
+	c.TextDecorationStyle.Solid = newValueFn[pseudoclass](vfn("solid"), nil).Setter("text-decoration-style")
+	c.TextDecorationStyle.Double = newValueFn[pseudoclass](vfn("double"), nil).Setter("text-decoration-style")
+	c.TextDecorationStyle.Dotted = newValueFn[pseudoclass](vfn("dotted"), nil).Setter("text-decoration-style")
+	c.TextDecorationStyle.Dashed = newValueFn[pseudoclass](vfn("dashed"), nil).Setter("text-decoration-style")
+	c.TextDecorationStyle.Wavy = newValueFn[pseudoclass](vfn("wavy"), nil).Setter("text-decoration-style")
+	c.TextDecorationStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-style")
+
+	// TextDecoration
+	c.TextDecoration.TextDecorationLine = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-line")
+	c.TextDecoration.TextDecorationColor = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-color")
+	c.TextDecoration.TextDecorationStyle = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-style")
+	c.TextDecoration.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration")
+
+	// Quotes
+	c.Quotes.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("quotes")
+	c.Quotes.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("quotes")
+	c.Quotes.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("quotes")
+
+	// FontSizeAdjust
+	c.FontSizeAdjust.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("font-size-adjust")
+	c.FontSizeAdjust.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-size-adjust")
+
+	// ListStylePosition
+	c.ListStylePosition.Inside = newValueFn[pseudoclass](vfn("inside"), nil).Setter("list-style-position")
+	c.ListStylePosition.Outside = newValueFn[pseudoclass](vfn("outside"), nil).Setter("list-style-position")
+	c.ListStylePosition.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-position")
+
+	// TextAlign
+	c.TextAlign.Left = newValueFn[pseudoclass](vfn("left"), nil).Setter("text-align")
+	c.TextAlign.Right = newValueFn[pseudoclass](vfn("right"), nil).Setter("text-align")
+	c.TextAlign.Center = newValueFn[pseudoclass](vfn("center"), nil).Setter("text-align")
+	c.TextAlign.Justify = newValueFn[pseudoclass](vfn("justify"), nil).Setter("text-align")
+	c.TextAlign.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-align")
+
+	// TextJustify
+	c.TextJustify.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("text-justify")
+	c.TextJustify.InterWord = newValueFn[pseudoclass](vfn("inter-word"), nil).Setter("text-justify")
+	c.TextJustify.InterCharacter = newValueFn[pseudoclass](vfn("inter-character"), nil).Setter("text-justify")
+	c.TextJustify.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-justify")
+	c.TextJustify.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-justify")
+
+	// WordBreak
+	c.WordBreak.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-break")
+	c.WordBreak.BreakAll = newValueFn[pseudoclass](vfn("break-all"), nil).Setter("word-break")
+	c.WordBreak.KeepAll = newValueFn[pseudoclass](vfn("keep-all"), nil).Setter("word-break")
+	c.WordBreak.BreakWord = newValueFn[pseudoclass](vfn("break-word"), nil).Setter("word-break")
+	c.WordBreak.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-break")
+
+	// FontStyle
+	c.FontStyle.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-style")
+	c.FontStyle.Italic = newValueFn[pseudoclass](vfn("italic"), nil).Setter("font-style")
+	c.FontStyle.Oblique = newValueFn[pseudoclass](vfn("oblique"), nil).Setter("font-style")
+	c.FontStyle.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-style")
+
+	// WordSpacing
+	c.WordSpacing.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-spacing")
+	c.WordSpacing.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-spacing")
+
+	// Font
+	c.Font.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font")
+
+	// LetterSpacing
+	c.LetterSpacing.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("letter-spacing")
+	c.LetterSpacing.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("letter-spacing")
+
+	// TextAlignLast
+	c.TextAlignLast.Auto = newValueFn[pseudoclass](vfn("auto"), nil).Setter("text-align-last")
+	c.TextAlignLast.Left = newValueFn[pseudoclass](vfn("left"), nil).Setter("text-align-last")
+	c.TextAlignLast.Right = newValueFn[pseudoclass](vfn("right"), nil).Setter("text-align-last")
+	c.TextAlignLast.Center = newValueFn[pseudoclass](vfn("center"), nil).Setter("text-align-last")
+	c.TextAlignLast.Justify = newValueFn[pseudoclass](vfn("justify"), nil).Setter("text-align-last")
+	c.TextAlignLast.Start = newValueFn[pseudoclass](vfn("start"), nil).Setter("text-align-last")
+	c.TextAlignLast.End = newValueFn[pseudoclass](vfn("end"), nil).Setter("text-align-last")
+	c.TextAlignLast.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-align-last")
+
+	// FontWeight
+	c.FontWeight.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-weight")
+	c.FontWeight.Bold = newValueFn[pseudoclass](vfn("bold"), nil).Setter("font-weight")
+	c.FontWeight.Bolder = newValueFn[pseudoclass](vfn("bolder"), nil).Setter("font-weight")
+	c.FontWeight.Lighter = newValueFn[pseudoclass](vfn("lighter"), nil).Setter("font-weight")
+	c.FontWeight.S100 = newValueFn[pseudoclass](vfn("100"), nil).Setter("font-weight")
+	c.FontWeight.S200 = newValueFn[pseudoclass](vfn("200"), nil).Setter("font-weight")
+	c.FontWeight.S300 = newValueFn[pseudoclass](vfn("300"), nil).Setter("font-weight")
+	c.FontWeight.S400 = newValueFn[pseudoclass](vfn("400"), nil).Setter("font-weight")
+	c.FontWeight.S500 = newValueFn[pseudoclass](vfn("500"), nil).Setter("font-weight")
+	c.FontWeight.S600 = newValueFn[pseudoclass](vfn("600"), nil).Setter("font-weight")
+	c.FontWeight.S700 = newValueFn[pseudoclass](vfn("700"), nil).Setter("font-weight")
+	c.FontWeight.S800 = newValueFn[pseudoclass](vfn("800"), nil).Setter("font-weight")
+	c.FontWeight.S900 = newValueFn[pseudoclass](vfn("900"), nil).Setter("font-weight")
+	c.FontWeight.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-weight")
+
+	// ListStyleImage
+	c.ListStyleImage.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("list-style-image")
+	c.ListStyleImage.Url = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image") // Special handling might be needed for URL
+	c.ListStyleImage.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-image")
+
+	// TextIndent
+	c.TextIndent.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-indent")
+
+	// FontVariant
+	c.FontVariant.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-variant")
+	c.FontVariant.SmallCaps = newValueFn[pseudoclass](vfn("small-caps"), nil).Setter("font-variant")
+	c.FontVariant.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-variant")
+
+	// ListStyleType
+	c.ListStyleType.Disc = newValueFn[pseudoclass](vfn("disc"), nil).Setter("list-style-type")
+	c.ListStyleType.Armenian = newValueFn[pseudoclass](vfn("armenian"), nil).Setter("list-style-type")
+	c.ListStyleType.Circle = newValueFn[pseudoclass](vfn("circle"), nil).Setter("list-style-type")
+	c.ListStyleType.CjkIdeographic = newValueFn[pseudoclass](vfn("cjk-ideographic"), nil).Setter("list-style-type")
+	c.ListStyleType.Decimal = newValueFn[pseudoclass](vfn("decimal"), nil).Setter("list-style-type")
+	c.ListStyleType.DecimalLeadingZero = newValueFn[pseudoclass](vfn("decimal-leading-zero"), nil).Setter("list-style-type")
+	c.ListStyleType.Georgian = newValueFn[pseudoclass](vfn("georgian"), nil).Setter("list-style-type")
+	c.ListStyleType.Hebrew = newValueFn[pseudoclass](vfn("hebrew"), nil).Setter("list-style-type")
+	c.ListStyleType.Hiragana = newValueFn[pseudoclass](vfn("hiragana"), nil).Setter("list-style-type")
+	c.ListStyleType.HiraganaIroha = newValueFn[pseudoclass](vfn("hiragana-iroha"), nil).Setter("list-style-type")
+	c.ListStyleType.Katakana = newValueFn[pseudoclass](vfn("katakana"), nil).Setter("list-style-type")
+	c.ListStyleType.KatakanaIroha = newValueFn[pseudoclass](vfn("katakana-iroha"), nil).Setter("list-style-type")
+	c.ListStyleType.LowerAlpha = newValueFn[pseudoclass](vfn("lower-alpha"), nil).Setter("list-style-type")
+	c.ListStyleType.LowerGreek = newValueFn[pseudoclass](vfn("lower-greek"), nil).Setter("list-style-type")
+	c.ListStyleType.LowerLatin = newValueFn[pseudoclass](vfn("lower-latin"), nil).Setter("list-style-type")
+	c.ListStyleType.LowerRoman = newValueFn[pseudoclass](vfn("lower-roman"), nil).Setter("list-style-type")
+	c.ListStyleType.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("list-style-type")
+	c.ListStyleType.Square = newValueFn[pseudoclass](vfn("square"), nil).Setter("list-style-type")
+	c.ListStyleType.UpperAlpha = newValueFn[pseudoclass](vfn("upper-alpha"), nil).Setter("list-style-type")
+	c.ListStyleType.UpperGreek = newValueFn[pseudoclass](vfn("upper-greek"), nil).Setter("list-style-type")
+	c.ListStyleType.UpperLatin = newValueFn[pseudoclass](vfn("upper-latin"), nil).Setter("list-style-type")
+	c.ListStyleType.UpperRoman = newValueFn[pseudoclass](vfn("upper-roman"), nil).Setter("list-style-type")
+	c.ListStyleType.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("list-style-type")
+
+	// WordWrap
+	c.WordWrap.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("word-wrap")
+	c.WordWrap.BreakWord = newValueFn[pseudoclass](vfn("break-word"), nil).Setter("word-wrap")
+	c.WordWrap.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("word-wrap")
+
+	// TextOverflow
+	c.TextOverflow.Clip = newValueFn[pseudoclass](vfn("clip"), nil).Setter("text-overflow")
+	c.TextOverflow.Ellipsis = newValueFn[pseudoclass](vfn("ellipsis"), nil).Setter("text-overflow")
+	c.TextOverflow.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-overflow")
+
+	// TextShadow
+	c.TextShadow.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-shadow")
+	c.TextShadow.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-shadow")
+
+	// FontStretch
+	c.FontStretch.UltraCondensed = newValueFn[pseudoclass](vfn("ultra-condensed"), nil).Setter("font-stretch")
+	c.FontStretch.ExtraCondensed = newValueFn[pseudoclass](vfn("extra-condensed"), nil).Setter("font-stretch")
+	c.FontStretch.Condensed = newValueFn[pseudoclass](vfn("condensed"), nil).Setter("font-stretch")
+	c.FontStretch.SemiCondensed = newValueFn[pseudoclass](vfn("semi-condensed"), nil).Setter("font-stretch")
+	c.FontStretch.Normal = newValueFn[pseudoclass](vfn("normal"), nil).Setter("font-stretch")
+	c.FontStretch.SemiExpanded = newValueFn[pseudoclass](vfn("semi-expanded"), nil).Setter("font-stretch")
+	c.FontStretch.Expanded = newValueFn[pseudoclass](vfn("expanded"), nil).Setter("font-stretch")
+	c.FontStretch.ExtraExpanded = newValueFn[pseudoclass](vfn("extra-expanded"), nil).Setter("font-stretch")
+	c.FontStretch.UltraExpanded = newValueFn[pseudoclass](vfn("ultra-expanded"), nil).Setter("font-stretch")
+	c.FontStretch.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-stretch")
+
+	// TextTransform
+	c.TextTransform.None = newValueFn[pseudoclass](vfn("none"), nil).Setter("text-transform")
+	c.TextTransform.Capitalize = newValueFn[pseudoclass](vfn("capitalize"), nil).Setter("text-transform")
+	c.TextTransform.Uppercase = newValueFn[pseudoclass](vfn("uppercase"), nil).Setter("text-transform")
+	c.TextTransform.Lowercase = newValueFn[pseudoclass](vfn("lowercase"), nil).Setter("text-transform")
+	c.TextTransform.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-transform")
+
+	// CaptionSide
+	c.CaptionSide.Top = newValueFn[pseudoclass](vfn("top"), nil).Setter("caption-side")
+	c.CaptionSide.Bottom = newValueFn[pseudoclass](vfn("bottom"), nil).Setter("caption-side")
+	c.CaptionSide.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("caption-side")
+
+	// TextDecorationColor
+	c.TextDecorationColor.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("text-decoration-color")
+
+	// FontFamily
+	c.FontFamily.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("font-family")
+
+	// Color
+	c.Color.Value = newValueFn[pseudoclass](nil, cfn).CustomSetter("color")
 
 	return c
 }
@@ -1498,15 +1497,6 @@ type ContainerLayout struct {
 	MinWidth struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
-	VerticalAlign struct {
-		Baseline   func(*ui.Element) *ui.Element
-		Top        func(*ui.Element) *ui.Element
-		TextTop    func(*ui.Element) *ui.Element
-		Middle     func(*ui.Element) *ui.Element
-		Bottom     func(*ui.Element) *ui.Element
-		TextBottom func(*ui.Element) *ui.Element
-		Value      func(value string) func(*ui.Element) *ui.Element
-	}
 	PerspectiveOrigin struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
@@ -1606,14 +1596,6 @@ type ContainerStyle struct {
 		Percent func(value string) func(*ui.Element) *ui.Element
 		Value   func(value string) func(*ui.Element) *ui.Element
 	}
-	WhiteSpace struct {
-		Normal  func(*ui.Element) *ui.Element
-		Nowrap  func(*ui.Element) *ui.Element
-		Pre     func(*ui.Element) *ui.Element
-		PreLine func(*ui.Element) *ui.Element
-		PreWrap func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
 	BorderRight struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
@@ -1657,30 +1639,6 @@ type ContainerStyle struct {
 		Transparent func(*ui.Element) *ui.Element
 		Value       func(value string) func(*ui.Element) *ui.Element
 	}
-	FontSize struct {
-		Medium  func(*ui.Element) *ui.Element
-		XxSmall func(*ui.Element) *ui.Element
-		XSmall  func(*ui.Element) *ui.Element
-		Small   func(*ui.Element) *ui.Element
-		Large   func(*ui.Element) *ui.Element
-		XLarge  func(*ui.Element) *ui.Element
-		XxLarge func(*ui.Element) *ui.Element
-		Smaller func(*ui.Element) *ui.Element
-		Larger  func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	LineHeight struct {
-		Normal func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
-	}
-	TextDecorationStyle struct {
-		Solid  func(*ui.Element) *ui.Element
-		Double func(*ui.Element) *ui.Element
-		Dotted func(*ui.Element) *ui.Element
-		Dashed func(*ui.Element) *ui.Element
-		Wavy   func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
-	}
 	BackfaceVisibility struct {
 		Visible func(*ui.Element) *ui.Element
 		Hidden  func(*ui.Element) *ui.Element
@@ -1698,12 +1656,6 @@ type ContainerStyle struct {
 		Inset  func(*ui.Element) *ui.Element
 		Outset func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
-	}
-	TextDecoration struct {
-		TextDecorationLine  func(value string) func(*ui.Element) *ui.Element
-		TextDecorationColor func(value string) func(*ui.Element) *ui.Element
-		TextDecorationStyle func(value string) func(*ui.Element) *ui.Element
-		Value               func(value string) func(*ui.Element) *ui.Element
 	}
 	Transition struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1724,11 +1676,6 @@ type ContainerStyle struct {
 	BorderRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
-	Quotes struct {
-		None  func(*ui.Element) *ui.Element
-		Auto  func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
 	TabSize struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
@@ -1745,29 +1692,6 @@ type ContainerStyle struct {
 		Contain func(*ui.Element) *ui.Element
 		Value   func(value string) func(*ui.Element) *ui.Element
 	}
-	FontSizeAdjust struct {
-		None  func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
-	ListStylePosition struct {
-		Inside  func(*ui.Element) *ui.Element
-		Outside func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	TextAlign struct {
-		Left    func(*ui.Element) *ui.Element
-		Right   func(*ui.Element) *ui.Element
-		Center  func(*ui.Element) *ui.Element
-		Justify func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	TextJustify struct {
-		Auto           func(*ui.Element) *ui.Element
-		InterWord      func(*ui.Element) *ui.Element
-		InterCharacter func(*ui.Element) *ui.Element
-		None           func(*ui.Element) *ui.Element
-		Value          func(value string) func(*ui.Element) *ui.Element
-	}
 	BackgroundAttachment struct {
 		Scroll func(*ui.Element) *ui.Element
 		Fixed  func(*ui.Element) *ui.Element
@@ -1780,9 +1704,6 @@ type ContainerStyle struct {
 		Thick  func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
 	}
-	Font struct {
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
 	BorderLeft struct {
 		BorderLeftWidth func(value string) func(*ui.Element) *ui.Element
 		BorderLeftStyle func(value string) func(*ui.Element) *ui.Element
@@ -1792,10 +1713,6 @@ type ContainerStyle struct {
 	TransitionDuration struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
-	WordSpacing struct {
-		Normal func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
-	}
 	AnimationName struct {
 		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1804,10 +1721,6 @@ type ContainerStyle struct {
 		Paused  func(*ui.Element) *ui.Element
 		Running func(*ui.Element) *ui.Element
 		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	LetterSpacing struct {
-		Normal func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
 	}
 	BorderBottomStyle struct {
 		None   func(*ui.Element) *ui.Element
@@ -1822,21 +1735,8 @@ type ContainerStyle struct {
 		Outset func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
 	}
-	WordBreak struct {
-		Normal    func(*ui.Element) *ui.Element
-		BreakAll  func(*ui.Element) *ui.Element
-		KeepAll   func(*ui.Element) *ui.Element
-		BreakWord func(*ui.Element) *ui.Element
-		Value     func(value string) func(*ui.Element) *ui.Element
-	}
 	BorderBottomRightRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
-	}
-	FontStyle struct {
-		Normal  func(*ui.Element) *ui.Element
-		Italic  func(*ui.Element) *ui.Element
-		Oblique func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
 	}
 	Order struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1861,39 +1761,8 @@ type ContainerStyle struct {
 		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
-	TextAlignLast struct {
-		Auto    func(*ui.Element) *ui.Element
-		Left    func(*ui.Element) *ui.Element
-		Right   func(*ui.Element) *ui.Element
-		Center  func(*ui.Element) *ui.Element
-		Justify func(*ui.Element) *ui.Element
-		Start   func(*ui.Element) *ui.Element
-		End     func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
 	BorderImageWidth struct {
 		Auto  func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
-	FontWeight struct {
-		Normal  func(*ui.Element) *ui.Element
-		Bold    func(*ui.Element) *ui.Element
-		Bolder  func(*ui.Element) *ui.Element
-		Lighter func(*ui.Element) *ui.Element
-		S100    func(*ui.Element) *ui.Element
-		S200    func(*ui.Element) *ui.Element
-		S300    func(*ui.Element) *ui.Element
-		S400    func(*ui.Element) *ui.Element
-		S500    func(*ui.Element) *ui.Element
-		S600    func(*ui.Element) *ui.Element
-		S700    func(*ui.Element) *ui.Element
-		S800    func(*ui.Element) *ui.Element
-		S900    func(*ui.Element) *ui.Element
-		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	ListStyleImage struct {
-		None  func(*ui.Element) *ui.Element
-		Url   func(value string) func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Opacity struct {
@@ -1942,17 +1811,6 @@ type ContainerStyle struct {
 	BorderTopRightRadius struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
-	CaptionSide struct {
-		Top    func(*ui.Element) *ui.Element
-		Bottom func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
-	}
-	FontFamily struct {
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
-	TextDecorationColor struct {
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
 	TransitionProperty struct {
 		None  func(*ui.Element) *ui.Element
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -1962,9 +1820,6 @@ type ContainerStyle struct {
 		BorderBox  func(*ui.Element) *ui.Element
 		ContentBox func(*ui.Element) *ui.Element
 		Value      func(value string) func(*ui.Element) *ui.Element
-	}
-	TextIndent struct {
-		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Visibility struct {
 		Visible  func(*ui.Element) *ui.Element
@@ -1978,11 +1833,6 @@ type ContainerStyle struct {
 	}
 	BorderTop struct {
 		Value func(value string) func(*ui.Element) *ui.Element
-	}
-	FontVariant struct {
-		Normal    func(*ui.Element) *ui.Element
-		SmallCaps func(*ui.Element) *ui.Element
-		Value     func(value string) func(*ui.Element) *ui.Element
 	}
 	Outline struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -2010,31 +1860,6 @@ type ContainerStyle struct {
 		Thick  func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
 	}
-	ListStyleType struct {
-		Disc               func(*ui.Element) *ui.Element
-		Armenian           func(*ui.Element) *ui.Element
-		Circle             func(*ui.Element) *ui.Element
-		CjkIdeographic     func(*ui.Element) *ui.Element
-		Decimal            func(*ui.Element) *ui.Element
-		DecimalLeadingZero func(*ui.Element) *ui.Element
-		Georgian           func(*ui.Element) *ui.Element
-		Hebrew             func(*ui.Element) *ui.Element
-		Hiragana           func(*ui.Element) *ui.Element
-		HiraganaIroha      func(*ui.Element) *ui.Element
-		Katakana           func(*ui.Element) *ui.Element
-		KatakanaIroha      func(*ui.Element) *ui.Element
-		LowerAlpha         func(*ui.Element) *ui.Element
-		LowerGreek         func(*ui.Element) *ui.Element
-		LowerLatin         func(*ui.Element) *ui.Element
-		LowerRoman         func(*ui.Element) *ui.Element
-		None               func(*ui.Element) *ui.Element
-		Square             func(*ui.Element) *ui.Element
-		UpperAlpha         func(*ui.Element) *ui.Element
-		UpperGreek         func(*ui.Element) *ui.Element
-		UpperLatin         func(*ui.Element) *ui.Element
-		UpperRoman         func(*ui.Element) *ui.Element
-		Value              func(value string) func(*ui.Element) *ui.Element
-	}
 	OutlineOffset struct {
 		Value func(value string) func(*ui.Element) *ui.Element
 	}
@@ -2059,23 +1884,9 @@ type ContainerStyle struct {
 		Thick  func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
 	}
-	WordWrap struct {
-		Normal    func(*ui.Element) *ui.Element
-		BreakWord func(*ui.Element) *ui.Element
-		Value     func(value string) func(*ui.Element) *ui.Element
-	}
 	BackgroundColor struct {
 		Transparent func(*ui.Element) *ui.Element
 		Value       func(value string) func(*ui.Element) *ui.Element
-	}
-	TextOverflow struct {
-		Clip     func(*ui.Element) *ui.Element
-		Ellipsis func(*ui.Element) *ui.Element
-		Value    func(value string) func(*ui.Element) *ui.Element
-	}
-	TextShadow struct {
-		None  func(*ui.Element) *ui.Element
-		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	BackgroundClip struct {
 		BorderBox  func(*ui.Element) *ui.Element
@@ -2103,9 +1914,6 @@ type ContainerStyle struct {
 		AlternateReverse func(*ui.Element) *ui.Element
 		Value            func(value string) func(*ui.Element) *ui.Element
 	}
-	Color struct {
-		Value func(value string) func(*ui.Element) *ui.Element
-	}
 	OutlineColor struct {
 		Invert func(*ui.Element) *ui.Element
 		Value  func(value string) func(*ui.Element) *ui.Element
@@ -2116,25 +1924,6 @@ type ContainerStyle struct {
 		Round   func(*ui.Element) *ui.Element
 		Space   func(*ui.Element) *ui.Element
 		Value   func(value string) func(*ui.Element) *ui.Element
-	}
-	FontStretch struct {
-		UltraCondensed func(*ui.Element) *ui.Element
-		ExtraCondensed func(*ui.Element) *ui.Element
-		Condensed      func(*ui.Element) *ui.Element
-		SemiCondensed  func(*ui.Element) *ui.Element
-		Normal         func(*ui.Element) *ui.Element
-		SemiExpanded   func(*ui.Element) *ui.Element
-		Expanded       func(*ui.Element) *ui.Element
-		ExtraExpanded  func(*ui.Element) *ui.Element
-		UltraExpanded  func(*ui.Element) *ui.Element
-		Value          func(value string) func(*ui.Element) *ui.Element
-	}
-	TextTransform struct {
-		None       func(*ui.Element) *ui.Element
-		Capitalize func(*ui.Element) *ui.Element
-		Uppercase  func(*ui.Element) *ui.Element
-		Lowercase  func(*ui.Element) *ui.Element
-		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 	Margin struct {
 		Top    func(value string) func(*ui.Element) *ui.Element
@@ -2194,19 +1983,6 @@ type ContentLayout struct {
 		Baseline  func(*ui.Element) *ui.Element
 		Value     func(value string) func(*ui.Element) *ui.Element
 	}
-	Content struct {
-		Normal       func(*ui.Element) *ui.Element
-		None         func(*ui.Element) *ui.Element
-		Counter      func(*ui.Element) *ui.Element
-		Attr         func(value string) func(*ui.Element) *ui.Element
-		String       func(*ui.Element) *ui.Element
-		OpenQuote    func(*ui.Element) *ui.Element
-		CloseQuote   func(*ui.Element) *ui.Element
-		NoOpenQuote  func(*ui.Element) *ui.Element
-		NoCloseQuote func(*ui.Element) *ui.Element
-		URL          func(url string) func(*ui.Element) *ui.Element
-		Value        func(value string) func(*ui.Element) *ui.Element
-	}
 	ColumnSpan struct {
 		None  func(*ui.Element) *ui.Element
 		All   func(*ui.Element) *ui.Element
@@ -2222,8 +1998,7 @@ type ContentLayout struct {
 		Inherit    func(*ui.Element) *ui.Element
 	}
 	FlexShrink struct {
-		Number func(value string) func(*ui.Element) *ui.Element
-		Value  func(value string) func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
 	}
 	Order struct {
 		Value func(value string) func(*ui.Element) *ui.Element
@@ -2239,6 +2014,15 @@ type ContentLayout struct {
 		FlexEnd   func(*ui.Element) *ui.Element
 		Baseline  func(*ui.Element) *ui.Element
 		Value     func(value string) func(*ui.Element) *ui.Element
+	}
+	VerticalAlign struct {
+		Baseline   func(*ui.Element) *ui.Element
+		Top        func(*ui.Element) *ui.Element
+		TextTop    func(*ui.Element) *ui.Element
+		Middle     func(*ui.Element) *ui.Element
+		Bottom     func(*ui.Element) *ui.Element
+		TextBottom func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
 	}
 }
 
@@ -2321,5 +2105,219 @@ type ContentStyle struct {
 		ZoomIn       func(*ui.Element) *ui.Element
 		ZoomOut      func(*ui.Element) *ui.Element
 		Value        func(value string) func(*ui.Element) *ui.Element
+	}
+	CaptionSide struct {
+		Top    func(*ui.Element) *ui.Element
+		Bottom func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	Color struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	Font struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	FontSize struct {
+		Medium  func(*ui.Element) *ui.Element
+		XxSmall func(*ui.Element) *ui.Element
+		XSmall  func(*ui.Element) *ui.Element
+		Small   func(*ui.Element) *ui.Element
+		Large   func(*ui.Element) *ui.Element
+		XLarge  func(*ui.Element) *ui.Element
+		XxLarge func(*ui.Element) *ui.Element
+		Smaller func(*ui.Element) *ui.Element
+		Larger  func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	FontSizeAdjust struct {
+		None  func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	FontStyle struct {
+		Normal  func(*ui.Element) *ui.Element
+		Italic  func(*ui.Element) *ui.Element
+		Oblique func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	FontWeight struct {
+		Normal  func(*ui.Element) *ui.Element
+		Bold    func(*ui.Element) *ui.Element
+		Bolder  func(*ui.Element) *ui.Element
+		Lighter func(*ui.Element) *ui.Element
+		S100    func(*ui.Element) *ui.Element
+		S200    func(*ui.Element) *ui.Element
+		S300    func(*ui.Element) *ui.Element
+		S400    func(*ui.Element) *ui.Element
+		S500    func(*ui.Element) *ui.Element
+		S600    func(*ui.Element) *ui.Element
+		S700    func(*ui.Element) *ui.Element
+		S800    func(*ui.Element) *ui.Element
+		S900    func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	FontFamily struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	FontStretch struct {
+		UltraCondensed func(*ui.Element) *ui.Element
+		ExtraCondensed func(*ui.Element) *ui.Element
+		Condensed      func(*ui.Element) *ui.Element
+		SemiCondensed  func(*ui.Element) *ui.Element
+		Normal         func(*ui.Element) *ui.Element
+		SemiExpanded   func(*ui.Element) *ui.Element
+		Expanded       func(*ui.Element) *ui.Element
+		ExtraExpanded  func(*ui.Element) *ui.Element
+		UltraExpanded  func(*ui.Element) *ui.Element
+		Value          func(value string) func(*ui.Element) *ui.Element
+	}
+	TextTransform struct {
+		None       func(*ui.Element) *ui.Element
+		Capitalize func(*ui.Element) *ui.Element
+		Uppercase  func(*ui.Element) *ui.Element
+		Lowercase  func(*ui.Element) *ui.Element
+		Value      func(value string) func(*ui.Element) *ui.Element
+	}
+	FontVariant struct {
+		Normal    func(*ui.Element) *ui.Element
+		SmallCaps func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
+	}
+	ListStyleType struct {
+		Disc               func(*ui.Element) *ui.Element
+		Armenian           func(*ui.Element) *ui.Element
+		Circle             func(*ui.Element) *ui.Element
+		CjkIdeographic     func(*ui.Element) *ui.Element
+		Decimal            func(*ui.Element) *ui.Element
+		DecimalLeadingZero func(*ui.Element) *ui.Element
+		Georgian           func(*ui.Element) *ui.Element
+		Hebrew             func(*ui.Element) *ui.Element
+		Hiragana           func(*ui.Element) *ui.Element
+		HiraganaIroha      func(*ui.Element) *ui.Element
+		Katakana           func(*ui.Element) *ui.Element
+		KatakanaIroha      func(*ui.Element) *ui.Element
+		LowerAlpha         func(*ui.Element) *ui.Element
+		LowerGreek         func(*ui.Element) *ui.Element
+		LowerLatin         func(*ui.Element) *ui.Element
+		LowerRoman         func(*ui.Element) *ui.Element
+		None               func(*ui.Element) *ui.Element
+		Square             func(*ui.Element) *ui.Element
+		UpperAlpha         func(*ui.Element) *ui.Element
+		UpperGreek         func(*ui.Element) *ui.Element
+		UpperLatin         func(*ui.Element) *ui.Element
+		UpperRoman         func(*ui.Element) *ui.Element
+		Value              func(value string) func(*ui.Element) *ui.Element
+	}
+	ListStylePosition struct {
+		Inside  func(*ui.Element) *ui.Element
+		Outside func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	LetterSpacing struct {
+		Normal func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	TextAlign struct {
+		Left    func(*ui.Element) *ui.Element
+		Right   func(*ui.Element) *ui.Element
+		Center  func(*ui.Element) *ui.Element
+		Justify func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	TextJustify struct {
+		Auto           func(*ui.Element) *ui.Element
+		InterWord      func(*ui.Element) *ui.Element
+		InterCharacter func(*ui.Element) *ui.Element
+		None           func(*ui.Element) *ui.Element
+		Value          func(value string) func(*ui.Element) *ui.Element
+	}
+	TextDecorationColor struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	LineHeight struct {
+		Normal func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	TextDecorationStyle struct {
+		Solid  func(*ui.Element) *ui.Element
+		Double func(*ui.Element) *ui.Element
+		Dotted func(*ui.Element) *ui.Element
+		Dashed func(*ui.Element) *ui.Element
+		Wavy   func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	TextIndent struct {
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	TextOverflow struct {
+		Clip     func(*ui.Element) *ui.Element
+		Ellipsis func(*ui.Element) *ui.Element
+		Value    func(value string) func(*ui.Element) *ui.Element
+	}
+	TextShadow struct {
+		None  func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	TextDecoration struct {
+		TextDecorationLine  func(value string) func(*ui.Element) *ui.Element
+		TextDecorationColor func(value string) func(*ui.Element) *ui.Element
+		TextDecorationStyle func(value string) func(*ui.Element) *ui.Element
+		Value               func(value string) func(*ui.Element) *ui.Element
+	}
+	TextAlignLast struct {
+		Auto    func(*ui.Element) *ui.Element
+		Left    func(*ui.Element) *ui.Element
+		Right   func(*ui.Element) *ui.Element
+		Center  func(*ui.Element) *ui.Element
+		Justify func(*ui.Element) *ui.Element
+		Start   func(*ui.Element) *ui.Element
+		End     func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	WhiteSpace struct {
+		Normal  func(*ui.Element) *ui.Element
+		Nowrap  func(*ui.Element) *ui.Element
+		Pre     func(*ui.Element) *ui.Element
+		PreLine func(*ui.Element) *ui.Element
+		PreWrap func(*ui.Element) *ui.Element
+		Value   func(value string) func(*ui.Element) *ui.Element
+	}
+	WordBreak struct {
+		Normal    func(*ui.Element) *ui.Element
+		BreakAll  func(*ui.Element) *ui.Element
+		KeepAll   func(*ui.Element) *ui.Element
+		BreakWord func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
+	}
+	WordSpacing struct {
+		Normal func(*ui.Element) *ui.Element
+		Value  func(value string) func(*ui.Element) *ui.Element
+	}
+	WordWrap struct {
+		Normal    func(*ui.Element) *ui.Element
+		BreakWord func(*ui.Element) *ui.Element
+		Value     func(value string) func(*ui.Element) *ui.Element
+	}
+	ListStyleImage struct {
+		None  func(*ui.Element) *ui.Element
+		Url   func(value string) func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
+	}
+	Content struct {
+		Normal       func(*ui.Element) *ui.Element
+		None         func(*ui.Element) *ui.Element
+		Counter      func(*ui.Element) *ui.Element
+		Attr         func(value string) func(*ui.Element) *ui.Element
+		String       func(*ui.Element) *ui.Element
+		OpenQuote    func(*ui.Element) *ui.Element
+		CloseQuote   func(*ui.Element) *ui.Element
+		NoOpenQuote  func(*ui.Element) *ui.Element
+		NoCloseQuote func(*ui.Element) *ui.Element
+		URL          func(url string) func(*ui.Element) *ui.Element
+		Value        func(value string) func(*ui.Element) *ui.Element
+	}
+	Quotes struct {
+		None  func(*ui.Element) *ui.Element
+		Auto  func(*ui.Element) *ui.Element
+		Value func(value string) func(*ui.Element) *ui.Element
 	}
 }
