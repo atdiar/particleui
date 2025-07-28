@@ -124,7 +124,7 @@ var buildFunc = func(cmd *cobra.Command, args []string) {
 
 			if !clientonly {
 				// Let's build the default server.
-				// The output file should be in /bin/tmp/server/csr/
+				// The output file should be in /bin/tmp/server/csr/{.root OR basepath}
 				err = Build(false, []string{"server", "csr"})
 				if err != nil {
 					fmt.Println("Error: unable to build the default server.")
@@ -192,7 +192,7 @@ var buildFunc = func(cmd *cobra.Command, args []string) {
 				fmt.Println("wasm app built.")
 			}
 
-			if clientonly {
+			if !clientonly {
 				err = Build(false, []string{"server", "ssr"})
 				if err != nil {
 					fmt.Println("Error: unable to build the ssr server.")

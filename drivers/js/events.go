@@ -16,7 +16,12 @@ import (
 	ui "github.com/atdiar/particleui"
 )
 
-var DEBUG = log.Print // DEBUG
+func DEBUG(v ...any) {
+	if verbose {
+		log.Print(v...)
+	}
+}
+
 var DebugMode bool
 
 /*

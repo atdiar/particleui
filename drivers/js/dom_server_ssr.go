@@ -110,7 +110,7 @@ func (rt *customRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	}
 }
 
-// modifyClient returns a round-tripper modiffied client that can forego the network and
+// modifyClient returns a round-tripper modified client that can forego the network and
 // generate the response as per the servemux when the host is the server it runs onto.
 func modifyClient(c *http.Client) *http.Client {
 	if c == nil {
@@ -162,7 +162,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		if LRMode != "false" || !nolr {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-
+		DEBUG("RenderHTMLhandler called for: ", r.URL.Path)
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
 
@@ -188,6 +188,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}
 
 		document := f()
+		document.Element.HttpClient = modifyClient(document.Element.HttpClient)
 		document.Element.HttpClient.Jar.SetCookies(r.URL, r.Cookies())
 
 		withNativejshelpers(document)
@@ -204,11 +205,12 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			document.ListenAndServe(r.Context(), start)
 		}()
 
-		ui.DoSync(ctx, document.AsElement(), func() {
+		ui.DoSync(r.Context(), document.AsElement(), func() {
 			router := document.Router()
 			route := r.URL.Path
 			_, routeexist := router.Match(route)
 			if routeexist != nil {
+				DEBUG("route not found: ", route)
 				w.WriteHeader(http.StatusNotFound)
 			}
 			router.GoTo(route)
@@ -216,6 +218,9 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 		err = document.Render(w)
 		if err != nil {
+			if verbose {
+				fmt.Printf("Error rendering document: %v\n", err)
+			}
 			switch err {
 			case ui.ErrNotFound:
 				w.WriteHeader(http.StatusNotFound)
@@ -286,6 +291,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}
 
 		ctx, shutdown := context.WithCancel(ctx)
+		ServeMux.Handle(BasePath, RenderHTMLhandler)
 
 		if DevMode != "false" {
 			ServeMux.Handle("/stop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -417,26 +423,34 @@ func (d Document) CreatePage(filePath string) error {
 		return err
 	}
 
-	// Determine the path for the CSS file
-	cssFilePath := filepath.Join(dirPath, "style.css")
-
-	// Generate the stylesheet for this page
-	if err := d.CreateStylesheet(cssFilePath); err != nil {
-		return fmt.Errorf("error creating stylesheet: %w", err)
-	}
-	if verbose {
-		fmt.Printf("Created stylesheet at '%s'\n", cssFilePath)
-	}
-
 	// Append stylesheet link to the document head
-	cssRelPath := "./style.css"
-	link := d.Link().SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
-	d.Head().AppendChild(link)
+	// Note here how we have to supply an ID so that there is no conflict when
+	// doing a replay of a server side render. The reason being that the ID generator is
+	// deterministic on purpose for perfect replay but does not allow for difference in rendering
+	// where a new element is introduced on only one platform and might take the ID.
+
+	ss, ok := d.GetCurrentStyleSheet()
+	if ok {
+		cssRelPath := strings.Join([]string{"./", ss, ".css"}, "")
+		link := d.Link.WithID(strings.Join([]string{d.AsElement().ID, ss, "stylesheet"}, "-")).SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
+		d.Head().AppendChild(link)
+
+		// Determine the path for the CSS file
+		cssFilePath := filepath.Join(dirPath, cssRelPath)
+
+		// Generate the stylesheet for this page
+		if err := d.CreateStylesheet(cssFilePath); err != nil {
+			return fmt.Errorf("error creating stylesheet: %w", err)
+		}
+		if verbose {
+			fmt.Printf("Created stylesheet at '%s'\n", cssFilePath)
+		}
+	}
 
 	// Create and open the file
 	file, err := os.Create(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating file '%s': %w", filePath, err)
 	}
 	defer file.Close()
 

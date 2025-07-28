@@ -179,10 +179,11 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		panic(err)
 	}
 	document.mutationRecorder().Capture()
+	ctx := context.Background()
 
 	start := make(chan struct{})
 	go func() {
-		document.ListenAndServe(nil, start)
+		document.ListenAndServe(ctx, start)
 	}()
 
 	// Should generate the file system based structure of the website.
@@ -392,32 +393,43 @@ func CreatePages(doc *Document) (int, error) {
 
 // CreatePage creates a single page for the document at the specified filePath.
 func (d Document) CreatePage(filePath string) error {
+
 	// Create the directory if it doesn't exist
 	dirPath := filepath.Dir(filePath)
+	// DEBUG
+	fmt.Printf("Creating page at '%s'\n", dirPath)
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return err
 	}
 
-	// Determine the path for the CSS file
-	cssFilePath := filepath.Join(dirPath, "style.css")
-
-	// Generate the stylesheet for this page
-	if err := d.CreateStylesheet(cssFilePath); err != nil {
-		return fmt.Errorf("error creating stylesheet: %w", err)
-	}
-	if verbose {
-		fmt.Printf("Created stylesheet at '%s'\n", cssFilePath)
-	}
-
 	// Append stylesheet link to the document head
-	cssRelPath := "./style.css"
-	link := d.Link().SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
-	d.Head().AppendChild(link)
+	// Note here how we have to supply an ID so that there is no conflict when
+	// doing a replay of a server side render. The reason being that the ID generator is
+	// deterministic on purpose for perfect replay but does not allow for difference in rendering
+	// where a new element is introduced on only one platform and might take the ID.
+
+	ss, ok := d.GetCurrentStyleSheet()
+	if ok {
+		cssRelPath := strings.Join([]string{"./", ss, ".css"}, "")
+		link := d.Link.WithID(strings.Join([]string{d.AsElement().ID, ss, "stylesheet"}, "-")).SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
+		d.Head().AppendChild(link)
+
+		// Determine the path for the CSS file
+		cssFilePath := filepath.Join(dirPath, cssRelPath)
+
+		// Generate the stylesheet for this page
+		if err := d.CreateStylesheet(cssFilePath); err != nil {
+			return fmt.Errorf("error creating stylesheet: %w", err)
+		}
+		if verbose {
+			fmt.Printf("Created stylesheet at '%s'\n", cssFilePath)
+		}
+	}
 
 	// Create and open the file
 	file, err := os.Create(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating file '%s': %w", filePath, err)
 	}
 	defer file.Close()
 

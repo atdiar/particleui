@@ -2023,7 +2023,7 @@ func (m *mutationRecorder) Capture() {
 			// In-memory storage if indexeddb not available
 			// This is also used on the server to store mutations before serializing them
 			// before they are sent to the frontend for replay during hydration.
-			DEBUG("indexeddb is not available, storing mutations in-memory. Beware of OOMe")
+			// DEBUG("indexeddb is not available, storing mutations in-memory. Beware of OOMe")
 			if !ok {
 				m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit())
 			} else {
@@ -3038,12 +3038,13 @@ func NewDocument(id string, options ...string) *Document {
 	d = withStdConstructors(d)
 
 	d.StyleSheets = make(map[string]StyleSheet)
-	d.HttpClient = &http.Client{}
+	d.Element.HttpClient = &http.Client{}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		panic(err)
 	}
-	d.HttpClient.Jar = jar
+	d.Element.HttpClient.Jar = jar
+	d.HttpClient = d.Element.HttpClient // Is that necessary? Also perhaps rather a method d.HttpClient()?
 
 	d.DBConnections = make(map[string]js.Value)
 	d.newMutationRecorder()

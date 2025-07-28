@@ -38,7 +38,7 @@ type jsStore struct {
 func Storage(typ string) *jsStore {
 	window := js.Global()
 	if !window.Truthy() {
-		DEBUG("window is not available, cannot access storage")
+		//DEBUG("window is not available, cannot access storage")
 		return nil
 	}
 

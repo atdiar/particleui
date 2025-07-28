@@ -336,898 +336,893 @@ footer a:hover {
         const goArea = document.querySelector('.go-area');
 
         const cssToGoMapping = {
-            // Container Layout properties
-            "box-shadow": {
-                id: "Container.Layout.BoxShadow",
-                values: ["none"],
-            },
-            "justify-content": {
-                id: "Container.Layout.JustifyContent",
-                values: ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"],
-            },
-            "justify-self": {
-                id: "Container.Layout.JustifySelf",
-                values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline", "end", "start", "left", "right", "safe", "unsafe", "anchor center","first baseline", "last baseline"], // todo: add more values
-            },
-            "z-index": {
-                id: "Container.Layout.ZIndex",
-                values: ["auto"],
-            },
-            "float": {
-                id: "Container.Layout.Float",
-                values: ["none", "left", "right"],
-            },
-            "overflow": {
-                id: "Container.Layout.Overflow",
-                values: ["visible", "hidden", "scroll", "auto"],
-            },
-            "overflow-y": {
-                id: "Container.Layout.OverflowY",
-                values: ["visible", "hidden", "scroll", "auto"],
-            },
-            "perspective": {
-                id: "Container.Layout.Perspective",
-                values: ["none"],
-            },
-            "border-collapse": {
-                id: "Container.Layout.BorderCollapse",
-                values: ["separate", "collapse"],
-            },
-            "page-break-before": {
-                id: "Container.Layout.PageBreakBefore",
-                values: ["auto", "always", "avoid", "left", "right"],
-            },
-            "columns": {
-                id: "Container.Layout.Columns",
-                values: ["auto"],
-            },
-            "column-count": {
-                id: "Container.Layout.ColumnCount",
-                values: ["auto"],
-            },
-            "min-height": {
-                id: "Container.Layout.MinHeight",
-                values: [],
-            },
-            "page-break-inside": {
-                id: "Container.Layout.PageBreakInside",
-                values: ["auto", "avoid"],
-            },
-            "column-gap": {
-                id: "Container.Layout.ColumnGap",
-                values: ["normal"],
-            },
-            "clip": {
-                id: "Container.Layout.Clip",
-                values: ["auto"],
-            },
-            "flex-direction": {
-                id: "Container.Layout.FlexDirection",
-                values: ["row", "row-reverse", "column", "column-reverse"],
-            },
-            "page-break-after": {
-                id: "Container.Layout.PageBreakAfter",
-                values: ["auto", "always", "avoid", "left", "right"],
-            },
-            "top": {
-                id: "Container.Layout.Top",
-                values: ["auto"],
-            },
-            "counter-increment": {
-                id: "Container.Layout.CounterIncrement",
-                values: ["none"],
-            },
-            "height": {
-                id: "Container.Layout.Height",
-                values: ["auto"],
-            },
-            "transform-style": {
-                id: "Container.Layout.TransformStyle",
-                values: ["flat", "preserve-3d"],
-            },
-            "overflow-x": {
-                id: "Container.Layout.OverflowX",
-                values: ["visible", "hidden", "scroll", "auto"],
-            },
-            "flex-wrap": {
-                id: "Container.Layout.FlexWrap",
-                values: ["nowrap", "wrap", "wrap-reverse"],
-            },
-            "max-width": {
-                id: "Container.Layout.MaxWidth",
-                values: ["none"],
-            },
-            "bottom": {
-                id: "Container.Layout.Bottom",
-                values: ["auto"],
-            },
-            "counter-reset": {
-                id: "Container.Layout.CounterReset",
-                values: ["none"],
-            },
-            "right": {
-                id: "Container.Layout.Right",
-                values: ["auto"],
-            },
-            "box-sizing": {
-                id: "Container.Layout.BoxSizing",
-                values: ["content-box", "border-box"],
-            },
-            "position": {
-                id: "Container.Layout.Position",
-                values: ["static", "absolute", "fixed", "relative", "sticky"],
-            },
-            "table-layout": {
-                id: "Container.Layout.TableLayout",
-                values: ["auto", "fixed"],
-            },
-            "width": {
-                id: "Container.Layout.Width",
-                values: ["auto"],
-            },
-            "max-height": {
-                id: "Container.Layout.MaxHeight",
-                values: ["none"],
-            },
-            "column-width": {
-                id: "Container.Layout.ColumnWidth",
-                values: ["auto"],
-            },
-            "min-width": {
-                id: "Container.Layout.MinWidth",
-                values: [],
-            },
-            "vertical-align": {
-                id: "Container.Layout.VerticalAlign",
-                values: ["baseline", "top", "text-top", "middle", "bottom", "text-bottom"],
-            },
-            "perspective-origin": {
-                id: "Container.Layout.PerspectiveOrigin",
-                values: [],
-            },
-            "align-content": {
-                id: "Container.Layout.AlignContent",
-                values: ["stretch", "center", "flex-start", "flex-end", "space-between", "space-around"],
-            },
-            "flex-flow": {
-                id: "Container.Layout.FlexFlow",
-                values: [],
-            },
-            "display": {
-                id: "Container.Layout.Display",
-                values: ["inline", "block", "contents", "flex", "grid", "none"],
-            },
-            "left": {
-                id: "Container.Layout.Left",
-                values: ["auto"],
-            },
-            "grid-template-columns": {
-                id: "Container.Layout.GridTemplateColumns",
-                values: [],
-            },
-            "grid-template-rows": {
-                id: "Container.Layout.GridTemplateRows",
-                values: [],
-            },
-            "grid-column": {
-                id: "Container.Layout.GridColumn",
-                values: [],
-            },
-            "grid-row": {
-                id: "Container.Layout.GridRow",
-                values: [],
-            },
-            "gap": {
-                id: "Container.Layout.Gap",
-                values: [],
-            },
-            "scroll-behavior": {
-                id: "Container.Layout.ScrollBehavior",
-                values: ["auto", "smooth"],
-            },
+    // Container Layout properties
+    "box-shadow": {
+        id: "Container.Layout.BoxShadow",
+        values: ["none"],
+    },
+    "justify-content": {
+        id: "Container.Layout.JustifyContent",
+        values: ["flex-start", "flex-end", "center", "space-between", "space-around"],
+    },
+    "z-index": {
+        id: "Container.Layout.ZIndex",
+        values: ["auto"],
+    },
+    "float": {
+        id: "Container.Layout.Float",
+        values: ["none", "left", "right"],
+    },
+    "overflow": {
+        id: "Container.Layout.Overflow",
+        values: ["visible", "hidden", "scroll", "auto"],
+    },
+    "overflow-y": {
+        id: "Container.Layout.OverflowY",
+        values: ["visible", "hidden", "scroll", "auto"],
+    },
+    "perspective": {
+        id: "Container.Layout.Perspective",
+        values: ["none"],
+    },
+    "border-collapse": {
+        id: "Container.Layout.BorderCollapse",
+        values: ["separate", "collapse"],
+    },
+    "page-break-before": {
+        id: "Container.Layout.PageBreakBefore",
+        values: ["auto", "always", "avoid", "left", "right"],
+    },
+    "columns": {
+        id: "Container.Layout.Columns",
+        values: ["auto"],
+    },
+    "column-count": {
+        id: "Container.Layout.ColumnCount",
+        values: ["auto"],
+    },
+    "min-height": {
+        id: "Container.Layout.MinHeight",
+        values: [],
+    },
+    "page-break-inside": {
+        id: "Container.Layout.PageBreakInside",
+        values: ["auto", "avoid"],
+    },
+    "column-gap": {
+        id: "Container.Layout.ColumnGap",
+        values: ["normal"],
+    },
+    "clip": {
+        id: "Container.Layout.Clip",
+        values: ["auto"],
+    },
+    "flex-direction": {
+        id: "Container.Layout.FlexDirection",
+        values: ["row", "row-reverse", "column", "column-reverse"],
+    },
+    "page-break-after": {
+        id: "Container.Layout.PageBreakAfter",
+        values: ["auto", "always", "avoid", "left", "right"],
+    },
+    "top": {
+        id: "Container.Layout.Top",
+        values: ["auto"],
+    },
+    "counter-increment": {
+        id: "Container.Layout.CounterIncrement",
+        values: ["none"],
+    },
+    "height": {
+        id: "Container.Layout.Height",
+        values: ["auto"],
+    },
+    "transform-style": {
+        id: "Container.Layout.TransformStyle",
+        values: ["flat", "preserve-3d"],
+    },
+    "overflow-x": {
+        id: "Container.Layout.OverflowX",
+        values: ["visible", "hidden", "scroll", "auto"],
+    },
+    "flex-wrap": {
+        id: "Container.Layout.FlexWrap",
+        values: ["nowrap", "wrap", "wrap-reverse"],
+    },
+    "max-width": {
+        id: "Container.Layout.MaxWidth",
+        values: ["none"],
+    },
+    "bottom": {
+        id: "Container.Layout.Bottom",
+        values: ["auto"],
+    },
+    "counter-reset": {
+        id: "Container.Layout.CounterReset",
+        values: ["none"],
+    },
+    "right": {
+        id: "Container.Layout.Right",
+        values: ["auto"],
+    },
+    "box-sizing": {
+        id: "Container.Layout.BoxSizing",
+        values: ["content-box", "border-box"],
+    },
+    "position": {
+        id: "Container.Layout.Position",
+        values: ["static", "absolute", "fixed", "relative", "sticky"],
+    },
+    "table-layout": {
+        id: "Container.Layout.TableLayout",
+        values: ["auto", "fixed"],
+    },
+    "width": {
+        id: "Container.Layout.Width",
+        values: ["auto"],
+    },
+    "max-height": {
+        id: "Container.Layout.MaxHeight",
+        values: ["none"],
+    },
+    "column-width": {
+        id: "Container.Layout.ColumnWidth",
+        values: ["auto"],
+    },
+    "min-width": {
+        id: "Container.Layout.MinWidth",
+        values: [],
+    },
+    "vertical-align": {
+        id: "Content.Layout.VerticalAlign",
+        values: ["baseline", "top", "text-top", "middle", "bottom", "text-bottom"],
+    },
+    "perspective-origin": {
+        id: "Container.Layout.PerspectiveOrigin",
+        values: [],
+    },
+    "align-content": {
+        id: "Container.Layout.AlignContent",
+        values: ["stretch", "center", "flex-start", "flex-end", "space-between", "space-around"],
+    },
+    "flex-flow": {
+        id: "Container.Layout.FlexFlow",
+        values: [],
+    },
+    "display": {
+        id: "Container.Layout.Display",
+        values: ["inline", "block", "contents", "flex", "grid", "none"],
+    },
+    "left": {
+        id: "Container.Layout.Left",
+        values: ["auto"],
+    },
+    "grid-template-columns": {
+        id: "Container.Layout.GridTemplateColumns",
+        values: [],
+    },
+    "grid-template-rows": {
+        id: "Container.Layout.GridTemplateRows",
+        values: [],
+    },
+    "grid-column": {
+        id: "Container.Layout.GridColumn",
+        values: [],
+    },
+    "grid-row": {
+        id: "Container.Layout.GridRow",
+        values: [],
+    },
+    "gap": {
+        id: "Container.Layout.Gap",
+        values: [],
+    },
+    "scroll-behavior": {
+        id: "Container.Layout.ScrollBehavior",
+        values: ["auto", "smooth"],
+    },
 
-            // Container Style properties
-            "background-image": {
-                id: "Container.Style.BackgroundImage",
-                values: ["none"],
-            },
-            "border-left-style": {
-                id: "Container.Style.BorderLeftStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "transition-delay": {
-                id: "Container.Style.TransitionDelay",
-                values: [],
-            },
-            "animation-duration": {
-                id: "Container.Style.AnimationDuration",
-                values: [],
-            },
-            "list-style": {
-                id: "Container.Style.ListStyle",
-                values: [],
-            },
-            "outline-width": {
-                id: "Container.Style.OutlineWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "border-top-left-radius": {
-                id: "Container.Style.BorderTopLeftRadius",
-                values: [],
-            },
-            "white-space": {
-                id: "Container.Style.WhiteSpace",
-                values: ["normal", "nowrap", "pre", "pre-line", "pre-wrap"],
-            },
-            "border-right": {
-                id: "Container.Style.BorderRight",
-                values: [],
-            },
-            "text-decoration-line": {
-                id: "Container.Style.TextDecorationLine",
-                values: ["none", "underline", "overline", "line-through"],
-            },
-            "animation-delay": {
-                id: "Container.Style.AnimationDelay",
-                values: [],
-            },
-            "background-position": {
-                id: "Container.Style.BackgroundPosition",
-                values: ["left top", "left center", "left bottom", "right top", "right center", "right bottom", "center top", "center center", "center bottom"],
-            },
-            "border-image": {
-                id: "Container.Style.BorderImage",
-                values: [],
-            },
-            "border-spacing": {
-                id: "Container.Style.BorderSpacing",
-                values: [],
-            },
-            "border-image-outset": {
-                id: "Container.Style.BorderImageOutset",
-                values: [],
-            },
-            "border-image-slice": {
-                id: "Container.Style.BorderImageSlice",
-                values: [],
-            },
-            "border-left-color": {
-                id: "Container.Style.BorderLeftColor",
-                values: ["transparent"],
-            },
-            "font-size": {
-                id: "Container.Style.FontSize",
-                values: ["medium", "xx-small", "x-small", "small", "large", "x-large", "xx-large", "smaller", "larger"],
-            },
-            "line-height": {
-                id: "Container.Style.LineHeight",
-                values: ["normal"],
-            },
-            "text-decoration-style": {
-                id: "Container.Style.TextDecorationStyle",
-                values: ["solid", "double", "dotted", "dashed", "wavy"],
-            },
-            "backface-visibility": {
-                id: "Container.Style.BackfaceVisibility",
-                values: ["visible", "hidden"],
-            },
-            "border-right-style": {
-                id: "Container.Style.BorderRightStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "text-decoration": {
-                id: "Container.Style.TextDecoration",
-                values: [],
-            },
-            "transition": {
-                id: "Container.Style.Transition",
-                values: [],
-            },
-            "animation-iteration-count": {
-                id: "Container.Style.AnimationIterationCount",
-                values: ["infinite"],
-            },
-            "border-bottom": {
-                id: "Container.Style.BorderBottom",
-                values: [],
-            },
-            "animation-timing-function": {
-                id: "Container.Style.AnimationTimingFunction",
-                values: [],
-            },
-            "border-radius": {
-                id: "Container.Style.BorderRadius",
-                values: [],
-            },
-            "quotes": {
-                id: "Container.Style.Quotes",
-                values: ["none", "auto"],
-            },
-            "tab-size": {
-                id: "Container.Style.TabSize",
-                values: [],
-            },
-            "animation-fill-mode": {
-                id: "Container.Style.AnimationFillMode",
-                values: ["none", "forwards", "backwards", "both"],
-            },
-            "background-size": {
-                id: "Container.Style.BackgroundSize",
-                values: ["auto", "cover", "contain"],
-            },
-            "font-size-adjust": {
-                id: "Container.Style.FontSizeAdjust",
-                values: ["none"],
-            },
-            "list-style-position": {
-                id: "Container.Style.ListStylePosition",
-                values: ["inside", "outside"],
-            },
-            "text-align": {
-                id: "Container.Style.TextAlign",
-                values: ["left", "right", "center", "justify"],
-            },
-            "text-justify": {
-                id: "Container.Style.TextJustify",
-                values: ["auto", "inter-word", "inter-character", "none"],
-            },
-            "background-attachment": {
-                id: "Container.Style.BackgroundAttachment",
-                values: ["scroll", "fixed", "local"],
-            },
-            "border-right-width": {
-                id: "Container.Style.BorderRightWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "font": {
-                id: "Container.Style.Font",
-                values: [],
-            },
-            "border-left": {
-                id: "Container.Style.BorderLeft",
-                values: [],
-            },
-            "transition-duration": {
-                id: "Container.Style.TransitionDuration",
-                values: [],
-            },
-            "word-spacing": {
-                id: "Container.Style.WordSpacing",
-                values: ["normal"],
-            },
-            "animation-name": {
-                id: "Container.Style.AnimationName",
-                values: ["none"],
-            },
-            "animation-play-state": {
-                id: "Container.Style.AnimationPlayState",
-                values: ["paused", "running"],
-            },
-            "letter-spacing": {
-                id: "Container.Style.LetterSpacing",
-                values: ["normal"],
-            },
-            "border-bottom-style": {
-                id: "Container.Style.BorderBottomStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "word-break": {
-                id: "Container.Style.WordBreak",
-                values: ["normal", "break-all", "keep-all", "break-word"],
-            },
-            "border-bottom-right-radius": {
-                id: "Container.Style.BorderBottomRightRadius",
-                values: [],
-            },
-            "font-style": {
-                id: "Container.Style.FontStyle",
-                values: ["normal", "italic", "oblique"],
-            },
-            "order": {
-                id: "Container.Style.Order",
-                values: [],
-            },
-            "outline-style": {
-                id: "Container.Style.OutlineStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "border-bottom-left-radius": {
-                id: "Container.Style.BorderBottomLeftRadius",
-                values: [],
-            },
-            "border-image-source": {
-                id: "Container.Style.BorderImageSource",
-                values: ["none"],
-            },
-            "text-align-last": {
-                id: "Container.Style.TextAlignLast",
-                values: ["auto", "left", "right", "center", "justify", "start", "end"],
-            },
-            "border-image-width": {
-                id: "Container.Style.BorderImageWidth",
-                values: ["auto"],
-            },
-            "font-weight": {
-                id: "Container.Style.FontWeight",
-                values: ["normal", "bold", "bolder", "lighter", "100", "200", "300", "400", "500", "600", "700", "800", "900"],
-            },
-            "list-style-image": {
-                id: "Container.Style.ListStyleImage",
-                values: ["none"],
-            },
-            "opacity": {
-                id: "Container.Style.Opacity",
-                values: [],
-            },
-            "clear": {
-                id: "Container.Style.Clear",
-                values: ["none", "left", "right", "both"],
-            },
-            "border-top-color": {
-                id: "Container.Style.BorderTopColor",
-                values: ["transparent"],
-            },
-            "border": {
-                id: "Container.Style.Border",
-                values: [],
-            },
-            "border-right-color": {
-                id: "Container.Style.BorderRightColor",
-                values: ["transparent"],
-            },
-            "transition-timing-function": {
-                id: "Container.Style.TransitionTimingFunction",
-                values: [],
-            },
-            "border-bottom-width": {
-                id: "Container.Style.BorderBottomWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "border-style": {
-                id: "Container.Style.BorderStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "border-top-right-radius": {
-                id: "Container.Style.BorderTopRightRadius",
-                values: [],
-            },
-            "caption-side": {
-                id: "Container.Style.CaptionSide",
-                values: ["top", "bottom"],
-            },
-            "font-family": {
-                id: "Container.Style.FontFamily",
-                values: [],
-            },
-            "text-decoration-color": {
-                id: "Container.Style.TextDecorationColor",
-                values: [],
-            },
-            "transition-property": {
-                id: "Container.Style.TransitionProperty",
-                values: ["none"],
-            },
-            "background-origin": {
-                id: "Container.Style.BackgroundOrigin",
-                values: ["padding-box", "border-box", "content-box"],
-            },
-            "text-indent": {
-                id: "Container.Style.TextIndent",
-                values: [],
-            },
-            "visibility": {
-                id: "Container.Style.Visibility",
-                values: ["visible", "hidden", "collapse"],
-            },
-            "border-color": {
-                id: "Container.Style.BorderColor",
-                values: ["transparent"],
-            },
-            "border-top": {
-                id: "Container.Style.BorderTop",
-                values: [],
-            },
-            "font-variant": {
-                id: "Container.Style.FontVariant",
-                values: ["normal", "small-caps"],
-            },
-            "outline": {
-                id: "Container.Style.Outline",
-                values: [],
-            },
-            "border-bottom-color": {
-                id: "Container.Style.BorderBottomColor",
-                values: ["transparent"],
-            },
-            "border-top-style": {
-                id: "Container.Style.BorderTopStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "border-width": {
-                id: "Container.Style.BorderWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "list-style-type": {
-                id: "Container.Style.ListStyleType",
-                values: ["disc", "armenian", "circle", "cjk-ideographic", "decimal", "decimal-leading-zero", "georgian", "hebrew", "hiragana", "hiragana-iroha", "katakana", "katakana-iroha", "lower-alpha", "lower-greek", "lower-latin", "lower-roman", "none", "square", "upper-alpha", "upper-greek", "upper-latin", "upper-roman"],
-            },
-            "outline-offset": {
-                id: "Container.Style.OutlineOffset",
-                values: [],
-            },
-            "animation": {
-                id: "Container.Style.Animation",
-                values: [],
-            },
-            "background": {
-                id: "Container.Style.Background",
-                values: [],
-            },
-            "background-repeat": {
-                id: "Container.Style.BackgroundRepeat",
-                values: ["repeat", "repeat-x", "repeat-y", "no-repeat", "space", "round"],
-            },
-            "border-top-width": {
-                id: "Container.Style.BorderTopWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "word-wrap": {
-                id: "Container.Style.WordWrap",
-                values: ["normal", "break-word"],
-            },
-            "background-color": {
-                id: "Container.Style.BackgroundColor",
-                values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
-                    "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
-                    "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
-                    "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
-                    "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
-                    "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
-                    "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
-                    "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
-                    "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
-                    "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
-                    "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
-                    "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
-                    "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
-                    "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
-                    "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
-                    "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
-                    "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
-                    "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
-                    "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
-                    "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
-                    "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
-                    "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
-                    "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
-                    "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
-                    "yellow", "yellowgreen"],
-            },
-            "text-overflow": {
-                id: "Container.Style.TextOverflow",
-                values: ["clip", "ellipsis"],
-            },
-            "text-shadow": {
-                id: "Container.Style.TextShadow",
-                values: ["none"],
-            },
-            "background-clip": {
-                id: "Container.Style.BackgroundClip",
-                values: ["border-box", "padding-box", "content-box"],
-            },
-            "border-left-width": {
-                id: "Container.Style.BorderLeftWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "resize": {
-                id: "Container.Style.Resize",
-                values: ["none", "both", "horizontal", "vertical"],
-            },
-            "animation-direction": {
-                id: "Container.Style.AnimationDirection",
-                values: ["normal", "reverse", "alternate", "alternate-reverse"],
-            },
-            "color": {
-                id: "Container.Style.Color",
-                values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
-                    "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
-                    "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
-                    "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
-                    "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
-                    "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
-                    "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
-                    "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
-                    "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
-                    "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
-                    "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
-                    "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
-                    "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
-                    "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
-                    "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
-                    "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
-                    "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
-                    "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
-                    "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
-                    "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
-                    "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
-                    "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
-                    "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
-                    "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
-                    "yellow", "yellowgreen"],
-            },
-            "outline-color": {
-                id: "Container.Style.OutlineColor",
-                values: ["invert"],
-            },
-            "border-image-repeat": {
-                id: "Container.Style.BorderImageRepeat",
-                values: ["stretch", "repeat", "round", "space"],
-            },
-            "font-stretch": {
-                id: "Container.Style.FontStretch",
-                values: ["ultra-condensed", "extra-condensed", "condensed", "semi-condensed", "normal", "semi-expanded", "expanded", "extra-expanded", "ultra-expanded"],
-            },
-            "text-transform": {
-                id: "Container.Style.TextTransform",
-                values: ["none", "capitalize", "uppercase", "lowercase"],
-            },
-            "transform": {
-                id: "Container.Style.Transform",
-                values: [],
-            },
-            "pointer-events": {
-                id: "Container.Style.PointerEvents",
-                values: ["none", "auto"],
-            },
-            "user-select": {
-                id: "Container.Style.UserSelect",
-                values: ["none", "text", "auto", "all"],
-            },
-            "backdrop-filter": {
-                id: "Container.Style.BackdropFilter",
-                values: [],
-            },
-            "object-fit": {
-                id: "Container.Style.ObjectFit",
-                values: ["fill", "contain", "cover", "none", "scale-down"],
-            },
-            "object-position": {
-                id: "Container.Style.ObjectPosition",
-                values: [],
-            },
+    // Container Style properties
+    "background-image": {
+        id: "Container.Style.BackgroundImage",
+        values: ["none"],
+    },
+    "border-left-style": {
+        id: "Container.Style.BorderLeftStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "transition-delay": {
+        id: "Container.Style.TransitionDelay",
+        values: [],
+    },
+    "animation-duration": {
+        id: "Container.Style.AnimationDuration",
+        values: [],
+    },
+    "list-style": {
+        id: "Content.Style.ListStyle",
+        values: [],
+    },
+    "outline-width": {
+        id: "Container.Style.OutlineWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "border-top-left-radius": {
+        id: "Container.Style.BorderTopLeftRadius",
+        values: [],
+    },
+    "white-space": {
+        id: "Content.Style.WhiteSpace",
+        values: ["normal", "nowrap", "pre", "pre-line", "pre-wrap"],
+    },
+    "border-right": {
+        id: "Container.Style.BorderRight",
+        values: [],
+    },
+    "text-decoration-line": {
+        id: "Content.Style.TextDecorationLine",
+        values: ["none", "underline", "overline", "line-through"],
+    },
+    "animation-delay": {
+        id: "Container.Style.AnimationDelay",
+        values: [],
+    },
+    "background-position": {
+        id: "Container.Style.BackgroundPosition",
+        values: ["left top", "left center", "left bottom", "right top", "right center", "right bottom", "center top", "center center", "center bottom"],
+    },
+    "border-image": {
+        id: "Container.Style.BorderImage",
+        values: [],
+    },
+    "border-spacing": {
+        id: "Container.Style.BorderSpacing",
+        values: [],
+    },
+    "border-image-outset": {
+        id: "Container.Style.BorderImageOutset",
+        values: [],
+    },
+    "border-image-slice": {
+        id: "Container.Style.BorderImageSlice",
+        values: [],
+    },
+    "border-left-color": {
+        id: "Container.Style.BorderLeftColor",
+        values: ["transparent"],
+    },
+    "font-size": {
+        id: "Content.Style.FontSize",
+        values: ["medium", "xx-small", "x-small", "small", "large", "x-large", "xx-large", "smaller", "larger"],
+    },
+    "line-height": {
+        id: "Content.Style.LineHeight",
+        values: ["normal"],
+    },
+    "text-decoration-style": {
+        id: "Content.Style.TextDecorationStyle",
+        values: ["solid", "double", "dotted", "dashed", "wavy"],
+    },
+    "backface-visibility": {
+        id: "Container.Style.BackfaceVisibility",
+        values: ["visible", "hidden"],
+    },
+    "border-right-style": {
+        id: "Container.Style.BorderRightStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "text-decoration": {
+        id: "Content.Style.TextDecoration",
+        values: [],
+    },
+    "transition": {
+        id: "Container.Style.Transition",
+        values: [],
+    },
+    "animation-iteration-count": {
+        id: "Container.Style.AnimationIterationCount",
+        values: ["infinite"],
+    },
+    "border-bottom": {
+        id: "Container.Style.BorderBottom",
+        values: [],
+    },
+    "animation-timing-function": {
+        id: "Container.Style.AnimationTimingFunction",
+        values: [],
+    },
+    "border-radius": {
+        id: "Container.Style.BorderRadius",
+        values: [],
+    },
+    "quotes": {
+        id: "Content.Style.Quotes",
+        values: ["none", "auto"],
+    },
+    "tab-size": {
+        id: "Container.Style.TabSize",
+        values: [],
+    },
+    "animation-fill-mode": {
+        id: "Container.Style.AnimationFillMode",
+        values: ["none", "forwards", "backwards", "both"],
+    },
+    "background-size": {
+        id: "Container.Style.BackgroundSize",
+        values: ["auto", "cover", "contain"],
+    },
+    "font-size-adjust": {
+        id: "Content.Style.FontSizeAdjust",
+        values: ["none"],
+    },
+    "list-style-position": {
+        id: "Content.Style.ListStylePosition",
+        values: ["inside", "outside"],
+    },
+    "text-align": {
+        id: "Content.Style.TextAlign",
+        values: ["left", "right", "center", "justify"],
+    },
+    "text-justify": {
+        id: "Content.Style.TextJustify",
+        values: ["auto", "inter-word", "inter-character", "none"],
+    },
+    "background-attachment": {
+        id: "Container.Style.BackgroundAttachment",
+        values: ["scroll", "fixed", "local"],
+    },
+    "border-right-width": {
+        id: "Container.Style.BorderRightWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "font": {
+        id: "Content.Style.Font",
+        values: [],
+    },
+    "border-left": {
+        id: "Container.Style.BorderLeft",
+        values: [],
+    },
+    "transition-duration": {
+        id: "Container.Style.TransitionDuration",
+        values: [],
+    },
+    "word-spacing": {
+        id: "Content.Style.WordSpacing",
+        values: ["normal"],
+    },
+    "animation-name": {
+        id: "Container.Style.AnimationName",
+        values: ["none"],
+    },
+    "animation-play-state": {
+        id: "Container.Style.AnimationPlayState",
+        values: ["paused", "running"],
+    },
+    "letter-spacing": {
+        id: "Content.Style.LetterSpacing",
+        values: ["normal"],
+    },
+    "border-bottom-style": {
+        id: "Container.Style.BorderBottomStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "word-break": {
+        id: "Content.Style.WordBreak",
+        values: ["normal", "break-all", "keep-all", "break-word"],
+    },
+    "border-bottom-right-radius": {
+        id: "Container.Style.BorderBottomRightRadius",
+        values: [],
+    },
+    "font-style": {
+        id: "Content.Style.FontStyle",
+        values: ["normal", "italic", "oblique"],
+    },
+    "order": {
+        id: "Container.Style.Order",
+        values: [],
+    },
+    "outline-style": {
+        id: "Container.Style.OutlineStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "border-bottom-left-radius": {
+        id: "Container.Style.BorderBottomLeftRadius",
+        values: [],
+    },
+    "border-image-source": {
+        id: "Container.Style.BorderImageSource",
+        values: ["none"],
+    },
+    "text-align-last": {
+        id: "Content.Style.TextAlignLast",
+        values: ["auto", "left", "right", "center", "justify", "start", "end"],
+    },
+    "border-image-width": {
+        id: "Container.Style.BorderImageWidth",
+        values: ["auto"],
+    },
+    "font-weight": {
+        id: "Content.Style.FontWeight",
+        values: ["normal", "bold", "bolder", "lighter", "100", "200", "300", "400", "500", "600", "700", "800", "900"],
+    },
+    "list-style-image": {
+        id: "Content.Style.ListStyleImage",
+        values: ["none"],
+    },
+    "opacity": {
+        id: "Container.Style.Opacity",
+        values: [],
+    },
+    "clear": {
+        id: "Container.Style.Clear",
+        values: ["none", "left", "right", "both"],
+    },
+    "border-top-color": {
+        id: "Container.Style.BorderTopColor",
+        values: ["transparent"],
+    },
+    "border": {
+        id: "Container.Style.Border",
+        values: [],
+    },
+    "border-right-color": {
+        id: "Container.Style.BorderRightColor",
+        values: ["transparent"],
+    },
+    "transition-timing-function": {
+        id: "Container.Style.TransitionTimingFunction",
+        values: [],
+    },
+    "border-bottom-width": {
+        id: "Container.Style.BorderBottomWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "border-style": {
+        id: "Container.Style.BorderStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "border-top-right-radius": {
+        id: "Container.Style.BorderTopRightRadius",
+        values: [],
+    },
+    "caption-side": {
+        id: "Content.Style.CaptionSide",
+        values: ["top", "bottom"],
+    },
+    "font-family": {
+        id: "Content.Style.FontFamily",
+        values: [],
+    },
+    "text-decoration-color": {
+        id: "Content.Style.TextDecorationColor",
+        values: [],
+    },
+    "transition-property": {
+        id: "Container.Style.TransitionProperty",
+        values: ["none"],
+    },
+    "background-origin": {
+        id: "Container.Style.BackgroundOrigin",
+        values: ["padding-box", "border-box", "content-box"],
+    },
+    "text-indent": {
+        id: "Content.Style.TextIndent",
+        values: [],
+    },
+    "visibility": {
+        id: "Container.Style.Visibility",
+        values: ["visible", "hidden", "collapse"],
+    },
+    "border-color": {
+        id: "Container.Style.BorderColor",
+        values: ["transparent"],
+    },
+    "border-top": {
+        id: "Container.Style.BorderTop",
+        values: [],
+    },
+    "font-variant": {
+        id: "Content.Style.FontVariant",
+        values: ["normal", "small-caps"],
+    },
+    "outline": {
+        id: "Container.Style.Outline",
+        values: [],
+    },
+    "border-bottom-color": {
+        id: "Container.Style.BorderBottomColor",
+        values: ["transparent"],
+    },
+    "border-top-style": {
+        id: "Container.Style.BorderTopStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "border-width": {
+        id: "Container.Style.BorderWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "list-style-type": {
+        id: "Content.Style.ListStyleType",
+        values: ["disc", "armenian", "circle", "cjk-ideographic", "decimal", "decimal-leading-zero", "georgian", "hebrew", "hiragana", "hiragana-iroha", "katakana", "katakana-iroha", "lower-alpha", "lower-greek", "lower-latin", "lower-roman", "none", "square", "upper-alpha", "upper-greek", "upper-latin", "upper-roman"],
+    },
+    "outline-offset": {
+        id: "Container.Style.OutlineOffset",
+        values: [],
+    },
+    "animation": {
+        id: "Container.Style.Animation",
+        values: [],
+    },
+    "background": {
+        id: "Container.Style.Background",
+        values: [],
+    },
+    "background-repeat": {
+        id: "Container.Style.BackgroundRepeat",
+        values: ["repeat", "repeat-x", "repeat-y", "no-repeat", "space", "round"],
+    },
+    "border-top-width": {
+        id: "Container.Style.BorderTopWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "word-wrap": {
+        id: "Content.Style.WordWrap",
+        values: ["normal", "break-word"],
+    },
+    "background-color": {
+        id: "Container.Style.BackgroundColor",
+        values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
+            "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+            "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
+            "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
+            "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+            "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+            "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
+            "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
+            "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+            "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
+            "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
+            "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
+            "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
+            "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
+            "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
+            "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
+            "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
+            "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
+            "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
+            "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
+            "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
+            "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
+            "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
+            "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
+            "yellow", "yellowgreen"],
+    },
+    "text-overflow": {
+        id: "Content.Style.TextOverflow",
+        values: ["clip", "ellipsis"],
+    },
+    "text-shadow": {
+        id: "Content.Style.TextShadow",
+        values: ["none"],
+    },
+    "background-clip": {
+        id: "Container.Style.BackgroundClip",
+        values: ["border-box", "padding-box", "content-box"],
+    },
+    "border-left-width": {
+        id: "Container.Style.BorderLeftWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "resize": {
+        id: "Container.Style.Resize",
+        values: ["none", "both", "horizontal", "vertical"],
+    },
+    "animation-direction": {
+        id: "Container.Style.AnimationDirection",
+        values: ["normal", "reverse", "alternate", "alternate-reverse"],
+    },
+    "color": {
+        id: "Content.Style.Color",
+        values: ["transparent", "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure",
+            "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+            "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
+            "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod",
+            "darkgray", "darkgreen", "darkkhaki", "darkmagenta", "darkolivegreen",
+            "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+            "darkslateblue", "darkslategray", "darkturquoise", "darkviolet", "deeppink",
+            "deepskyblue", "dimgray", "dodgerblue", "firebrick", "floralwhite",
+            "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+            "gray", "green", "greenyellow", "honeydew", "hotpink", "indianred", "indigo",
+            "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon",
+            "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray",
+            "lightgreen", "lightpink", "lightsalmon", "lightseagreen", "lightskyblue",
+            "lightslategray", "lightsteelblue", "lightyellow", "lime", "limegreen",
+            "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
+            "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen",
+            "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose",
+            "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
+            "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
+            "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
+            "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
+            "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue",
+            "slateblue", "slategray", "snow", "springgreen", "steelblue", "tan", "teal",
+            "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
+            "yellow", "yellowgreen"],
+    },
+    "outline-color": {
+        id: "Container.Style.OutlineColor",
+        values: ["invert"],
+    },
+    "border-image-repeat": {
+        id: "Container.Style.BorderImageRepeat",
+        values: ["stretch", "repeat", "round", "space"],
+    },
+    "font-stretch": {
+        id: "Content.Style.FontStretch",
+        values: ["ultra-condensed", "extra-condensed", "condensed", "semi-condensed", "normal", "semi-expanded", "expanded", "extra-expanded", "ultra-expanded"],
+    },
+    "text-transform": {
+        id: "Content.Style.TextTransform",
+        values: ["none", "capitalize", "uppercase", "lowercase"],
+    },
+    "transform": {
+        id: "Container.Style.Transform",
+        values: [],
+    },
+    "pointer-events": {
+        id: "Container.Style.PointerEvents",
+        values: ["none", "auto"],
+    },
+    "user-select": {
+        id: "Container.Style.UserSelect",
+        values: ["none", "text", "auto", "all"],
+    },
+    "backdrop-filter": {
+        id: "Container.Style.BackdropFilter",
+        values: [],
+    },
+    "object-fit": {
+        id: "Container.Style.ObjectFit",
+        values: ["fill", "contain", "cover", "none", "scale-down"],
+    },
+    "object-position": {
+        id: "Container.Style.ObjectPosition",
+        values: [],
+    },
 
-            // Content Layout properties
-            "flex-grow": {
-                id: "Content.Layout.FlexGrow",
-                values: [],
-            },
-            "align-self": {
-                id: "Content.Layout.AlignSelf",
-                values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline"],
-            },
-            "content": {
-                id: "Content.Layout.Content",
-                values: ["normal", "none", "counter", "open-quote", "close-quote", "no-open-quote", "no-close-quote"],
-            },
-            "column-span": {
-                id: "Content.Layout.ColumnSpan",
-                values: ["none", "all"],
-            },
-            "flex": {
-                id: "Content.Layout.Flex",
-                values: ["auto", "initial", "none", "inherit"],
-            },
-            "flex-shrink": {
-                id: "Content.Layout.FlexShrink",
-                values: [],
-            },
-            "flex-basis": {
-                id: "Content.Layout.FlexBasis",
-                values: ["auto"],
-            },
-            "align-items": {
-                id: "Content.Layout.AlignItems",
-                values: ["stretch", "center", "flex-start", "flex-end", "baseline"],
-            },
+    // Content Layout properties
+    "flex-grow": {
+        id: "Content.Layout.FlexGrow",
+        values: [],
+    },
+    "align-self": {
+        id: "Content.Layout.AlignSelf",
+        values: ["auto", "stretch", "center", "flex-start", "flex-end", "baseline"],
+    },
+    "content": {
+        id: "Content.Layout.Content",
+        values: ["normal", "none", "counter", "open-quote", "close-quote", "no-open-quote", "no-close-quote"],
+    },
+    "column-span": {
+        id: "Content.Layout.ColumnSpan",
+        values: ["none", "all"],
+    },
+    "flex": {
+        id: "Content.Layout.Flex",
+        values: ["auto", "initial", "none", "inherit"],
+    },
+    "flex-shrink": {
+        id: "Content.Layout.FlexShrink",
+        values: [],
+    },
+    "flex-basis": {
+        id: "Content.Layout.FlexBasis",
+        values: ["auto"],
+    },
+    "align-items": {
+        id: "Content.Layout.AlignItems",
+        values: ["stretch", "center", "flex-start", "flex-end", "baseline"],
+    },
 
-            // Content Style properties
-            "column-rule-width": {
-                id: "Content.Style.ColumnRuleWidth",
-                values: ["medium", "thin", "thick"],
-            },
-            "column-rule": {
-                id: "Content.Style.ColumnRule",
-                values: [],
-            },
-            "direction": {
-                id: "Content.Style.Direction",
-                values: ["ltr", "rtl"],
-            },
-            "column-rule-style": {
-                id: "Content.Style.ColumnRuleStyle",
-                values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
-            },
-            "column-rule-color": {
-                id: "Content.Style.ColumnRuleColor",
-                values: [],
-            },
-            "column-fill": {
-                id: "Content.Style.ColumnFill",
-                values: ["balance", "auto"],
-            },
-            "empty-cells": {
-                id: "Content.Style.EmptyCells",
-                values: ["show", "hide"],
-            },
-            "cursor": {
-                id: "Content.Style.Cursor",
-                values: ["alias", "all-scroll", "auto", "cell", "context-menu", "col-resize", "copy", "crosshair", "default", "e-resize", "ew-resize", "grab", "grabbing", "help", "move", "n-resize", "ne-resize", "nesw-resize", "ns-resize", "nw-resize", "nwse-resize", "no-drop", "none", "not-allowed", "pointer", "progress", "row-resize", "s-resize", "se-resize", "sw-resize", "text", "vertical-text", "w-resize", "wait", "zoom-in", "zoom-out"],
-            },
-            "padding": {
-                id: "Container.Layout.Padding",
-                values: [],
-            },
-            "padding-top": {
-                id: "Container.Layout.PaddingTop",
-                values: [],
-            },
-            "padding-right": {
-                id: "Container.Layout.PaddingRight",
-                values: [],
-            },
-            "padding-bottom": {
-                id: "Container.Layout.PaddingBottom",
-                values: [],
-            },
-            "padding-left": {
-                id: "Container.Layout.PaddingLeft",
-                values: [],
-            },
+    // Content Style properties
+    "column-rule-width": {
+        id: "Content.Style.ColumnRuleWidth",
+        values: ["medium", "thin", "thick"],
+    },
+    "column-rule": {
+        id: "Content.Style.ColumnRule",
+        values: [],
+    },
+    "direction": {
+        id: "Content.Style.Direction",
+        values: ["ltr", "rtl"],
+    },
+    "column-rule-style": {
+        id: "Content.Style.ColumnRuleStyle",
+        values: ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"],
+    },
+    "column-rule-color": {
+        id: "Content.Style.ColumnRuleColor",
+        values: [],
+    },
+    "column-fill": {
+        id: "Content.Style.ColumnFill",
+        values: ["balance", "auto"],
+    },
+    "empty-cells": {
+        id: "Content.Style.EmptyCells",
+        values: ["show", "hide"],
+    },
+    "cursor": {
+        id: "Content.Style.Cursor",
+        values: ["alias", "all-scroll", "auto", "cell", "context-menu", "col-resize", "copy", "crosshair", "default", "e-resize", "ew-resize", "grab", "grabbing", "help", "move", "n-resize", "ne-resize", "nesw-resize", "ns-resize", "nw-resize", "nwse-resize", "no-drop", "none", "not-allowed", "pointer", "progress", "row-resize", "s-resize", "se-resize", "sw-resize", "text", "vertical-text", "w-resize", "wait", "zoom-in", "zoom-out"],
+    },
+    "padding": {
+        id: "Container.Layout.Padding",
+        values: [],
+    },
+    "padding-top": {
+        id: "Container.Layout.PaddingTop",
+        values: [],
+    },
+    "padding-right": {
+        id: "Container.Layout.PaddingRight",
+        values: [],
+    },
+    "padding-bottom": {
+        id: "Container.Layout.PaddingBottom",
+        values: [],
+    },
+    "padding-left": {
+        id: "Container.Layout.PaddingLeft",
+        values: [],
+    },
 
-            // Margin properties
-            "margin": {
-                id: "Container.Layout.Margin",
-                values: ["auto"],
-            },
-            "margin-top": {
-                id: "Container.Layout.MarginTop",
-                values: ["auto"],
-            },
-            "margin-right": {
-                id: "Container.Layout.MarginRight",
-                values: ["auto"],
-            },
-            "margin-bottom": {
-                id: "Container.Layout.MarginBottom",
-                values: ["auto"],
-            },
-            "margin-left": {
-                id: "Container.Layout.MarginLeft",
-                values: ["auto"],
-            },
+    // Margin properties
+    "margin": {
+        id: "Container.Layout.Margin",
+        values: ["auto"],
+    },
+    "margin-top": {
+        id: "Container.Layout.MarginTop",
+        values: ["auto"],
+    },
+    "margin-right": {
+        id: "Container.Layout.MarginRight",
+        values: ["auto"],
+    },
+    "margin-bottom": {
+        id: "Container.Layout.MarginBottom",
+        values: ["auto"],
+    },
+    "margin-left": {
+        id: "Container.Layout.MarginLeft",
+        values: ["auto"],
+    },
 
-            // Text-related properties
-            "text-orientation": {
-                id: "Container.Style.TextOrientation",
-                values: ["mixed", "upright", "sideways"],
-            },
-            "text-underline-position": {
-                id: "Container.Style.TextUnderlinePosition",
-                values: ["auto", "under", "left", "right"],
-            },
-            "text-rendering": {
-                id: "Container.Style.TextRendering",
-                values: ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
-            },
-            "font-kerning": {
-                id: "Container.Style.FontKerning",
-                values: ["auto", "normal", "none"],
-            },
-            "hanging-punctuation": {
-                id: "Container.Style.HangingPunctuation",
-                values: ["none", "first", "last", "force-end", "allow-end"],
-            },
+    // Text-related properties
+    "text-orientation": {
+        id: "Content.Style.TextOrientation",
+        values: ["mixed", "upright", "sideways"],
+    },
+    "text-underline-position": {
+        id: "Content.Style.TextUnderlinePosition",
+        values: ["auto", "under", "left", "right"],
+    },
+    "text-rendering": {
+        id: "Content.Style.TextRendering",
+        values: ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
+    },
+    "font-kerning": {
+        id: "Content.Style.FontKerning",
+        values: ["auto", "normal", "none"],
+    },
+    "hanging-punctuation": {
+        id: "Container.Style.HangingPunctuation",
+        values: ["none", "first", "last", "force-end", "allow-end"],
+    },
 
-            // Flexbox-specific properties
-            "place-content": {
-                id: "Container.Layout.PlaceContent",
-                values: [],
-            },
-            "place-items": {
-                id: "Container.Layout.PlaceItems",
-                values: [],
-            },
-            "place-self": {
-                id: "Content.Layout.PlaceSelf",
-                values: [],
-            },
+    // Flexbox-specific properties
+    "place-content": {
+        id: "Container.Layout.PlaceContent",
+        values: [],
+    },
+    "place-items": {
+        id: "Container.Layout.PlaceItems",
+        values: [],
+    },
+    "place-self": {
+        id: "Content.Layout.PlaceSelf",
+        values: [],
+    },
 
-            // Grid-specific properties
-            "grid-template-areas": {
-                id: "Container.Layout.GridTemplateAreas",
-                values: ["none"],
-            },
-            "grid-auto-columns": {
-                id: "Container.Layout.GridAutoColumns",
-                values: ["auto"],
-            },
-            "grid-auto-rows": {
-                id: "Container.Layout.GridAutoRows",
-                values: ["auto"],
-            },
-            "grid-auto-flow": {
-                id: "Container.Layout.GridAutoFlow",
-                values: ["row", "column", "dense", "row dense", "column dense"],
-            },
-            "grid-area": {
-                id: "Content.Layout.GridArea",
-                values: ["auto"],
-            },
+    // Grid-specific properties
+    "grid-template-areas": {
+        id: "Container.Layout.GridTemplateAreas",
+        values: ["none"],
+    },
+    "grid-auto-columns": {
+        id: "Container.Layout.GridAutoColumns",
+        values: ["auto"],
+    },
+    "grid-auto-rows": {
+        id: "Container.Layout.GridAutoRows",
+        values: ["auto"],
+    },
+    "grid-auto-flow": {
+        id: "Container.Layout.GridAutoFlow",
+        values: ["row", "column", "dense", "row dense", "column dense"],
+    },
+    "grid-area": {
+        id: "Content.Layout.GridArea",
+        values: ["auto"],
+    },
 
-            // Transform-related properties
-            "transform-origin": {
-                id: "Container.Style.TransformOrigin",
-                values: [],
-            },
-            "transform-box": {
-                id: "Container.Style.TransformBox",
-                values: ["content-box", "border-box", "fill-box", "stroke-box", "view-box"],
-            },
+    // Transform-related properties
+    "transform-origin": {
+        id: "Container.Style.TransformOrigin",
+        values: [],
+    },
+    "transform-box": {
+        id: "Container.Style.TransformBox",
+        values: ["content-box", "border-box", "fill-box", "stroke-box", "view-box"],
+    },
 
-            // Miscellaneous properties
-            "aspect-ratio": {
-                id: "Container.Layout.AspectRatio",
-                values: ["auto"],
-            },
-            "scroll-snap-type": {
-                id: "Container.Layout.ScrollSnapType",
-                values: ["none", "x mandatory", "y mandatory", "block mandatory", "inline mandatory", "both mandatory"],
-            },
-            "overscroll-behavior": {
-                id: "Container.Layout.OverscrollBehavior",
-                values: ["auto", "contain", "none"],
-            },
-            "contain": {
-                id: "Container.Layout.Contain",
-                values: ["none", "strict", "content", "size", "layout", "style", "paint"],
-            },
-            "will-change": {
-                id: "Container.Style.WillChange",
-                values: ["auto"],
-            },
-            "filter": {
-                id: "Container.Style.Filter",
-                values: ["none"],
-            },
-            "mix-blend-mode": {
-                id: "Container.Style.MixBlendMode",
-                values: ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"],
-            },
-            "isolation": {
-                id: "Container.Style.Isolation",
-                values: ["auto", "isolate"],
-            },
+    // Miscellaneous properties
+    "aspect-ratio": {
+        id: "Container.Layout.AspectRatio",
+        values: ["auto"],
+    },
+    "scroll-snap-type": {
+        id: "Container.Layout.ScrollSnapType",
+        values: ["none", "x mandatory", "y mandatory", "block mandatory", "inline mandatory", "both mandatory"],
+    },
+    "overscroll-behavior": {
+        id: "Container.Layout.OverscrollBehavior",
+        values: ["auto", "contain", "none"],
+    },
+    "contain": {
+        id: "Container.Layout.Contain",
+        values: ["none", "strict", "content", "size", "layout", "style", "paint"],
+    },
+    "will-change": {
+        id: "Container.Style.WillChange",
+        values: ["auto"],
+    },
+    "filter": {
+        id: "Container.Style.Filter",
+        values: ["none"],
+    },
+    "mix-blend-mode": {
+        id: "Container.Style.MixBlendMode",
+        values: ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"],
+    },
+    "isolation": {
+        id: "Container.Style.Isolation",
+        values: ["auto", "isolate"],
+    },
 
-            // Newer CSS properties
-            "accent-color": {
-                id: "Container.Style.AccentColor",
-                values: ["auto"],
-            },
-            "content-visibility": {
-                id: "Container.Layout.ContentVisibility",
-                values: ["visible", "auto", "hidden"],
-            },
-            "scrollbar-color": {
-                id: "Container.Style.ScrollbarColor",
-                values: ["auto"],
-            },
-            "scrollbar-width": {
-                id: "Container.Style.ScrollbarWidth",
-                values: ["auto", "thin", "none"],
-            },
+    // Newer CSS properties
+    "accent-color": {
+        id: "Container.Style.AccentColor",
+        values: ["auto"],
+    },
+    "content-visibility": {
+        id: "Container.Layout.ContentVisibility",
+        values: ["visible", "auto", "hidden"],
+    },
+    "scrollbar-color": {
+        id: "Container.Style.ScrollbarColor",
+        values: ["auto"],
+    },
+    "scrollbar-width": {
+        id: "Container.Style.ScrollbarWidth",
+        values: ["auto", "thin", "none"],
+    },
 
-        };
-             
+};  
         
         function capitalizeFirstLetter(string) {
             return string.charAt(0).toUpperCase() + string.slice(1);
