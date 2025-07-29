@@ -20,7 +20,7 @@ func (v ViewElement) AsElement() *Element {
 func (v ViewElement) watchable() {}
 func (v ViewElement) uiElement() {}
 
-// hasParameterizedView return the parameter name stripped from the initial colon ( ":")
+// hasParameterizedView returns the parameter name stripped from the initial colon ( ":")
 // if it exists.
 func (v ViewElement) hasParameterizedView() (string, bool) {
 	e := v.AsElement()
@@ -38,7 +38,7 @@ func (v ViewElement) hasParameterizedView() (string, bool) {
 func NewViewElement(e *Element, views ...View) ViewElement {
 	if e.InactiveViews == nil {
 		e.InactiveViews = make(map[string]View) // Important to put that on top... it creates
-		// effectively a ViewElement out of an Elmeent. attach below depends on that
+		// effectively a ViewElement out of an Element. attach below depends on that
 	} else {
 		panic("FAILURE: cannot create a ViewElement out of an Element which already has views")
 	}

@@ -70,14 +70,24 @@ var prop = props{
 // newIDgenerator returns a function used to create new IDs. It uses
 // a Pseudo-Random Number Generator (PRNG) as it is desirable to generate deterministic sequences.
 // Evidently, as users navigate the app differently and may create new Elements
+//
+// To make the returned ID generation function concurrently safe,
+// a sync.Mutex is embedded within the closure to protect access
+// to the underlying rand.Rand instance.
 func newIDgenerator(charlen int, seed int64) func() string {
 	source := rand.NewSource(seed)
 	r := rand.New(source)
+
+	var mu sync.Mutex // Mutex to protect the rand.Rand instance 'r'
+
 	return func() string {
+		mu.Lock()         // Acquire the lock before accessing 'r'
+		defer mu.Unlock() // Release the lock when the function exits
+
 		var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 		b := make([]rune, charlen)
 		for i := range b {
-			b[i] = letter[r.Intn(len(letter))]
+			b[i] = letter[r.Intn(len(letter))] // r.Intn() is now protected
 		}
 		return string(b)
 	}
@@ -117,6 +127,7 @@ func (m *scsmap[K, T]) Range(fn func(key K, value T) bool) {
 // Configuration is an object that holds configuration options for the UI element constrcutors, as well as
 // some of the general UI behavior.
 type Configuration struct {
+	Mu                       *sync.RWMutex
 	DocType                  string
 	Constructors             map[string]func(id string, optionNames ...string) *Element
 	GlobalConstructorOptions map[string]func(*Element) *Element
@@ -175,6 +186,7 @@ func NewConstructorOption(name string, configuratorFn func(*Element) *Element) C
 // NewConfiguration creates a new namespace for a list of Element constructors.
 func NewConfiguration(storeid string, doctype string) *Configuration {
 	es := &Configuration{
+		&sync.RWMutex{},
 		doctype,
 		make(map[string]func(id string, optionNames ...string) *Element, 0),
 		make(map[string]func(*Element) *Element),
@@ -200,6 +212,8 @@ func NewConfiguration(storeid string, doctype string) *Configuration {
 // AddRuntimePropType allows for the definition of a specific category of *Element properties that can
 // not be stored in memory as they are purely a runtime/transient concept (such as "event").
 func (e *Configuration) AddRuntimePropType(name string) *Configuration {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.RuntimePropTypes[name] = true
 	return e
 }
@@ -208,6 +222,8 @@ func (e *Configuration) AddRuntimePropType(name string) *Configuration {
 // element constructed.
 // Rationale: implementing dark-mode aware ui elements easily.
 func (e *Configuration) WithGlobalConstructorOption(c ConstructorOption) *Configuration {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.GlobalConstructorOptions[c.Name] = c.Configurator
 	return e
 }
@@ -217,6 +233,8 @@ func (e *Configuration) WithGlobalConstructorOption(c ConstructorOption) *Config
 // For instance, in a web setting, we may want to be able to persist data in
 // webstorage so that on refresh, the app state can be recovered.
 func (e *Configuration) AddPersistenceMode(name string, loadFromStore func(*Element) error, store func(*Element, string, string, Value, ...bool), clear func(*Element)) *Configuration {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
 	e.PersistentStorer[name] = storageFunctions{loadFromStore, store, clear}
 	return e
 }
@@ -224,11 +242,21 @@ func (e *Configuration) AddPersistenceMode(name string, loadFromStore func(*Elem
 // EnableMutationCapture enables mutation capture of the UI tree. This is used for debugging,
 // implementing hot reloading, SSR (server-side-rendering) etc.
 // It basically captures a trace of the program execution that can be replayed later.
-func (e *Configuration) EnableMutationCapture() *Configuration { e.MutationCapture = true; return e }
+func (e *Configuration) EnableMutationCapture() *Configuration {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+	e.MutationCapture = true
+	return e
+}
 
 // EnableMutationReplay enables mutation replay of the UI tree. This is used to recover the state corresponding
 // to a UI tree that has already been rendered.
-func (e *Configuration) EnableMutationReplay() *Configuration { e.MutationReplay = true; return e }
+func (e *Configuration) EnableMutationReplay() *Configuration {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+	e.MutationReplay = true
+	return e
+}
 
 // NewAppRoot returns the starting point of an app.
 func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Element) *Element {
@@ -328,9 +356,15 @@ func (e *Configuration) AddConstructorOptionsTo(elementtype string, options ...C
 	return e
 }
 
-// NewConstructor registers and returns a new Element construcor function.
+// NewConstructor registers and returns a new Element constructor function.
 func (e *Configuration) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
-
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+	c, ok := e.Constructors[elementtype]
+	if ok {
+		DEBUG("Constructor for ", elementtype, " already exists. Returning existing constructor.")
+		return c
+	}
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
 		optlist = make(map[string]func(*Element) *Element)
@@ -342,7 +376,7 @@ func (e *Configuration) NewConstructor(elementtype string, constructor func(id s
 	}
 
 	// Then we create the element constructor to return
-	c := func(id string, optionNames ...string) *Element {
+	c = func(id string, optionNames ...string) *Element {
 		element := constructor(id)
 		element.Set(Namespace.Internals, "constructor", String(elementtype))
 		element.Configuration = e
@@ -547,6 +581,8 @@ func (c *Configuration) NewObservable(id string, options ...string) Observable {
 	o.Configuration = c
 
 	o.WatchEvent("registered", o, OnMutation(func(evt MutationEvent) bool {
+		c.Mu.Lock()
+		defer c.Mu.Unlock()
 		globsopt := make(map[string]struct{}, 16)
 		for optname, fn := range c.GlobalConstructorOptions {
 			fn(evt.Origin())
@@ -1906,7 +1942,13 @@ func (e *Element) Set(category string, propname string, value Value) {
 }
 
 func MutationReplaying(e *Element) bool {
-	if e == nil || e.Configuration == nil || !e.Configuration.MutationReplay || !e.Registered() {
+	if e == nil || e.Configuration == nil {
+		return false // panic?
+	}
+	e.Configuration.Mu.RLock()
+	defer e.Configuration.Mu.RUnlock()
+
+	if !e.Configuration.MutationReplay || !e.Registered() {
 		return false
 	}
 
@@ -2013,7 +2055,13 @@ func shouldSkip(category, propname string) bool {
 }
 
 func mutationcapturing(e *Element) bool {
-	if e == nil || e.Configuration == nil || !e.Configuration.MutationCapture || !e.Registered() {
+	if e == nil || e.Configuration == nil {
+		return false // panic?
+	}
+	e.Configuration.Mu.RLock()
+	defer e.Configuration.Mu.RUnlock()
+
+	if !e.Configuration.MutationCapture || !e.Registered() {
 		return false
 	}
 

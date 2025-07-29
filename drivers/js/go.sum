@@ -2,6 +2,8 @@ github.com/atdiar/particleui v0.0.0-20241108155900-6038552f13e8 h1:Zn1VXIUR/1Xac
 github.com/atdiar/particleui v0.0.0-20241108155900-6038552f13e8/go.mod h1:exOkQ0uHKrLBBL+hgLFAHgQadYqjkW0XPv7C815RTfY=
 github.com/atdiar/particleui/drivers/js/compat v0.0.0-20241108155900-6038552f13e8 h1:iOQmSQBbzgH7sHcKOXS2OOr+ftWgn0OJTqneX0jmEd0=
 github.com/atdiar/particleui/drivers/js/compat v0.0.0-20241108155900-6038552f13e8/go.mod h1:eNRcLlsUOSlgqcUVDODjmoOfGG3sbyTa1mIbY2ExUR0=
+github.com/atdiar/particleui/drivers/js/compat v0.0.0-20250728113059-994719ed3ead h1:Zk2lzg240Q7sydneu3N7t/EUG5jFMQrSExTUX+Qi1yo=
+github.com/atdiar/particleui/drivers/js/compat v0.0.0-20250728113059-994719ed3ead/go.mod h1:aVos+bYvHSISX26Om8cGFLl5YSo3gC8a73nXF4OeOAk=
 github.com/fsnotify/fsnotify v1.8.0 h1:dAwr6QBTBZIkG8roQaJjGof0pp0EeF+tNV7YBP3F/8M=
 github.com/fsnotify/fsnotify v1.8.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/yosssi/gohtml v0.0.0-20201013000340-ee4748c638f4 h1:0sw0nJM544SpsihWx1bkXdYLQDlzRflMgFJQ4Yih9ts=

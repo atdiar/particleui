@@ -310,7 +310,8 @@ func ConnectNative(e *ui.Element, tag string) {
 func connectNative(e *ui.Element, tag string) {
 	id := e.ID
 	document := e.Root
-
+	e.Configuration.Mu.RLock()
+	defer e.Configuration.Mu.RUnlock()
 	// TODO make sure the below can only happens after the document is connected to the native object.
 	// In which case, using js.Global.Get("document") should not be necessary (it is actually wrong on the server)
 	// Rather, we should be able to retrieve the native document object from the Element's Native property.
@@ -1246,15 +1247,16 @@ func (c *gconstructor[T, U]) WithID(id string, options ...string) T {
 
 func (c *gconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
-	constructorDocumentLinker[id] = d
+	constructorDocumentLinker.Set(id, d)
 	d.Element.OnDeleted(ui.OnMutation(func(evt ui.MutationEvent) bool {
-		delete(constructorDocumentLinker, id)
+		constructorDocumentLinker.Delete(id)
 		return false
 	}))
 }
 
 func (c *gconstructor[T, U]) owner() *Document {
-	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+	d, _ := constructorDocumentLinker.Get(fmt.Sprintf("%v", *c))
+	return d
 }
 
 // For ButtonElement: it has a dedicated Document linked constructor as it has an optional typ argument
@@ -1283,11 +1285,12 @@ func (c *buttongconstructor[T, U]) WithID(id string, typ string, options ...stri
 
 func (c *buttongconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
-	constructorDocumentLinker[id] = d
+	constructorDocumentLinker.Set(id, d)
 }
 
 func (c *buttongconstructor[T, U]) owner() *Document {
-	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+	d, _ := constructorDocumentLinker.Get(fmt.Sprintf("%v", *c))
+	return d
 }
 
 // For inputElement: it has a dedicated Document linked constructor as it has an additional typ argument
@@ -1316,11 +1319,12 @@ func (c *inputgconstructor[T, U]) WithID(id string, typ string, options ...strin
 
 func (c *inputgconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
-	constructorDocumentLinker[id] = d
+	constructorDocumentLinker.Set(id, d)
 }
 
 func (c *inputgconstructor[T, U]) owner() *Document {
-	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+	d, _ := constructorDocumentLinker.Get(fmt.Sprintf("%v", *c))
+	return d
 }
 
 // For olElement: it has a dedicated Document linked constructor as it has additional typ and  offset arguments
@@ -1349,11 +1353,12 @@ func (c *olgconstructor[T, U]) WithID(id string, typ string, offset int, options
 
 func (c *olgconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
-	constructorDocumentLinker[id] = d
+	constructorDocumentLinker.Set(id, d)
 }
 
 func (c *olgconstructor[T, U]) owner() *Document {
-	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+	d, _ := constructorDocumentLinker.Get(fmt.Sprintf("%v", *c))
+	return d
 }
 
 // For iframeElement: it has a dedicated Document linked constructor as it has an additional src argument
@@ -1382,11 +1387,12 @@ func (c *iframeconstructor[T, U]) WithID(id string, src string, options ...strin
 
 func (c *iframeconstructor[T, U]) ownedBy(d *Document) {
 	id := fmt.Sprintf("%v", *c)
-	constructorDocumentLinker[id] = d
+	constructorDocumentLinker.Set(id, d)
 }
 
 func (c *iframeconstructor[T, U]) owner() *Document {
-	return constructorDocumentLinker[fmt.Sprintf("%v", *c)]
+	d, _ := constructorDocumentLinker.Get(fmt.Sprintf("%v", *c))
+	return d
 }
 
 type Document struct {
@@ -1461,9 +1467,7 @@ type Document struct {
 	Form      gconstructor[FormElement, formConstructor]
 	Iframe    iframeconstructor[IframeElement, iframeConstructor]
 
-	StyleSheets   map[string]StyleSheet
-	HttpClient    *http.Client
-	DBConnections map[string]js.Value
+	StyleSheets map[string]StyleSheet
 }
 
 func (d *Document) Window() Window {
@@ -1914,6 +1918,9 @@ func (m *mutationRecorder) loadmetadata() {
 }
 
 func (m *mutationRecorder) Capture() {
+	m.raw.Configuration.Mu.RLock()
+	defer m.raw.Configuration.Mu.RUnlock()
+
 	if !m.raw.Configuration.MutationCapture {
 		DEBUG("mutationreccorder capturing... not enabled")
 		return
@@ -2023,7 +2030,7 @@ func (m *mutationRecorder) Capture() {
 			// In-memory storage if indexeddb not available
 			// This is also used on the server to store mutations before serializing them
 			// before they are sent to the frontend for replay during hydration.
-			// DEBUG("indexeddb is not available, storing mutations in-memory. Beware of OOMe")
+			//DEBUG("indexeddb is not available, storing mutations in-memory. Beware of OOMe")
 			if !ok {
 				m.raw.Properties.Set(Namespace.Data, "mutationlist", ui.NewList(v).Commit())
 			} else {
@@ -2171,6 +2178,8 @@ func (m *mutationRecorder) Capture() {
 }
 
 func (m *mutationRecorder) Replay() error {
+	m.raw.Configuration.Mu.RLock()
+	defer m.raw.Configuration.Mu.RUnlock()
 	if !m.raw.Configuration.MutationReplay {
 		DEBUG("mutationreccorder replaying... not enabled")
 		return nil
@@ -2358,7 +2367,8 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 			}))
 		})
 	*/
-
+	e.Configuration.Mu.RLock()
+	defer e.Configuration.Mu.RUnlock()
 	if e.Configuration.MutationReplay && (LRMode != "false" || SSRMode != "false") {
 		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
 	}
@@ -2391,6 +2401,8 @@ func mutationreplay(d *Document) error {
 	m := d.mutationRecorder()
 
 	e := m.raw
+	e.Configuration.Mu.RLock()
+	defer e.Configuration.Mu.RUnlock()
 	if !e.Configuration.MutationReplay {
 		return nil
 	}
@@ -3005,7 +3017,7 @@ var documents *scsmap[*ui.Element, *Document] = newscsmap[*ui.Element, *Document
 // constructorDocumentLinker maps constructors id to the document they are created for.
 // Since we do not have dependent types, it is used to  have access to the document within
 // WithID methods, for element registration purposes (methods on function types do not have access to non-global user-defined state)
-var constructorDocumentLinker = make(map[string]*Document)
+var constructorDocumentLinker *scsmap[string, *Document] = newscsmap[string, *Document]()
 
 func (d *Document) WithDefaultConstructorOptions(mods ...ui.ConstructorOption) *Document {
 	for _, m := range mods {
@@ -3046,7 +3058,6 @@ func NewDocument(id string, options ...string) *Document {
 	d.Element.HttpClient.Jar = jar
 	d.HttpClient = d.Element.HttpClient // Is that necessary? Also perhaps rather a method d.HttpClient()?
 
-	d.DBConnections = make(map[string]js.Value)
 	d.newMutationRecorder()
 
 	e := d.Element

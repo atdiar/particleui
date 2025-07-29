@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/atdiar/particleui v0.0.0-20241108155900-6038552f13e8
-	github.com/atdiar/particleui/drivers/js/compat v0.0.0-20241108155900-6038552f13e8
+	github.com/atdiar/particleui/drivers/js/compat v0.0.0-20250728113059-994719ed3ead
 	github.com/fsnotify/fsnotify v1.8.0
 	golang.org/x/net v0.31.0
 )
