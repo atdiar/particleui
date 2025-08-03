@@ -347,8 +347,8 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		if onend != nil {
 			onend = onend.RunOnce()
 			evnt.Origin().AfterEvent(TransitionPhase(name, "end"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
-				evnt.Origin().TriggerEvent(TransitionPhase(name, "ended"))
 				evnt.Origin().Set("transition", name, String("ended"))
+				evnt.Origin().TriggerEvent(TransitionPhase(name, "ended"))
 				return false
 			}).RunOnce())
 			evnt.Origin().WatchEvent(TransitionPhase(name, "end"), evnt.Origin(), onend)
@@ -361,27 +361,25 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 
 		evnt.Origin().WatchEvent("cancelalltransitions", evnt.Origin(), cancelall)
 
-		// After the transition start, upon failure, the element should be able to trigger the transition end.
+		// After the transition start, upon error, the element should be able to trigger the transition end.
 		evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
 			ev.Origin().Set("transition", name, String("error"))
+			return false
+		}).RunOnce())
 
-			ev.Origin().WatchEvent(TransitionPhase(name, "error"), ev.Origin(), OnMutation(func(event MutationEvent) bool {
-				event.Origin().EndTransition(name, event.NewValue())
-				return false
-			}).RunOnce())
-
+		evnt.Origin().AfterEvent(TransitionPhase(name, "error"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
+			ev.Origin().EndTransition(name, ev.NewValue())
 			return false
 		}).RunOnce())
 
 		// After the transition start, upon cancellation, the element should be able to trigger the transition end.
 		evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
 			ev.Origin().Set("transition", name, String("cancelled"))
+			return false
+		}).RunOnce())
 
-			ev.Origin().WatchEvent(TransitionPhase(name, "cancel"), ev.Origin(), OnMutation(func(event MutationEvent) bool {
-				event.Origin().TriggerEvent(TransitionPhase(name, "ended"))
-				event.Origin().Set("transition", name, String("ended"))
-				return false
-			}).RunOnce())
+		evnt.Origin().AfterEvent(TransitionPhase(name, "cancel"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
+			ev.Origin().EndTransition(name, ev.NewValue())
 			return false
 		}).RunOnce())
 

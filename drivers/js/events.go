@@ -17,9 +17,13 @@ import (
 )
 
 func DEBUG(v ...any) {
-	if verbose {
+	if verbose || DebugMode {
 		log.Print(v...)
 	}
+}
+
+func DEBUGF(v ...any) {
+	log.Println(v...)
 }
 
 var DebugMode bool
@@ -298,30 +302,35 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		return nil
 	})
 
-	tgt, ok := JSValue(listener)
-	if !ok {
-		panic("listener doesn't seem to be connected to a native JS element. Impossible to add native event listener")
-	}
-
-	if listener.IsRoot() {
-		tgt = js.Global().Get("document")
-	}
-	if !tgt.Truthy() {
-		// DEBUG
-		if DebugMode {
-			fmt.Println(listener.ID, " : Unable to register event listener. Native object is not available")
+	listener.WatchEvent(natively_connected, listener, ui.OnMutation(func(evt ui.MutationEvent) bool {
+		DEBUGF("Registering native event listener for ", NativeEventName, " on ", listener.ID)
+		tgt, ok := JSValue(listener)
+		if !ok {
+			// DEBUG
+			fmt.Println(NativeEventName, " : Unable to register event listener. Native object for ", listener.ID, " is not available")
+			panic("listener doesn't seem to be connected to a native JS element. Impossible to add native event listener")
 		}
-		return
-	}
-	tgt.Call("addEventListener", NativeEventName, cb, capture)
-	if listener.NativeEventUnlisteners.List == nil {
-		listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
-	}
-	listener.NativeEventUnlisteners.Add(NativeEventName, func() {
-		tgt.Call("removeEventListener", NativeEventName, cb)
-		cb.Release()
-	})
 
+		if listener.IsRoot() {
+			tgt = js.Global().Get("document")
+		}
+		if !tgt.Truthy() {
+			// DEBUG
+			if DebugMode {
+				fmt.Println(listener.ID, " : Unable to register event listener. Native object is not available")
+			}
+			return false
+		}
+		tgt.Call("addEventListener", NativeEventName, cb, capture)
+		if listener.NativeEventUnlisteners.List == nil {
+			listener.NativeEventUnlisteners = ui.NewNativeEventUnlisteners()
+		}
+		listener.NativeEventUnlisteners.Add(NativeEventName, func() {
+			tgt.Call("removeEventListener", NativeEventName, cb)
+			cb.Release()
+		})
+		return false
+	}).RunASAP().RunOnce())
 }
 
 type KeyboardEvent struct {

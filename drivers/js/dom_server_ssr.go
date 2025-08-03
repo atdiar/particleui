@@ -65,12 +65,17 @@ func init() {
 		DevMode = "true"
 	}
 
-	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
-	IndexPath = filepath.Join(StaticDir, "index.html")
-
 	if !nolr {
 		LRMode = "true"
 	}
+
+	if basepath == "" || basepath == "/" {
+		basepath = filepath.Join(".", "_root")
+	}
+
+	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
+	IndexPath = filepath.Join(StaticDir, "index.html")
+
 	Server = newDefaultServer()
 
 }
@@ -162,7 +167,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		if LRMode != "false" || !nolr {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		DEBUG("RenderHTMLhandler called for: ", r.URL.Path)
+
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
 
@@ -193,17 +198,43 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 		withNativejshelpers(document)
 
-		err = document.mutationRecorder().Replay()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		document.mutationRecorder().Capture()
+		document.OnTransitionStart("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
+			err := document.mutationRecorder().Replay()
+			if err != nil {
+				DEBUG("replay error, sending to transition error handler... ", err)
+				document.ErrorTransition("replay", ui.String(err.Error()))
+				return true
+			}
+			document.EndTransition("replay")
+			return false
+		}))
 
-		start := make(chan struct{})
+		document.OnTransitionError("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
+			DEBUG("replay transition error for the document: ", document.ID, " with error: ", evt.NewValue())
+			document.mutationRecorder().Clear()
+			return false
+		}).RunASAP())
+
+		document.AfterEvent("ui-ready", document, ui.OnMutation(func(evt ui.MutationEvent) bool {
+			lch := ui.NewLifecycleHandlers(evt.Origin())
+			if !lch.MutationWillReplay() {
+				document.mutationRecorder().Capture()
+			} else {
+				document.AfterEvent("mutation-replayed", document, ui.OnMutation(func(evt ui.MutationEvent) bool {
+					document.mutationRecorder().Capture()
+					return false
+				}).RunASAP())
+			}
+			return false
+		}).RunOnce())
+
+		start := make(chan struct{}) // closed when setup is done and ready to listen
 		go func() {
 			document.ListenAndServe(r.Context(), start)
 		}()
+
+		var renderedContent bytes.Buffer
+		var renderErr error
 
 		ui.DoSync(r.Context(), document.AsElement(), func() {
 			router := document.Router()
@@ -214,14 +245,15 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				w.WriteHeader(http.StatusNotFound)
 			}
 			router.GoTo(route)
+
+			renderErr = document.Render(&renderedContent)
 		})
 
-		err = document.Render(w)
-		if err != nil {
+		if renderErr != nil {
 			if verbose {
-				fmt.Printf("Error rendering document: %v\n", err)
+				fmt.Printf("Error rendering document: %v\n", renderErr)
 			}
-			switch err {
+			switch renderErr {
 			case ui.ErrNotFound:
 				w.WriteHeader(http.StatusNotFound)
 			case ui.ErrFrameworkFailure:
@@ -229,6 +261,11 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			case ui.ErrUnauthorized:
 				w.WriteHeader(http.StatusUnauthorized)
 			}
+			return
+		}
+		_, err = w.Write(renderedContent.Bytes())
+		if err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
 		}
 
 	})
@@ -257,15 +294,17 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				// we want to render every possible route. This should generate the whole website
 				// in the output directory under the form of static index.html files in nested directories.
 				// DEBUG TODO use ui.DoSync(document.AsElement(), func() {
-				n, err := CreatePages(document)
-				if err != nil {
-					fmt.Printf("Error creating pages: %v\n", err)
-					os.Exit(1)
-				} else {
-					if verbose {
-						fmt.Printf("Created %d pages\n", n)
+				ui.DoSync(ctx, document.AsElement(), func() {
+					n, err := CreatePages(document)
+					if err != nil {
+						fmt.Printf("Error creating pages: %v\n", err)
+						os.Exit(1)
+					} else {
+						if verbose {
+							fmt.Printf("Created %d pages\n", n)
+						}
 					}
-				}
+				})
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
@@ -362,10 +401,10 @@ func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
 	state := SerializeStateHistory(root)
 	script := `<script id='` + SSRStateElementID + `' type="application/json">
 	` + state + `
-	<script>`
+	</script>`
 	scriptNode, err := html.Parse(strings.NewReader(script))
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	return scriptNode
 }

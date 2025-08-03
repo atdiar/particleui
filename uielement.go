@@ -240,7 +240,7 @@ func (e *Configuration) NewAppRoot(id string, modifiers ...func(*Element) *Eleme
 
 	el.Configuration = e
 
-	el.uuid = e.newUID()
+	el.uuid = newIDgenerator(16, time.Now().UnixNano())()
 	m := make(map[string]*Element, 4096)
 	m[id] = el
 	e.Registry.Set(el.uuid, m)
@@ -330,7 +330,11 @@ func (e *Configuration) AddConstructorOptionsTo(elementtype string, options ...C
 
 // NewConstructor registers and returns a new Element construcor function.
 func (e *Configuration) NewConstructor(elementtype string, constructor func(id string) *Element, options ...ConstructorOption) func(id string, optionNames ...string) *Element {
-
+	c, ok := e.Constructors[elementtype]
+	if ok {
+		DEBUG("Constructor for ", elementtype, " already exists.")
+		return c
+	}
 	optlist, ok := e.ConstructorsOptions[elementtype]
 	if !ok {
 		optlist = make(map[string]func(*Element) *Element)
@@ -342,7 +346,7 @@ func (e *Configuration) NewConstructor(elementtype string, constructor func(id s
 	}
 
 	// Then we create the element constructor to return
-	c := func(id string, optionNames ...string) *Element {
+	c = func(id string, optionNames ...string) *Element {
 		element := constructor(id)
 		element.Set(Namespace.Internals, "constructor", String(elementtype))
 		element.Configuration = e
@@ -1388,6 +1392,7 @@ func (e *Element) OnMutation(category string, propname string, h *MutationHandle
 // When two elements both bind each other's properties, this is two way-binding.
 // Indeed, property mutations are idempotent.
 // Otherwise, this is one-way binding.
+// Events should not be bounds two ways, lest we want to trigger an infinite update loop.
 func (e *Element) BindValue(category string, propname string, source *Element) *Element {
 	if source == nil {
 		panic("unable to bind to a nil *Element")
@@ -1401,15 +1406,21 @@ func (e *Element) BindValue(category string, propname string, source *Element) *
 	}
 
 	hdl := OnMutation(func(evt MutationEvent) bool {
+		if category == Namespace.Event {
+			e.TriggerEvent(propname, evt.NewValue())
+			return false
+		}
 		e.Set(category, propname, evt.NewValue())
-
 		return false
 	}).binder()
 
 	if category != Namespace.Event {
 		hdl = hdl.RunASAP()
+		e.Watch(category, propname, source, hdl)
+	} else {
+		e.WatchEvent(propname, source, hdl)
 	}
-	e.Watch(category, propname, source, hdl)
+
 	return e
 }
 

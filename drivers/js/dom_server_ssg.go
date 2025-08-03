@@ -46,16 +46,17 @@ var (
 // NOTE: the default entry path is stored in the BasePath variable stored in dom.go
 
 func init() {
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
+
 	flag.StringVar(&host, "host", "localhost", "Host name for the server")
 	flag.StringVar(&port, "port", "8888", "Port number for the server")
 
 	flag.BoolVar(&release, "release", false, "Build the app in release mode")
 	flag.BoolVar(&nolr, "nolr", false, "Disable live reloading")
-	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
-	flag.BoolVar(&verbose, "v", false, "Enable verbose logging")
-	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 
-	flag.StringVar(&render, "render", "", "Route to render")
+	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
+	flag.StringVar(&render, "render", "", "specify the page(s) that will be rendered to html")
 
 	flag.Parse()
 
@@ -65,6 +66,9 @@ func init() {
 
 	if !nolr {
 		LRMode = "true"
+	}
+	if basepath == "" || basepath == "/" {
+		basepath = filepath.Join(".", "_root")
 	}
 
 	StaticDir = filepath.Join("..", "..", "..", "client", basepath)
@@ -256,15 +260,17 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				// we want to render every possible route. This should generate the whole website
 				// in the output directory under the form of static index.html files in nested directories.
 				// DEBUG TODO use ui.DoSync(document.AsElement(), func() {
-				n, err := CreatePages(document)
-				if err != nil {
-					fmt.Printf("Error creating pages: %v\n", err)
-					os.Exit(1)
-				} else {
-					if verbose {
-						fmt.Printf("Created %d pages\n", n)
+				ui.DoSync(ctx, document.AsElement(), func() {
+					n, err := CreatePages(document)
+					if err != nil {
+						fmt.Printf("Error creating pages: %v\n", err)
+						os.Exit(1)
+					} else {
+						if verbose {
+							fmt.Printf("Created %d pages\n", n)
+						}
 					}
-				}
+				})
 			} else {
 				// We render the route that was specified in the command line.
 				// This should generate the corresponding file in the output directory.
@@ -356,7 +362,7 @@ func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
 	state := SerializeStateHistory(root)
 	script := `<script id='` + SSRStateElementID + `' type="application/json">
 	` + state + `
-	<script>`
+	</script>`
 	scriptNode, err := html.Parse(strings.NewReader(script))
 	if err != nil {
 		panic(err)

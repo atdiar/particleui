@@ -36,11 +36,6 @@ import (
 	ui "github.com/atdiar/particleui"
 )
 
-func init() {
-	ui.NativeEventBridge = NativeEventBridge
-	ui.NativeDispatch = NativeDispatch
-}
-
 const (
 	CaptureLimit = 10000000
 )
@@ -74,6 +69,18 @@ const (
 	natively_connected = "natively-connected"
 	registered         = "registered"
 )
+
+func init() {
+	ui.NativeEventBridge = NativeEventBridge
+	ui.NativeDispatch = NativeDispatch
+}
+
+func init() {
+	Elements.EnableMutationReplay()
+	if DevMode != "false" && LRMode != "false" {
+		Elements.EnableMutationCapture()
+	}
+}
 
 var SSEscript = `
 
@@ -148,13 +155,13 @@ func SerializeStateHistory(e *ui.Element) string {
 }
 
 func DeserializeStateHistory(rawstate string) (ui.Value, error) {
-	state := ui.NewObject()
+	state := make(map[string]any)
 	err := json.Unmarshal([]byte(rawstate), &state)
 	if err != nil {
 		return nil, err
 	}
 
-	return state.Value(), nil
+	return ui.ValueFrom(state), nil
 }
 
 var dEBUGJS = func(v js.Value, isJsonString ...bool) {
@@ -284,6 +291,7 @@ func JSValue(el ui.AnyElement) (js.Value, bool) { // TODO  unexport
 	if !ok {
 		return js.Value{}, ok
 	}
+
 	return n.Value, true
 }
 
@@ -291,18 +299,19 @@ func nativeDocumentAlreadyRendered() bool {
 	//  get native document status by looking for the ssr hint encoded in the page (data attribute)
 	// the data attribute should be removed once the document state is replayed.
 	statenode := js.Global().Get("document").Call("getElementById", SSRStateElementID)
-	if !statenode.Truthy() {
-		// TODO: check if the document is already rendered, at least partially, still.
-		return false
-	}
+	return statenode.Truthy()
+}
 
-	return true
+func RegisterElement(root *ui.Element, e *ui.Element) {
+	e.BindValue(Namespace.Event, "connect-native", root)
+	e.BindValue(Namespace.Event, "mutation-replayed", root)
+
+	ui.RegisterElement(root, e)
 }
 
 func ConnectNative(e *ui.Element, tag string) {
 	e.WatchEvent(registered, e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		connectNative(e, tag)
-		evt.Origin().TriggerEvent(natively_connected)
 		return false
 	}).RunOnce().RunASAP())
 }
@@ -320,7 +329,7 @@ func connectNative(e *ui.Element, tag string) {
 			if nativeDocumentAlreadyRendered() && e.Configuration.MutationReplay {
 				e.Configuration.Disconnected = true
 
-				statenode := js.Global().Get("document)").Call("getElementById", SSRStateElementID)
+				statenode := js.Global().Get("document").Call("getElementById", SSRStateElementID)
 				state := statenode.Get("textContent").String()
 
 				e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
@@ -328,7 +337,6 @@ func connectNative(e *ui.Element, tag string) {
 				e.WatchEvent("mutation-replayed", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 					statenode.Call("remove")
 					evt.Origin().TriggerEvent("connect-native")
-					evt.Origin().Configuration.Disconnected = false
 					return false
 				}))
 			}
@@ -336,8 +344,20 @@ func connectNative(e *ui.Element, tag string) {
 	}
 
 	if e.Configuration.Disconnected {
-		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 
+		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
+			if evt.Origin().IsRoot() {
+				evt.Origin().Configuration.Disconnected = false
+			}
+			return false
+		}).RunASAP().RunOnce())
+
+		e.AfterEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
+			evt.Origin().TriggerEvent(natively_connected)
+			return false
+		}).RunASAP().RunOnce())
+
+		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			if tag == "window" {
 				var wd js.Value
 				if !js.Global().Truthy() {
@@ -559,6 +579,7 @@ func connectNative(e *ui.Element, tag string) {
 
 		return
 	}
+	defer e.TriggerEvent(natively_connected)
 	if tag == "window" {
 		docNative, ok := JSValue(document)
 		if !ok {
@@ -1154,66 +1175,70 @@ var routerConfig = func(r *ui.Router) {
 	}))
 
 	doc := GetDocument(r.Outlet.AsElement())
-	// Add default navigation error handlers
-	// notfound:
-	pnf := doc.Div.WithID(r.Outlet.AsElement().Root.ID + "-notfound").SetText("Page Not Found.")
-	SetAttribute(pnf.AsElement(), "role", "alert")
-	SetInlineCSS(pnf, `all: initial;`)
+	lch := ui.NewLifecycleHandlers(doc)
+	lch.OnReady(ui.OnMutation(func(evnt ui.MutationEvent) bool {
+		// Add default navigation error handlers
+		// notfound:
+		pnf := doc.Div.WithID(r.Outlet.AsElement().Root.ID + "-notfound").SetText("Page Not Found.")
+		SetAttribute(pnf.AsElement(), "role", "alert")
+		SetInlineCSS(pnf, `all: initial;`)
 
-	// DEBUG TODO check whether notfound is triggered by traversing back to the
-	// main view incrementally. local notfound having priority.
-	// Normally the logis is intended for the beahvior to be just that.
-	// ui.AddView("notfound", pnf)(r.Outlet.AsElement())
-	r.OnNotfound(ui.OnMutation(func(evt ui.MutationEvent) bool {
-		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
-		if !ok {
-			panic("targetview should have been set")
-		}
-		document := GetDocument(r.Outlet.AsElement())
-		document.Window().SetTitle("Page Not Found")
+		// DEBUG TODO check whether notfound is triggered by traversing back to the
+		// main view incrementally. local notfound having priority.
+		// Normally the logis is intended for the beahvior to be just that.
+		// ui.AddView("notfound", pnf)(r.Outlet.AsElement())
+		r.OnNotfound(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
+			if !ok {
+				panic("targetview should have been set")
+			}
+			document := GetDocument(r.Outlet.AsElement())
+			document.Window().SetTitle("Page Not Found")
 
-		tv := ui.ViewElement{document.GetElementById(v.(ui.String).String())}
-		if tv.HasStaticView("notfound") {
-			tv.ActivateView("notfound")
+			tv := ui.ViewElement{document.GetElementById(v.(ui.String).String())}
+			if tv.HasStaticView("notfound") {
+				tv.ActivateView("notfound")
+				return false
+			}
+			if r.Outlet.HasStaticView("notfound") {
+				r.Outlet.ActivateView("notfound")
+				return false
+			}
+
+			body := document.Body().AsElement()
+			body.SetChildren(pnf.AsElement())
+
 			return false
-		}
-		if r.Outlet.HasStaticView("notfound") {
-			r.Outlet.ActivateView("notfound")
+		}))
+
+		// unauthorized
+		ui.AddView("unauthorized", doc.Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
+		r.OnUnauthorized(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
+			if !ok {
+				panic("targetview should have been set")
+			}
+
+			document := GetDocument(r.Outlet.AsElement())
+			document.Window().SetTitle("Unauthorized")
+
+			tv := ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
+			if tv.HasStaticView("unauthorized") {
+				tv.ActivateView("unauthorized")
+				return false // DEBUG TODO return true?
+			}
+			r.Outlet.ActivateView("unauthorized")
 			return false
-		}
+		}))
 
-		body := document.Body().AsElement()
-		body.SetChildren(pnf.AsElement())
-
-		return false
-	}))
-
-	// unauthorized
-	ui.AddView("unauthorized", doc.Div.WithID(r.Outlet.AsElement().ID+"-unauthorized").SetText("Unauthorized"))(r.Outlet.AsElement())
-	r.OnUnauthorized(ui.OnMutation(func(evt ui.MutationEvent) bool {
-		v, ok := r.Outlet.AsElement().Root.Get(Namespace.Navigation, "targetviewid")
-		if !ok {
-			panic("targetview should have been set")
-		}
-
-		document := GetDocument(r.Outlet.AsElement())
-		document.Window().SetTitle("Unauthorized")
-
-		tv := ui.ViewElement{GetDocument(r.Outlet.AsElement()).GetElementById(v.(ui.String).String())}
-		if tv.HasStaticView("unauthorized") {
-			tv.ActivateView("unauthorized")
-			return false // DEBUG TODO return true?
-		}
-		r.Outlet.ActivateView("unauthorized")
-		return false
-	}))
-
-	// appfailure
-	afd := doc.Div.WithID(" -appfailure").SetText("App Failure")
-	r.OnAppfailure(ui.OnMutation(func(evt ui.MutationEvent) bool {
-		document := GetDocument(r.Outlet.AsElement())
-		document.Window().SetTitle("App Failure")
-		r.Outlet.AsElement().Root.SetChildren(afd.AsElement())
+		// appfailure
+		afd := doc.Div.WithID(" -appfailure").SetText("App Failure")
+		r.OnAppfailure(ui.OnMutation(func(evt ui.MutationEvent) bool {
+			document := GetDocument(r.Outlet.AsElement())
+			document.Window().SetTitle("App Failure")
+			r.Outlet.AsElement().Root.SetChildren(afd.AsElement())
+			return false
+		}))
 		return false
 	}))
 
@@ -1239,7 +1264,7 @@ func (c *gconstructor[T, U]) WithID(id string, options ...string) T {
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
+	RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1276,7 +1301,7 @@ func (c *buttongconstructor[T, U]) WithID(id string, typ string, options ...stri
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
+	RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1309,7 +1334,7 @@ func (c *inputgconstructor[T, U]) WithID(id string, typ string, options ...strin
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
+	RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1342,7 +1367,7 @@ func (c *olgconstructor[T, U]) WithID(id string, typ string, offset int, options
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
+	RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1375,7 +1400,7 @@ func (c *iframeconstructor[T, U]) WithID(id string, src string, options ...strin
 	if d == nil {
 		panic("constructor should have an owner")
 	}
-	ui.RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
+	RegisterElement(d.AsElement(), e.AsElement()) // DEBUG
 
 	return e
 }
@@ -1472,7 +1497,7 @@ func (d *Document) Window() Window {
 		return Window{w}
 	}
 	wd := newWindow("zui-window")
-	ui.RegisterElement(d.AsElement(), wd.Raw)
+	RegisterElement(d.AsElement(), wd.Raw)
 	wd.Raw.TriggerEvent("mounted", ui.Bool(true))
 	wd.Raw.TriggerEvent("mountable", ui.Bool(true))
 	d.AsElement().BindValue(Namespace.UI, "title", wd.AsElement())
@@ -1503,7 +1528,7 @@ func (d *Document) NewObservable(id string, options ...string) ui.Observable {
 	}
 	o := d.AsElement().Configuration.NewObservable(id, options...).AsElement()
 
-	ui.RegisterElement(d.AsElement(), o)
+	RegisterElement(d.AsElement(), o)
 	// DEBUG initially that was done in the constructor but might be
 	// more appropriate here.
 	o.TriggerEvent("mountable")
@@ -1682,6 +1707,7 @@ func (s StyleSheet) String() string {
 	return res.String()
 }
 
+// TODO DEBUG what to do to handle ssr/Disconnected?
 func makeStyleSheet(observable *ui.Element) *ui.Element {
 
 	new := ui.OnMutation(func(evt ui.MutationEvent) bool {
@@ -2221,7 +2247,7 @@ func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 	m := d.NewObservable("mutation-recorder", options...)
 
 	trace, ok := d.Get(Namespace.Internals, "mutationtrace")
-	if ok {
+	if ok && trace != nil {
 		// TODO DEBUG transform into chunks?
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
 		if err != nil {
@@ -2229,6 +2255,7 @@ func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 		}
 		m.AsElement().SetData("mutationlist", v)
 		l := v.(ui.List).Length()
+		d.Set(Namespace.Internals, "mutationtrace", nil)
 		return &mutationRecorder{m.AsElement(), 0, 0, 4096, l, true}
 	}
 
@@ -2254,9 +2281,10 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 		panic("document is missing")
 	}
 
+	// DEBUG TODO might need to refine the logic to account for ssr/Disconnected mode.
 	// If we are not in a windowed environment, we should trigger the PageReady event manually
-	w, ok := JSValue(d.Window())
-	if w.Truthy() && ok {
+	// w, ok := JSValue(d.Window())
+	if InBrowser() {
 		d.Window().AsElement().AddEventListener("PageReady", ui.NewEventHandler(func(evt ui.Event) bool {
 			d.OnLoaded(ui.OnMutation(func(evt ui.MutationEvent) bool {
 				ui.NewLifecycleHandlers(evt.Origin()).SetReady()
@@ -2349,15 +2377,6 @@ var newDocument = Elements.NewConstructor("html", func(id string) *ui.Element {
 		}
 		return false
 	}))
-	/*
-			// DEBUG TODO use documents's Ready event via lifecyclehandler
-		e.OnRouterMounted(func(r *ui.Router) {
-			e.AddEventListener("focusin", ui.NewEventHandler(func(evt ui.Event) bool {
-				r.History.Set("focusedElementId", ui.String(evt.Target().ID))
-				return false
-			}))
-		})
-	*/
 
 	if e.Configuration.MutationReplay && (LRMode != "false" || SSRMode != "false") {
 		ui.NewLifecycleHandlers(e).MutationShouldReplay(true)
@@ -2381,12 +2400,6 @@ var documentTitleHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	return false
 }).RunASAP()
 
-// mutation replay is mostly idempotent. Mostly only because some replayed events may trigger
-// a listener call back during the capture phase that comes right afterwards instead of immediately.
-// For example, we had to apply the callback on focus events in a delayed manner to avoid deadblocking.
-// This should be solved at some point if Wasm-JS interoperability improves (reentrancy).
-// For now, the SetFocus called during rootScrollrestoration triggers a focus event that is handled
-// in a  microtask.
 func mutationreplay(d *Document) error {
 	m := d.mutationRecorder()
 
@@ -2394,11 +2407,10 @@ func mutationreplay(d *Document) error {
 	if !e.Configuration.MutationReplay {
 		return nil
 	}
-
 	// We need to retrieve the metadata for the list of mutations from storage.
 	// If storage is not available, the mutations can only be replayed from memory if any.
 	storage := Storage("indexeddb")
-	if storage == nil {
+	if storage == nil || e.Configuration.Disconnected {
 		rh, ok := e.GetData("mutationlist")
 		if !ok {
 			DEBUG("INFO: mutation recordings are missing")
@@ -2410,7 +2422,6 @@ func mutationreplay(d *Document) error {
 		}
 
 		mutNum := mutationtrace.Length()
-
 		for m.pos < mutNum {
 			rawop := mutationtrace.Get(m.pos)
 			op := rawop.(ui.Object)
@@ -2434,15 +2445,18 @@ func mutationreplay(d *Document) error {
 				panic("mutation entry badly encoded. Expected a ui.Object with a 'val' property")
 			}
 
-			el := GetDocument(e).GetElementById(id.(ui.String).String())
+			el := d.GetElementById(id.(ui.String).String())
 			if el == nil {
 				// Unable to recover state for this element id. Element  doesn't exist"
 				DEBUG("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
 				return ui.ErrReplayFailure
 			}
 
-			el.BindValue(Namespace.Event, "connect-native", e)
-			el.BindValue(Namespace.Event, "mutation-replayed", e)
+			// DEBUG are we binding to the wrong element. mutation-replayed is triggered on
+			// the document so unless it is bound to the mutation-recorder
+			// there might be an issue.
+			//el.BindValue(Namespace.Event, "connect-native", d.AsElement())
+			//el.BindValue(Namespace.Event, "mutation-replayed", d.AsElement())
 
 			_, ok = op.Get("sync")
 			if !ok {
@@ -2568,8 +2582,12 @@ func mutationreplay(d *Document) error {
 				return true
 			}
 
-			el.BindValue(Namespace.Event, "connect-native", e)
-			el.BindValue(Namespace.Event, "mutation-replayed", e)
+			// DEBUG are we binding to the wrong element. mutation-replayed is triggered on
+			// the document so unless it is bound to the mutation-recorder
+			// there might be an issue.
+			// DEBUG binding done within the RegisterEleemnt function
+			//el.BindValue(Namespace.Event, "connect-native", d.AsElement())
+			//el.BindValue(Namespace.Event, "mutation-replayed", d.AsElement())
 
 			_, ok = op.Get("sync")
 			if !ok {
@@ -2605,6 +2623,9 @@ func SetFocus(e ui.AnyElement, scrollintoview bool) {
 	if !e.AsElement().Mounted() {
 		return
 	}
+	if e.AsElement().Configuration.Disconnected {
+		return
+	}
 
 	n, ok := JSValue(e.AsElement())
 	if !ok {
@@ -2630,6 +2651,10 @@ func IsInViewPort(e *ui.Element) bool {
 	if !js.Global().Truthy() {
 		return true
 	}
+	if e.Configuration.Disconnected {
+		return false
+	}
+
 	n, ok := JSValue(e)
 	if !ok {
 		return false
@@ -2661,6 +2686,10 @@ func partiallyVisible(e *ui.Element) bool {
 	if !js.Global().Truthy() {
 		return true
 	}
+	if e.Configuration.Disconnected {
+		return false
+	}
+
 	n, ok := JSValue(e)
 	if !ok {
 		return false
@@ -2767,6 +2796,9 @@ func Autofocus(e *ui.Element) *ui.Element {
 // called is visible to the user.
 func (d *Document) ScrollIntoView(e *ui.Element, options ...ScrollOption) {
 	if !js.Global().Truthy() {
+		return
+	}
+	if e.Configuration.Disconnected {
 		return
 	}
 	var m map[string]any
@@ -3131,6 +3163,7 @@ var historyMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 })
 
 var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
+	DEBUGF("navinithandler called")
 	if !js.Global().Truthy() {
 		return false
 	}
@@ -3151,7 +3184,7 @@ var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	}
 
 	route = filepath.Join("/", strings.TrimPrefix(route, BasePath))
-
+	DEBUGF("about to initiate routechanege request for route: ", route)
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
 }).RunASAP().RunOnce()
@@ -3232,6 +3265,7 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
 			e.WatchEvent("ui-ready", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
+				DEBUGF("Setting scroll restoration support for root element %s", e.ID)
 				rootScrollRestorationSupport(evt.Origin())
 				return false
 			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.
@@ -3423,7 +3457,7 @@ func withStdConstructors(d *Document) *Document {
 
 	d.Configuration.NewConstructor("observable", func(id string) *ui.Element {
 		o := d.Configuration.NewObservable(id).AsElement()
-		ui.RegisterElement(d.Element, o)
+		RegisterElement(d.Element, o)
 		o.TriggerEvent("mountable")
 		o.TriggerEvent("mounted")
 		return o
@@ -3431,252 +3465,252 @@ func withStdConstructors(d *Document) *Document {
 
 	d.body = gconstructor[BodyElement, bodyConstructor](func() BodyElement {
 		e := BodyElement{newBody(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.body.ownedBy(d)
 
 	d.head = gconstructor[HeadElement, headConstructor](func() HeadElement {
 		e := HeadElement{newHead(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.head.ownedBy(d)
 
 	d.Meta = gconstructor[MetaElement, metaConstructor](func() MetaElement {
 		e := MetaElement{newMeta(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Meta.ownedBy(d)
 
 	d.Title = gconstructor[TitleElement, titleConstructor](func() TitleElement {
 		e := TitleElement{newTitle(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Title.ownedBy(d)
 
 	d.Script = gconstructor[ScriptElement, scriptConstructor](func() ScriptElement {
 		e := ScriptElement{newScript(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Script.ownedBy(d)
 
 	d.Style = gconstructor[StyleElement, styleConstructor](func() StyleElement {
 		e := StyleElement{newStyle(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Style.ownedBy(d)
 
 	d.Base = gconstructor[BaseElement, baseConstructor](func() BaseElement {
 		e := BaseElement{newBase(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Base.ownedBy(d)
 
 	d.NoScript = gconstructor[NoScriptElement, noscriptConstructor](func() NoScriptElement {
 		e := NoScriptElement{newNoScript(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.NoScript.ownedBy(d)
 
 	d.Link = gconstructor[LinkElement, linkConstructor](func() LinkElement {
 		e := LinkElement{newLink(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Link.ownedBy(d)
 
 	d.Div = gconstructor[DivElement, divConstructor](func() DivElement {
 		e := DivElement{newDiv(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Div.ownedBy(d)
 
 	d.TextArea = gconstructor[TextAreaElement, textareaConstructor](func() TextAreaElement {
 		e := TextAreaElement{newTextArea(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.TextArea.ownedBy(d)
 
 	d.Header = gconstructor[HeaderElement, headerConstructor](func() HeaderElement {
 		e := HeaderElement{newHeader(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Header.ownedBy(d)
 
 	d.Footer = gconstructor[FooterElement, footerConstructor](func() FooterElement {
 		e := FooterElement{newFooter(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Footer.ownedBy(d)
 
 	d.Section = gconstructor[SectionElement, sectionConstructor](func() SectionElement {
 		e := SectionElement{newSection(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Section.ownedBy(d)
 
 	d.H1 = gconstructor[H1Element, h1Constructor](func() H1Element {
 		e := H1Element{newH1(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H1.ownedBy(d)
 
 	d.H2 = gconstructor[H2Element, h2Constructor](func() H2Element {
 		e := H2Element{newH2(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H2.ownedBy(d)
 
 	d.H3 = gconstructor[H3Element, h3Constructor](func() H3Element {
 		e := H3Element{newH3(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H3.ownedBy(d)
 
 	d.H4 = gconstructor[H4Element, h4Constructor](func() H4Element {
 		e := H4Element{newH4(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H4.ownedBy(d)
 
 	d.H5 = gconstructor[H5Element, h5Constructor](func() H5Element {
 		e := H5Element{newH5(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H5.ownedBy(d)
 
 	d.H6 = gconstructor[H6Element, h6Constructor](func() H6Element {
 		e := H6Element{newH6(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.H6.ownedBy(d)
 
 	d.Span = gconstructor[SpanElement, spanConstructor](func() SpanElement {
 		e := SpanElement{newSpan(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Span.ownedBy(d)
 
 	d.Article = gconstructor[ArticleElement, articleConstructor](func() ArticleElement {
 		e := ArticleElement{newArticle(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Article.ownedBy(d)
 
 	d.Aside = gconstructor[AsideElement, asideConstructor](func() AsideElement {
 		e := AsideElement{newAside(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Aside.ownedBy(d)
 
 	d.Main = gconstructor[MainElement, mainConstructor](func() MainElement {
 		e := MainElement{newMain(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Main.ownedBy(d)
 
 	d.Paragraph = gconstructor[ParagraphElement, paragraphConstructor](func() ParagraphElement {
 		e := ParagraphElement{newParagraph(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Paragraph.ownedBy(d)
 
 	d.Nav = gconstructor[NavElement, navConstructor](func() NavElement {
 		e := NavElement{newNav(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Nav.ownedBy(d)
 
 	d.Anchor = gconstructor[AnchorElement, anchorConstructor](func() AnchorElement {
 		e := AnchorElement{newAnchor(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Anchor.ownedBy(d)
 
 	d.Button = buttongconstructor[ButtonElement, buttonConstructor](func(typ ...string) ButtonElement {
 		e := ButtonElement{newButton(d.newID(), typ...)}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Button.ownedBy(d)
 
 	d.Label = gconstructor[LabelElement, labelConstructor](func() LabelElement {
 		e := LabelElement{newLabel(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Label.ownedBy(d)
 
 	d.Input = inputgconstructor[InputElement, inputConstructor](func(typ string) InputElement {
 		e := InputElement{newInput(d.newID(), typ)}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Input.ownedBy(d)
 
 	d.Output = gconstructor[OutputElement, outputConstructor](func() OutputElement {
 		e := OutputElement{newOutput(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Output.ownedBy(d)
 
 	d.Img = gconstructor[ImgElement, imgConstructor](func() ImgElement {
 		e := ImgElement{newImg(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Img.ownedBy(d)
 
 	d.Audio = gconstructor[AudioElement, audioConstructor](func() AudioElement {
 		e := AudioElement{newAudio(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Audio.ownedBy(d)
 
 	d.Video = gconstructor[VideoElement, videoConstructor](func() VideoElement {
 		e := VideoElement{newVideo(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Video.ownedBy(d)
 
 	d.Source = gconstructor[SourceElement, sourceConstructor](func() SourceElement {
 		e := SourceElement{newSource(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Source.ownedBy(d)
 
 	d.Ul = gconstructor[UlElement, ulConstructor](func() UlElement {
 		e := UlElement{newUl(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Ul.ownedBy(d)
@@ -3684,7 +3718,7 @@ func withStdConstructors(d *Document) *Document {
 	d.Ol = olgconstructor[OlElement, olConstructor](func(typ string, offset int) OlElement {
 		e := OlElement{newOl(d.newID())}
 		o := e.AsElement()
-		ui.RegisterElement(d.Element, o)
+		RegisterElement(d.Element, o)
 		SetAttribute(o, "type", typ)
 		SetAttribute(o, "start", strconv.Itoa(offset))
 		return e
@@ -3693,21 +3727,21 @@ func withStdConstructors(d *Document) *Document {
 
 	d.Li = gconstructor[LiElement, liConstructor](func() LiElement {
 		e := LiElement{newLi(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Li.ownedBy(d)
 
 	d.Table = gconstructor[TableElement, tableConstructor](func() TableElement {
 		e := TableElement{newTable(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Table.ownedBy(d)
 
 	d.Iframe = iframeconstructor[IframeElement, iframeConstructor](func() IframeElement {
 		e := IframeElement{newIframe(d.newID())}
-		ui.RegisterElement(d.Element, e.AsElement())
+		RegisterElement(d.Element, e.AsElement())
 		return e
 	})
 	d.Iframe.ownedBy(d)
@@ -4419,6 +4453,9 @@ func SetTextContent(e *ui.Element, text string) {
 // Please note that it is unsafe (risk of XSS)
 // Do not use it to dynamically inject unsanitized text inputs.
 func SetInnerHTML(e *ui.Element, inner string) *ui.Element {
+	if e.Configuration.Disconnected {
+		return e
+	}
 	jsv, ok := JSValue(e)
 	if !ok {
 		return e
@@ -5564,7 +5601,7 @@ func (l LabelElement) For(p **ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		d := GetDocument(evt.Origin())
 
-		evt.Origin().WatchEvent("ui-idle", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
+		d.OnReady(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e := *p
 			l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			return false
@@ -6150,7 +6187,7 @@ type AudioElement struct {
 func (a AudioElement) Buffered() TimeRanges {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return newTimeRanges(js.Undefined())
 	}
 
 	b := j.Get("buiffered")
@@ -6160,7 +6197,7 @@ func (a AudioElement) Buffered() TimeRanges {
 func (a AudioElement) CurrentTime() time.Duration {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return time.Duration(j.Get("currentTime").Float()) * time.Second
 }
@@ -6168,7 +6205,7 @@ func (a AudioElement) CurrentTime() time.Duration {
 func (a AudioElement) Duration() time.Duration {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return time.Duration(j.Get("duration").Float()) * time.Second
 }
@@ -6176,7 +6213,7 @@ func (a AudioElement) Duration() time.Duration {
 func (a AudioElement) PlayBackRate() float64 {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("playbackRate").Float()
 }
@@ -6184,7 +6221,7 @@ func (a AudioElement) PlayBackRate() float64 {
 func (a AudioElement) Ended() bool {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("ended").Bool()
 }
@@ -6192,7 +6229,7 @@ func (a AudioElement) Ended() bool {
 func (a AudioElement) ReadyState() float64 {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("readyState").Float()
 }
@@ -6200,7 +6237,7 @@ func (a AudioElement) ReadyState() float64 {
 func (a AudioElement) Seekable() TimeRanges {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return newTimeRanges(js.Undefined())
 	}
 	b := j.Get("seekable")
 	return newTimeRanges(b)
@@ -6209,7 +6246,7 @@ func (a AudioElement) Seekable() TimeRanges {
 func (a AudioElement) Volume() float64 {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("volume").Float()
 }
@@ -6217,7 +6254,7 @@ func (a AudioElement) Volume() float64 {
 func (a AudioElement) Muted() bool {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("muted").Bool()
 }
@@ -6225,7 +6262,7 @@ func (a AudioElement) Muted() bool {
 func (a AudioElement) Paused() bool {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("paused").Bool()
 }
@@ -6233,7 +6270,7 @@ func (a AudioElement) Paused() bool {
 func (a AudioElement) Loop() bool {
 	j, ok := JSValue(a.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("loop").Bool()
 }
@@ -6374,7 +6411,7 @@ type VideoElement struct {
 func (v VideoElement) Buffered() TimeRanges {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return newTimeRanges(js.Undefined())
 	}
 	b := j.Get("buiffered")
 	return newTimeRanges(b)
@@ -6383,7 +6420,7 @@ func (v VideoElement) Buffered() TimeRanges {
 func (v VideoElement) CurrentTime() time.Duration {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return time.Duration(j.Get("currentTime").Float()) * time.Second
 }
@@ -6391,7 +6428,7 @@ func (v VideoElement) CurrentTime() time.Duration {
 func (v VideoElement) Duration() time.Duration {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return time.Duration(j.Get("duration").Float()) * time.Second
 }
@@ -6399,7 +6436,7 @@ func (v VideoElement) Duration() time.Duration {
 func (v VideoElement) PlayBackRate() float64 {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("playbackRate").Float()
 }
@@ -6407,7 +6444,7 @@ func (v VideoElement) PlayBackRate() float64 {
 func (v VideoElement) Ended() bool {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("ended").Bool()
 }
@@ -6415,7 +6452,7 @@ func (v VideoElement) Ended() bool {
 func (v VideoElement) ReadyState() float64 {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("readyState").Float()
 }
@@ -6423,7 +6460,7 @@ func (v VideoElement) ReadyState() float64 {
 func (v VideoElement) Seekable() TimeRanges {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return newTimeRanges(js.Undefined())
 	}
 	b := j.Get("seekable")
 	return newTimeRanges(b)
@@ -6432,7 +6469,7 @@ func (v VideoElement) Seekable() TimeRanges {
 func (v VideoElement) Volume() float64 {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return 0
 	}
 	return j.Get("volume").Float()
 }
@@ -6440,7 +6477,7 @@ func (v VideoElement) Volume() float64 {
 func (v VideoElement) Muted() bool {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("muted").Bool()
 }
@@ -6448,7 +6485,7 @@ func (v VideoElement) Muted() bool {
 func (v VideoElement) Paused() bool {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("paused").Bool()
 }
@@ -6456,7 +6493,7 @@ func (v VideoElement) Paused() bool {
 func (v VideoElement) Loop() bool {
 	j, ok := JSValue(v.AsElement())
 	if !ok {
-		panic("element is not connected to Native dom node.")
+		return false
 	}
 	return j.Get("loop").Bool()
 }
@@ -7971,7 +8008,10 @@ func withStringAttributeWatcher(e *ui.Element, attr string) {
 		SetAttribute(evt.Origin(), attr, string(evt.NewValue().(ui.String)))
 		return false
 	}).RunOnce())
-
+	if attr == "for" {
+		withStringPropertyWatcher(e, "htmlFor") // IDL attribute support
+		return
+	}
 	withStringPropertyWatcher(e, attr) // IDL attribute support
 }
 
@@ -8011,6 +8051,10 @@ func withMediaElementPropertyWatchers(e *ui.Element) *ui.Element {
 }
 
 func withStringPropertyWatcher(e *ui.Element, propname string) {
+	if propname == "htmlFor" {
+		e.Watch(Namespace.UI, "for", e, stringPropertyWatcher(propname))
+		return
+	}
 	e.Watch(Namespace.UI, propname, e, stringPropertyWatcher(propname))
 }
 
@@ -8028,52 +8072,67 @@ func withClampedNumberPropertyWatcher(e *ui.Element, propname string, min int, m
 
 func clampedValueWatcher(propname string, min int, max int) *ui.MutationHandler {
 	return ui.OnMutation(func(evt ui.MutationEvent) bool {
-		j, ok := JSValue(evt.Origin())
-		if !ok {
-			return false
-		}
-		v := float64(evt.NewValue().(ui.Number))
-		if v < float64(min) {
-			v = float64(min)
-		}
+		evt.Origin().WatchEvent(natively_connected, evt.Origin(), ui.OnMutation(func(event ui.MutationEvent) bool {
+			j, ok := JSValue(evt.Origin())
+			if !ok {
+				return false
+			}
+			v := float64(evt.NewValue().(ui.Number))
+			if v < float64(min) {
+				v = float64(min)
+			}
 
-		if v > float64(max) {
-			v = float64(max)
-		}
-		j.Set(propname, v)
+			if v > float64(max) {
+				v = float64(max)
+			}
+			j.Set(propname, v)
+			return false
+		}).RunOnce().RunASAP())
+
 		return false
 	}).RunASAP()
 }
 
 func numericPropertyWatcher(propname string) *ui.MutationHandler {
 	return ui.OnMutation(func(evt ui.MutationEvent) bool {
-		j, ok := JSValue(evt.Origin())
-		if !ok {
-			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
-		}
-		j.Set(propname, float64(evt.NewValue().(ui.Number)))
+		evt.Origin().WatchEvent(natively_connected, evt.Origin(), ui.OnMutation(func(event ui.MutationEvent) bool {
+			j, ok := JSValue(evt.Origin())
+			if !ok {
+				panic("element doesn't seem to have been connected to the corresponding Native DOM Element")
+			}
+			j.Set(propname, float64(evt.NewValue().(ui.Number)))
+			return false
+		}).RunOnce().RunASAP())
+
 		return false
 	}).RunASAP()
 }
 
 func boolPropertyWatcher(propname string) *ui.MutationHandler {
 	return ui.OnMutation(func(evt ui.MutationEvent) bool {
-		j, ok := JSValue(evt.Origin())
-		if !ok {
-			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
-		}
-		j.Set(propname, bool(evt.NewValue().(ui.Bool)))
+		evt.Origin().WatchEvent(natively_connected, evt.Origin(), ui.OnMutation(func(event ui.MutationEvent) bool {
+			j, ok := JSValue(evt.Origin())
+			if !ok {
+				panic("element doesn't seem to have been connected to the corresponding Native DOM Element")
+			}
+			j.Set(propname, bool(evt.NewValue().(ui.Bool)))
+			return false
+		}).RunOnce().RunASAP())
+
 		return false
 	})
 }
 
 func stringPropertyWatcher(propname string) *ui.MutationHandler {
 	return ui.OnMutation(func(evt ui.MutationEvent) bool {
-		j, ok := JSValue(evt.Origin())
-		if !ok {
-			panic("element doesn't seem to have been connected to thecorresponding Native DOM Element")
-		}
-		j.Set(propname, string(evt.NewValue().(ui.String)))
+		evt.Origin().WatchEvent(natively_connected, evt.Origin(), ui.OnMutation(func(event ui.MutationEvent) bool {
+			j, ok := JSValue(evt.Origin())
+			if !ok {
+				panic("element doesn't seem to have been connected to the corresponding Native DOM Element")
+			}
+			j.Set(propname, string(evt.NewValue().(ui.String)))
+			return false
+		}).RunOnce().RunASAP())
 		return false
 	}).RunASAP()
 }
@@ -8081,9 +8140,12 @@ func stringPropertyWatcher(propname string) *ui.MutationHandler {
 func enableClasses(e *ui.Element) *ui.Element {
 	h := ui.OnMutation(func(evt ui.MutationEvent) bool {
 		target := evt.Origin()
+		if target.Configuration.Disconnected {
+			return false
+		}
 		native, ok := target.Native.(NativeElement)
 		if !ok {
-			log.Print("wrong type for native element or native element does not exist")
+			log.Print("wrong type for native element ", target.ID, " or native element does not exist")
 			return true
 		}
 		classes, ok := evt.NewValue().(ui.String)
@@ -8106,16 +8168,19 @@ func enableClasses(e *ui.Element) *ui.Element {
 
 // abstractjs
 var textContentHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
-	j, ok := JSValue(evt.Origin())
-	if !ok {
-		return false
-	}
+	evt.Origin().WatchEvent(natively_connected, evt.Origin(), ui.OnMutation(func(event ui.MutationEvent) bool {
+		j, ok := JSValue(evt.Origin())
+		if !ok {
+			return false
+		}
 
-	str, ok := evt.NewValue().(ui.String)
-	if !ok {
-		return true
-	}
-	j.Set("textContent", string(str))
+		str, ok := evt.NewValue().(ui.String)
+		if !ok {
+			return true
+		}
+		j.Set("textContent", string(str))
+		return false
+	}).RunOnce().RunASAP())
 
 	return false
 }).RunASAP() // TODO DEBUG just added RunASAP
@@ -8146,10 +8211,15 @@ func SetAttribute(target ui.AnyElement, name string, value string) {
 	}
 
 	attrmap = am.Set(name, ui.String(value)).Commit()
-	target.AsElement().SetData("attrs", attrmap)
-	native, ok := target.AsElement().Native.(NativeElement)
+	t := target.AsElement()
+	t.SetData("attrs", attrmap)
+
+	if t.Configuration.Disconnected { // implicitly, we are in ssr so the attributes have been set server-side already.
+		return
+	}
+	native, ok := t.Native.(NativeElement)
 	if !ok {
-		log.Print("Cannot set Attribute on non-expected wrapper type", target.AsElement().ID)
+		log.Print("Cannot set attribute ", name, " on non-expected wrapper type", t.ID)
 		return
 	}
 	native.Value.Call("setAttribute", name, value)
@@ -8167,11 +8237,16 @@ func RemoveAttribute(target *ui.Element, name string) {
 	}
 	am = attrmap.MakeCopy()
 	am.Delete(name)
-	target.SetData("attrs", am.Commit())
+	t := target.AsElement()
+	t.SetData("attrs", am.Commit())
 
-	native, ok := target.Native.(NativeElement)
+	if t.Configuration.Disconnected { // implicitly, we are in ssr so the attributes have been set server-side already.
+		return
+	}
+
+	native, ok := t.Native.(NativeElement)
 	if !ok {
-		log.Print("Cannot delete Attribute using non-expected wrapper type ", target.ID)
+		log.Print("Cannot delete attribute ", name, " on non-expected wrapper type", t.ID)
 		return
 	}
 	native.Value.Call("removeAttribute", name)

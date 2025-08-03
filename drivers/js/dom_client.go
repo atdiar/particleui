@@ -17,17 +17,6 @@ import (
 	js "github.com/atdiar/particleui/drivers/js/compat"
 )
 
-// TODO on init, Apply EnableMutationCapture to Elements if ldlflags -X tag is set for the buildtype variable to "dev"
-// Also, the mutationtrace should be stored in the sessionstorage or localstorage
-// And the mutationtrace should replay once the document is ready.
-
-func init() {
-	Elements.EnableMutationReplay()
-	if DevMode != "false" && LRMode != "false" {
-		Elements.EnableMutationCapture()
-	}
-}
-
 func (n NativeElement) SetChildren(children ...*ui.Element) {
 	if n.typ == "HTMLElement" {
 		fragment := js.Global().Get("document").Call("createDocumentFragment")
@@ -303,7 +292,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				BasePath = bpath.Path // TODO the router should be able to handle this and rewrite links DEBUG
 			}
 			// Otherwise we do nothing, the basepath uses the default value. This i si specific to this framework as
-			// we set the basepath in the document head  .
+			// we set the basepath in the document head.
 			return false
 		}).RunASAP())
 
@@ -323,6 +312,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			d.mutationRecorder().Clear()
 			// Should reload the page
 			DEBUG("replay error, we should reload: ", evt.NewValue())
+			// DEBUG
 			d.Window().Reload()
 			return true // here true or false doesn't matter
 		}).RunASAP())
@@ -346,7 +336,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			return false
 		}).RunOnce())
 
-		if !InBrowser() { // SSR Mode only
+		if !InBrowser() { // SSG Mode only
 			err := CreateSitemap(d, filepath.Join(".", "sitemap.xml"))
 			if err != nil {
 				log.Print(err)

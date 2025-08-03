@@ -147,8 +147,9 @@ func (v Value) Call(method string, args ...interface{}) Value {
 		case "document":
 			return ValueOf(v.data.(*stubwindow).document) // Return the document object
 		default:
-			panic(fmt.Sprintf("method %s not implemented for stubwindow", method))
+			//panic(fmt.Sprintf("method %s not implemented for stubwindow", method))
 			// could return Undefined but for now, trying to find bugs
+			return Undefined() // Return Undefined for unimplemented methods
 		}
 	}
 
@@ -159,8 +160,9 @@ func (v Value) Call(method string, args ...interface{}) Value {
 			return ValueOf(doc.implementation) // Return the document implementation
 		default:
 			// Other methods on document are not emulated
-			panic(fmt.Sprintf("method %s not implemented for stubdocument", method))
+			// panic(fmt.Sprintf("method %s not implemented for stubdocument", method))
 			// could return Undefined but for now, trying to find bugs
+			return Undefined() // Return Undefined for unimplemented methods
 		}
 	}
 
@@ -193,9 +195,10 @@ func (v Value) Call(method string, args ...interface{}) Value {
 			return ValueOf(htmlNode)
 		default:
 			// Other methods on document.implementation are not emulated
-			panic(fmt.Sprintf("method %s not implemented for documentImplementation", method))
+			//panic(fmt.Sprintf("method %s not implemented for documentImplementation", method))
 			// return Undefined()
 			// could return Undefined but for now, trying to find bugs
+			return Undefined() // Return Undefined for unimplemented methods
 		}
 	}
 
