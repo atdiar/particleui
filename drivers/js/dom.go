@@ -291,7 +291,6 @@ func JSValue(el ui.AnyElement) (js.Value, bool) { // TODO  unexport
 	if !ok {
 		return js.Value{}, ok
 	}
-
 	return n.Value, true
 }
 
@@ -346,7 +345,7 @@ func connectNative(e *ui.Element, tag string) {
 	if e.Configuration.Disconnected {
 
 		e.WatchEvent("connect-native", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
-			if evt.Origin().IsRoot() {
+			if evt.Origin().Configuration.Disconnected {
 				evt.Origin().Configuration.Disconnected = false
 			}
 			return false
@@ -368,20 +367,21 @@ func connectNative(e *ui.Element, tag string) {
 						}
 					}
 				} else {
+
 					docNative, ok := JSValue(document)
 					if !ok {
-						DEBUG("unable to access native document object ", e.Root.ID)
-						panic("unable to access native document object")
+						panic(fmt.Sprintf("unable to access native document object ", e.Root.ID))
 					}
 					if !docNative.Truthy() {
 						panic("unable to access native document object. It is not truthy.")
 					}
 
-					wd := docNative.Get("ownerDocument").Get("defaultView")
+					wd = docNative.Get("ownerDocument").Get("defaultView")
 					if !wd.Truthy() {
 						if DebugMode {
 							log.Println("unable to access window object in this environment")
 						}
+						return false
 					}
 				}
 				evt.Origin().Native = NewNativeElementWrapper(wd, "Window")
@@ -575,7 +575,7 @@ func connectNative(e *ui.Element, tag string) {
 
 			return false
 
-		}).RunOnce())
+		}).RunOnce().RunASAP())
 
 		return
 	}
@@ -3106,12 +3106,11 @@ func NewDocument(id string, options ...string) *Document {
 		return false
 	}).RunASAP())
 	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
-
+	activityStateSupport(e)
 	e.OnRouterMounted(routerConfig)
+
 	d.OnReady(navinitHandler)
 	e.Watch(Namespace.UI, "title", e, documentTitleHandler)
-
-	activityStateSupport(e)
 
 	if InBrowser() {
 		document = d
@@ -3163,7 +3162,6 @@ var historyMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 })
 
 var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
-	DEBUGF("navinithandler called")
 	if !js.Global().Truthy() {
 		return false
 	}
@@ -3184,7 +3182,6 @@ var navinitHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	}
 
 	route = filepath.Join("/", strings.TrimPrefix(route, BasePath))
-	DEBUGF("about to initiate routechanege request for route: ", route)
 	evt.Origin().TriggerEvent("navigation-routechangerequest", ui.String(route))
 	return false
 }).RunASAP().RunOnce()
@@ -3265,7 +3262,6 @@ var AllowScrollRestoration = ui.NewConstructorOption("scrollrestoration", func(e
 				js.Global().Get("history").Set("scrollRestoration", "manual")
 			}
 			e.WatchEvent("ui-ready", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
-				DEBUGF("Setting scroll restoration support for root element %s", e.ID)
 				rootScrollRestorationSupport(evt.Origin())
 				return false
 			}).RunOnce()) // TODO Check that we really want to do this on the main document on navigation-end.

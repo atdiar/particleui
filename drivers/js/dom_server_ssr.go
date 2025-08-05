@@ -171,25 +171,34 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
 
-		// Join the cleaned path with the static directory
+		// First, check if the request is for a directory with an index.html file.
+		// This handles requests like '/' or '/about/' which should serve a page.
 		path := filepath.Join(StaticDir, cleanedPath)
-
-		fi, err := os.Stat(path)
-		if err == nil && !fi.IsDir() {
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-
-		// TODO if fi is Dir, check whether it has an index.html file
-		if fi != nil && fi.IsDir() {
-			// If it's a directory, check for index.html
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			indexPath := filepath.Join(path, "index.html")
 			if _, err := os.Stat(indexPath); err == nil {
-				// Serve the index.html file if it exists
 				http.ServeFile(w, r, indexPath)
 				return
 			}
-			// Otherwise, we let the handler generate the appropriate page
+		}
+
+		// Now, check for all other file-like requests using the extension.
+		hasFileExtension := filepath.Ext(cleanedPath) != ""
+		isSpecialFile := strings.HasPrefix(cleanedPath, "/.well-known/")
+
+		if hasFileExtension || isSpecialFile {
+			// Correct the variable name to use 'path' as defined above.
+			fi, err := os.Stat(path)
+			if err == nil && !fi.IsDir() {
+				// A file exists, so we serve it and exit the handler.
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+
+			// A file was requested, but it doesn't exist on disk.
+			// We return a 404 without attempting to generate a page.
+			http.NotFound(w, r)
+			return
 		}
 
 		document := f()
@@ -239,9 +248,9 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		ui.DoSync(r.Context(), document.AsElement(), func() {
 			router := document.Router()
 			route := r.URL.Path
-			_, routeexist := router.Match(route)
-			if routeexist != nil {
-				DEBUG("route not found: ", route)
+			_, routedoesnotexist := router.Match(route)
+			if routedoesnotexist != nil {
+				DEBUGF("route not found: ", route)
 				w.WriteHeader(http.StatusNotFound)
 			}
 			router.GoTo(route)
@@ -263,7 +272,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			}
 			return
 		}
-		_, err = w.Write(renderedContent.Bytes())
+		_, err := w.Write(renderedContent.Bytes())
 		if err != nil {
 			http.Error(w, "Failed to write response", http.StatusInternalServerError)
 		}

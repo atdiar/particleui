@@ -1093,7 +1093,7 @@ func (v Value) Get(property string) Value {
 	case "ownerDocument":
 		// For any node, ownerDocument returns the Document node it belongs to.
 		if node.Type == html.DocumentNode {
-			return ValueOf(node) // If it's already a Document node, return itself
+			return Null() // ValueOf(node) // If it's already a Document node, return null
 		}
 		for p := node.Parent; p != nil; p = p.Parent {
 			if p.Type == html.DocumentNode {

@@ -133,12 +133,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 
 		var rv = ui.NewObject() //.Set("value",ui.String(jstarget.Get("value").String()))
 
-		// When replaying mutations, user events have already been handled and state has changed accordingly.
-		// we do not need to handle them again.
-		if ui.MutationReplaying(GetDocument(listener).AsElement()) {
-			DEBUG("replaying mutations, skipping event handling")
-			return nil
-		}
 		// DEBUG is this the correct context or is context.Background relevant here
 		/*doc := GetDocument(listener)
 		navContext:= doc.Router().NavContext
@@ -303,7 +297,6 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 	})
 
 	listener.WatchEvent(natively_connected, listener, ui.OnMutation(func(evt ui.MutationEvent) bool {
-		DEBUGF("Registering native event listener for ", NativeEventName, " on ", listener.ID)
 		tgt, ok := JSValue(listener)
 		if !ok {
 			// DEBUG
@@ -314,6 +307,7 @@ var NativeEventBridge = func(NativeEventName string, listener *ui.Element, captu
 		if listener.IsRoot() {
 			tgt = js.Global().Get("document")
 		}
+
 		if !tgt.Truthy() {
 			// DEBUG
 			if DebugMode {
