@@ -175,22 +175,35 @@ var NewBuilder = func(f func() *Document, buildEnvModifiers ...func()) (ListenAn
 		// Clean the URL path to prevent directory traversal
 		cleanedPath := filepath.Clean(r.URL.Path)
 
-		// Join the cleaned path with the static directory
+		// First, check if the request is for a directory with an index.html file.
+		// This handles requests like '/' or '/about/' which should serve a page.
 		path := filepath.Join(StaticDir, cleanedPath)
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+			indexPath := filepath.Join(path, "index.html")
+			if _, err := os.Stat(indexPath); err == nil {
+				http.ServeFile(w, r, indexPath)
+				return
+			}
+		}
 
-		// Check if the requested file exists
-		_, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			// If the file does not exist, serve index.html
-			http.ServeFile(w, r, IndexPath)
-			return
-		} else if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Now, check for all other file-like requests using the extension.
+		hasFileExtension := filepath.Ext(cleanedPath) != ""
+		isSpecialFile := strings.HasPrefix(cleanedPath, "/.well-known/")
+
+		if hasFileExtension || isSpecialFile {
+			// Correct the variable name to use 'path' as defined above.
+			fi, err := os.Stat(path)
+			if err == nil && !fi.IsDir() {
+				// A file exists, so we serve it and exit the handler.
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+
+			http.NotFound(w, r)
 			return
 		}
 
-		// If the file exists, serve it
-		fileServer.ServeHTTP(w, r)
+		http.ServeFile(w, r, IndexPath)
 	})
 
 	for _, m := range buildEnvModifiers {

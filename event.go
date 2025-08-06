@@ -319,7 +319,6 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 
 	e.WatchEvent(TransitionPhase(name, "start"), e, OnMutation(func(evnt MutationEvent) bool {
 		// cancel previous in-flight transitions and reset transition state to not failed, not cancelled)
-		//evt.Origin().CancelTransition(name,String("transition restarted"))
 		if TransitionStarted(e, name) {
 			evnt.Origin().CancelTransition(name, String("transition restarted"))
 		}
@@ -329,26 +328,45 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		if onerror != nil {
 			onerror = onerror.RunOnce()
 			evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
-				evnt.Origin().Set("transition", name, String("error"))
+				event.Origin().Set("transition", name, String("error"))
+
+				// After the transition start, upon failure, the element should signal that the transiton has ended.
+				event.Origin().AfterEvent(TransitionPhase(name, "error"), event.Origin(), OnMutation(func(ev MutationEvent) bool {
+					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+					return false
+				}).RunOnce())
+
 				return false
-			}).RunOnce().RunASAP())
+			}).RunOnce())
 			evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), onerror)
 		}
 
 		if oncancel != nil {
 			oncancel = oncancel.RunOnce()
 			evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
-				evnt.Origin().Set("transition", name, String("cancelled"))
+				event.Origin().Set("transition", name, String("cancelled"))
+
+				// After the transition start, upon cancellation, the element should signal that the transiton has ended.
+				event.Origin().AfterEvent(TransitionPhase(name, "cancel"), event.Origin(), OnMutation(func(ev MutationEvent) bool {
+					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+					return false
+				}).RunOnce())
 				return false
-			}).RunOnce().RunASAP())
+			}).RunOnce())
 			evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), oncancel)
 		}
 
 		if onend != nil {
 			onend = onend.RunOnce()
+
+			evnt.Origin().WatchEvent(TransitionPhase(name, "end"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
+				event.Origin().Set("transition", name, String("ending"))
+				return false
+			}).RunOnce())
+
 			evnt.Origin().AfterEvent(TransitionPhase(name, "end"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
-				evnt.Origin().Set("transition", name, String("ended"))
-				evnt.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+				event.Origin().Set("transition", name, String("complete"))
+				event.Origin().TriggerEvent(TransitionPhase(name, "ended"), event.NewValue())
 				return false
 			}).RunOnce())
 			evnt.Origin().WatchEvent(TransitionPhase(name, "end"), evnt.Origin(), onend)
@@ -360,28 +378,6 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 		}).RunOnce()
 
 		evnt.Origin().WatchEvent("cancelalltransitions", evnt.Origin(), cancelall)
-
-		// After the transition start, upon error, the element should be able to trigger the transition end.
-		evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
-			ev.Origin().Set("transition", name, String("error"))
-			return false
-		}).RunOnce())
-
-		evnt.Origin().AfterEvent(TransitionPhase(name, "error"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
-			ev.Origin().EndTransition(name, ev.NewValue())
-			return false
-		}).RunOnce())
-
-		// After the transition start, upon cancellation, the element should be able to trigger the transition end.
-		evnt.Origin().WatchEvent(TransitionPhase(name, "cancel"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
-			ev.Origin().Set("transition", name, String("cancelled"))
-			return false
-		}).RunOnce())
-
-		evnt.Origin().AfterEvent(TransitionPhase(name, "cancel"), evnt.Origin(), OnMutation(func(ev MutationEvent) bool {
-			ev.Origin().EndTransition(name, ev.NewValue())
-			return false
-		}).RunOnce())
 
 		// Upon transition end, we should  cleanup the transition mutation handlers which didn't get
 		// called (e.g. error, cancel)
@@ -437,18 +433,6 @@ func (e *Element) OnTransitionStart(name string, h *MutationHandler) {
 	}).RunASAP().RunOnce())
 }
 
-/*
-func (e *Element) OnTransitionStart(name string, h *MutationHandler) {
-	e.WatchEvent(strings.Join([]string{name, "transition", "defined"}, "-"), e, OnMutation(func(evnt MutationEvent) bool {
-		evnt.Origin().WatchEvent(TransitionPhase(name, "start"), evnt.Origin(), OnMutation(func(event MutationEvent) bool {
-			event.Origin().WatchEvent(TransitionPhase(name, "start"), event.Origin(), h.RunOnce())
-			return false
-		}).RunOnce())
-		return false
-	}).RunASAP().RunOnce())
-}
-*/
-
 func (e *Element) OnTransitionError(name string, h *MutationHandler) {
 	e.WatchEvent(onerrorRegistrationHook(name), e, OnMutation(func(evnt MutationEvent) bool {
 		evnt.Origin().WatchEvent(TransitionPhase(name, "error"), evnt.Origin(), h.RunOnce())
@@ -493,14 +477,18 @@ func (e *Element) ErrorTransition(name string, values ...Value) {
 	if !e.transitionIsDefined(name) {
 		panic(fmt.Sprint(name, " transition is not defined"))
 	}
-	e.TriggerEvent(TransitionPhase(name, "error"), values...)
+	if TransitionStarted(e, name) {
+		e.TriggerEvent(TransitionPhase(name, "error"), values...)
+	}
 }
 
 func (e *Element) CancelTransition(name string, values ...Value) {
 	if !e.transitionIsDefined(name) {
 		panic(fmt.Sprint(name, " transition is not defined"))
 	}
-	e.TriggerEvent(TransitionPhase(name, "cancel"), values...)
+	if TransitionStarted(e, name) {
+		e.TriggerEvent(TransitionPhase(name, "cancel"), values...)
+	}
 }
 
 func (e *Element) CancelAllTransitions() {
@@ -509,9 +497,12 @@ func (e *Element) CancelAllTransitions() {
 
 func (e *Element) EndTransition(name string, values ...Value) {
 	if !e.transitionIsDefined(name) {
-		panic(fmt.Sprint(name, " transition is not defined"))
+		DEBUG(fmt.Sprint(name, " transition is not defined"))
+		return
 	}
-	e.TriggerEvent(TransitionPhase(name, "end"), values...)
+	if TransitionStarted(e, name) {
+		e.TriggerEvent(TransitionPhase(name, "end"), values...)
+	}
 }
 
 // TransitionCancelled returns true if the transition was cancelled.
@@ -532,7 +523,7 @@ func TransitionCancelled(e *Element, transitionname string) bool {
 	return vv.String() == "cancelled"
 }
 
-func TransitionError(e *Element, transitionname string) bool {
+func TransitionErrored(e *Element, transitionname string) bool {
 	v, ok := e.Get("transition", transitionname)
 	if !ok {
 		return false
@@ -544,7 +535,7 @@ func TransitionError(e *Element, transitionname string) bool {
 	return vv.String() == "error"
 }
 
-func TransitionEnded(e *Element, transitionname string) bool {
+func TransitionEnding(e *Element, transitionname string) bool {
 	v, ok := e.Get("transition", transitionname)
 	if !ok {
 		return false
@@ -553,7 +544,19 @@ func TransitionEnded(e *Element, transitionname string) bool {
 	if !ok {
 		return false
 	}
-	return vv.String() == "ended"
+	return vv.String() == "ending"
+}
+
+func TransitionComplete(e *Element, transitionname string) bool {
+	v, ok := e.Get("transition", transitionname)
+	if !ok {
+		return false
+	}
+	vv, ok := v.(String)
+	if !ok {
+		return false
+	}
+	return vv.String() == "complete"
 }
 
 func TransitionStarted(e *Element, transitionname string) bool {
@@ -605,7 +608,7 @@ func (e *Element) NewTransitionChain(name string, transitionevents ...string) fu
 			if 0 < i && i < l {
 				e.OnTransitionEnd(t, OnMutation(func(evt MutationEvent) bool {
 					// check cancellation status first
-					if TransitionCancelled(e, t) || TransitionError(e, t) {
+					if TransitionCancelled(e, t) || TransitionErrored(e, t) {
 						return false
 					}
 
@@ -615,7 +618,7 @@ func (e *Element) NewTransitionChain(name string, transitionevents ...string) fu
 			}
 			if i == l {
 				e.OnTransitionEnd(t, OnMutation(func(evt MutationEvent) bool {
-					if TransitionCancelled(e, t) || TransitionError(e, t) {
+					if TransitionCancelled(e, t) || TransitionErrored(e, t) {
 						return false
 					}
 
@@ -680,7 +683,7 @@ func (l LifecycleHandlers) OnLoad(h *MutationHandler) {
 }
 
 func (l LifecycleHandlers) OnLoaded(h *MutationHandler) {
-	l.root.WatchEvent("ui-loaded", l.root, h)
+	l.root.WatchEvent(TransitionPhase("load", "ended"), l.root, h)
 }
 
 // SetReady is used to signal that the UI tree has been built and data/resources have been loaded on both the Go/wasm side

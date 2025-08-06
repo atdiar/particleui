@@ -594,11 +594,15 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 				return false
 			}))
 
-			// After replay end, the app should be considered loaded. So we will end the load transition.
-			evt.Origin().AfterTransition("replay", OnMutation(func(ev MutationEvent) bool {
-				ev.Origin().EndTransition("load")
+			evt.Origin().OnTransitionError("load", OnMutation(func(ev MutationEvent) bool {
+				ev.Origin().CancelTransition("replay")
 				return false
-			}).RunOnce())
+			}))
+
+			evt.Origin().OnTransitionCancel("load", OnMutation(func(ev MutationEvent) bool {
+				ev.Origin().CancelTransition("replay", ev.NewValue())
+				return false
+			}))
 
 			return false
 		}
@@ -606,19 +610,11 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	})
 
 	onloaderror := OnMutation(func(evt MutationEvent) bool {
-		if lch.MutationWillReplay() {
-			evt.Origin().CancelTransition("replay", evt.NewValue())
-			return false
-		}
 
 		return false
 	})
 
 	onloadcancel := OnMutation(func(evt MutationEvent) bool {
-		if lch.MutationWillReplay() {
-			evt.Origin().CancelTransition("replay", evt.NewValue())
-			return false
-		}
 		return false
 	})
 
@@ -630,11 +626,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	// some kind of event on the native side in order to be able to trigger the ui-ready event.
 	// That is platform/driver dependent and makes use of the Ready lifecycle handler function which triggers a ui-ready event
 	// at the root of the UI tree.
-	// Note> could use AfterTransition instead of AfterEvent
-	root.AsElement().Root.AfterTransition("load", OnMutation(func(evt MutationEvent) bool {
-		evt.Origin().TriggerEvent("ui-loaded")
-		return false
-	}).RunOnce())
 
 	onreplaystart := OnMutation(func(evt MutationEvent) bool {
 		return false

@@ -308,14 +308,25 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}))
 
 		d.OnTransitionError("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
-			DEBUG("replay transition error for the document: ", d.ID, " with error: ", evt.NewValue())
 			d.mutationRecorder().Clear()
-			// Should reload the page
-			DEBUG("replay error, we should reload: ", evt.NewValue())
-			// DEBUG
 			d.Window().Reload()
 			return true // here true or false doesn't matter
-		}).RunASAP())
+		}))
+
+		lch := ui.NewLifecycleHandlers(d)
+		if lch.MutationWillReplay() {
+			d.AfterTransition("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
+				d.EndTransition("load")
+				return false
+			}))
+		} else {
+			d.AfterEvent(ui.TransitionPhase("load", "start"), d, ui.OnMutation(func(evt ui.MutationEvent) bool {
+				if ui.TransitionStarted(evt.Origin(), "load") {
+					d.EndTransition("load")
+				}
+				return false
+			}).RunASAP())
+		}
 
 		d.AfterTransition("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			js.Global().Call("onWasmDone")
@@ -324,15 +335,9 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 		// Capture mutations
 		d.AfterEvent("ui-ready", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
-			lch := ui.NewLifecycleHandlers(evt.Origin())
-			if !lch.MutationWillReplay() {
-				d.mutationRecorder().Capture()
-			} else {
-				d.AfterEvent("mutation-replayed", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
-					d.mutationRecorder().Capture()
-					return false
-				}).RunASAP())
-			}
+			// given that ui-ready event occurs onyl after the load event has been fired
+			// which itself happends after the replay event, we can safely capture mutations
+			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())
 

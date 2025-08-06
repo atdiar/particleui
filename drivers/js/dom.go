@@ -1135,7 +1135,7 @@ var allowDataFetching = ui.NewConstructorOption("datafetching", func(e *ui.Eleme
 	}).RunASAP()
 
 	// TODO DEBUG use AfterEvent? observe ui-ready?
-	e.WatchEvent("ui-loaded", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
+	e.WatchEvent(ui.TransitionPhase("load", "ended"), d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 		e.OnMount(fetcher)
 		e.OnUnmounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 			evt.Origin().RemoveMutationHandler(Namespace.Event, "unmounted", evt.Origin(), fetcher)
@@ -1563,7 +1563,7 @@ func (d *Document) OnNavigationEnd(h *ui.MutationHandler) {
 }
 
 func (d *Document) OnLoaded(h *ui.MutationHandler) {
-	d.AsElement().WatchEvent("ui-loaded", d, h)
+	d.AsElement().WatchEvent(ui.TransitionPhase("load", "ended"), d, h)
 }
 
 func (d *Document) OnReady(h *ui.MutationHandler) {
@@ -3106,11 +3106,13 @@ func NewDocument(id string, options ...string) *Document {
 		return false
 	}).RunASAP())
 	d.SetFavicon("data:;base64,iVBORw0KGgo=") // TODO default favicon
-	activityStateSupport(e)
+
 	e.OnRouterMounted(routerConfig)
 
 	d.OnReady(navinitHandler)
 	e.Watch(Namespace.UI, "title", e, documentTitleHandler)
+
+	activityStateSupport(e)
 
 	if InBrowser() {
 		document = d
@@ -4359,7 +4361,7 @@ func (d *Document) enableWasm() *Document {
 				// 4. Promise.all still waits for all components before dispatching PageReady
 				Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady])
 					.then(() => {
-						// console.log("All main startup components (WASM, Page Load, IndexedDB) are ready.");
+						 //console.log("All main startup components (WASM, Page Load, IndexedDB) are ready.");
 						// Small final delay before dispatching, as a safety measure for any final browser flush.
 						setTimeout(() => {
 							// console.log("Dispatching PageReady event...");
@@ -5596,8 +5598,8 @@ func (l LabelElement) SetText(s string) LabelElement {
 func (l LabelElement) For(p **ui.Element) LabelElement {
 	l.AsElement().OnMounted(ui.OnMutation(func(evt ui.MutationEvent) bool {
 		d := GetDocument(evt.Origin())
-
-		d.OnReady(ui.OnMutation(func(evt ui.MutationEvent) bool {
+		// TODO revert to d.OnReady once the bug is fixed.. currently doesn't seem to fire in csr client mode
+		evt.Origin().WatchEvent("ui-idle", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			e := *p
 			l.AsElement().SetDataSetUI("for", ui.String(e.ID))
 			return false

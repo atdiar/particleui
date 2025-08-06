@@ -128,7 +128,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	// onend MutationHandler
 	onend := OnMutation(func(evt MutationEvent) bool {
 		// If no transition Error, then the transition was successful
-		if !TransitionError(evt.Origin(), prop.ActivateView) && !TransitionCancelled(evt.Origin(), prop.ActivateView) {
+		if !TransitionErrored(evt.Origin(), prop.ActivateView) && !TransitionCancelled(evt.Origin(), prop.ActivateView) {
 			evt.Origin().SetUI("activeview", evt.NewValue())
 		}
 
@@ -247,7 +247,7 @@ func (v ViewElement) ActivateView(name string) error {
 	e := v.AsElement()
 	e.StartTransition(prop.ActivateView, String(name))
 
-	if TransitionError(e, prop.ActivateView) {
+	if TransitionErrored(e, prop.ActivateView) {
 		v, err := TransitionEndValue(e, prop.ActivateView)
 		if err != nil {
 			panic(err)
