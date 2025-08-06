@@ -291,7 +291,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 				}
 				BasePath = bpath.Path // TODO the router should be able to handle this and rewrite links DEBUG
 			}
-			// Otherwise we do nothing, the basepath uses the default value. This i si specific to this framework as
+			// Otherwise we do nothing, the basepath uses the default value. This is specific to this framework as
 			// we set the basepath in the document head.
 			return false
 		}).RunASAP())

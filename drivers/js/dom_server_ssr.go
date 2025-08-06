@@ -225,15 +225,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}).RunASAP())
 
 		document.AfterEvent("ui-ready", document, ui.OnMutation(func(evt ui.MutationEvent) bool {
-			lch := ui.NewLifecycleHandlers(evt.Origin())
-			if !lch.MutationWillReplay() {
-				document.mutationRecorder().Capture()
-			} else {
-				document.AfterEvent("mutation-replayed", document, ui.OnMutation(func(evt ui.MutationEvent) bool {
-					document.mutationRecorder().Capture()
-					return false
-				}).RunASAP())
-			}
+			document.mutationRecorder().Capture()
 			return false
 		}).RunOnce())
 
@@ -248,6 +240,9 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		ui.DoSync(r.Context(), document.AsElement(), func() {
 			router := document.Router()
 			route := r.URL.Path
+			if route == "" {
+				route = "/"
+			}
 			_, routedoesnotexist := router.Match(route)
 			if routedoesnotexist != nil {
 				DEBUGF("route not found: ", route)
@@ -397,7 +392,6 @@ func newHTMLDocument(document *Document) *html.Node {
 	if !ok {
 		panic("Error converting Document to HTML Node")
 	}
-
 	statenode := generateStateHistoryRecordElement(document.AsElement()) // TODO review all this logic
 	if statenode != nil {
 		h.Call("appendChild", statenode)

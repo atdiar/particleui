@@ -156,6 +156,9 @@ func SerializeStateHistory(e *ui.Element) string {
 
 func DeserializeStateHistory(rawstate string) (ui.Value, error) {
 	state := make(map[string]any)
+	if rawstate == "" {
+		return nil, nil
+	}
 	err := json.Unmarshal([]byte(rawstate), &state)
 	if err != nil {
 		return nil, err
@@ -303,8 +306,6 @@ func nativeDocumentAlreadyRendered() bool {
 
 func RegisterElement(root *ui.Element, e *ui.Element) {
 	e.BindValue(Namespace.Event, "connect-native", root)
-	e.BindValue(Namespace.Event, "mutation-replayed", root)
-
 	ui.RegisterElement(root, e)
 }
 
@@ -333,7 +334,7 @@ func connectNative(e *ui.Element, tag string) {
 
 				e.Set(Namespace.Internals, "mutationtrace", ui.String(state))
 
-				e.WatchEvent("mutation-replayed", e, ui.OnMutation(func(evt ui.MutationEvent) bool {
+				e.AfterTransition("replay", ui.OnMutation(func(evt ui.MutationEvent) bool {
 					statenode.Call("remove")
 					evt.Origin().TriggerEvent("connect-native")
 					return false
@@ -1093,14 +1094,10 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 				PutInStorage(e)
 			}
 
-			e.WatchEvent("datastore-load", e, ui.OnMutation(func(event ui.MutationEvent) bool {
-				LoadFromStorage(event.Origin())
-				return false
-			}).RunASAP())
+			LoadFromStorage(e)
 			return false
 		}).RunOnce())
 
-		// DEBUG it is already handled during the replay transition???
 		// In LR Mode, we need to load data persisted for the mutation-recorder
 		if LRMode != "false" && SSRMode == "false" {
 			if e.ID == "mutation-recorder" {
@@ -1116,7 +1113,11 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 			return false
 		}))
 
-		d.OnTransitionStart("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
+		d.OnTransitionEnd("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
+			if e.ID == "mutation-recorder" {
+				return false
+			}
+			DEBUGF("loading data from storage has been signaled for ", e.ID)
 			e.TriggerEvent("datastore-load")
 			return false
 		}).RunASAP().RunOnce())
@@ -2216,7 +2217,6 @@ func (m *mutationRecorder) Replay() error {
 	}
 
 	d.Set(Namespace.Internals, "mutation-replaying", ui.Bool(false))
-	d.TriggerEvent("mutation-replayed")
 
 	return nil
 }
@@ -2252,6 +2252,10 @@ func (d *Document) newMutationRecorder(options ...string) *mutationRecorder {
 		v, err := DeserializeStateHistory(trace.(ui.String).String())
 		if err != nil {
 			panic(err)
+		}
+		if v == nil {
+			d.Set(Namespace.Internals, "mutationtrace", nil)
+			return &mutationRecorder{m.AsElement(), 0, 0, 4096, 0, true}
 		}
 		m.AsElement().SetData("mutationlist", v)
 		l := v.(ui.List).Length()
@@ -2452,12 +2456,6 @@ func mutationreplay(d *Document) error {
 				return ui.ErrReplayFailure
 			}
 
-			// DEBUG are we binding to the wrong element. mutation-replayed is triggered on
-			// the document so unless it is bound to the mutation-recorder
-			// there might be an issue.
-			//el.BindValue(Namespace.Event, "connect-native", d.AsElement())
-			//el.BindValue(Namespace.Event, "mutation-replayed", d.AsElement())
-
 			_, ok = op.Get("sync")
 			if !ok {
 				ui.ReplayMutation(el, cat.(ui.String).String(), prop.(ui.String).String(), val, false)
@@ -2581,13 +2579,6 @@ func mutationreplay(d *Document) error {
 				replayerror = fmt.Errorf("!!!!  Unable to recover state for this element id. Element  doesn't exist: " + id.(ui.String).String())
 				return true
 			}
-
-			// DEBUG are we binding to the wrong element. mutation-replayed is triggered on
-			// the document so unless it is bound to the mutation-recorder
-			// there might be an issue.
-			// DEBUG binding done within the RegisterEleemnt function
-			//el.BindValue(Namespace.Event, "connect-native", d.AsElement())
-			//el.BindValue(Namespace.Event, "mutation-replayed", d.AsElement())
 
 			_, ok = op.Get("sync")
 			if !ok {

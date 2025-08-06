@@ -105,7 +105,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 		if !auth {
 			DEBUG("unauthorized view: ", vname)
-			v.AsElement().ErrorTransition(prop.ActivateView, String("Unauthorized"))
+			v.AsElement().ErrorTransition(prop.ActivateView, String(vname), String("Unauthorized"))
 			return false
 		}
 		evt.Origin().activateView(vname)
@@ -127,11 +127,7 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 
 	// onend MutationHandler
 	onend := OnMutation(func(evt MutationEvent) bool {
-		// If no transition Error, then the transition was successful
-		if !TransitionErrored(evt.Origin(), prop.ActivateView) && !TransitionCancelled(evt.Origin(), prop.ActivateView) {
-			evt.Origin().SetUI("activeview", evt.NewValue())
-		}
-
+		evt.Origin().SetUI("activeview", evt.NewValue())
 		return false
 	})
 
@@ -371,7 +367,7 @@ func (e *Element) activateView(name string) {
 				return
 			}
 			// TODO panic or silently return? Or transition Error
-			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined"))
+			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined!"))
 			return
 		}
 		e.SetChildren(newview.elements.List...)
@@ -392,7 +388,7 @@ func (e *Element) activateView(name string) {
 				e.EndTransition(prop.ActivateView, String(name)) // already active
 				return
 			}
-			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined"))
+			e.ErrorTransition(prop.ActivateView, String(name), String("no default view defined."))
 			return
 		}
 

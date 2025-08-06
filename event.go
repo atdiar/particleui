@@ -332,7 +332,7 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 
 				// After the transition start, upon failure, the element should signal that the transiton has ended.
 				event.Origin().AfterEvent(TransitionPhase(name, "error"), event.Origin(), OnMutation(func(ev MutationEvent) bool {
-					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"), ev.NewValue())
 					return false
 				}).RunOnce())
 
@@ -348,7 +348,7 @@ func (e *Element) DefineTransition(name string, onstart, onerror, oncancel, onen
 
 				// After the transition start, upon cancellation, the element should signal that the transiton has ended.
 				event.Origin().AfterEvent(TransitionPhase(name, "cancel"), event.Origin(), OnMutation(func(ev MutationEvent) bool {
-					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"))
+					ev.Origin().TriggerEvent(TransitionPhase(name, "ended"), ev.NewValue())
 					return false
 				}).RunOnce())
 				return false
@@ -572,15 +572,11 @@ func TransitionStarted(e *Element, transitionname string) bool {
 }
 
 func TransitionEndValue(e *Element, transitionname string) (Value, error) {
-	v, ok := e.Get(Namespace.Event, TransitionPhase(transitionname, "end"))
+	v, ok := e.GetEventValue(TransitionPhase(transitionname, "ended"))
 	if !ok {
 		return nil, errors.New("transition doesn't seem to have completed yet")
 	}
-	o, ok := v.(Object).Get("value")
-	if !ok {
-		panic("unexpected event object format for transition end event")
-	}
-	return o, nil
+	return v, nil
 }
 
 /* DEBUG rewrite this

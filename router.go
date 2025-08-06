@@ -200,7 +200,7 @@ func (r *Router) tryNavigate(newroute string) bool {
 	}
 	err = a()
 	if err != nil {
-		log.Print("activation failure ", err) // DEBUG
+		log.Print("activation failure for route: ", newroute, err) // DEBUG
 		r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
 		return false
 	}
@@ -221,6 +221,9 @@ func (r *Router) CancelNavigation() {
 func (r *Router) GoTo(route string) {
 	if !r.LeaveTrailingSlash {
 		route = strings.TrimSuffix(route, "/")
+		if route == "" {
+			route = "/"
+		}
 	}
 	r.Outlet.AsElement().Root.TriggerEvent("navigation-new")
 	r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(route))
@@ -438,7 +441,7 @@ func (r *Router) handler() *MutationHandler {
 			err = a()
 			if err != nil {
 				r.Outlet.AsElement().Root.TriggerEvent("navigation-unauthorized", String(newroute))
-				DEBUG("activation failure", err)
+				DEBUG("activation failure: ", newroute, err)
 			}
 
 			if found {
