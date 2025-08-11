@@ -1029,9 +1029,6 @@ func (e *Element) hasParent(any AnyElement) bool {
 }
 
 // AppendChild appends a new element to the Element's children.
-// If the element being appended is mounted on the main tree that starts from a
-// root Element, the root Element will see its ("event","docupdate") property
-// set with the value of the appendee.
 func (e *Element) AppendChild(childEl AnyElement) *Element {
 	return e.appendChild(childEl)
 }
@@ -1571,7 +1568,7 @@ func (e *Element) watchOnce(category string, propname string, owner Watchable, h
 	return e.Watch(category, propname, owner, g)
 }
 
-// removeHandler allows for the removal of a Mutation Handler.
+// RemoveMutationHandler allows for the removal of a Mutation Handler.
 // Can be used to clean up, for instance in the case of
 func (e *Element) RemoveMutationHandler(category string, propname string, owner Watchable, h *MutationHandler) *Element {
 	_, ok := owner.AsElement().Properties.Categories[category]
@@ -1582,6 +1579,29 @@ func (e *Element) RemoveMutationHandler(category string, propname string, owner 
 	return e
 }
 
+/*
+// RemoveBeforeEventHandler removes a MutationHandler that was registered to run before an event.
+// Note that h will not run ASAP as it is not semantically correct.
+// Also note that if a handler is passed that is marked as a RunASAP,
+// a copy without the mark will be registered instead.
+// Hence, such handlers cannot be removed since a handler copy is not a pointer that the user owns.
+// TODO DEBUG change the behavior so that ASAP is simply ignored for before handlers, without
+// the pointer copy.
+// Alternatively, the removal function should be returned as a result of watching?
+func (e *Element) RemoveBeforeEventHandler(eventname string, target Watchable, h *MutationHandler) *Element {
+	lifecycleStartPropname := strings.Join([]string{Namespace.Event, eventname, "start"}, "-")
+	e.RemoveMutationHandler(Namespace.lifecycle, lifecycleStartPropname, target, h)
+	return e
+}
+
+// RemoveAfterEventHandler removes a MutationHandler that was registered to run after an event.
+func (e *Element) RemoveAfterEventHandler(eventname string, target Watchable, h *MutationHandler) *Element {
+	lifecycleEndPropname := strings.Join([]string{Namespace.Event, eventname, "end"}, "-")
+	e.RemoveMutationHandler(Namespace.lifecycle, lifecycleEndPropname, target, h)
+	return e
+}
+*/
+
 // Unwatch cancels mutation observing for the property of the owner Element
 // registered under the given category.
 func (e *Element) Unwatch(category string, propname string, owner Watchable) *Element {
@@ -1591,6 +1611,18 @@ func (e *Element) Unwatch(category string, propname string, owner Watchable) *El
 	}
 	p.RemoveWatcher(propname, e)
 	e.PropMutationHandlers.RemoveAll(strings.Join([]string{owner.AsElement().ID, category, propname}, "/"))
+
+	if category == Namespace.Event {
+		lifecycleStartPropname := strings.Join([]string{Namespace.Event, propname, "start"}, "-")
+		lifecycleEndPropname := strings.Join([]string{Namespace.Event, propname, "end"}, "-")
+		e.Unwatch(Namespace.lifecycle, lifecycleStartPropname, owner)
+		e.Unwatch(Namespace.lifecycle, lifecycleEndPropname, owner)
+	}
+	return e
+}
+
+func (e *Element) UnwatchEvent(eventname string, target Watchable) *Element {
+	e.Unwatch(Namespace.Event, eventname, target)
 	return e
 }
 
@@ -1784,6 +1816,20 @@ func (e *Element) WatchEvent(name string, target Watchable, h *MutationHandler) 
 
 func (e *Element) GetEventValue(name string) (Value, bool) {
 	return e.Properties.Get(Namespace.Event, name)
+}
+
+// BeforeEvent registers a mutation handler that gets called each time a mutation event should occur,
+// right before the event is dispatched.
+func (e *Element) BeforeEvent(eventname string, target Watchable, h *MutationHandler) {
+	lifecycleStartPropname := strings.Join([]string{Namespace.Event, eventname, "start"}, "-")
+
+	if h.ASAP {
+		g := *h
+		g.ASAP = false
+		e.Watch(Namespace.lifecycle, lifecycleStartPropname, target, &g)
+		return
+	}
+	e.Watch(Namespace.lifecycle, lifecycleStartPropname, target, h)
 }
 
 // AfterEvent registers a mutation handler that gets called each time a mutation event occurs and

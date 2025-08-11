@@ -515,7 +515,7 @@ func CreatePages(doc *Document) (int, error) {
 	}
 
 	var count int
-	for route := range router.Links {
+	for i, route := range router.RouteList() {
 		fullPath := filepath.Join(StaticDir, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
@@ -524,7 +524,7 @@ func CreatePages(doc *Document) (int, error) {
 		if err := doc.CreatePage(fullPath); err != nil {
 			return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
 		}
-		count++
+		count = i
 	}
 	return count, nil
 }

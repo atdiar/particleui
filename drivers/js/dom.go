@@ -1112,12 +1112,11 @@ var allowdatapersistence = ui.NewConstructorOption("datapersistence", func(e *ui
 			}
 			return false
 		}))
-
+		// TODO DEBUG: make that happen OnTransitionStart("load") instead?
 		d.OnTransitionEnd("load", ui.OnMutation(func(evt ui.MutationEvent) bool {
 			if e.ID == "mutation-recorder" {
 				return false
 			}
-			DEBUGF("loading data from storage has been signaled for ", e.ID)
 			e.TriggerEvent("datastore-load")
 			return false
 		}).RunASAP().RunOnce())
@@ -8278,13 +8277,9 @@ var NoopMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 })
 
 func Sitemap(d *Document) ([]byte, error) {
-	var routelist = make([]string, 64)
+	var routelist = make([]string, 128)
 	r := d.Router()
-	if r == nil {
-		routelist = append(routelist, "/")
-	} else {
-		routelist = r.RouteList()
-	}
+	routelist = r.RouteList()
 
 	if routelist == nil {
 		panic("no route list")

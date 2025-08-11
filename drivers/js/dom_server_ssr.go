@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	ui "github.com/atdiar/particleui"
+	js "github.com/atdiar/particleui/drivers/js/compat"
 	"github.com/yosssi/gohtml"
 
 	"golang.org/x/net/html"
@@ -378,7 +379,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 func (d *Document) Render(w io.Writer) error {
 	var buf bytes.Buffer
-	if err := html.Render(&buf, newHTMLDocument(d).Parent); err != nil {
+	if err := html.Render(&buf, newHTMLDocument(d).Node()); err != nil {
 		return err
 	}
 
@@ -387,6 +388,7 @@ func (d *Document) Render(w io.Writer) error {
 	return err
 }
 
+/*
 func newHTMLDocument(document *Document) *html.Node {
 	h, ok := JSValue(document.AsElement())
 	if !ok {
@@ -398,6 +400,38 @@ func newHTMLDocument(document *Document) *html.Node {
 	}
 
 	return h.Node()
+}
+*/
+
+func newHTMLDocument(document *Document) js.Value {
+	doc := document.AsElement()
+	n := doc.Native.(NativeElement).Value
+	head := document.Head().AsElement().Native.(NativeElement).Value
+
+	// Handle the statenode logic first, which needs to run for every page.
+	statenode := generateStateHistoryRecordElement(doc)
+	if statenode != nil {
+		// Remove the old statenode if it exists. This ensures we update the state.
+		oldStatenode := head.Call("querySelector", "#"+SSRStateElementID)
+		if !oldStatenode.IsNull() && !oldStatenode.IsUndefined() {
+			head.Call("removeChild", oldStatenode)
+		}
+		// Append the new statenode to the head.
+		head.Call("appendChild", statenode)
+	}
+
+	// Now handle the DocumentNode. This check is for the very first render only.
+	// If a parent exists, the DocumentNode is already set up, so just return it.
+	parentNode := n.Get("parentNode")
+	if !parentNode.IsNull() && !parentNode.IsUndefined() {
+		return parentNode
+	}
+
+	// This is the first render. Create the DocumentNode and attach the HTML element.
+	h := js.ValueOf(&html.Node{Type: html.DoctypeNode})
+	h.Call("appendChild", n)
+
+	return h
 }
 
 func generateStateHistoryRecordElement(root *ui.Element) *html.Node {
@@ -440,7 +474,7 @@ func CreatePages(doc *Document) (int, error) {
 	}
 
 	var count int
-	for route := range router.Links {
+	for i, route := range router.RouteList() {
 		fullPath := filepath.Join(StaticDir, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
@@ -449,7 +483,7 @@ func CreatePages(doc *Document) (int, error) {
 		if err := doc.CreatePage(fullPath); err != nil {
 			return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
 		}
-		count++
+		count = i
 	}
 	return count, nil
 }

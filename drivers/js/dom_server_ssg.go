@@ -178,23 +178,19 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	document := f()
 	withNativejshelpers(document)
 
-	err := document.mutationRecorder().Replay()
-	if err != nil {
-		panic(err)
-	}
-	document.mutationRecorder().Capture()
 	ctx := context.Background()
 
 	start := make(chan struct{})
 	go func() {
 		document.ListenAndServe(ctx, start)
 	}()
+	start <- struct{}{} // wait for the document to be ready
 
 	// Should generate the file system based structure of the website.
 	ui.DoSync(ctx, document.AsElement(), func() {
 		// Creating the sitemap.xml file and putting it under the static directory
 		// that should have been created in the output directory.
-		err = CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
+		err := CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
 		if err != nil {
 			panic(err)
 		}
@@ -229,6 +225,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		if fi != nil && fi.IsDir() {
 			// If it's a directory, check for index.html
 			indexPath := filepath.Join(path, "index.html")
+			DEBUGF(indexPath)
 			if _, err := os.Stat(indexPath); err == nil {
 				// Serve the index.html file if it exists
 				http.ServeFile(w, r, indexPath)
@@ -242,6 +239,9 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 	for _, m := range buildEnvModifiers {
 		m()
 	}
+
+	ServeMux = http.NewServeMux()
+	Server.Handler = ServeMux
 
 	return func(ctx context.Context) {
 		if ctx == nil {
@@ -296,7 +296,6 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}
 
 		ctx, shutdown := context.WithCancel(ctx)
-
 		ServeMux.Handle(BasePath, RenderHTMLhandler)
 
 		if DevMode != "false" {
@@ -341,19 +340,24 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-func (d Document) Render(w io.Writer) error {
+func (d *Document) Render(w io.Writer) error {
 	return html.Render(w, newHTMLDocument(d).Node())
 }
 
-func newHTMLDocument(document Document) js.Value {
+func newHTMLDocument(document *Document) js.Value {
 	doc := document.AsElement()
-	h := js.ValueOf(&html.Node{Type: html.DoctypeNode})
 	n := doc.Native.(NativeElement).Value
-	h.Call("appendChild", n)
-	statenode := generateStateHistoryRecordElement(doc) // TODO review all this logic
-	if statenode != nil {
-		document.Head().AsElement().Native.(NativeElement).Value.Call("appendChild", statenode)
+
+	// Now handle the DocumentNode. This check is for the very first render only.
+	// If a parent exists, the DocumentNode is already set up, so just return it.
+	parentNode := n.Get("parentNode")
+	if !parentNode.IsNull() && !parentNode.IsUndefined() {
+		return parentNode
 	}
+
+	// This is the first render. Create the DocumentNode and attach the HTML element.
+	h := js.ValueOf(&html.Node{Type: html.DoctypeNode})
+	h.Call("appendChild", n)
 
 	return h
 }
@@ -383,7 +387,7 @@ func CreatePages(doc *Document) (int, error) {
 	}
 
 	var count int
-	for route := range router.Links {
+	for i, route := range router.RouteList() {
 		fullPath := filepath.Join(StaticDir, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
@@ -392,7 +396,7 @@ func CreatePages(doc *Document) (int, error) {
 		if err := doc.CreatePage(fullPath); err != nil {
 			return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
 		}
-		count++
+		count = i
 	}
 	return count, nil
 }

@@ -88,24 +88,12 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 
 	r := &Router{rootview, context.Background(), nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
 
-	r.Outlet.AsElement().Root.WatchEvent("docupdate", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
-		_, navready := evt.Origin().Get(Namespace.Navigation, "ready")
-		if !navready {
-			v, ok := evt.Origin().Get(Namespace.Internals, "views")
-			if ok {
-				l, ok := v.(List)
-				if ok {
-					for _, val := range l.UnsafelyUnwrap() {
-						viewRef, ok := val.(String)
-						if !ok {
-							panic("expected an Element ID string stored for this ViewElementt")
-						}
-						viewEl := GetById(r.Outlet.AsElement().Root, viewRef.String())
-						r.insert(ViewElement{viewEl})
-					}
-				}
-			}
-		}
+	r.Outlet.AsElement().Root.BeforeEvent("navigation-routechangerequest", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
+		evt.Origin().Set(Namespace.Navigation, "processing", Bool(true))
+		return false
+	}))
+	r.Outlet.AsElement().Root.AfterEvent("navigation-routechangerequest", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
+		evt.Origin().Set(Namespace.Navigation, "processing", Bool(false))
 		return false
 	}))
 
@@ -135,28 +123,27 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 }
 
 // canonicalize separates a route into a path and its potential query elements
-func canonicalizeRoute(route string) (path string, queryparams *Object) {
+func canonicalizeRoute(route string) (path string, queryparams Object) {
+	qp := NewObject()
 	parsed, err := url.Parse(route)
 	if err != nil {
-		return route, nil
+		return route, qp.Commit()
 	}
 	path = parsed.Path
 	query := parsed.Query()
-	paramobj := NewObject()
+
 	for k, v := range query {
 		if len(v) == 1 {
-			paramobj.Set(k, String(v[0]))
+			qp.Set(k, String(v[0]))
 		}
 		l := NewList()
 		for _, val := range v {
 			l = l.Append(String(val))
 		}
-		paramobj.Set(k, l.Commit())
+		qp.Set(k, l.Commit())
 	}
-	o := paramobj.Commit()
-	queryparams = &o
 
-	return path, queryparams
+	return path, qp.Commit()
 
 }
 
@@ -340,15 +327,28 @@ func (r *Router) traverseRoutes(node *rnode, currentPath string, routes *[]strin
 		return
 	}
 
+	if currentPath == "" {
+		*routes = append(*routes, "/")
+		currentPath = "/"
+	} else {
+		currentPath = strings.TrimSuffix(currentPath, "/")
+	}
+
 	// Iterate through each view in the node
 	for viewName, viewMap := range node.next {
+		newPath, err := url.JoinPath(currentPath, viewName)
+		if err != nil {
+			panic(err)
+		}
+		*routes = append(*routes, newPath)
 		for id, nextNode := range viewMap {
-			newPath := strings.Trim(fmt.Sprintf("%s/%s/%s", currentPath, viewName, id), "/")
+			newPath, err := url.JoinPath(newPath, id)
+			if err != nil {
+				panic(err)
+			}
 			if len(nextNode.next) == 0 {
-				// If this is a leaf node, add the path to the routes
-				*routes = append(*routes, newPath)
+				continue
 			} else {
-				// Otherwise, continue traversing
 				r.traverseRoutes(nextNode, newPath, routes)
 			}
 		}
@@ -651,6 +651,7 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 	root.AsElement().Root.DefineTransition("replay", onreplaystart, onreplayerror, onreplaycancel, onreplayend)
 
 	root.AsElement().Root.StartTransition("load")
+	r.Outlet.AsElement().Root.TriggerEvent("ui-idle")
 
 	eventnames := strings.Split(events, " ")
 	for _, event := range eventnames {
@@ -664,7 +665,6 @@ func (r *Router) ListenAndServe(ctx context.Context, events string, target AnyEl
 			close(isready) // close the channel if it is not already closed
 		}
 	}
-	r.Outlet.AsElement().Root.TriggerEvent("ui-idle")
 
 	for {
 		select {
@@ -931,8 +931,8 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 			activations = append(activations, a)
 
 			// TODO set queryparams object as a property of the last view
-			if queryparams != nil && i == viewcount {
-				r.ViewElement.AsElement().Set(Namespace.Navigation, "query", *queryparams)
+			if queryparams.Length() > 0 && i == viewcount {
+				r.ViewElement.AsElement().Set(Namespace.Navigation, "query", queryparams)
 			}
 
 			if !ok {

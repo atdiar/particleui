@@ -336,6 +336,7 @@ func (v Value) Call(method string, args ...interface{}) Value {
 				}
 
 				// Default append if no specific auto-correction applies
+				fmt.Println(childNode) // DEBUG
 				targetNode.AppendChild(childNode)
 			}
 			return Undefined()
@@ -1036,6 +1037,20 @@ func (v Value) Get(property string) Value {
 	}
 
 	node := v.Node()
+
+	if property == "isConnected" {
+		// isConnected returns true if the node is part of the document tree.
+		// This is a simplified check; in a real DOM, you'd traverse up to find the Document node.
+		return ValueOf(node.Parent != nil && node.Parent.Type == html.DocumentNode)
+	}
+
+	if property == "parentElement" {
+		// Returns the parent element if it exists, otherwise returns null.
+		if node.Parent != nil && node.Parent.Type == html.ElementNode {
+			return ValueOf(node.Parent)
+		}
+		return Null() // If no parent element, return Null
+	}
 	// Special cases for the Document node.
 	if node.Type == html.DocumentNode { // Check if it's a Document node
 		switch property {
@@ -1172,6 +1187,46 @@ func (v Value) Get(property string) Value {
 
 	case "nodeType":
 		return ValueOf(v.Node().Type)
+	case "parentNode":
+		// Returns the parent node of the current node.
+		if v.Node().Parent != nil {
+			return ValueOf(v.Node().Parent)
+		}
+		return Null() // If no parent, return Null (consistent with DOM spec)
+	case "nodeValue":
+		// Returns the node's value, which is relevant for Text, Comment, and ProcessingInstruction nodes.
+		switch v.Node().Type {
+		case html.TextNode, html.RawNode, html.CommentNode:
+			return ValueOf(v.Node().Data) // Return the node's data as its value
+		case html.DocumentNode, html.DoctypeNode:
+			return Null() // For Document and Doctype nodes, nodeValue is null
+		default:
+			return Undefined() // For other node types, return Undefined
+		}
+	case "nextSibling":
+		// Returns the next sibling node of the current node.
+		if v.Node().NextSibling != nil {
+			return ValueOf(v.Node().NextSibling)
+		}
+		return Null() // If no next sibling, return Null (consistent with DOM spec)
+	case "previousSibling":
+		// Returns the previous sibling node of the current node.
+		if v.Node().PrevSibling != nil {
+			return ValueOf(v.Node().PrevSibling)
+		}
+		return Null() // If no previous sibling, return Null (consistent with DOM spec)
+	case "firstChild":
+		// Returns the first child node of the current node.
+		if v.Node().FirstChild != nil {
+			return ValueOf(v.Node().FirstChild)
+		}
+		return Null() // If no first child, return Null (consistent with DOM spec)
+	case "lastChild":
+		// Returns the last child node of the current node.
+		if v.Node().LastChild != nil {
+			return ValueOf(v.Node().LastChild)
+		}
+		return Null() // If no last child, return Null (consistent with DOM spec)
 	case "textContent":
 		node := v.Node() // Panics if not a Node, consistent with JS runtime errors
 		// If the node is a document or a doctype, textContent returns null.
