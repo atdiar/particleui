@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 )
 
@@ -264,6 +265,85 @@ func (v ViewElement) ActivateView(name string) error {
 		return errors.New(l.Get(1).(String).String())
 	}
 	return nil
+}
+
+func (v ViewElement) SetQueryValidator(viewname string, validator *ValidationSchema) {
+	// SetQueryValidator sets a QueryValidator for a given view.
+	// The validator will be used to validate query parameters when the view is activated.
+	var validatorStr string
+	if validator != nil {
+		validatorBStr, err := validator.MarshalJSON()
+		if err != nil {
+			DEBUG("error marshalling validator: ", err)
+			// panic ?
+		}
+		validatorStr = string(validatorBStr)
+	} else {
+		return
+	}
+	o, ok := v.AsElement().Get(Namespace.Navigation, "queryvalidator")
+	if !ok {
+		o := NewObject()
+		o.Set(viewname, String(validatorStr))
+		v.AsElement().Set(Namespace.Navigation, "queryvalidator", o.Commit())
+		// If the query is invalid, it gets ignored.
+		v.OnQuery(viewname, OnMutation(func(evt MutationEvent) bool {
+			if !v.QueryIsValidFor(viewname) {
+				return true
+			}
+			return false
+		}))
+		return
+	}
+	o = o.(Object).MakeCopy().Set(viewname, String(validatorStr)).Commit()
+	v.AsElement().Set(Namespace.Navigation, "queryvalidator", o)
+}
+
+func (v ViewElement) QueryIsValidFor(viewname string) bool {
+	// ValidateQuery checks if the query parameters for a given view are valid
+	// according to the QueryValidator set for that view.
+	o, ok := v.AsElement().Get(Namespace.Navigation, "queryvalidator")
+	if !ok {
+		return true // no validator set
+	}
+	queryValidator, ok := o.(Object).Get(viewname)
+	if !ok {
+		return true // no validator for this view
+	}
+	validator, ok := queryValidator.(String)
+	if !ok {
+		return true // not a valid validator
+	}
+	// Unmarshal the validator
+	var schema ValidationSchema
+	err := schema.UnmarshalJSON([]byte(validator))
+	if err != nil {
+		DEBUG("error unmarshalling query validator: ", err)
+		return false
+	}
+	// Get the current query parameters
+	query, ok := v.AsElement().Get(Namespace.Navigation, "query")
+	if !ok {
+		err := ValidateQueryParams(schema, nil)
+		if err != nil {
+			DEBUG("error validating query parameters: ", err)
+			return false // no query parameters set
+		} else {
+			return true // no query parameters set, but no error either
+		}
+	}
+	qryObh := query.(Object)
+	var params = url.Values{}
+	err = Deserialize(qryObh, &params)
+	if err != nil {
+		DEBUG("error deserializing query parameters: ", err)
+		return false // error deserializing query parameters
+	}
+	err = ValidateQueryParams(schema, params)
+	if err != nil {
+		return false
+	}
+	return true // query parameters are valid
 }
 
 // OnParamChange registers a MutationHandler that will be triggered when a view parameter changes.

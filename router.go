@@ -125,7 +125,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 
 // canonicalize separates a route into a path and its potential query elements
 // TODO DEBUG: does it handle the hash if present?
-func canonicalizeRoute(route string) (path string, queryparams Object) {
+func canonicalizeRoute(route string) (path string, queryparams Value) {
 	qp := NewObject()
 	parsed, err := url.Parse(route)
 	if err != nil {
@@ -134,19 +134,12 @@ func canonicalizeRoute(route string) (path string, queryparams Object) {
 	path = parsed.Path
 	query := parsed.Query()
 
-	for k, v := range query {
-		if len(v) == 1 {
-			qp.Set(k, String(v[0]))
-		}
-		l := NewList()
-		for _, val := range v {
-			l = l.Append(String(val))
-		}
-		qp.Set(k, l.Commit())
+	res, err := Serialize(query)
+	if err != nil {
+		log.Print("unable to serialize query params: ", err) // DEBUG
+		return route, qp.Commit()
 	}
-
-	return path, qp.Commit()
-
+	return path, res
 }
 
 func compareRoutes(r1, r2 string) bool {
@@ -244,7 +237,7 @@ func (r *Router) goTo(route string) {
 
 }
 
-func (r *Router) UpdateQuery(params map[string]string) {
+func (r *Router) UpdateQuery(params url.Values) {
 	ru := r.CurrentRoute()
 	u, err := url.Parse(ru)
 	if err != nil {
@@ -252,10 +245,12 @@ func (r *Router) UpdateQuery(params map[string]string) {
 	}
 	q := u.Query()
 	for k, v := range params {
-		if v == "" {
-			q.Del(k)
-		} else {
-			q.Set(k, v)
+		for _, val := range v {
+			if val == "" {
+				q.Del(k)
+			} else {
+				q.Set(k, val)
+			}
 		}
 	}
 
@@ -263,21 +258,14 @@ func (r *Router) UpdateQuery(params map[string]string) {
 	r.GoTo(u.String())
 }
 
-func (r *Router) ReplaceQuery(params map[string]string) {
+func (r *Router) ReplaceQuery(params url.Values) {
 	ru := r.CurrentRoute()
 	u, err := url.Parse(ru)
 	if err != nil {
 		panic(fmt.Sprintf("unable to parse route %s: %v", ru, err))
 	}
-	q := url.Values{}
-	for k, v := range params {
-		if v == "" {
-			q.Del(k)
-		} else {
-			q.Set(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
+
+	u.RawQuery = params.Encode()
 	r.GoTo(u.String())
 }
 
@@ -986,6 +974,12 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 			if i == viewcount {
 				q := func() error {
 					r.ViewElement.AsElement().Set(Namespace.Navigation, "query", queryparams)
+					return nil
+				}
+				activations = append(activations, q)
+			} else {
+				q := func() error {
+					r.ViewElement.AsElement().Set(Namespace.Navigation, "query", NewObject().Commit()) // cleariing queryparams
 					return nil
 				}
 				activations = append(activations, q)
