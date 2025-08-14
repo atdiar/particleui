@@ -167,6 +167,7 @@ func ldflags() string {
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.Flags().StringVarP(&basepath, "basepath", "", "/", "base path for the project")
+	runCmd.Flags().StringVarP(&origin, "origin", "", "", "Origin fURL for the site, used when generating the sitemap files")
 	runCmd.Flags().StringVarP(&host, "host", "", "localhost", "Host name for the server")
 	runCmd.Flags().StringVarP(&port, "port", "p", "8888", "Port number for the server")
 	runCmd.Flags().BoolVarP(&releaseMode, "release", "r", false, "Run in release mode")

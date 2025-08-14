@@ -71,6 +71,18 @@ func NewViewElement(e *Element, views ...View) ViewElement {
 	// a viewElement should have a default view that should activated when mounting, unless
 	e.OnMounted(defaultViewMounter) // TODO remove
 
+	e.OnUnmount(OnMutation(func(evt MutationEvent) bool {
+		v.ActivateView("")
+		return false
+	}))
+
+	v.OnChange(OnMutation(func(evt MutationEvent) bool {
+		if _, ok := v.AsElement().Get(Namespace.Navigation, "query"); ok {
+			v.AsElement().Set(Namespace.Navigation, "query", NewObject().Commit())
+		}
+		return false
+	}))
+
 	e.OnDeleted(OnMutation(func(evt MutationEvent) bool {
 		l, ok := evt.Origin().Root.Get(Namespace.Internals, "views")
 		if ok {
@@ -263,7 +275,8 @@ func (v ViewElement) OnParamChange(h *MutationHandler) {
 // OnActivated registers a MutationHandler that will be triggered each time a view has been activated.
 // MutationHanlders can be registered to handle the presence of potential
 // query parameters when a view is being activated on navigation.
-func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ...*MutationHandler) {
+func (v ViewElement) OnActivated(viewname string, h *MutationHandler) {
+
 	nh := OnMutation(func(evt MutationEvent) bool {
 		view := evt.NewValue().(String)
 		if string(view) != viewname {
@@ -271,6 +284,7 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ..
 		}
 		return h.Handle(evt)
 	})
+
 	if h.Once {
 		nh = nh.RunOnce()
 	}
@@ -279,10 +293,37 @@ func (v ViewElement) OnActivated(viewname string, h *MutationHandler, onquery ..
 		nh = nh.RunASAP()
 	}
 	v.AsElement().WatchEvent("viewactivated", v.AsElement(), nh)
+}
 
-	for _, qh := range onquery {
-		v.AsElement().Watch(Namespace.Navigation, "query", v, qh)
+func (v ViewElement) OnChange(h *MutationHandler) {
+	// OnChange registers a MutationHandler that will be triggered when the active view changes.
+	// This is useful to handle changes in the active view, such as when a new view is activated.
+	v.AsElement().Watch(Namespace.UI, "activeview", v, h)
+}
+
+func (v ViewElement) OnQuery(activeViewName string, h *MutationHandler) {
+	// OnQuery registers a MutationHandler that will be triggered
+	// when a new query is set for a given view.
+	var g *MutationHandler
+	g = OnMutation(func(evt MutationEvent) bool {
+		name, _ := v.ActiveViewName()
+		if name == activeViewName {
+			if h != nil {
+				return h.Handle(evt)
+			}
+			return false
+		}
+		return false
+	})
+
+	if h.Once {
+		g = g.RunOnce()
 	}
+	if h.ASAP {
+		g = g.RunASAP()
+	}
+
+	v.AsElement().Watch(Namespace.Navigation, "query", v, g)
 }
 
 func (v ViewElement) IsParameterizedView(viewname string) bool {

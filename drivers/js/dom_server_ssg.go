@@ -5,24 +5,31 @@ package doc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	ui "github.com/atdiar/particleui"
 	js "github.com/atdiar/particleui/drivers/js/compat"
+	"github.com/yosssi/gohtml"
 	"golang.org/x/net/html"
 	//"golang.org/x/net/html/atom"
 )
 
 var (
-	uipkg = "github.com/atdiar/particleui"
+	uipkg  = "github.com/atdiar/particleui"
+	origin = "http://localhost:8888"
 
 	SourcePath = filepath.Join("..", "..", "..", "..", "..", "src")
 	IndexPath  string
@@ -57,6 +64,7 @@ func init() {
 
 	flag.StringVar(&basepath, "basepath", BasePath, "Base path for the server")
 	flag.StringVar(&render, "render", "", "specify the page(s) that will be rendered to html")
+	flag.StringVar(&origin, "origin", "http://localhost:8888", "Origin URL for the site")
 
 	flag.Parse()
 
@@ -188,13 +196,6 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 
 	// Should generate the file system based structure of the website.
 	ui.DoSync(ctx, document.AsElement(), func() {
-		// Creating the sitemap.xml file and putting it under the static directory
-		// that should have been created in the output directory.
-		err := CreateSitemap(document, filepath.Join(StaticDir, "sitemap.xml"))
-		if err != nil {
-			panic(err)
-		}
-
 		// Traverse the document routes and generate the corresponding files
 		// in the output directory.
 		numPages, err := CreatePages(document)
@@ -341,7 +342,14 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 func (d *Document) Render(w io.Writer) error {
-	return html.Render(w, newHTMLDocument(d).Node())
+	var buf bytes.Buffer
+	if err := html.Render(&buf, newHTMLDocument(d).Node()); err != nil {
+		return err
+	}
+
+	formatted := gohtml.Format(buf.String())
+	_, err := w.Write([]byte(formatted))
+	return err
 }
 
 func newHTMLDocument(document *Document) js.Value {
@@ -379,7 +387,6 @@ func recoverStateHistory() {}
 var recoverStateHistoryHandler = ui.NoopMutationHandler
 
 func CreatePages(doc *Document) (int, error) {
-	// Use StaticPath instead of hardcoded path
 	router := doc.Router()
 	if router == nil {
 		err := doc.CreatePage(filepath.Join(StaticDir, "index.html"))
@@ -387,17 +394,62 @@ func CreatePages(doc *Document) (int, error) {
 	}
 
 	var count int
+	manifestPath := filepath.Join(StaticDir, "manifest.json")
+	oldManifest := loadManifest(manifestPath)
+	newManifest := make(Manifest)
+
 	for i, route := range router.RouteList() {
 		fullPath := filepath.Join(StaticDir, route, "index.html")
 		if verbose {
 			fmt.Printf("Creating page for route '%s' at '%s'\n", route, fullPath)
 		}
+		// Use a buffer to render the page content
+		var buf bytes.Buffer
 		doc.Router().GoTo(route)
-		if err := doc.CreatePage(fullPath); err != nil {
-			return count, fmt.Errorf("error creating page for route '%s': %w", route, err)
+		if err := doc.Render(&buf); err != nil {
+			return count, fmt.Errorf("error rendering page for route '%s': %w", route, err)
 		}
+
+		// Compute hash of the rendered content
+		newHash := getHash(buf.Bytes())
+		lastMod := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+		if oldPageData, ok := oldManifest[route]; ok && oldPageData.Hash == newHash {
+			// Hash is the same, so no content change.
+			// Use the old lastmod date and skip writing the file.
+			newManifest[route] = oldPageData
+			count = i
+			continue
+		}
+
+		// If the code reaches this point, the hash has changed or the page is new.
+		// Set the new manifest entry with the updated hash and lastMod date.
+		newManifest[route] = PageData{
+			Hash:    newHash,
+			LastMod: lastMod,
+		}
+
+		// Now, write the file to the disk.
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return count, err
+		}
+
+		if err := os.WriteFile(fullPath, buf.Bytes(), 0644); err != nil {
+			return count, fmt.Errorf("error writing page file for route '%s': %w", route, err)
+		}
+
 		count = i
 	}
+
+	saveManifest(manifestPath, newManifest)
+
+	// Now, create the sitemap using the new manifest
+	err := CreateSitemap(doc, origin, filepath.Join(StaticDir, "sitemap.xml"), newManifest)
+	if err != nil {
+		panic(err)
+	}
+	// Creating the sitemap.xml file and putting it under the static directory
+	// that should have been created in the output directory.
 	return count, nil
 }
 
@@ -470,6 +522,120 @@ func (d Document) CreateStylesheet(cssFilePath string) error {
 	}
 
 	return os.WriteFile(cssFilePath, []byte(cssContent.String()), 0644)
+}
+
+func Sitemap(d *Document, siteOrigin string, manifest Manifest) ([]byte, error) {
+	r := d.Router()
+	routelist := r.RouteList()
+
+	if routelist == nil {
+		return nil, nil // Return an empty sitemap, not a panic.
+	}
+
+	urlset := urlset{
+		Space: "http://www.sitemaps.org/schemas/sitemap/0.9",
+		Urls:  make([]mapurl, 0, len(routelist)),
+	}
+
+	for _, u := range routelist {
+		// Use url.JoinPath for robust URL construction.
+		fullURL, err := url.JoinPath(siteOrigin, u)
+		if err != nil {
+			return nil, err
+		}
+
+		lastMod := ""
+		if pageData, ok := manifest[u]; ok {
+			lastMod = pageData.LastMod
+		}
+
+		urlset.Urls = append(urlset.Urls, mapurl{
+			Loc:        fullURL,
+			LastMod:    lastMod,
+			ChangeFreq: "weekly",
+			Priority:   0.8,
+		})
+	}
+
+	output, err := xml.MarshalIndent(urlset, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	// Add the XML header.
+	return append([]byte(xml.Header), output...), nil
+}
+
+func CreateSitemap(d *Document, siteOrigin string, outputpath string, manifest Manifest) error {
+	o, err := Sitemap(d, siteOrigin, manifest)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(outputpath, o, 0644)
+}
+
+type mapurl struct {
+	Loc        string  `xml:"loc"`
+	LastMod    string  `xml:"lastmod,omitempty"`
+	ChangeFreq string  `xml:"changefreq,omitempty"`
+	Priority   float32 `xml:"priority,omitempty"`
+}
+
+type urlset struct {
+	XMLName xml.Name `xml:"urlset"`
+	Space   string   `xml:"xmlns,attr"`
+	Urls    []mapurl `xml:"url"`
+}
+
+type PageData struct {
+	Hash    string `json:"hash"`
+	LastMod string `json:"lastmod"`
+}
+
+type Manifest map[string]PageData // Key is the relative URL, value is the page data
+
+func getHash(data []byte) string {
+	h := sha256.New()
+	h.Write(data)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func loadManifest(filePath string) Manifest {
+	// Open the manifest file
+	file, err := os.Open(filePath)
+	if err != nil {
+		// If the file doesn't exist, return an empty manifest.
+		if os.IsNotExist(err) {
+			return make(Manifest)
+		}
+		// For other errors, panic as it's unexpected.
+		panic(fmt.Sprintf("error opening manifest file: %v", err))
+	}
+	defer file.Close()
+
+	var manifest Manifest
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&manifest); err != nil {
+		// Handle the case of an empty or corrupt file.
+		if err != io.EOF {
+			panic(fmt.Sprintf("error decoding manifest file: %v", err))
+		}
+		return make(Manifest)
+	}
+
+	return manifest
+}
+
+func saveManifest(filePath string, manifest Manifest) {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		panic(fmt.Sprintf("error marshaling manifest to JSON: %v", err))
+	}
+
+	// Write the JSON data to the file.
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		panic(fmt.Sprintf("error writing manifest file: %v", err))
+	}
 }
 
 func ldflags() string {

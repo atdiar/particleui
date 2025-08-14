@@ -63,7 +63,8 @@ type Router struct {
 	// Navigation context cancellation function
 	NavigationCancelFn context.CancelFunc
 
-	Links map[string]Link
+	VanityURLs map[string]Link
+	Links      map[string]Link
 
 	Routes *rnode
 
@@ -86,7 +87,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 		panic("router can only use a view attached to the main tree as a navigation Outlet.")
 	}
 
-	r := &Router{rootview, context.Background(), nil, make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
+	r := &Router{rootview, context.Background(), nil, make(map[string]Link, 300), make(map[string]Link, 300), newrootrnode(rootview), NewNavigationHistory(rootview.AsElement().Root), false}
 
 	r.Outlet.AsElement().Root.BeforeEvent("navigation-routechangerequest", r.Outlet.AsElement().Root, OnMutation(func(evt MutationEvent) bool {
 		evt.Origin().Set(Namespace.Navigation, "processing", Bool(true))
@@ -123,6 +124,7 @@ func NewRouter(rootview ViewElement, options ...func(*Router) *Router) *Router {
 }
 
 // canonicalize separates a route into a path and its potential query elements
+// TODO DEBUG: does it handle the hash if present?
 func canonicalizeRoute(route string) (path string, queryparams Object) {
 	qp := NewObject()
 	parsed, err := url.Parse(route)
@@ -162,6 +164,9 @@ func (r *Router) tryNavigate(newroute string) bool {
 	}
 
 	// 1. Let's see if the URI matches any of the registered routes.
+	if nroute, ok := r.VanityURLs[newroute]; ok {
+		newroute = nroute.URI()
+	}
 	v, _, a, err := r.Routes.match(newroute)
 	r.Outlet.AsElement().Root.Set(Namespace.Navigation, "targetviewid", String(v.AsElement().ID))
 	if err != nil {
@@ -239,6 +244,43 @@ func (r *Router) goTo(route string) {
 
 }
 
+func (r *Router) UpdateQuery(params map[string]string) {
+	ru := r.CurrentRoute()
+	u, err := url.Parse(ru)
+	if err != nil {
+		panic(fmt.Sprintf("unable to parse route %s: %v", ru, err))
+	}
+	q := u.Query()
+	for k, v := range params {
+		if v == "" {
+			q.Del(k)
+		} else {
+			q.Set(k, v)
+		}
+	}
+
+	u.RawQuery = q.Encode()
+	r.GoTo(u.String())
+}
+
+func (r *Router) ReplaceQuery(params map[string]string) {
+	ru := r.CurrentRoute()
+	u, err := url.Parse(ru)
+	if err != nil {
+		panic(fmt.Sprintf("unable to parse route %s: %v", ru, err))
+	}
+	q := url.Values{}
+	for k, v := range params {
+		if v == "" {
+			q.Del(k)
+		} else {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+	r.GoTo(u.String())
+}
+
 func (r *Router) GoBack() {
 	if r.History.BackAllowed() {
 		r.Outlet.AsElement().Root.TriggerEvent("navigation-routechangerequest", String(r.History.Back()))
@@ -311,6 +353,9 @@ func (r *Router) insert(v ViewElement) {
 // Match returns whether a route is valid or not. It can be used in tests to
 // Make sure that app links are not breaking.
 func (r *Router) Match(route string) (prefetch func(), err error) {
+	if nroute, ok := r.VanityURLs[route]; ok {
+		route = nroute.URI()
+	}
 	_, p, _, err := r.Routes.match(route)
 	return p, err
 
@@ -418,6 +463,9 @@ func (r *Router) handler() *MutationHandler {
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
 
 		// Let's see if the URI matches any of the registered routes. (TODO)
+		if nroute, ok := r.VanityURLs[newroute]; ok {
+			newroute = nroute.URI()
+		}
 		v, _, a, err := r.Routes.match(newroute)
 		r.Outlet.AsElement().Root.Set(Namespace.Navigation, "targetviewid", String(v.AsElement().ID))
 		if err != nil {
@@ -481,6 +529,9 @@ func (r *Router) redirecthandler() *MutationHandler {
 		r.Outlet.AsElement().Root.SetUI("history", r.History.Value())
 
 		// 1. Let's see if the URI matches any of the registered routes.
+		if nroute, ok := r.VanityURLs[newroute]; ok {
+			newroute = nroute.URI()
+		}
 		v, _, a, err := r.Routes.match(newroute)
 		r.Outlet.AsElement().Root.Set(Namespace.Navigation, "targetviewid", String(v.AsElement().ID))
 		if err != nil {
@@ -814,6 +865,7 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 	targetview = r.ViewElement // DEBUG TODO is it the true targetview?
 	if ls == 0 || (ls == 1 && segments[0] == "") {
 		a := func() error {
+			r.ViewElement.AsElement().Set(Namespace.Navigation, "query", queryparams)
 			return targetview.ActivateView(segments[0])
 		}
 		p := func() {
@@ -931,8 +983,12 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 			activations = append(activations, a)
 
 			// TODO set queryparams object as a property of the last view
-			if queryparams.Length() > 0 && i == viewcount {
-				r.ViewElement.AsElement().Set(Namespace.Navigation, "query", queryparams)
+			if i == viewcount {
+				q := func() error {
+					r.ViewElement.AsElement().Set(Namespace.Navigation, "query", queryparams)
+					return nil
+				}
+				activations = append(activations, q)
 			}
 
 			if !ok {
@@ -978,7 +1034,8 @@ func (r *rnode) match(route string) (targetview ViewElement, prefetchFn func(), 
 // required for the target View to be available for display on screen.
 // A link can be watched.
 type Link struct {
-	Raw *Element
+	Raw    *Element
+	router *Router
 }
 
 func (l Link) URI() string {
@@ -1054,7 +1111,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 		e.SetUI("viewelements", NewList(String(r.Outlet.AsElement().ID)).Commit())
 		e.SetUI("viewnames", NewList(String(viewname)).Commit())
 		e.SetUI("uri", String("/"+viewname))
-		l = Link{e}
+		l = Link{e, r}
 	}
 
 	for _, m := range modifiers {
@@ -1082,7 +1139,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	//viewname = string(nl[len(nl)-1].(String))
 
 	nh := OnMutation(func(evt MutationEvent) bool {
-		if isValidLink(Link{e}) {
+		if isValidLink(Link{e, r}) {
 			_, ok := e.Get(eventNS, "verified")
 			if !ok {
 				e.TriggerEvent("verified")
@@ -1117,6 +1174,7 @@ func (r *Router) NewLink(viewname string, modifiers ...func(Link) Link) Link {
 	r.Links[l.URI()] = l
 
 	// TODO do we need to be able to disable navigation if link points to current route?
+	// Or at least, simply scroll to id?
 	r.Outlet.AsElement().WatchEvent("activate", e, OnMutation(func(evt MutationEvent) bool {
 		var hash string
 		if s, ok := evt.NewValue().(String); ok {
@@ -1144,6 +1202,22 @@ func (r *Router) CurrentRoute() string {
 
 	}
 	return route.(String).String()
+}
+
+func (r *Router) NewVanityURL(uri string, l Link) *Router {
+	_, err := url.Parse(uri)
+	if err != nil {
+		panic("unable to parse vanity URL: " + uri + " " + err.Error())
+	}
+	if l.Raw == nil {
+		panic("unable to create vanity URL for nil link")
+	}
+	if l.router == nil {
+		panic("unable to create vanity URL for link without router")
+	}
+	r.VanityURLs[uri] = l
+
+	return r
 }
 
 /*
@@ -1174,47 +1248,52 @@ func (l Link) MonitorActivity(b bool) Link {
 }
 */
 
-// Path is a link modifying function that allows to link to a more deeply nested app state,
+// To is a link modifying method that allows to link to a more deeply nested app state,
 // specified by the nested ViewElement and the corresponding name for the view that the latter
 // should display. This creates a path fragment.
 //
-// Note that if the link being modified does not target a direct parent of the Path fragment ViewELement,
+// Note that if the link being modified does not target a direct parent of the path fragment ViewELement,
 // the link will be invalid.
 // Hence, it is not possible to skip an intermediary path fragment or add them out-of-order.
-func Path(ve ViewElement, viewname string) func(Link) Link {
+func (l Link) To(ve ViewElement, viewname string) Link {
 	if isParameter(viewname) {
 		panic(viewname + " is not a valid view name.")
 	}
-	return func(l Link) Link {
-		e := l.AsElement()
-		ne := l.AsElement().Configuration.NewElement(ve.AsElement().ID+"-"+viewname, e.DocType)
 
-		v, ok := e.GetData("viewelements")
-		if !ok {
-			panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
-		}
-		n, ok := e.GetData("viewnames")
-		if !ok {
-			panic("Link creation seems to be incomplete. The list of viewnames for the path it denotes should be present.")
-		}
-		vl := v.(List)
-		nl := n.(List)
-		vl = vl.MakeCopy().Append(String(ve.AsElement().ID)).Commit()
-		nl = nl.MakeCopy().Append(String(viewname)).Commit()
-		ne.SetUI("viewelements", vl)
-		ne.SetUI("viewnames", nl)
-		uri := "/" + string(nl.Get(0).(String))
-		for i, velem := range vl.UnsafelyUnwrap() {
-			if i == 0 {
-				continue
-			}
-			id := string(velem.(String))
-			vname := string(nl.Get(i).(String))
-			uri = "/" + id + "/" + vname
-		}
-		ne.SetUI("uri", String(uri))
-		return Link{ne}
+	e := l.AsElement()
+
+	v, ok := e.GetData("viewelements")
+	if !ok {
+		panic("Link creation seems to be incomplete. The list of viewElements for the path it denotes should be present.")
 	}
+	n, ok := e.GetData("viewnames")
+	if !ok {
+		panic("Link creation seems to be incomplete. The list of viewnames for the path it denotes should be present.")
+	}
+	vl := v.(List)
+	nl := n.(List)
+	vl = vl.MakeCopy().Append(String(ve.AsElement().ID)).Commit()
+	nl = nl.MakeCopy().Append(String(viewname)).Commit()
+
+	e.SetUI("viewelements", vl)
+	e.SetUI("viewnames", nl)
+
+	uri := "/" + string(nl.Get(0).(String))
+	for i, velem := range vl.UnsafelyUnwrap() {
+		if i == 0 {
+			continue
+		}
+		id := string(velem.(String))
+		vname := string(nl.Get(i).(String))
+		uri = "/" + id + "/" + vname
+	}
+	e.SetUI("uri", String(uri))
+	return l
+
+}
+
+func (l Link) Router() *Router {
+	return l.router
 }
 
 func (r *Router) RetrieveLink(URI string) (Link, bool) {

@@ -14,7 +14,7 @@ import (
 )
 
 var csr, ssr, ssg bool
-var basepath string
+var basepath, origin string
 var static string
 var clientonly bool
 
@@ -345,6 +345,10 @@ func renderPages(renderPath string, releasebuild bool) error {
 		cmd.Args = append(cmd.Args, "--basepath", basepath)
 	}
 
+	if origin != "" {
+		cmd.Args = append(cmd.Args, "--origin", origin)
+	}
+
 	if verbose {
 		cmd.Args = append(cmd.Args, "--verbose")
 	}
@@ -374,6 +378,7 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 
 	buildCmd.Flags().StringVarP(&basepath, "basepath", "", "/", "base path for the project")
+	buildCmd.Flags().StringVarP(&origin, "origin", "", "", "Origin URL for the site")
 	buildCmd.Flags().BoolVarP(&csr, "csr", "c", false, "build for client-side rendering")
 	buildCmd.Flags().BoolVarP(&ssr, "ssr", "s", false, "build for server-side rendering")
 	buildCmd.Flags().BoolVarP(&ssg, "ssg", "g", false, "build for static site generation")

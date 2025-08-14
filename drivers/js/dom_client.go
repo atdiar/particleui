@@ -334,7 +334,7 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 		}))
 
 		// Capture mutations
-		d.AfterEvent("ui-ready", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
+		d.WatchEvent("ui-ready", d, ui.OnMutation(func(evt ui.MutationEvent) bool {
 			// given that ui-ready event occurs onyl after the load event has been fired
 			// which itself happends after the replay event, we can safely capture mutations
 			d.mutationRecorder().Capture()

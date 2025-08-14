@@ -10,14 +10,12 @@ import (
 
 	//crand "crypto/rand"
 	"encoding/json"
-	"encoding/xml"
 
 	//"errors"
 
 	"fmt"
 	"hash/fnv"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 
@@ -3099,7 +3097,7 @@ func NewDocument(id string, options ...string) *Document {
 
 	e.OnRouterMounted(routerConfig)
 
-	d.OnReady(navinitHandler)
+	d.AfterEvent("ui-ready", d, navinitHandler)
 	e.Watch(Namespace.UI, "title", e, documentTitleHandler)
 
 	activityStateSupport(e)
@@ -8275,42 +8273,3 @@ func (s set) Add(str string) set {
 var NoopMutationHandler = ui.OnMutation(func(evt ui.MutationEvent) bool {
 	return false
 })
-
-func Sitemap(d *Document) ([]byte, error) {
-	var routelist = make([]string, 128)
-	r := d.Router()
-	routelist = r.RouteList()
-
-	if routelist == nil {
-		panic("no route list")
-	}
-
-	urlset := urlset{}
-	for _, u := range routelist {
-		urlset.Urls = append(urlset.Urls, mapurl{Loc: u})
-	}
-	output, err := xml.MarshalIndent(urlset, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-
-	return output, nil
-
-}
-
-func CreateSitemap(d *Document, path string) error {
-	o, err := Sitemap(d)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, o, 0644)
-}
-
-type mapurl struct {
-	Loc string `xml:"loc"`
-}
-
-type urlset struct {
-	XMLName xml.Name `xml:"urlset"`
-	Urls    []mapurl `xml:"url"`
-}

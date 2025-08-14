@@ -5,6 +5,7 @@ import (
 	//"strings"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"reflect"
 )
 
@@ -257,6 +258,10 @@ func (o Object) Range(f func(key string, val Value) (done bool)) {
 			break
 		}
 	}
+}
+
+func (o Object) All() iter.Seq2[string, Value] {
+	return iter.Seq2[string, Value](o.Range)
 }
 
 // Unwrap returnis the underlying map that is used to store the object values.
@@ -561,6 +566,10 @@ func (l List) Range(f func(index int, val Value) (done bool)) {
 			break
 		}
 	}
+}
+
+func (l List) All() iter.Seq2[int, Value] {
+	return iter.Seq2[int, Value](l.Range)
 }
 
 func (l List) Length() int {
