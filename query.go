@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// TODO should default values be available as a fallback if a parameter exists but its value
+// is not supported?
+
 // The updated struct to match the extended schema.
 type ParamSchema struct {
 	Required  bool     `json:"required"`

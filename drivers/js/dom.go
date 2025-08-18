@@ -659,6 +659,7 @@ func connectNative(e *ui.Element, tag string) {
 			if !element.Truthy() {
 				element = js.Global().Get("document").Get(tag)
 				if !element.Truthy() {
+					DEBUGF("debug *********** creating body element ***********")
 					element = js.Global().Get("document").Call("createElement", tag)
 				}
 			}
@@ -2302,7 +2303,7 @@ func (d *Document) ListenAndServe(ctx context.Context, startsignals ...chan stru
 	}
 
 	if d.Router() == nil {
-		DEBUG("no router found, creating a default one")
+		DEBUGF("no router found, creating a default one")
 		var main ui.ViewElement
 		b := d.Body()
 		var c []*ui.Element
@@ -3071,14 +3072,17 @@ func NewDocument(id string, options ...string) *Document {
 
 	e := d.Element
 
-	head := d.head.WithID("head")
-	e.AppendChild(head)
-	e.AppendChild(d.body.WithID("body"))
-	d.enableWasm()
+	//head := d.head.WithID("head")
+	//e.AppendChild(head)
+	//e.AppendChild(d.body.WithID("body"))
+	d.body.WithID("body")
+	d.head.WithID("head")
 
 	// setting the base element
 	base := d.Base.WithID("base").SetHref(BasePath)
 	d.Head().AppendChild(base)
+
+	d.enableWasm()
 
 	// favicon support (note: it's reactive, which means the favicon can be changed by
 	// simply modifying the path to the source image)
@@ -4160,207 +4164,204 @@ func (d *Document) enableWasm() *Document {
 	h.AppendChild(d.Script.WithID("wasmVM").Src("./wasm_exec.js")) // TODO DEBUG check this path
 
 	h.AppendChild(d.Script.WithID("goruntime").
-		SetInnerHTML(
-			`
-				// IndexedDBSync Class: A wrapper around IndexedDB to provide a localStorage-like API.
-				class IndexedDBSync {
-					constructor(dbName = 'myIndexedDB', storeName = 'keyvaluestore') {
-						this.dbName = dbName;
-						this.storeName = storeName;
-						this.db = null; // Will hold the IndexedDB database instance
-					}
+		SetInnerHTML(`
+// IndexedDBSync Class: A wrapper around IndexedDB to provide a localStorage-like API.
+class IndexedDBSync {
+	constructor(dbName = 'myIndexedDB', storeName = 'keyvaluestore') {
+		this.dbName = dbName;
+		this.storeName = storeName;
+		this.db = null; // Will hold the IndexedDB database instance
+	}
 
-					/**
-					* Initializes the IndexedDB database.
-					* Opens the database and creates the object store if it doesn't exist.
-					* @returns {Promise<void>} A promise that resolves when the database is ready.
-					*/
-					async init() {
-						return new Promise((resolve, reject) => {
-							// Request to open the database. Version 1.
-							const request = indexedDB.open(this.dbName, 1);
+	/**
+	* Initializes the IndexedDB database.
+	* Opens the database and creates the object store if it doesn't exist.
+	* @returns {Promise<void>} A promise that resolves when the database is ready.
+	*/
+	async init() {
+		return new Promise((resolve, reject) => {
+			// Request to open the database. Version 1.
+			const request = indexedDB.open(this.dbName, 1);
 
-							// Event handler for when the database needs to be upgraded (e.g., first time creation)
-							request.onupgradeneeded = (event) => {
-								this.db = event.target.result; // Get the database instance
-								// Create an object store if it doesn't already exist
-								if (!this.db.objectStoreNames.contains(this.storeName)) {
-									this.db.createObjectStore(this.storeName);
-								}
-							};
-
-							// Event handler for successful database opening
-							request.onsuccess = (event) => {
-								this.db = event.target.result; // Get the database instance
-								// console.log('IndexedDB opened successfully:', this.dbName);
-								resolve(); // Resolve the promise indicating success
-							};
-
-							// Event handler for errors during database opening
-							request.onerror = (event) => {
-								console.error('IndexedDB error:', event.target.errorCode);
-								reject(new Error('Failed to open IndexedDB: ' + event.target.errorCode)); // Reject with an error
-							};
-						});
-					}
-
-					/**
-					* Performs a transaction on the IndexedDB.
-					* This is a helper method to abstract away transaction logic.
-					* @param {string} mode - The transaction mode ('readonly' or 'readwrite').
-					* @param {function(IDBObjectStore): IDBRequest} operation - A function that takes the object store and returns an IDBRequest.
-					* @returns {Promise<any>} A promise that resolves with the result of the operation or rejects with an error.
-					*/
-					_transaction(mode, operation) {
-						return new Promise((resolve, reject) => {
-							if (!this.db) {
-								return reject(new Error('IndexedDB is not initialized. Call init() first.'));
-							}
-
-							// Start a new transaction
-							const transaction = this.db.transaction([this.storeName], mode);
-							const store = transaction.objectStore(this.storeName);
-
-							// Execute the operation and get the request
-							const request = operation(store);
-
-							// Event handler for successful request completion
-							request.onsuccess = (event) => {
-								resolve(event.target.result); // Resolve with the result of the request
-							};
-
-							// Event handler for request errors
-							request.onerror = (event) => {
-								console.error('IndexedDB request error:', event.target.errorCode);
-								reject(new Error('IndexedDB request failed: ' + event.target.errorCode)); // Reject with an error
-							};
-
-							// Event handler for transaction completion (success or abort)
-							transaction.oncomplete = () => {
-								// console.log('Transaction completed.');
-							};
-
-							// Event handler for transaction abort (e.g., due to an error)
-							transaction.onabort = (event) => {
-								console.error('Transaction aborted:', event.target.error);
-								reject(new Error('Transaction aborted: ' + event.target.error)); // Reject with an error
-							};
-						});
-					}
-
-					/**
-					* Stores a key-value pair in IndexedDB.
-					* @param {string} key - The key to store the value under.
-					* @param {any} value - The value to store.
-					* @returns {Promise<void>} A promise that resolves when the item is set.
-					*/
-					async setItem(key, value) {
-						return this._transaction('readwrite', (store) => store.put(value, key));
-					}
-
-					/**
-					* Retrieves a value from IndexedDB by its key.
-					* @param {string} key - The key of the item to retrieve.
-					* @returns {Promise<any | undefined>} A promise that resolves with the retrieved value, or undefined if not found.
-					*/
-					async getItem(key) {
-						return this._transaction('readonly', (store) => store.get(key));
-					}
-
-					/**
-					* Removes an item from IndexedDB by its key.
-					* @param {string} key - The key of the item to remove.
-					* @returns {Promise<void>} A promise that resolves when the item is removed.
-					*/
-					async removeItem(key) {
-						return this._transaction('readwrite', (store) => store.delete(key));
-					}
-
-					/**
-					* Clears all items from the object store.
-					* @returns {Promise<void>} A promise that resolves when all items are cleared.
-					*/
-					async clear() {
-						return this._transaction('readwrite', (store) => store.clear());
-					}
+			// Event handler for when the database needs to be upgraded (e.g., first time creation)
+			request.onupgradeneeded = (event) => {
+				this.db = event.target.result; // Get the database instance
+				// Create an object store if it doesn't already exist
+				if (!this.db.objectStoreNames.contains(this.storeName)) {
+					this.db.createObjectStore(this.storeName);
 				}
+			};
 
-				// Instantiate the IndexedDBSync wrapper
-				const dbSync = new IndexedDBSync();
+			// Event handler for successful database opening
+			request.onsuccess = (event) => {
+				this.db = event.target.result; // Get the database instance
+				// console.log('IndexedDB opened successfully:', this.dbName);
+				resolve(); // Resolve the promise indicating success
+			};
 
-				// Expose the instance globally for Go/WASM to interact with
-				window.indexedDBSyncInstance = dbSync;
+			// Event handler for errors during database opening
+			request.onerror = (event) => {
+				console.error('IndexedDB error:', event.target.errorCode);
+				reject(new Error('Failed to open IndexedDB: ' + event.target.errorCode)); // Reject with an error
+			};
+		});
+	}
 
-				let indexedDBReadyResolver;
-				window.indexedDBReady = new Promise(resolve => indexedDBReadyResolver = resolve);
+	/**
+	* Performs a transaction on the IndexedDB.
+	* This is a helper method to abstract away transaction logic.
+	* @param {string} mode - The transaction mode ('readonly' or 'readwrite').
+	* @param {function(IDBObjectStore): IDBRequest} operation - A function that takes the object store and returns an IDBRequest.
+	* @returns {Promise<any>} A promise that resolves with the result of the operation or rejects with an error.
+	*/
+	_transaction(mode, operation) {
+		return new Promise((resolve, reject) => {
+			if (!this.db) {
+				return reject(new Error('IndexedDB is not initialized. Call init() first.'));
+			}
 
-				(async () => {
-					try {
-						if (window.indexedDBSyncInstance) {
-							// console.log("IndexedDBSync: Starting IndexedDB initialization...");
-							await window.indexedDBSyncInstance.init(); // Wait for IndexedDB to be fully initialized
-							// console.log("IndexedDBSync: IndexedDB initialized and ready.");
-							indexedDBReadyResolver(); // Resolve this promise much earlier
-						} else {
-							console.error('IndexedDBSync instance not found during early init.');
-							indexedDBReadyResolver(new Error('IndexedDBSync instance not found.'));
-						}
-					} catch (error) {
-						console.error('IndexedDBSync: Error during early IndexedDB initialization:', error);
-						indexedDBReadyResolver(error);
-					}
-				})();
+			// Start a new transaction
+			const transaction = this.db.transaction([this.storeName], mode);
+			const store = transaction.objectStore(this.storeName);
 
-				let wasmLoadedResolver, loadEventResolver;
-				window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
-				window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
+			// Execute the operation and get the request
+			const request = operation(store);
 
-				window.onWasmDone = function() {
-					wasmLoadedResolver();
-				}
+			// Event handler for successful request completion
+			request.onsuccess = (event) => {
+				resolve(event.target.result); // Resolve with the result of the request
+			};
 
-				// Modify the 'load' event listener to be async and await IndexedDB initialization
-				window.addEventListener('load', async () => {
-					loadEventResolver(); // Signal that the browser's load event has fired
-				});
+			// Event handler for request errors
+			request.onerror = (event) => {
+				console.error('IndexedDB request error:', event.target.errorCode);
+				reject(new Error('IndexedDB request failed: ' + event.target.errorCode)); // Reject with an error
+			};
 
-				const go = new Go();
+			// Event handler for transaction completion (success or abort)
+			transaction.oncomplete = () => {
+				// console.log('Transaction completed.');
+			};
 
-				// 3. Chain the WASM instantiation to the indexedDBReady promise
-				window.indexedDBReady
-					.then(() => {
-						// console.log("IndexedDB is ready. Proceeding to instantiate WebAssembly.");
-						// Only fetch and run WASM once IndexedDB is guaranteed to be ready
-						return WebAssembly.instantiateStreaming(fetch("/main.wasm"), go.importObject);
-					})
-					.then((result) => {
-						// console.log("WebAssembly instantiated. Running Go runtime.");
-						go.run(result.instance); // This will then call your Go main()
-						// wasmLoadedResolver() will be called by Go's onWasmDone later
-					})
-					.catch(error => {
-						console.error("WASM instantiation or IndexedDB initialization failed:", error);
-						// Ensure wasmLoaded is rejected if WASM fails to load after this point
-						wasmLoadedResolver(new Error("WASM failed to load after IndexedDB was ready: " + error.message));
-						// Also ensure PageReady is not dispatched successfully if critical startup fails
-					});
+			// Event handler for transaction abort (e.g., due to an error)
+			transaction.onabort = (event) => {
+				console.error('Transaction aborted:', event.target.error);
+				reject(new Error('Transaction aborted: ' + event.target.error)); // Reject with an error
+			};
+		});
+	}
+
+	/**
+	* Stores a key-value pair in IndexedDB.
+	* @param {string} key - The key to store the value under.
+	* @param {any} value - The value to store.
+	* @returns {Promise<void>} A promise that resolves when the item is set.
+	*/
+	async setItem(key, value) {
+		return this._transaction('readwrite', (store) => store.put(value, key));
+	}
+
+	/**
+	* Retrieves a value from IndexedDB by its key.
+	* @param {string} key - The key of the item to retrieve.
+	* @returns {Promise<any | undefined>} A promise that resolves with the retrieved value, or undefined if not found.
+	*/
+	async getItem(key) {
+		return this._transaction('readonly', (store) => store.get(key));
+	}
+
+	/**
+	* Removes an item from IndexedDB by its key.
+	* @param {string} key - The key of the item to remove.
+	* @returns {Promise<void>} A promise that resolves when the item is removed.
+	*/
+	async removeItem(key) {
+		return this._transaction('readwrite', (store) => store.delete(key));
+	}
+
+	/**
+	* Clears all items from the object store.
+	* @returns {Promise<void>} A promise that resolves when all items are cleared.
+	*/
+	async clear() {
+		return this._transaction('readwrite', (store) => store.clear());
+	}
+}
+
+// Instantiate the IndexedDBSync wrapper
+const dbSync = new IndexedDBSync();
+
+// Expose the instance globally for Go/WASM to interact with
+window.indexedDBSyncInstance = dbSync;
+
+let indexedDBReadyResolver;
+window.indexedDBReady = new Promise(resolve => indexedDBReadyResolver = resolve);
+
+(async () => {
+	try {
+		if (window.indexedDBSyncInstance) {
+			// console.log("IndexedDBSync: Starting IndexedDB initialization...");
+			await window.indexedDBSyncInstance.init(); // Wait for IndexedDB to be fully initialized
+			// console.log("IndexedDBSync: IndexedDB initialized and ready.");
+			indexedDBReadyResolver(); // Resolve this promise much earlier
+		} else {
+			console.error('IndexedDBSync instance not found during early init.');
+			indexedDBReadyResolver(new Error('IndexedDBSync instance not found.'));
+		}
+	} catch (error) {
+		console.error('IndexedDBSync: Error during early IndexedDB initialization:', error);
+		indexedDBReadyResolver(error);
+	}
+})();
+
+let wasmLoadedResolver, loadEventResolver;
+window.wasmLoaded = new Promise(resolve => wasmLoadedResolver = resolve);
+window.loadEventFired = new Promise(resolve => loadEventResolver = resolve);
+
+window.onWasmDone = function() {
+	wasmLoadedResolver();
+}
+
+// Modify the 'load' event listener to be async and await IndexedDB initialization
+window.addEventListener('load', async () => {
+	loadEventResolver(); // Signal that the browser's load event has fired
+});
+
+const go = new Go();
+
+// 3. Chain the WASM instantiation to the indexedDBReady promise
+window.addEventListener('DOMContentLoaded', () => {
+	// console.log("DOM is ready. Starting WASM instantiation...");
+
+	window.indexedDBReady
+		.then(() => {
+			return WebAssembly.instantiateStreaming(fetch("./main.wasm"), go.importObject);
+		})
+		.then((result) => {
+			// console.log("WASM is ready. Running Go application...");
+			go.run(result.instance);
+		})
+		.catch(error => {
+			console.error("WASM setup failed:", error);
+		});
+});
 
 
-				// 4. Promise.all still waits for all components before dispatching PageReady
-				Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady])
-					.then(() => {
-						 //console.log("All main startup components (WASM, Page Load, IndexedDB) are ready.");
-						// Small final delay before dispatching, as a safety measure for any final browser flush.
-						setTimeout(() => {
-							// console.log("Dispatching PageReady event...");
-							window.dispatchEvent(new Event('PageReady'));
-						}, 50);
-					})
-					.catch(error => {
-						console.error("Application startup failed:", error);
-						// Handle critical startup errors, e.g., display a message to the user
-					});
-
+// 4. Promise.all still waits for all components before dispatching PageReady
+window.wasmReady = new Promise((resolve, reject) => {
+Promise.all([window.wasmLoaded, window.loadEventFired, window.indexedDBReady])
+	.then(() => {
+		// console.log("All startup components are ready.");
+		setTimeout(() => {
+			window.dispatchEvent(new Event('PageReady'));
+			resolve(); // Resolve the global promise when everything is done!
+		}, 50);
+	})
+	.catch(error => {
+		console.error("Application startup failed:", error);
+		reject(error); // Reject the global promise if something goes wrong.
+	});
+});
 			`,
 		),
 	)

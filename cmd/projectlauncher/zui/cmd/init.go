@@ -4,9 +4,11 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -459,27 +461,62 @@ func createFile(path, content string) error {
 	return nil
 }
 
-// CopyWasmExecJs copies the wasm_exec.js file from the Go distribution to the specified destination directory.
-func CopyWasmExecJs(destinationDir string) error {
-	// Determine the Go root directory
-	goRoot := runtime.GOROOT()
+// DownloadWasmExecJs retrieves the wasm_exec.js file from the official Go repository
+// for the active toolchain version, skipping the download if the file already exists.
+func DownloadWasmExecJs(destinationDir string) error {
+	destinationPath := filepath.Join(destinationDir, "wasm_exec.js")
 
-	// Source wasm_exec.js path
-	source := filepath.Join(goRoot, "misc", "wasm", "wasm_exec.js")
-
-	// Ensure the destination directory exists
-	err := os.MkdirAll(destinationDir, 0755) // Create the destination directory if it does not exist
-	if err != nil {
-		return fmt.Errorf("error creating destination directory: %v", err)
+	// 1. Check if the file already exists on disk.
+	if _, err := os.Stat(destinationPath); err == nil {
+		if verbose {
+			fmt.Printf("wasm_exec.js already exists at %s, skipping download.\n", destinationPath)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("could not access destination path for wasm_exec.js: %w", err)
 	}
 
-	// Destination wasm_exec.js path
-	destination := filepath.Join(destinationDir, "wasm_exec.js")
-
-	// Copy the wasm_exec.js file
-	err = copyFile(source, destination)
+	// 2. Get the active Go toolchain version (e.g., "go1.24.6").
+	cmd := exec.Command("go", "env", "GOVERSION")
+	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("error copying file: %v", err)
+		return fmt.Errorf("could not determine Go version: %w", err)
+	}
+	goVersion := string(bytes.TrimSpace(output))
+
+	// 3. Construct the URL using the full git ref path you found.
+	url := fmt.Sprintf("https://raw.githubusercontent.com/golang/go/refs/tags/%s/lib/wasm/wasm_exec.js", goVersion)
+	if verbose {
+		fmt.Printf("Downloading wasm_exec.js from %s\n", url)
+	}
+
+	// 4. Download the file via HTTP GET.
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download wasm_exec.js: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download wasm_exec.js from %s: received status code %d", url, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// 5. Save the file to the destination.
+	if err := os.MkdirAll(destinationDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory %s: %w", destinationDir, err)
+	}
+
+	if err := os.WriteFile(destinationPath, body, 0644); err != nil {
+		return fmt.Errorf("failed to write wasm_exec.js to %s: %w", destinationPath, err)
+	}
+
+	if verbose {
+		fmt.Printf("Successfully downloaded and saved wasm_exec.js to %s\n", destinationPath)
 	}
 
 	return nil
@@ -684,7 +721,7 @@ func Build(client bool, buildTags []string, cmdArgs ...string) error {
 			}
 		} else {
 			if client {
-				err := CopyWasmExecJs(outputDir)
+				err := DownloadWasmExecJs(outputDir)
 				if err != nil {
 					return fmt.Errorf("failed to copy wasm_exec.js: %v", err)
 				}

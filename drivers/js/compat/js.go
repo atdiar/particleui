@@ -26,13 +26,13 @@ var (
 	FuncOf        = js.FuncOf
 )
 
-const (
-	TypeNull Type = iota
-	TypeBoolean
-	TypeNumber
-	TypeString
-	TypeSymbol
-	TypeObject
-	TypeFunction
-	TypeUndefined
+var (
+	TypeUndefined = js.TypeUndefined
+	TypeNull      = js.TypeNull
+	TypeBoolean   = js.TypeBoolean
+	TypeNumber    = js.TypeNumber
+	TypeString    = js.TypeString
+	TypeSymbol    = js.TypeSymbol
+	TypeObject    = js.TypeObject
+	TypeFunction  = js.TypeFunction
 )

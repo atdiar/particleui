@@ -1,6 +1,8 @@
 package doc
 
 import (
+	"strings"
+
 	ui "github.com/atdiar/particleui"
 )
 
@@ -12,6 +14,20 @@ var Class = func(classes ...string) func(*ui.Element) *ui.Element {
 		for _, class := range classes {
 			AddClass(e, class)
 		}
+		return e
+	}
+}
+
+func InlineCSS(css ...string) func(*ui.Element) *ui.Element {
+	return func(e *ui.Element) *ui.Element {
+		var style string
+		for _, c := range css {
+			style = strings.Join([]string{style, strings.TrimSuffix(c, ";")}, ";")
+		}
+		if style != "" && !strings.HasSuffix(style, ";") {
+			style += ";"
+		}
+		SetInlineCSS(e, style)
 		return e
 	}
 }

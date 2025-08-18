@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	ui "github.com/atdiar/particleui"
 	"github.com/fsnotify/fsnotify"
@@ -530,32 +531,21 @@ func CreatePages(doc *Document) (int, error) {
 }
 
 // CreatePage creates a single page for the document at the specified filePath.
+// CreatePage creates a single page for the document at the specified filePath.
 func (d Document) CreatePage(filePath string) error {
-
-	// Create the directory if it doesn't exist
 	dirPath := filepath.Dir(filePath)
-	// DEBUG
-	fmt.Printf("Creating page at '%s'\n", dirPath)
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return err
 	}
 
-	// Append stylesheet link to the document head
-	// Note here how we have to supply an ID so that there is no conflict when
-	// doing a replay of a server side render. The reason being that the ID generator is
-	// deterministic on purpose for perfect replay but does not allow for difference in rendering
-	// where a new element is introduced on only one platform and might take the ID.
-
+	// 1. Handle all stylesheet logic first.
 	ss, ok := d.GetCurrentStyleSheet()
 	if ok {
 		cssRelPath := strings.Join([]string{"./", ss, ".css"}, "")
 		link := d.Link.WithID(strings.Join([]string{d.AsElement().ID, ss, "stylesheet"}, "-")).SetAttribute("href", cssRelPath).SetAttribute("rel", "stylesheet")
 		d.Head().AppendChild(link)
 
-		// Determine the path for the CSS file
 		cssFilePath := filepath.Join(dirPath, cssRelPath)
-
-		// Generate the stylesheet for this page
 		if err := d.CreateStylesheet(cssFilePath); err != nil {
 			return fmt.Errorf("error creating stylesheet: %w", err)
 		}
@@ -564,16 +554,43 @@ func (d Document) CreatePage(filePath string) error {
 		}
 	}
 
-	// Create and open the file
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file '%s': %w", filePath, err)
+	// 2. Render the new page content to an in-memory buffer.
+	var newContent bytes.Buffer
+	if err := d.Render(&newContent); err != nil {
+		return fmt.Errorf("error rendering document to buffer: %w", err)
 	}
-	defer file.Close()
 
-	// Render the document
-	if err := d.Render(file); err != nil {
-		return err
+	// 3. Read the content of the existing file on disk.
+	existingContent, err := os.ReadFile(filePath)
+
+	// 4. Decide if a file write is necessary for the HTML file.
+	if err == nil && bytes.Equal(newContent.Bytes(), existingContent) {
+		if verbose {
+			fmt.Printf("Content of '%s' is unchanged. Skipping HTML write.\n", filePath)
+		}
+		return nil
+	}
+
+	// 5. Before writing the HTML, back up the old file if it exists.
+	if err == nil {
+		// MODIFIED: Generate a timestamped backup filename.
+		timestamp := time.Now().Format("20060102150405")
+		ext := filepath.Ext(filePath)
+		baseName := strings.TrimSuffix(filepath.Base(filePath), ext)
+		backupFileName := fmt.Sprintf("%s_old_%s%s", baseName, timestamp, ext)
+		backupPath := filepath.Join(dirPath, backupFileName)
+
+		if verbose {
+			fmt.Printf("Content of 'index.html' has changed. Backing it up to '%s'.\n", backupFileName)
+		}
+		if errRename := os.Rename(filePath, backupPath); errRename != nil {
+			return fmt.Errorf("failed to backup existing index.html: %w", errRename)
+		}
+	}
+
+	// 6. Write the new HTML content to the file.
+	if errWrite := os.WriteFile(filePath, newContent.Bytes(), 0644); errWrite != nil {
+		return fmt.Errorf("error creating file '%s': %w", errWrite)
 	}
 
 	return nil

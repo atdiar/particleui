@@ -2397,6 +2397,7 @@ func newViewAccessNode(v *Element, viewname string) *viewAccessNode {
 	return &viewAccessNode{nil, v, viewname}
 }
 
+/*
 func (v *viewAccessNode) Link(any AnyElement) {
 	e := any.AsElement()
 	if !e.isViewElement() {
@@ -2413,6 +2414,18 @@ func (v *viewAccessNode) Link(any AnyElement) {
 	}
 	v.previous = e.ViewAccessNode
 	v.Element = e
+}
+*/
+
+func (child *Element) ParentViewElement() *ViewElement {
+	if child == nil || child.ViewAccessNode == nil || child.ViewAccessNode.Element == nil {
+		return nil
+	}
+	parent := child.ViewAccessNode.Element
+	if !parent.isViewElement() {
+		panic("ViewAccessNode holds an *Element that is unexpectedly not a ViewElement")
+	}
+	return &ViewElement{parent}
 }
 
 func (child *Element) link(any AnyElement) {

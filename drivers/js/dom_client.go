@@ -7,9 +7,7 @@ package doc
 
 import (
 	"context"
-	"log"
 	"net/url"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 
@@ -340,13 +338,6 @@ func NewBuilder(f func() *Document, buildEnvModifiers ...func()) (ListenAndServe
 			d.mutationRecorder().Capture()
 			return false
 		}).RunOnce())
-
-		if !InBrowser() { // SSG Mode only
-			err := CreateSitemap(d, filepath.Join(".", "sitemap.xml"))
-			if err != nil {
-				log.Print(err)
-			}
-		}
 
 		d.ListenAndServe(ctx)
 	}

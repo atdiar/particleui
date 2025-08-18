@@ -1342,11 +1342,14 @@ func (v Value) Set(property string, value interface{}) {
 
 	switch v.data.(type) {
 	case *stubwindow:
-		panic("Cannot set properties on a stub window directly. Use stubWindow.document or stubWindow.defaultView.")
+		DEBUG("Cannot set properties on a stub window directly. Use stubWindow.document or stubWindow.defaultView.")
+		return
 	case *stubdocument:
-		panic("Cannot set properties on a stub document directly. Use stubDocument.documentElement or stubDocument.body.")
+		DEBUG("Cannot set properties on a stub document directly. Use stubDocument.documentElement or stubDocument.body.")
+		return
 	case *documentImplementation:
-		panic("Cannot set properties on a document implementation directly. Use stubDocument.documentElement or stubDocument.body.")
+		DEBUG("Cannot set properties on a document implementation directly. Use stubDocument.documentElement or stubDocument.body.")
+		return
 	}
 
 	node := v.Node() // This will panic if v.data is not a *html.Node
